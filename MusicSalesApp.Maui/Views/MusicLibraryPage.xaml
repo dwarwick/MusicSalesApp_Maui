@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             xmlns:vm="clr-namespace:MusicSalesApp.Maui.ViewModels"
+             x:Class="MusicSalesApp.Maui.Views.MusicLibraryPage"
+             x:DataType="vm:MusicLibraryViewModel"
+             Title="Music Library">
+
+    <Grid RowDefinitions="*,Auto">
+        <!-- Song List -->
+        <RefreshView x:Name="SongsRefreshView"
+                     Grid.Row="0"
+                     IsRefreshing="{Binding IsLoading}">
+            <CollectionView ItemsSource="{Binding Songs}"
+                            SelectionMode="None">
+                <CollectionView.EmptyView>
+                    <VerticalStackLayout HorizontalOptions="Center"
+                                         VerticalOptions="Center"
+                                         Padding="20">
+                        <Label Text="No songs available"
+                               FontSize="18"
+                               HorizontalTextAlignment="Center"
+                               TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray300}}" />
+                        <Label Text="{Binding ErrorMessage}"
+                               FontSize="14"
+                               HorizontalTextAlignment="Center"
+                               TextColor="Red"
+                               IsVisible="{Binding ErrorMessage, Converter={toolkit:IsNotNullConverter}}" />
+                    </VerticalStackLayout>
+                </CollectionView.EmptyView>
+
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:SongDto">
+                        <Border Margin="8,4"
+                                Padding="12"
+                                StrokeShape="RoundRectangle 12"
+                                Stroke="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray600}}"
+                                BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource Gray900}}">
+                            <Grid ColumnDefinitions="80,*,Auto"
+                                  ColumnSpacing="12"
+                                  RowDefinitions="Auto,Auto,Auto"
+                                  RowSpacing="2">
+
+                                <!-- Album Art -->
+                                <Border Grid.RowSpan="3"
+                                        Grid.Column="0"
+                                        StrokeShape="RoundRectangle 8"
+                                        StrokeThickness="0"
+                                        HeightRequest="80"
+                                        WidthRequest="80">
+                                    <Image Source="{Binding AlbumArtUrl}"
+                                           Aspect="AspectFill"
+                                           HeightRequest="80"
+                                           WidthRequest="80" />
+                                </Border>
+
+                                <!-- Song Title -->
+                                <Label Grid.Row="0"
+                                       Grid.Column="1"
+                                       Text="{Binding SongTitle}"
+                                       FontSize="16"
+                                       FontAttributes="Bold"
+                                       LineBreakMode="TailTruncation"
+                                       MaxLines="1" />
+
+                                <!-- Artist Name -->
+                                <Label Grid.Row="1"
+                                       Grid.Column="1"
+                                       Text="{Binding ArtistName}"
+                                       FontSize="13"
+                                       TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
+                                       LineBreakMode="TailTruncation"
+                                       MaxLines="1" />
+
+                                <!-- Genre and Stream Count -->
+                                <HorizontalStackLayout Grid.Row="2"
+                                                        Grid.Column="1"
+                                                        Spacing="12">
+                                    <Label Text="{Binding Genre}"
+                                           FontSize="12"
+                                           TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray400}}" />
+                                    <Label FontSize="12"
+                                           TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray400}}">
+                                        <Label.Text>
+                                            <Binding Path="StreamCount"
+                                                     StringFormat="{}{0:N0} streams" />
+                                        </Label.Text>
+                                    </Label>
+                                </HorizontalStackLayout>
+
+                                <!-- Play Button -->
+                                <Button Grid.RowSpan="3"
+                                        Grid.Column="2"
+                                        Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MusicLibraryViewModel}}, Path=PlaySongCommand}"
+                                        CommandParameter="{Binding .}"
+                                        Text="&#x25B6;"
+                                        TextColor="White"
+                                        FontSize="20"
+                                        HeightRequest="44"
+                                        WidthRequest="44"
+                                        Padding="0"
+                                        CornerRadius="22"
+                                        BackgroundColor="{StaticResource Primary}"
+                                        VerticalOptions="Center" />
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+        </RefreshView>
+
+        <!-- Now Playing Bar -->
+        <Border Grid.Row="1"
+                Padding="12,8"
+                BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource Gray900}}"
+                StrokeThickness="0"
+                IsVisible="{Binding CurrentlyPlayingSong, Converter={toolkit:IsNotNullConverter}}">
+            <Grid ColumnDefinitions="48,*,Auto,Auto"
+                  ColumnSpacing="12">
+
+                <!-- Mini Album Art -->
+                <Border StrokeShape="RoundRectangle 6"
+                        StrokeThickness="0"
+                        HeightRequest="48"
+                        WidthRequest="48">
+                    <Image Source="{Binding CurrentlyPlayingSong.AlbumArtUrl}"
+                           Aspect="AspectFill"
+                           HeightRequest="48"
+                           WidthRequest="48" />
+                </Border>
+
+                <!-- Song Info -->
+                <VerticalStackLayout Grid.Column="1"
+                                     VerticalOptions="Center"
+                                     Spacing="2">
+                    <Label Text="{Binding CurrentlyPlayingSong.SongTitle}"
+                           FontSize="14"
+                           FontAttributes="Bold"
+                           LineBreakMode="TailTruncation"
+                           MaxLines="1" />
+                    <Label Text="{Binding CurrentlyPlayingSong.ArtistName}"
+                           FontSize="12"
+                           TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
+                           LineBreakMode="TailTruncation"
+                           MaxLines="1" />
+                </VerticalStackLayout>
+
+                <!-- Play/Pause Button -->
+                <Button Grid.Column="2"
+                        Command="{Binding TogglePlayPauseCommand}"
+                        Text="{Binding IsPlaying, Converter={StaticResource PlayPauseGlyphConverter}}"
+                        TextColor="White"
+                        FontSize="18"
+                        HeightRequest="40"
+                        WidthRequest="40"
+                        Padding="0"
+                        CornerRadius="20"
+                        BackgroundColor="{StaticResource Primary}"
+                        VerticalOptions="Center" />
+
+                <!-- Stop Button -->
+                <Button Grid.Column="3"
+                        Command="{Binding StopCommand}"
+                        Text="&#x25A0;"
+                        TextColor="White"
+                        FontSize="16"
+                        HeightRequest="40"
+                        WidthRequest="40"
+                        Padding="0"
+                        CornerRadius="20"
+                        BackgroundColor="{AppThemeBinding Light={StaticResource Gray300}, Dark={StaticResource Gray600}}"
+                        VerticalOptions="Center" />
+            </Grid>
+        </Border>
+
+        <!-- MediaElement for audio playback (hidden) -->
+        <toolkit:MediaElement x:Name="AudioPlayer"
+                              IsVisible="false"
+                              ShouldAutoPlay="True"
+                              ShouldKeepScreenOn="False" />
+    </Grid>
+
+</ContentPage>

@@ -1,0 +1,36 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "maui-build-windows",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "build",
+        "${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj",
+        "-f",
+        "net10.0-windows10.0.19041.0",
+        "-c",
+        "Debug",
+        "/p:WindowsPackageType=None"
+      ],
+      "problemMatcher": "$msCompile",
+      "group": "build"
+    },
+    {
+      "label": "maui-start-android-emulator",
+      "type": "shell",
+      "command": "pwsh -ExecutionPolicy Bypass -File ${workspaceFolder:MusicSalesApp_Maui}/.vscode/start-emulator.ps1",
+      "problemMatcher": [],
+      "group": "build"
+    },
+    {
+      "label": "maui-deploy-android",
+      "type": "shell",
+      "dependsOn": "maui-start-android-emulator",
+      "command": "pwsh -ExecutionPolicy Bypass -File ${workspaceFolder:MusicSalesApp_Maui}/.vscode/deploy-android.ps1",
+      "problemMatcher": "$msCompile",
+      "group": "build"
+    }
+  ]
+}

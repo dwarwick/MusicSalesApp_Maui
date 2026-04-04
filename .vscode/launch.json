@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "MAUI - Windows",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/bin/Debug/net10.0-windows10.0.19041.0/win-x64/MusicSalesApp.Maui.exe",
+      "args": [],
+      "cwd": "${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui",
+      "stopAtEntry": false,
+      "preLaunchTask": "maui-build-windows"
+    }
+  ]
+}
