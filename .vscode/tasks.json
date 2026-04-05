@@ -31,6 +31,21 @@
       "command": "pwsh -ExecutionPolicy Bypass -File ${workspaceFolder:MusicSalesApp_Maui}/.vscode/deploy-android.ps1",
       "problemMatcher": "$msCompile",
       "group": "build"
+    },
+    {
+      "label": "maui-adb-reverse",
+      "type": "shell",
+      "command": "pwsh -ExecutionPolicy Bypass -File ${workspaceFolder:MusicSalesApp_Maui}/.vscode/adb-reverse.ps1",
+      "problemMatcher": [],
+      "group": "build"
+    },
+    {
+      "label": "maui-deploy-phone",
+      "type": "shell",
+      "dependsOn": "maui-adb-reverse",
+      "command": "dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-android -t:Install",
+      "problemMatcher": "$msCompile",
+      "group": "build"
     }
   ]
 }

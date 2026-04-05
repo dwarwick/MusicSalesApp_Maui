@@ -4,7 +4,19 @@
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:views="clr-namespace:MusicSalesApp.Maui.Views"
-    Title="StreamTunes">
+    Title="StreamTunes"
+    Shell.BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource NavBarDark}}"
+    Shell.ForegroundColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}"
+    Shell.TitleColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}">
+
+    <Shell.TitleView>
+        <Grid Padding="8,0" VerticalOptions="Center" HorizontalOptions="Start">
+            <Image Source="{AppThemeBinding Light=logo_light_small.png, Dark=logo_dark_small.png}"
+                   HeightRequest="35"
+                   Aspect="AspectFit"
+                   VerticalOptions="Center" />
+        </Grid>
+    </Shell.TitleView>
 
     <ShellContent
         Title="Music Library"

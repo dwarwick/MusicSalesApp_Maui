@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="colorPrimary">#512BD4</color>
-    <color name="colorPrimaryDark">#2B0B98</color>
-    <color name="colorAccent">#2B0B98</color>
+    <color name="colorPrimary">#1DB954</color>
+    <color name="colorPrimaryDark">#1DB954</color>
+    <color name="colorAccent">#1ED760</color>
+    <!-- Light-mode splash background (overridden in values-night) -->
+    <color name="maui_splash_color">#FFFFFF</color>
 </resources>

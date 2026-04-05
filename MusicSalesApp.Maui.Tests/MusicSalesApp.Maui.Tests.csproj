@@ -26,7 +26,7 @@
   <!-- Include source files from MAUI project that are testable (no MAUI platform deps) -->
   <ItemGroup>
     <Compile Include="..\MusicSalesApp.Maui\ViewModels\*.cs" Link="ViewModels\%(Filename)%(Extension)" />
-    <Compile Include="..\MusicSalesApp.Maui\Services\*.cs" Link="Services\%(Filename)%(Extension)" />
+    <Compile Include="..\MusicSalesApp.Maui\Services\*.cs" Link="Services\%(Filename)%(Extension)" Exclude="..\MusicSalesApp.Maui\Services\AlertService.cs;..\MusicSalesApp.Maui\Services\SignalRService.cs" />
   </ItemGroup>
 
   <ItemGroup>

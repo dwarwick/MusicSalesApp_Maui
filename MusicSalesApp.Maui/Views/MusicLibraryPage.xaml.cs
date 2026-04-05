@@ -10,6 +10,8 @@ public partial class MusicLibraryPage : ContentPage
 {
     private readonly MusicLibraryViewModel _viewModel;
     private readonly ILogger<MusicLibraryPage> _logger;
+    private IDispatcherTimer? _progressTimer;
+    private bool _isSeeking;
 
     public MusicLibraryPage(MusicLibraryViewModel viewModel, ILogger<MusicLibraryPage> logger)
     {
@@ -20,8 +22,9 @@ public partial class MusicLibraryPage : ContentPage
         // Subscribe to ViewModel property changes to sync MediaElement with playback state
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
 
-        // Add converter to page resources before InitializeComponent
+        // Add converters to page resources before InitializeComponent
         Resources.Add("PlayPauseGlyphConverter", new PlayPauseGlyphConverter());
+        Resources.Add("DurationConverter", new DurationConverter());
 
         InitializeComponent();
 
@@ -35,6 +38,10 @@ public partial class MusicLibraryPage : ContentPage
         AudioPlayer.MediaFailed += OnMediaFailed;
         AudioPlayer.MediaEnded += OnMediaEnded;
 
+        // Wire up slider seek events
+        ProgressSlider.DragStarted += OnSliderDragStarted;
+        ProgressSlider.DragCompleted += OnSliderDragCompleted;
+
         _logger.LogInformation("[Audio] MusicLibraryPage constructed. ShouldAutoPlay={ShouldAutoPlay}", AudioPlayer.ShouldAutoPlay);
     }
 
@@ -46,13 +53,68 @@ public partial class MusicLibraryPage : ContentPage
         {
             await _viewModel.LoadSongsCommand.ExecuteAsync(null);
         }
+
+        // Load stream qualifying threshold from the server
+        await _viewModel.LoadStreamQualifyingSecondsAsync();
+
+        // Start SignalR connections for real-time updates
+        await _viewModel.StartSignalRAsync();
     }
 
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
+        StopProgressTimer();
         AudioPlayer.Stop();
     }
+
+    // --- Progress timer ---
+
+    private void StartProgressTimer()
+    {
+        if (_progressTimer != null) return;
+
+        _progressTimer = Dispatcher.CreateTimer();
+        _progressTimer.Interval = TimeSpan.FromMilliseconds(500);
+        _progressTimer.Tick += OnProgressTimerTick;
+        _progressTimer.Start();
+    }
+
+    private void StopProgressTimer()
+    {
+        if (_progressTimer == null) return;
+
+        _progressTimer.Stop();
+        _progressTimer.Tick -= OnProgressTimerTick;
+        _progressTimer = null;
+    }
+
+    private void OnProgressTimerTick(object? sender, EventArgs e)
+    {
+        if (_isSeeking) return;
+
+        _viewModel.UpdatePlaybackPosition(AudioPlayer.Position, AudioPlayer.Duration);
+
+        // Update slider directly — XAML OneWay binding breaks after user drag
+        ProgressSlider.Value = _viewModel.PlaybackProgress;
+    }
+
+    // --- Slider seek ---
+
+    private void OnSliderDragStarted(object? sender, EventArgs e)
+    {
+        _isSeeking = true;
+    }
+
+    private void OnSliderDragCompleted(object? sender, EventArgs e)
+    {
+        _isSeeking = false;
+        var seekPosition = _viewModel.GetSeekPosition(ProgressSlider.Value);
+        AudioPlayer.SeekTo(seekPosition);
+        _logger.LogInformation("[Audio] Seeked to {Position}", seekPosition);
+    }
+
+    // --- ViewModel property change handling ---
 
     private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
@@ -73,6 +135,7 @@ public partial class MusicLibraryPage : ContentPage
         if (song == null)
         {
             _logger.LogInformation("[Audio] HandleSongChanged: song is null, stopping.");
+            StopProgressTimer();
             AudioPlayer.Stop();
             AudioPlayer.Source = null;
             return;
@@ -118,11 +181,13 @@ public partial class MusicLibraryPage : ContentPage
                 _logger.LogInformation("[Audio] IsPlaying=true but CurrentState={State}, not calling Play (ShouldAutoPlay handles it).",
                     AudioPlayer.CurrentState);
             }
+            StartProgressTimer();
         }
         else
         {
             _logger.LogInformation("[Audio] Pausing.");
             AudioPlayer.Pause();
+            StopProgressTimer();
         }
     }
 
@@ -131,12 +196,21 @@ public partial class MusicLibraryPage : ContentPage
     private void OnMediaStateChanged(object? sender, MediaStateChangedEventArgs e)
     {
         _logger.LogInformation("[Audio] StateChanged: {Previous} -> {New}", e.PreviousState, e.NewState);
+
+        // Start timer when media begins playing (e.g. via ShouldAutoPlay)
+        if (e.NewState == MediaElementState.Playing && _viewModel.IsPlaying)
+        {
+            StartProgressTimer();
+        }
     }
 
     private void OnMediaOpened(object? sender, EventArgs e)
     {
         _logger.LogInformation("[Audio] MediaOpened! Duration={Duration}, Position={Position}, Volume={Volume}",
             AudioPlayer.Duration, AudioPlayer.Position, AudioPlayer.Volume);
+
+        // Update duration immediately when media opens
+        _viewModel.UpdatePlaybackPosition(AudioPlayer.Position, AudioPlayer.Duration);
     }
 
     private void OnMediaFailed(object? sender, MediaFailedEventArgs e)
@@ -147,6 +221,8 @@ public partial class MusicLibraryPage : ContentPage
     private void OnMediaEnded(object? sender, EventArgs e)
     {
         _logger.LogInformation("[Audio] MediaEnded.");
+        StopProgressTimer();
+        _viewModel.IsPlaying = false;
     }
 }
 
@@ -158,6 +234,29 @@ public class PlayPauseGlyphConverter : IValueConverter
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         return value is true ? "\u23F8" : "\u25B6"; // ⏸ or ▶
+    }
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        throw new NotSupportedException();
+    }
+}
+
+/// <summary>
+/// Converts a nullable double (seconds) to a formatted duration string (m:ss or h:mm:ss).
+/// </summary>
+public class DurationConverter : IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is double seconds && !double.IsNaN(seconds) && !double.IsInfinity(seconds) && seconds > 0)
+        {
+            var ts = TimeSpan.FromSeconds(seconds);
+            return ts.TotalHours >= 1
+                ? ts.ToString(@"h\:mm\:ss")
+                : ts.ToString(@"m\:ss");
+        }
+        return "--:--";
     }
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)

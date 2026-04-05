@@ -46,13 +46,16 @@ public static class MauiProgram
 		// Register HttpClientFactory with the API base URL
 		var apiBaseUrl = builder.Configuration["ApiBaseUrl"] ?? "https://localhost:7173";
 #if ANDROID && DEBUG
-		// Android emulator can't reach host's "localhost" — use 10.0.2.2 instead.
-		// Also use HTTP to avoid dev certificate issues on the emulator.
-		// Skip remapping when using a tunnel URL (e.g. ngrok).
+		// Android can't reach the host's "localhost" directly.
+		// Emulator: 10.0.2.2 routes to the host PC.
+		// Physical device via USB: use "adb reverse tcp:5162 tcp:5162" then localhost works.
+		// Both cases use HTTP on port 5162 to avoid dev certificate issues.
 		if (apiBaseUrl.Contains("localhost"))
 		{
+			var isEmulator = Android.OS.Build.Hardware == "ranchu" || Android.OS.Build.Hardware == "goldfish";
+			var host = isEmulator ? "10.0.2.2" : "localhost";
 			apiBaseUrl = apiBaseUrl
-				.Replace("localhost", "10.0.2.2")
+				.Replace("localhost", host)
 				.Replace("https://", "http://")
 				.Replace(":7173", ":5162");
 		}
@@ -86,6 +89,8 @@ public static class MauiProgram
 
 		// Register services
 		builder.Services.AddSingleton<IMusicService, MusicService>();
+		builder.Services.AddSingleton<IAlertService, AlertService>();
+		builder.Services.AddSingleton<ISignalRService, SignalRService>();
 
 		// Register ViewModels and Pages
 		builder.Services.AddTransient<MusicLibraryViewModel>();
