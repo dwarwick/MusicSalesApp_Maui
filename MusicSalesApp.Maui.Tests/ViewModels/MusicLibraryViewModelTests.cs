@@ -10,6 +10,8 @@ public class MusicLibraryViewModelTests
     private Mock<IMusicService> _mockMusicService;
     private Mock<IAlertService> _mockAlertService;
     private Mock<ISignalRService> _mockSignalRService;
+    private Mock<IAuthService> _mockAuthService;
+    private Mock<INavigationService> _mockNavigationService;
     private MusicLibraryViewModel _viewModel;
 
     [SetUp]
@@ -18,8 +20,10 @@ public class MusicLibraryViewModelTests
         _mockMusicService = new Mock<IMusicService>();
         _mockAlertService = new Mock<IAlertService>();
         _mockSignalRService = new Mock<ISignalRService>();
+        _mockAuthService = new Mock<IAuthService>();
+        _mockNavigationService = new Mock<INavigationService>();
         _viewModel = new MusicLibraryViewModel(
-            _mockMusicService.Object, _mockAlertService.Object, _mockSignalRService.Object);
+            _mockMusicService.Object, _mockAlertService.Object, _mockSignalRService.Object, _mockAuthService.Object, _mockNavigationService.Object);
     }
 
     [Test]
@@ -599,7 +603,7 @@ public class MusicLibraryViewModelTests
         await _viewModel.LoadSongsCommand.ExecuteAsync(null);
 
         // Act
-        _viewModel.SelectedGenre = "Rock";
+        _viewModel.ToggleGenreFilterCommand.Execute("Rock");
 
         // Assert
         Assert.That(_viewModel.Songs, Has.Count.EqualTo(2));
@@ -613,7 +617,7 @@ public class MusicLibraryViewModelTests
         await _viewModel.LoadSongsCommand.ExecuteAsync(null);
 
         // Act
-        _viewModel.SelectedArtist = "Bob";
+        _viewModel.ToggleArtistFilterCommand.Execute("Bob");
 
         // Assert
         Assert.That(_viewModel.Songs, Has.Count.EqualTo(2));
@@ -627,8 +631,8 @@ public class MusicLibraryViewModelTests
         await _viewModel.LoadSongsCommand.ExecuteAsync(null);
 
         // Act
-        _viewModel.SelectedGenre = "Rock";
-        _viewModel.SelectedArtist = "Bob";
+        _viewModel.ToggleGenreFilterCommand.Execute("Rock");
+        _viewModel.ToggleArtistFilterCommand.Execute("Bob");
 
         // Assert
         Assert.That(_viewModel.Songs, Has.Count.EqualTo(1));
@@ -651,7 +655,7 @@ public class MusicLibraryViewModelTests
         LoadTestSongsDirectly();
         await _viewModel.LoadSongsCommand.ExecuteAsync(null);
 
-        _viewModel.SelectedGenre = "Jazz";
+        _viewModel.ToggleGenreFilterCommand.Execute("Jazz");
         Assert.That(_viewModel.Songs, Has.Count.EqualTo(1));
 
         // Act
@@ -659,8 +663,8 @@ public class MusicLibraryViewModelTests
 
         // Assert
         Assert.That(_viewModel.Songs, Has.Count.EqualTo(5));
-        Assert.That(_viewModel.SelectedGenre, Is.Null);
-        Assert.That(_viewModel.SelectedArtist, Is.Null);
+        Assert.That(_viewModel.SelectedGenres, Is.Empty);
+        Assert.That(_viewModel.SelectedArtists, Is.Empty);
     }
 
     [Test]
@@ -696,7 +700,7 @@ public class MusicLibraryViewModelTests
         await _viewModel.LoadSongsCommand.ExecuteAsync(null);
 
         // Act - select Jazz genre
-        _viewModel.SelectedGenre = "Jazz";
+        _viewModel.ToggleGenreFilterCommand.Execute("Jazz");
 
         // Assert - only Charlie has Jazz songs
         Assert.That(_viewModel.AvailableArtists, Has.Count.EqualTo(1));
@@ -710,7 +714,7 @@ public class MusicLibraryViewModelTests
         await _viewModel.LoadSongsCommand.ExecuteAsync(null);
 
         // Act - select Alice
-        _viewModel.SelectedArtist = "Alice";
+        _viewModel.ToggleArtistFilterCommand.Execute("Alice");
 
         // Assert - Alice has Pop and Rock
         Assert.That(_viewModel.AvailableGenres, Has.Count.EqualTo(2));
@@ -730,7 +734,7 @@ public class MusicLibraryViewModelTests
         await _viewModel.LoadSongsCommand.ExecuteAsync(null);
 
         // Act - filter with different case
-        _viewModel.SelectedGenre = "Rock";
+        _viewModel.ToggleGenreFilterCommand.Execute("Rock");
 
         // Assert - both match
         Assert.That(_viewModel.Songs, Has.Count.EqualTo(2));
@@ -742,15 +746,15 @@ public class MusicLibraryViewModelTests
         LoadTestSongsDirectly();
         await _viewModel.LoadSongsCommand.ExecuteAsync(null);
 
-        _viewModel.SelectedGenre = "Jazz";
+        _viewModel.ToggleGenreFilterCommand.Execute("Jazz");
         Assert.That(_viewModel.Songs, Has.Count.EqualTo(1));
 
         // Act - reload songs
         await _viewModel.LoadSongsCommand.ExecuteAsync(null);
 
         // Assert - filters reset, all songs shown
-        Assert.That(_viewModel.SelectedGenre, Is.Null);
-        Assert.That(_viewModel.SelectedArtist, Is.Null);
+        Assert.That(_viewModel.SelectedGenres, Is.Empty);
+        Assert.That(_viewModel.SelectedArtists, Is.Empty);
         Assert.That(_viewModel.Songs, Has.Count.EqualTo(5));
     }
 
@@ -761,10 +765,306 @@ public class MusicLibraryViewModelTests
         await _viewModel.LoadSongsCommand.ExecuteAsync(null);
 
         // Act - select genre that won't combine with artist
-        _viewModel.SelectedGenre = "Jazz";
-        _viewModel.SelectedArtist = "Alice";
+        _viewModel.ToggleGenreFilterCommand.Execute("Jazz");
+        _viewModel.ToggleArtistFilterCommand.Execute("Alice");
 
         // Assert - Alice has no Jazz songs
         Assert.That(_viewModel.Songs, Has.Count.EqualTo(0));
+    }
+
+    // --- Multi-select filter tests ---
+
+    [Test]
+    public async Task Filter_MultipleGenres_ShowsUnion()
+    {
+        LoadTestSongsDirectly();
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        // Act - select both Rock and Jazz
+        _viewModel.ToggleGenreFilterCommand.Execute("Rock");
+        _viewModel.ToggleGenreFilterCommand.Execute("Jazz");
+
+        // Assert - Rock (2) + Jazz (1) = 3
+        Assert.That(_viewModel.Songs, Has.Count.EqualTo(3));
+    }
+
+    [Test]
+    public async Task Filter_ToggleRemovesSelection()
+    {
+        LoadTestSongsDirectly();
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        // Act - select then deselect Rock
+        _viewModel.ToggleGenreFilterCommand.Execute("Rock");
+        Assert.That(_viewModel.Songs, Has.Count.EqualTo(2));
+
+        _viewModel.ToggleGenreFilterCommand.Execute("Rock");
+
+        // Assert - all songs shown again
+        Assert.That(_viewModel.Songs, Has.Count.EqualTo(5));
+        Assert.That(_viewModel.SelectedGenres, Is.Empty);
+    }
+
+    [Test]
+    public async Task GenrePillText_ShowsCountWhenActive()
+    {
+        LoadTestSongsDirectly();
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        Assert.That(_viewModel.GenrePillText, Is.EqualTo("Genre"));
+
+        _viewModel.ToggleGenreFilterCommand.Execute("Rock");
+        Assert.That(_viewModel.GenrePillText, Is.EqualTo("Genre (1)"));
+
+        _viewModel.ToggleGenreFilterCommand.Execute("Jazz");
+        Assert.That(_viewModel.GenrePillText, Is.EqualTo("Genre (2)"));
+    }
+
+    [Test]
+    public async Task ArtistPillText_ShowsCountWhenActive()
+    {
+        LoadTestSongsDirectly();
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        Assert.That(_viewModel.ArtistPillText, Is.EqualTo("Artist"));
+
+        _viewModel.ToggleArtistFilterCommand.Execute("Alice");
+        Assert.That(_viewModel.ArtistPillText, Is.EqualTo("Artist (1)"));
+    }
+
+    [Test]
+    public async Task GenreFilterItems_ContainCountsAndSelectionState()
+    {
+        LoadTestSongsDirectly();
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        // Open panel to populate items
+        _viewModel.ToggleGenrePanelCommand.Execute(null);
+
+        // Assert - 3 genres with counts
+        Assert.That(_viewModel.GenreFilterItems, Has.Count.EqualTo(3));
+        var jazz = _viewModel.GenreFilterItems.First(f => f.Name == "Jazz");
+        var pop = _viewModel.GenreFilterItems.First(f => f.Name == "Pop");
+        var rock = _viewModel.GenreFilterItems.First(f => f.Name == "Rock");
+
+        Assert.That(jazz.Count, Is.EqualTo(1));
+        Assert.That(pop.Count, Is.EqualTo(2));
+        Assert.That(rock.Count, Is.EqualTo(2));
+        Assert.That(jazz.IsSelected, Is.False);
+    }
+
+    [Test]
+    public async Task GenreFilterItems_SearchFiltersItems()
+    {
+        LoadTestSongsDirectly();
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        _viewModel.ToggleGenrePanelCommand.Execute(null);
+
+        // Act - search for "ro"
+        _viewModel.GenreSearchText = "ro";
+
+        // Assert - only Rock matches
+        Assert.That(_viewModel.GenreFilterItems, Has.Count.EqualTo(1));
+        Assert.That(_viewModel.GenreFilterItems[0].Name, Is.EqualTo("Rock"));
+    }
+
+    [Test]
+    public void ToggleGenrePanel_ClosesArtistPanel()
+    {
+        _viewModel.IsArtistPanelOpen = true;
+
+        // Act
+        _viewModel.ToggleGenrePanelCommand.Execute(null);
+
+        // Assert
+        Assert.That(_viewModel.IsGenrePanelOpen, Is.True);
+        Assert.That(_viewModel.IsArtistPanelOpen, Is.False);
+    }
+
+    [Test]
+    public void ToggleArtistPanel_ClosesGenrePanel()
+    {
+        _viewModel.IsGenrePanelOpen = true;
+
+        // Act
+        _viewModel.ToggleArtistPanelCommand.Execute(null);
+
+        // Assert
+        Assert.That(_viewModel.IsArtistPanelOpen, Is.True);
+        Assert.That(_viewModel.IsGenrePanelOpen, Is.False);
+    }
+
+    // --- Auth-dependent like/dislike ---
+
+    [Test]
+    public async Task LikeSong_WhenNotLoggedIn_ShowsLoginPrompt()
+    {
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(false);
+        var song = new SongDto { Id = 1, SongTitle = "Test" };
+
+        await _viewModel.LikeSongCommand.ExecuteAsync(song);
+
+        _mockAlertService.Verify(a => a.ShowConfirmAsync(
+            "Login Required", It.IsAny<string>(), "Login", "Cancel"), Times.Once);
+        _mockMusicService.Verify(s => s.ToggleLikeAsync(It.IsAny<int>()), Times.Never);
+    }
+
+    [Test]
+    public async Task DislikeSong_WhenNotLoggedIn_ShowsLoginPrompt()
+    {
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(false);
+        var song = new SongDto { Id = 1, SongTitle = "Test" };
+
+        await _viewModel.DislikeSongCommand.ExecuteAsync(song);
+
+        _mockAlertService.Verify(a => a.ShowConfirmAsync(
+            "Login Required", It.IsAny<string>(), "Login", "Cancel"), Times.Once);
+        _mockMusicService.Verify(s => s.ToggleDislikeAsync(It.IsAny<int>()), Times.Never);
+    }
+
+    [Test]
+    public async Task LikeSong_WhenLoggedInButEmailNotConfirmed_ShowsVerifyAlert()
+    {
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(false);
+        var song = new SongDto { Id = 1, SongTitle = "Test" };
+
+        await _viewModel.LikeSongCommand.ExecuteAsync(song);
+
+        _mockAlertService.Verify(a => a.DisplayAlertAsync(
+            "Email Not Verified", It.IsAny<string>(), "OK"), Times.Once);
+        _mockMusicService.Verify(s => s.ToggleLikeAsync(It.IsAny<int>()), Times.Never);
+    }
+
+    [Test]
+    public async Task LikeSong_WhenAuthenticatedUser_CallsToggleLike()
+    {
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
+        var song = new SongDto { Id = 42, SongTitle = "Test" };
+
+        await _viewModel.LikeSongCommand.ExecuteAsync(song);
+
+        _mockMusicService.Verify(s => s.ToggleLikeAsync(42), Times.Once);
+    }
+
+    [Test]
+    public async Task DislikeSong_WhenAuthenticatedUser_CallsToggleDislike()
+    {
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
+        var song = new SongDto { Id = 42, SongTitle = "Test" };
+
+        await _viewModel.DislikeSongCommand.ExecuteAsync(song);
+
+        _mockMusicService.Verify(s => s.ToggleDislikeAsync(42), Times.Once);
+    }
+
+    // --- Playback restriction ---
+
+    [Test]
+    public void PreviewLimit_NonSubscriber_PausesAt60Seconds()
+    {
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+        var song = new SongDto { Id = 1, SongTitle = "Test" };
+        _viewModel.PlaySongCommand.Execute(song);
+
+        // Simulate playback reaching 60 seconds
+        for (int i = 1; i <= 61; i++)
+        {
+            _viewModel.UpdatePlaybackPosition(
+                TimeSpan.FromSeconds(i),
+                TimeSpan.FromSeconds(180));
+        }
+
+        Assert.That(_viewModel.IsPlaying, Is.False);
+        Assert.That(_viewModel.PreviewLimitReached, Is.True);
+    }
+
+    [Test]
+    public void PreviewLimit_Subscriber_PlaysFullSong()
+    {
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(true);
+        var song = new SongDto { Id = 1, SongTitle = "Test" };
+        _viewModel.PlaySongCommand.Execute(song);
+
+        for (int i = 1; i <= 120; i++)
+        {
+            _viewModel.UpdatePlaybackPosition(
+                TimeSpan.FromSeconds(i),
+                TimeSpan.FromSeconds(180));
+        }
+
+        Assert.That(_viewModel.IsPlaying, Is.True);
+        Assert.That(_viewModel.PreviewLimitReached, Is.False);
+    }
+
+    [Test]
+    public void PreviewLimit_CreatorOwnSong_PlaysFullWithoutStreamCount()
+    {
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+        _mockAuthService.Setup(a => a.IsCreator).Returns(true);
+        _mockAuthService.Setup(a => a.UserId).Returns(100);
+
+        // Set qualifying seconds low to verify no stream recorded
+        _mockMusicService.Setup(s => s.GetStreamQualifyingSecondsAsync()).ReturnsAsync(5);
+        _viewModel.LoadStreamQualifyingSecondsAsync().GetAwaiter().GetResult();
+
+        var song = new SongDto { Id = 1, SongTitle = "My Song", CreatorUserId = 100 };
+        _viewModel.PlaySongCommand.Execute(song);
+
+        for (int i = 1; i <= 120; i++)
+        {
+            _viewModel.UpdatePlaybackPosition(
+                TimeSpan.FromSeconds(i),
+                TimeSpan.FromSeconds(180));
+        }
+
+        Assert.That(_viewModel.IsPlaying, Is.True);
+        Assert.That(_viewModel.PreviewLimitReached, Is.False);
+        _mockMusicService.Verify(s => s.RecordStreamAsync(It.IsAny<int>()), Times.Never);
+    }
+
+    [Test]
+    public void PreviewLimit_CreatorOtherSong_LimitedAt60s()
+    {
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+        _mockAuthService.Setup(a => a.IsCreator).Returns(true);
+        _mockAuthService.Setup(a => a.UserId).Returns(100);
+
+        var song = new SongDto { Id = 1, SongTitle = "Other Song", CreatorUserId = 200 };
+        _viewModel.PlaySongCommand.Execute(song);
+
+        for (int i = 1; i <= 61; i++)
+        {
+            _viewModel.UpdatePlaybackPosition(
+                TimeSpan.FromSeconds(i),
+                TimeSpan.FromSeconds(180));
+        }
+
+        Assert.That(_viewModel.IsPlaying, Is.False);
+        Assert.That(_viewModel.PreviewLimitReached, Is.True);
+    }
+
+    [Test]
+    public void PreviewLimit_ResetsOnNewSong()
+    {
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+        var song1 = new SongDto { Id = 1, SongTitle = "Song 1" };
+        var song2 = new SongDto { Id = 2, SongTitle = "Song 2" };
+
+        _viewModel.PlaySongCommand.Execute(song1);
+        for (int i = 1; i <= 61; i++)
+        {
+            _viewModel.UpdatePlaybackPosition(TimeSpan.FromSeconds(i), TimeSpan.FromSeconds(180));
+        }
+
+        Assert.That(_viewModel.PreviewLimitReached, Is.True);
+
+        // Play a new song - preview limit should reset
+        _viewModel.PlaySongCommand.Execute(song2);
+        Assert.That(_viewModel.PreviewLimitReached, Is.False);
+        Assert.That(_viewModel.IsPlaying, Is.True);
     }
 }

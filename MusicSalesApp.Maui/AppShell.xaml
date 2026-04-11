@@ -5,9 +5,11 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:views="clr-namespace:MusicSalesApp.Maui.Views"
     Title="StreamTunes"
+    FlyoutBehavior="Flyout"
     Shell.BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource NavBarDark}}"
     Shell.ForegroundColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}"
-    Shell.TitleColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}">
+    Shell.TitleColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}"
+    FlyoutBackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
 
     <Shell.TitleView>
         <Grid Padding="8,0" VerticalOptions="Center" HorizontalOptions="Start">
@@ -18,9 +20,39 @@
         </Grid>
     </Shell.TitleView>
 
-    <ShellContent
-        Title="Music Library"
-        ContentTemplate="{DataTemplate views:MusicLibraryPage}"
-        Route="MusicLibrary" />
+    <Shell.FlyoutHeader>
+        <Grid Padding="16" HeightRequest="80"
+              BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource NavBarDark}}">
+            <Image Source="{AppThemeBinding Light=logo_light_small.png, Dark=logo_dark_small.png}"
+                   HeightRequest="40"
+                   Aspect="AspectFit"
+                   VerticalOptions="Center"
+                   HorizontalOptions="Start" />
+        </Grid>
+    </Shell.FlyoutHeader>
+
+    <FlyoutItem Title="Music Library" Icon="{FontImageSource FontFamily=OpenSansRegular, Glyph='&#x266B;', Size=20}">
+        <ShellContent
+            ContentTemplate="{DataTemplate views:MusicLibraryPage}"
+            Route="MusicLibrary" />
+    </FlyoutItem>
+
+    <MenuItem x:Name="LoginMenuItem"
+              Text="Login"
+              Clicked="OnLoginClicked" />
+
+    <MenuItem x:Name="RegisterMenuItem"
+              Text="Register"
+              Clicked="OnRegisterClicked" />
+
+    <MenuItem x:Name="ValidateEmailMenuItem"
+              Text="Validate my Email"
+              Shell.FlyoutItemIsVisible="False"
+              Clicked="OnValidateEmailClicked" />
+
+    <MenuItem x:Name="LogoutMenuItem"
+              Text="Logout"
+              Shell.FlyoutItemIsVisible="False"
+              Clicked="OnLogoutClicked" />
 
 </Shell>

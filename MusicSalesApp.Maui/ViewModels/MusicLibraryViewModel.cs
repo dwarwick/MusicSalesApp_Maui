@@ -10,6 +10,8 @@ public partial class MusicLibraryViewModel : ObservableObject
     private readonly IMusicService _musicService;
     private readonly IAlertService _alertService;
     private readonly ISignalRService _signalRService;
+    private readonly IAuthService _authService;
+    private readonly INavigationService _navigationService;
     private readonly Dictionary<int, (int likes, int dislikes)> _likeCounts = new();
 
     // All songs (unfiltered source of truth)
@@ -21,11 +23,22 @@ public partial class MusicLibraryViewModel : ObservableObject
     private double _continuousPlaybackSeconds;
     private bool _streamRecordedForCurrentSong;
 
-    public MusicLibraryViewModel(IMusicService musicService, IAlertService alertService, ISignalRService signalRService)
+    // Playback restriction state (subscribe CTA)
+    private const double PreviewLimitSeconds = 60.0;
+    private const int MinPreviewInterval = 2;
+    private const int MaxPreviewIntervalExclusive = 5;
+    private int _previewEndCount;
+    private int _nextCtaThreshold;
+    private readonly Random _random = new();
+
+    public MusicLibraryViewModel(IMusicService musicService, IAlertService alertService, ISignalRService signalRService, IAuthService authService, INavigationService navigationService)
     {
         _musicService = musicService;
         _alertService = alertService;
         _signalRService = signalRService;
+        _authService = authService;
+        _navigationService = navigationService;
+        _nextCtaThreshold = 0; // show on first preview end
 
         // Subscribe to real-time updates
         _signalRService.OnStreamCountUpdated += HandleStreamCountUpdated;
@@ -39,31 +52,196 @@ public partial class MusicLibraryViewModel : ObservableObject
     public ObservableCollection<string> AvailableGenres { get; } = [];
     public ObservableCollection<string> AvailableArtists { get; } = [];
 
-    [ObservableProperty]
-    public partial string? SelectedGenre { get; set; }
+    public HashSet<string> SelectedGenres { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public HashSet<string> SelectedArtists { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public ObservableCollection<FilterItem> GenreFilterItems { get; } = [];
+    public ObservableCollection<FilterItem> ArtistFilterItems { get; } = [];
 
     [ObservableProperty]
-    public partial string? SelectedArtist { get; set; }
+    public partial bool IsGenrePanelOpen { get; set; }
 
-    partial void OnSelectedGenreChanged(string? value)
+    [ObservableProperty]
+    public partial bool IsArtistPanelOpen { get; set; }
+
+    [ObservableProperty]
+    public partial string? GenreSearchText { get; set; }
+
+    [ObservableProperty]
+    public partial string? ArtistSearchText { get; set; }
+
+    [ObservableProperty]
+    public partial string GenrePillText { get; set; } = "Genre";
+
+    [ObservableProperty]
+    public partial string ArtistPillText { get; set; } = "Artist";
+
+    [ObservableProperty]
+    public partial bool HasActiveGenreFilters { get; set; }
+
+    [ObservableProperty]
+    public partial bool HasActiveArtistFilters { get; set; }
+
+    partial void OnGenreSearchTextChanged(string? value) => RefreshGenreFilterItems();
+    partial void OnArtistSearchTextChanged(string? value) => RefreshArtistFilterItems();
+
+    [RelayCommand]
+    private void ToggleGenrePanel()
     {
+        IsGenrePanelOpen = !IsGenrePanelOpen;
+        if (IsGenrePanelOpen)
+        {
+            IsArtistPanelOpen = false;
+            GenreSearchText = null;
+            RefreshGenreFilterItems();
+        }
+    }
+
+    [RelayCommand]
+    private void ToggleArtistPanel()
+    {
+        IsArtistPanelOpen = !IsArtistPanelOpen;
+        if (IsArtistPanelOpen)
+        {
+            IsGenrePanelOpen = false;
+            ArtistSearchText = null;
+            RefreshArtistFilterItems();
+        }
+    }
+
+    [RelayCommand]
+    internal void ToggleGenreFilter(string genre)
+    {
+        if (!SelectedGenres.Add(genre))
+            SelectedGenres.Remove(genre);
+
+        UpdateGenrePillText();
         RefreshAvailableArtists();
+        RefreshArtistFilterItems();
+        RefreshGenreFilterItemSelections();
         ApplyFilters();
     }
 
-    partial void OnSelectedArtistChanged(string? value)
+    [RelayCommand]
+    internal void ToggleArtistFilter(string artist)
     {
+        if (!SelectedArtists.Add(artist))
+            SelectedArtists.Remove(artist);
+
+        UpdateArtistPillText();
         RefreshAvailableGenres();
+        RefreshGenreFilterItems();
+        RefreshArtistFilterItemSelections();
         ApplyFilters();
+    }
+
+    private void UpdateGenrePillText()
+    {
+        HasActiveGenreFilters = SelectedGenres.Count > 0;
+        GenrePillText = SelectedGenres.Count > 0
+            ? $"Genre ({SelectedGenres.Count})"
+            : "Genre";
+    }
+
+    private void UpdateArtistPillText()
+    {
+        HasActiveArtistFilters = SelectedArtists.Count > 0;
+        ArtistPillText = SelectedArtists.Count > 0
+            ? $"Artist ({SelectedArtists.Count})"
+            : "Artist";
+    }
+
+    private void RefreshGenreFilterItems()
+    {
+        var search = GenreSearchText?.Trim();
+        var songs = CrossFilterSongsByArtist();
+
+        var items = songs
+            .Where(s => !string.IsNullOrWhiteSpace(s.Genre))
+            .GroupBy(s => s.Genre, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new FilterItem
+            {
+                Name = g.Key,
+                Count = g.Count(),
+                IsSelected = SelectedGenres.Contains(g.Key)
+            })
+            .Where(f => string.IsNullOrEmpty(search) ||
+                        f.Name.Contains(search, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        GenreFilterItems.Clear();
+        foreach (var item in items)
+            GenreFilterItems.Add(item);
+    }
+
+    private void RefreshArtistFilterItems()
+    {
+        var search = ArtistSearchText?.Trim();
+        var songs = CrossFilterSongsByGenre();
+
+        var items = songs
+            .Where(s => !string.IsNullOrWhiteSpace(s.ArtistName))
+            .GroupBy(s => s.ArtistName, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new FilterItem
+            {
+                Name = g.Key,
+                Count = g.Count(),
+                IsSelected = SelectedArtists.Contains(g.Key)
+            })
+            .Where(f => string.IsNullOrEmpty(search) ||
+                        f.Name.Contains(search, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        ArtistFilterItems.Clear();
+        foreach (var item in items)
+            ArtistFilterItems.Add(item);
+    }
+
+    private void RefreshGenreFilterItemSelections()
+    {
+        foreach (var item in GenreFilterItems)
+            item.IsSelected = SelectedGenres.Contains(item.Name);
+    }
+
+    private void RefreshArtistFilterItemSelections()
+    {
+        foreach (var item in ArtistFilterItems)
+            item.IsSelected = SelectedArtists.Contains(item.Name);
+    }
+
+    private IEnumerable<SongDto> CrossFilterSongsByArtist()
+    {
+        IEnumerable<SongDto> songs = _allSongs;
+        if (SelectedArtists.Count > 0)
+            songs = songs.Where(s => SelectedArtists.Contains(s.ArtistName));
+        return songs;
+    }
+
+    private IEnumerable<SongDto> CrossFilterSongsByGenre()
+    {
+        IEnumerable<SongDto> songs = _allSongs;
+        if (SelectedGenres.Count > 0)
+            songs = songs.Where(s => SelectedGenres.Contains(s.Genre));
+        return songs;
     }
 
     [RelayCommand]
     private void ClearFilters()
     {
-        SelectedGenre = null;
-        SelectedArtist = null;
+        SelectedGenres.Clear();
+        SelectedArtists.Clear();
+        UpdateGenrePillText();
+        UpdateArtistPillText();
+        GenreSearchText = null;
+        ArtistSearchText = null;
+        IsGenrePanelOpen = false;
+        IsArtistPanelOpen = false;
         RefreshAvailableGenres();
         RefreshAvailableArtists();
+        RefreshGenreFilterItems();
+        RefreshArtistFilterItems();
         ApplyFilters();
     }
 
@@ -74,16 +252,16 @@ public partial class MusicLibraryViewModel : ObservableObject
     {
         IEnumerable<SongDto> filtered = _allSongs;
 
-        if (!string.IsNullOrEmpty(SelectedGenre))
+        if (SelectedGenres.Count > 0)
         {
             filtered = filtered.Where(s =>
-                string.Equals(s.Genre, SelectedGenre, StringComparison.OrdinalIgnoreCase));
+                SelectedGenres.Contains(s.Genre));
         }
 
-        if (!string.IsNullOrEmpty(SelectedArtist))
+        if (SelectedArtists.Count > 0)
         {
             filtered = filtered.Where(s =>
-                string.Equals(s.ArtistName, SelectedArtist, StringComparison.OrdinalIgnoreCase));
+                SelectedArtists.Contains(s.ArtistName));
         }
 
         Songs.Clear();
@@ -94,17 +272,11 @@ public partial class MusicLibraryViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Refreshes AvailableGenres, cross-filtered by the currently selected artist.
+    /// Refreshes AvailableGenres, cross-filtered by the currently selected artists.
     /// </summary>
     internal void RefreshAvailableGenres()
     {
-        var songs = (IEnumerable<SongDto>)_allSongs;
-
-        if (!string.IsNullOrEmpty(SelectedArtist))
-        {
-            songs = songs.Where(s =>
-                string.Equals(s.ArtistName, SelectedArtist, StringComparison.OrdinalIgnoreCase));
-        }
+        var songs = CrossFilterSongsByArtist();
 
         var genres = songs
             .Where(s => !string.IsNullOrWhiteSpace(s.Genre))
@@ -121,17 +293,11 @@ public partial class MusicLibraryViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Refreshes AvailableArtists, cross-filtered by the currently selected genre.
+    /// Refreshes AvailableArtists, cross-filtered by the currently selected genres.
     /// </summary>
     internal void RefreshAvailableArtists()
     {
-        var songs = (IEnumerable<SongDto>)_allSongs;
-
-        if (!string.IsNullOrEmpty(SelectedGenre))
-        {
-            songs = songs.Where(s =>
-                string.Equals(s.Genre, SelectedGenre, StringComparison.OrdinalIgnoreCase));
-        }
+        var songs = CrossFilterSongsByGenre();
 
         var artists = songs
             .Where(s => !string.IsNullOrWhiteSpace(s.ArtistName))
@@ -175,7 +341,8 @@ public partial class MusicLibraryViewModel : ObservableObject
 
     /// <summary>
     /// Called by the code-behind timer to update playback position/duration.
-    /// Also tracks continuous playback time for stream count qualification.
+    /// Also tracks continuous playback time for stream count qualification
+    /// and enforces preview limits for non-subscribers.
     /// </summary>
     public void UpdatePlaybackPosition(TimeSpan position, TimeSpan duration)
     {
@@ -192,12 +359,63 @@ public partial class MusicLibraryViewModel : ObservableObject
 
         // Track continuous playback for stream count
         TrackStreamPlayback(position, previousPosition);
+
+        // Enforce preview limit for non-subscribers
+        CheckPreviewLimit(position);
+    }
+
+    /// <summary>
+    /// Checks if the current playback should be limited to 60 seconds.
+    /// Returns true if playback should be paused due to preview limit.
+    /// </summary>
+    private void CheckPreviewLimit(TimeSpan position)
+    {
+        if (CurrentlyPlayingSong == null || !IsPlaying)
+            return;
+
+        // Don't limit subscribers
+        if (_authService.HasActiveSubscription)
+            return;
+
+        // Don't limit creators playing their own songs
+        if (_authService.IsCreator && CurrentlyPlayingSong.CreatorUserId == _authService.UserId)
+            return;
+
+        // Enforce 60s limit
+        if (position.TotalSeconds >= PreviewLimitSeconds)
+        {
+            IsPlaying = false;
+            PreviewLimitReached = true;
+            _previewEndCount++;
+            ShowSubscribeCtaIfNeeded();
+        }
+    }
+
+    [ObservableProperty]
+    public partial bool PreviewLimitReached { get; set; }
+
+    private async void ShowSubscribeCtaIfNeeded()
+    {
+        if (_previewEndCount >= _nextCtaThreshold)
+        {
+            _nextCtaThreshold = _previewEndCount + _random.Next(MinPreviewInterval, MaxPreviewIntervalExclusive);
+
+            await _alertService.DisplayAlertAsync("Preview Limit",
+                "Subscribe at streamtunes.net for unlimited listening!", "OK");
+        }
     }
 
     private void TrackStreamPlayback(TimeSpan position, TimeSpan previousPosition)
     {
         if (CurrentlyPlayingSong == null || !IsPlaying || _streamRecordedForCurrentSong)
             return;
+
+        // Don't count streams for creators listening to their own songs
+        if (_authService.IsCreator && CurrentlyPlayingSong.CreatorUserId == _authService.UserId)
+        {
+            _streamRecordedForCurrentSong = true; // prevent further checks
+            return;
+        }
 
         // If the song changed, reset tracking
         if (CurrentlyPlayingSong.Id != _streamTrackingSongId)
@@ -261,9 +479,10 @@ public partial class MusicLibraryViewModel : ObservableObject
     {
         if (song == null) return;
 
-        // Auth stub — no auth implemented yet
-        await _alertService.DisplayAlertAsync("Login Required",
-            "Please log in to like songs.", "OK");
+        if (!await RequireAuthenticatedUserAsync("like songs"))
+            return;
+
+        await _musicService.ToggleLikeAsync(song.Id);
     }
 
     [RelayCommand]
@@ -271,9 +490,35 @@ public partial class MusicLibraryViewModel : ObservableObject
     {
         if (song == null) return;
 
-        // Auth stub — no auth implemented yet
-        await _alertService.DisplayAlertAsync("Login Required",
-            "Please log in to dislike songs.", "OK");
+        if (!await RequireAuthenticatedUserAsync("dislike songs"))
+            return;
+
+        await _musicService.ToggleDislikeAsync(song.Id);
+    }
+
+    /// <summary>
+    /// Returns true if the user is logged in with a confirmed email (User role).
+    /// Shows appropriate alerts and navigation if not.
+    /// </summary>
+    private async Task<bool> RequireAuthenticatedUserAsync(string action)
+    {
+        if (!_authService.IsLoggedIn)
+        {
+            bool goToLogin = await _alertService.ShowConfirmAsync("Login Required",
+                $"Please log in to {action}.", "Login", "Cancel");
+            if (goToLogin)
+                await _navigationService.GoToAsync("login");
+            return false;
+        }
+
+        if (!_authService.EmailConfirmed)
+        {
+            await _alertService.DisplayAlertAsync("Email Not Verified",
+                "Please verify your email before you can interact with songs.", "OK");
+            return false;
+        }
+
+        return true;
     }
 
     // --- Songs loading ---
@@ -294,8 +539,12 @@ public partial class MusicLibraryViewModel : ObservableObject
             _allSongs.AddRange(songs);
 
             // Reset filters when reloading
-            SelectedGenre = null;
-            SelectedArtist = null;
+            SelectedGenres.Clear();
+            SelectedArtists.Clear();
+            UpdateGenrePillText();
+            UpdateArtistPillText();
+            IsGenrePanelOpen = false;
+            IsArtistPanelOpen = false;
             RefreshAvailableGenres();
             RefreshAvailableArtists();
             ApplyFilters();
@@ -389,6 +638,7 @@ public partial class MusicLibraryViewModel : ObservableObject
         _continuousPlaybackSeconds = 0;
         _streamRecordedForCurrentSong = false;
         _streamTrackingSongId = song.Id;
+        PreviewLimitReached = false;
 
         CurrentlyPlayingSong = song;
         IsPlaying = true;
@@ -418,6 +668,7 @@ public partial class MusicLibraryViewModel : ObservableObject
         _playbackDuration = TimeSpan.Zero;
         _continuousPlaybackSeconds = 0;
         _streamRecordedForCurrentSong = false;
+        PreviewLimitReached = false;
     }
 
     public string FormatDuration(double? seconds)

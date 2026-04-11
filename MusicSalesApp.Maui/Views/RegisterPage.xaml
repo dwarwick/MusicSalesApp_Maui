@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             xmlns:vm="clr-namespace:MusicSalesApp.Maui.ViewModels"
+             x:Class="MusicSalesApp.Maui.Views.RegisterPage"
+             x:DataType="vm:RegisterViewModel"
+             Title="Register"
+             BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
+
+    <ScrollView>
+        <VerticalStackLayout Spacing="16" Padding="24,40,24,24" MaximumWidthRequest="400"
+                             HorizontalOptions="Center" VerticalOptions="Center">
+
+            <Image Source="{AppThemeBinding Light=logo_light_small.png, Dark=logo_dark_small.png}"
+                   HeightRequest="50" Aspect="AspectFit" HorizontalOptions="Center" Margin="0,0,0,16" />
+
+            <Label Text="Create an Account"
+                   FontSize="22" FontAttributes="Bold"
+                   HorizontalOptions="Center"
+                   TextColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}" />
+
+            <!-- Error Message -->
+            <Label Text="{Binding ErrorMessage}"
+                   IsVisible="{Binding ErrorMessage, Converter={toolkit:IsNotNullConverter}}"
+                   TextColor="Red" FontSize="13" HorizontalOptions="Center" />
+
+            <!-- Email -->
+            <Entry Placeholder="Email"
+                   Text="{Binding Email}"
+                   Keyboard="Email"
+                   ReturnType="Next"
+                   ClearButtonVisibility="WhileEditing"
+                   BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource CardBackgroundDark}}"
+                   TextColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}"
+                   PlaceholderColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray500}}" />
+
+            <!-- Password -->
+            <Grid>
+                <Entry x:Name="PasswordEntry"
+                       Placeholder="Password"
+                       Text="{Binding Password}"
+                       IsPassword="True"
+                       ReturnType="Next"
+                       BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource CardBackgroundDark}}"
+                       TextColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}"
+                       PlaceholderColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray500}}" />
+                <ImageButton Source="{FontImageSource FontFamily=OpenSansRegular, Glyph='&#x1F441;', Size=20, Color={AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray300}}}"
+                             HorizontalOptions="End" VerticalOptions="Center"
+                             Padding="8" BackgroundColor="Transparent"
+                             Clicked="OnTogglePasswordVisibility" />
+            </Grid>
+
+            <!-- Confirm Password -->
+            <Grid>
+                <Entry x:Name="ConfirmPasswordEntry"
+                       Placeholder="Confirm Password"
+                       Text="{Binding ConfirmPassword}"
+                       IsPassword="True"
+                       ReturnType="Done"
+                       BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource CardBackgroundDark}}"
+                       TextColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}"
+                       PlaceholderColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray500}}" />
+                <ImageButton Source="{FontImageSource FontFamily=OpenSansRegular, Glyph='&#x1F441;', Size=20, Color={AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray300}}}"
+                             HorizontalOptions="End" VerticalOptions="Center"
+                             Padding="8" BackgroundColor="Transparent"
+                             Clicked="OnToggleConfirmPasswordVisibility" />
+            </Grid>
+
+            <!-- Register Button -->
+            <Button Text="Register"
+                    Command="{Binding RegisterCommand}"
+                    IsEnabled="{Binding IsBusy, Converter={toolkit:InvertedBoolConverter}}"
+                    BackgroundColor="{StaticResource Primary}"
+                    TextColor="White"
+                    FontAttributes="Bold"
+                    CornerRadius="8"
+                    HeightRequest="48" />
+
+            <!-- Activity Indicator -->
+            <ActivityIndicator IsRunning="{Binding IsBusy}"
+                               IsVisible="{Binding IsBusy}"
+                               HorizontalOptions="Center" />
+
+            <!-- Login Link -->
+            <HorizontalStackLayout HorizontalOptions="Center" Spacing="4">
+                <Label Text="Already have an account?"
+                       FontSize="14"
+                       TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray300}}" />
+                <Label Text="Login"
+                       FontSize="14"
+                       FontAttributes="Bold"
+                       TextColor="{StaticResource Primary}">
+                    <Label.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding GoToLoginCommand}" />
+                    </Label.GestureRecognizers>
+                </Label>
+            </HorizontalStackLayout>
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

@@ -8,51 +8,36 @@
              Title="Music Library"
              BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
 
-    <Grid RowDefinitions="Auto,*,Auto">
-        <!-- Filter Bar -->
-        <Grid Grid.Row="0"
-              ColumnDefinitions="*,*,Auto"
-              ColumnSpacing="8"
-              Padding="8,8,8,4"
-              BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
+        <!-- Filter Pill Bar -->
+        <HorizontalStackLayout Grid.Row="0"
+                               Spacing="8"
+                               Padding="8,8,8,4">
 
-            <!-- Genre Picker -->
-            <Border Grid.Column="0"
-                    StrokeShape="RoundRectangle 8"
-                    Stroke="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray600}}"
-                    StrokeThickness="1"
-                    Padding="0"
-                    BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource CardBackgroundDark}}">
-                <Picker x:Name="GenrePicker"
-                        Title="All Genres"
-                        ItemsSource="{Binding AvailableGenres}"
-                        SelectedItem="{Binding SelectedGenre}"
-                        FontSize="13"
-                        TextColor="{AppThemeBinding Light=Black, Dark=White}"
-                        TitleColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray400}}"
-                        HorizontalOptions="Fill" />
-            </Border>
+            <!-- Genre Pill -->
+            <Button Command="{Binding ToggleGenrePanelCommand}"
+                    Text="{Binding GenrePillText}"
+                    FontSize="13"
+                    FontAttributes="Bold"
+                    HeightRequest="36"
+                    Padding="14,0"
+                    CornerRadius="18"
+                    BackgroundColor="{Binding HasActiveGenreFilters, Converter={StaticResource ActivePillBgConverter}}"
+                    TextColor="{Binding HasActiveGenreFilters, Converter={StaticResource ActivePillTextConverter}}" />
 
-            <!-- Artist Picker -->
-            <Border Grid.Column="1"
-                    StrokeShape="RoundRectangle 8"
-                    Stroke="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray600}}"
-                    StrokeThickness="1"
-                    Padding="0"
-                    BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource CardBackgroundDark}}">
-                <Picker x:Name="ArtistPicker"
-                        Title="All Artists"
-                        ItemsSource="{Binding AvailableArtists}"
-                        SelectedItem="{Binding SelectedArtist}"
-                        FontSize="13"
-                        TextColor="{AppThemeBinding Light=Black, Dark=White}"
-                        TitleColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray400}}"
-                        HorizontalOptions="Fill" />
-            </Border>
+            <!-- Artist Pill -->
+            <Button Command="{Binding ToggleArtistPanelCommand}"
+                    Text="{Binding ArtistPillText}"
+                    FontSize="13"
+                    FontAttributes="Bold"
+                    HeightRequest="36"
+                    Padding="14,0"
+                    CornerRadius="18"
+                    BackgroundColor="{Binding HasActiveArtistFilters, Converter={StaticResource ActivePillBgConverter}}"
+                    TextColor="{Binding HasActiveArtistFilters, Converter={StaticResource ActivePillTextConverter}}" />
 
             <!-- Clear Filters Button -->
-            <Button Grid.Column="2"
-                    Command="{Binding ClearFiltersCommand}"
+            <Button Command="{Binding ClearFiltersCommand}"
                     Text="✕"
                     FontSize="14"
                     HeightRequest="36"
@@ -62,11 +47,110 @@
                     BackgroundColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray600}}"
                     TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
                     VerticalOptions="Center" />
-        </Grid>
+        </HorizontalStackLayout>
+
+        <!-- Expandable Filter Panel -->
+        <Border Grid.Row="1"
+                IsVisible="{Binding IsGenrePanelOpen}"
+                StrokeShape="RoundRectangle 8"
+                Stroke="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray600}}"
+                StrokeThickness="1"
+                Margin="8,0,8,4"
+                Padding="8"
+                BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource CardBackgroundDark}}"
+                MaximumHeightRequest="260">
+            <VerticalStackLayout Spacing="4">
+                <SearchBar Placeholder="Search genres..."
+                           Text="{Binding GenreSearchText}"
+                           FontSize="13"
+                           HeightRequest="36"
+                           BackgroundColor="Transparent"
+                           CancelButtonColor="{StaticResource Primary}" />
+                <CollectionView ItemsSource="{Binding GenreFilterItems}"
+                                SelectionMode="None"
+                                MaximumHeightRequest="200">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:FilterItem">
+                            <Grid ColumnDefinitions="Auto,*,Auto" Padding="4,6" ColumnSpacing="8">
+                                <Grid.GestureRecognizers>
+                                    <TapGestureRecognizer
+                                        Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MusicLibraryViewModel}}, Path=ToggleGenreFilterCommand}"
+                                        CommandParameter="{Binding Name}" />
+                                </Grid.GestureRecognizers>
+                                <CheckBox Grid.Column="0"
+                                          IsChecked="{Binding IsSelected, Mode=OneWay}"
+                                          Color="{StaticResource Primary}"
+                                          InputTransparent="True"
+                                          VerticalOptions="Center" />
+                                <Label Grid.Column="1"
+                                       Text="{Binding Name}"
+                                       FontSize="14"
+                                       TextColor="{AppThemeBinding Light=Black, Dark=White}"
+                                       VerticalOptions="Center" />
+                                <Label Grid.Column="2"
+                                       Text="{Binding Count}"
+                                       FontSize="12"
+                                       TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray400}}"
+                                       VerticalOptions="Center" />
+                            </Grid>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+            </VerticalStackLayout>
+        </Border>
+
+        <Border Grid.Row="1"
+                IsVisible="{Binding IsArtistPanelOpen}"
+                StrokeShape="RoundRectangle 8"
+                Stroke="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray600}}"
+                StrokeThickness="1"
+                Margin="8,0,8,4"
+                Padding="8"
+                BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource CardBackgroundDark}}"
+                MaximumHeightRequest="260">
+            <VerticalStackLayout Spacing="4">
+                <SearchBar Placeholder="Search artists..."
+                           Text="{Binding ArtistSearchText}"
+                           FontSize="13"
+                           HeightRequest="36"
+                           BackgroundColor="Transparent"
+                           CancelButtonColor="{StaticResource Primary}" />
+                <CollectionView ItemsSource="{Binding ArtistFilterItems}"
+                                SelectionMode="None"
+                                MaximumHeightRequest="200">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:FilterItem">
+                            <Grid ColumnDefinitions="Auto,*,Auto" Padding="4,6" ColumnSpacing="8">
+                                <Grid.GestureRecognizers>
+                                    <TapGestureRecognizer
+                                        Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MusicLibraryViewModel}}, Path=ToggleArtistFilterCommand}"
+                                        CommandParameter="{Binding Name}" />
+                                </Grid.GestureRecognizers>
+                                <CheckBox Grid.Column="0"
+                                          IsChecked="{Binding IsSelected, Mode=OneWay}"
+                                          Color="{StaticResource Primary}"
+                                          InputTransparent="True"
+                                          VerticalOptions="Center" />
+                                <Label Grid.Column="1"
+                                       Text="{Binding Name}"
+                                       FontSize="14"
+                                       TextColor="{AppThemeBinding Light=Black, Dark=White}"
+                                       VerticalOptions="Center" />
+                                <Label Grid.Column="2"
+                                       Text="{Binding Count}"
+                                       FontSize="12"
+                                       TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray400}}"
+                                       VerticalOptions="Center" />
+                            </Grid>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+            </VerticalStackLayout>
+        </Border>
 
         <!-- Song List -->
         <RefreshView x:Name="SongsRefreshView"
-                     Grid.Row="1"
+                     Grid.Row="2"
                      IsRefreshing="{Binding IsLoading}">
             <CollectionView ItemsSource="{Binding Songs}"
                             SelectionMode="None">
@@ -244,7 +328,7 @@
         </RefreshView>
 
         <!-- Now Playing Bar -->
-        <Border Grid.Row="2"
+        <Border Grid.Row="3"
                 Padding="0"
                 BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource CardBackgroundDark}}"
                 StrokeThickness="0"

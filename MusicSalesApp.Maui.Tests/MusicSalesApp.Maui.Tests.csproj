@@ -26,11 +26,12 @@
   <!-- Include source files from MAUI project that are testable (no MAUI platform deps) -->
   <ItemGroup>
     <Compile Include="..\MusicSalesApp.Maui\ViewModels\*.cs" Link="ViewModels\%(Filename)%(Extension)" />
-    <Compile Include="..\MusicSalesApp.Maui\Services\*.cs" Link="Services\%(Filename)%(Extension)" Exclude="..\MusicSalesApp.Maui\Services\AlertService.cs;..\MusicSalesApp.Maui\Services\SignalRService.cs" />
+    <Compile Include="..\MusicSalesApp.Maui\Services\*.cs" Link="Services\%(Filename)%(Extension)" Exclude="..\MusicSalesApp.Maui\Services\AlertService.cs;..\MusicSalesApp.Maui\Services\SignalRService.cs;..\MusicSalesApp.Maui\Services\AuthService.cs;..\MusicSalesApp.Maui\Services\NavigationService.cs" />
   </ItemGroup>
 
   <ItemGroup>
     <Using Include="NUnit.Framework" />
+    <Using Include="Microsoft.Maui.Controls" />
   </ItemGroup>
 
 </Project>

@@ -48,24 +48,32 @@ public static class MauiProgram
 #if ANDROID && DEBUG
 		// Android can't reach the host's "localhost" directly.
 		// Emulator: 10.0.2.2 routes to the host PC.
-		// Physical device via USB: use "adb reverse tcp:5162 tcp:5162" then localhost works.
+		// Physical device via USB: use "adb reverse tcp:5162 tcp:5162" then 127.0.0.1 works.
 		// Both cases use HTTP on port 5162 to avoid dev certificate issues.
+		// Note: Use 127.0.0.1 instead of "localhost" because SocketsHttpHandler on some
+		// Android devices doesn't resolve "localhost" to the loopback address.
 		if (apiBaseUrl.Contains("localhost"))
 		{
 			var isEmulator = Android.OS.Build.Hardware == "ranchu" || Android.OS.Build.Hardware == "goldfish";
-			var host = isEmulator ? "10.0.2.2" : "localhost";
+			var host = isEmulator ? "10.0.2.2" : "127.0.0.1";
 			apiBaseUrl = apiBaseUrl
 				.Replace("localhost", host)
 				.Replace("https://", "http://")
 				.Replace(":7173", ":5162");
 		}
 #endif
+		builder.Services.AddTransient<AuthDelegatingHandler>();
+		var mobileApiKey = builder.Configuration["MobileApiKey"];
 		builder.Services.AddHttpClient("MusicSalesApi", client =>
 		{
 			client.BaseAddress = new Uri(apiBaseUrl);
 			// Required for ngrok free tier to skip the browser interstitial page
 			client.DefaultRequestHeaders.Add("ngrok-skip-browser-warning", "true");
+			// API key for mobile-only endpoints
+			if (!string.IsNullOrEmpty(mobileApiKey))
+				client.DefaultRequestHeaders.Add("X-Api-Key", mobileApiKey);
 		})
+		.AddHttpMessageHandler<AuthDelegatingHandler>()
 #if DEBUG
 		.ConfigurePrimaryHttpMessageHandler(() =>
 		{
@@ -88,13 +96,25 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IConfiguration>(builder.Configuration);
 
 		// Register services
+		builder.Services.AddSingleton<IAuthService, AuthService>();
 		builder.Services.AddSingleton<IMusicService, MusicService>();
 		builder.Services.AddSingleton<IAlertService, AlertService>();
 		builder.Services.AddSingleton<ISignalRService, SignalRService>();
+		builder.Services.AddSingleton<INavigationService, NavigationService>();
 
 		// Register ViewModels and Pages
 		builder.Services.AddTransient<MusicLibraryViewModel>();
 		builder.Services.AddTransient<MusicLibraryPage>();
+		builder.Services.AddTransient<LoginViewModel>();
+		builder.Services.AddTransient<LoginPage>();
+		builder.Services.AddTransient<RegisterViewModel>();
+		builder.Services.AddTransient<RegisterPage>();
+		builder.Services.AddTransient<VerifyEmailViewModel>();
+		builder.Services.AddTransient<VerifyEmailPage>();
+		builder.Services.AddTransient<ForgotPasswordViewModel>();
+		builder.Services.AddTransient<ForgotPasswordPage>();
+		builder.Services.AddTransient<ResetPasswordViewModel>();
+		builder.Services.AddTransient<ResetPasswordPage>();
 
 #if DEBUG
 		builder.Logging.AddDebug();

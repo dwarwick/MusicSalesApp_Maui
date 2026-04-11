@@ -25,6 +25,8 @@ public partial class MusicLibraryPage : ContentPage
         // Add converters to page resources before InitializeComponent
         Resources.Add("PlayPauseGlyphConverter", new PlayPauseGlyphConverter());
         Resources.Add("DurationConverter", new DurationConverter());
+        Resources.Add("ActivePillBgConverter", new ActivePillBgConverter());
+        Resources.Add("ActivePillTextConverter", new ActivePillTextConverter());
 
         InitializeComponent();
 
@@ -257,6 +259,49 @@ public class DurationConverter : IValueConverter
                 : ts.ToString(@"m\:ss");
         }
         return "--:--";
+    }
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        throw new NotSupportedException();
+    }
+}
+
+/// <summary>
+/// Converts bool (isActive) to pill background color: green when active, gray when inactive.
+/// </summary>
+public class ActivePillBgConverter : IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is true)
+            return Color.FromArgb("#1DB954"); // Primary green
+
+        // Use theme-appropriate gray
+        return Application.Current?.RequestedTheme == AppTheme.Dark
+            ? Color.FromArgb("#404040")   // Gray600
+            : Color.FromArgb("#C8C8C8");  // Gray200
+    }
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        throw new NotSupportedException();
+    }
+}
+
+/// <summary>
+/// Converts bool (isActive) to pill text color: white when active, gray when inactive.
+/// </summary>
+public class ActivePillTextConverter : IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is true)
+            return Colors.White;
+
+        return Application.Current?.RequestedTheme == AppTheme.Dark
+            ? Color.FromArgb("#ACACAC")  // Gray300
+            : Color.FromArgb("#404040"); // Gray600
     }
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)

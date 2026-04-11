@@ -17,6 +17,7 @@ public partial class SongDto : ObservableObject
     public string? PersonaImageUrl { get; set; }
     public string StreamUrl { get; set; } = string.Empty;
     public double? TrackLengthSeconds { get; set; }
+    public int? CreatorUserId { get; set; }
 
     [ObservableProperty]
     public partial int StreamCount { get; set; }

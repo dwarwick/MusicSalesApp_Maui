@@ -14,6 +14,10 @@
     <Color x:Key="SecondaryDarkText">#9880e5</Color>
     <Color x:Key="Tertiary">#2B0B98</Color>
 
+    <!-- Purple accent (matching web app #8e44ad) -->
+    <Color x:Key="PurpleAccent">#8E44AD</Color>
+    <Color x:Key="PurpleAccentLight">#9B59B6</Color>
+
     <Color x:Key="White">White</Color>
     <Color x:Key="Black">Black</Color>
     <Color x:Key="Magenta">#D600AA</Color>
