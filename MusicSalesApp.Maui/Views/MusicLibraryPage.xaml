@@ -3,12 +3,13 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
              xmlns:vm="clr-namespace:MusicSalesApp.Maui.ViewModels"
+             xmlns:views="clr-namespace:MusicSalesApp.Maui.Views"
              x:Class="MusicSalesApp.Maui.Views.MusicLibraryPage"
              x:DataType="vm:MusicLibraryViewModel"
              Title="Music Library"
              BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
 
-    <Grid RowDefinitions="Auto,Auto,*,Auto">
+    <Grid RowDefinitions="Auto,Auto,*,Auto,Auto">
         <!-- Filter Pill Bar -->
         <HorizontalStackLayout Grid.Row="0"
                                Spacing="8"
@@ -177,40 +178,35 @@
                                 StrokeShape="RoundRectangle 8"
                                 Stroke="Transparent"
                                 BackgroundColor="{AppThemeBinding Light={StaticResource CardBackgroundLight}, Dark={StaticResource CardBackgroundDark}}">
-                            <Grid ColumnDefinitions="80,*,Auto"
-                                  ColumnSpacing="12"
-                                  RowDefinitions="Auto,Auto,Auto,Auto"
-                                  RowSpacing="2">
-
-                                <!-- Album Art -->
-                                <Border Grid.RowSpan="4"
-                                        Grid.Column="0"
-                                        StrokeShape="RoundRectangle 4"
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer
+                                    Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MusicLibraryViewModel}}, Path=OpenSongCommand}"
+                                    CommandParameter="{Binding .}" />
+                            </Border.GestureRecognizers>
+                            <VerticalStackLayout Spacing="8">
+                                <!-- Album Art (150×150) -->
+                                <Border HorizontalOptions="Center"
+                                        StrokeShape="RoundRectangle 8"
                                         StrokeThickness="0"
-                                        HeightRequest="80"
-                                        WidthRequest="80"
-                                        VerticalOptions="Start">
+                                        HeightRequest="150"
+                                        WidthRequest="150">
                                     <Image Source="{Binding AlbumArtUrl}"
                                            Aspect="AspectFill"
-                                           HeightRequest="80"
-                                           WidthRequest="80" />
+                                           HeightRequest="150"
+                                           WidthRequest="150" />
                                 </Border>
 
                                 <!-- Song Title -->
-                                <Label Grid.Row="0"
-                                       Grid.Column="1"
-                                       Grid.ColumnSpan="2"
-                                       Text="{Binding SongTitle}"
+                                <Label Text="{Binding SongTitle}"
                                        FontSize="16"
                                        FontAttributes="Bold"
                                        TextColor="{AppThemeBinding Light=Black, Dark=White}"
                                        LineBreakMode="TailTruncation"
-                                       MaxLines="1" />
+                                       MaxLines="1"
+                                       HorizontalTextAlignment="Center" />
 
-                                <!-- Artist Name (with optional persona image) -->
-                                <HorizontalStackLayout Grid.Row="1"
-                                                        Grid.Column="1"
-                                                        Grid.ColumnSpan="2"
+                                <!-- Artist Name -->
+                                <HorizontalStackLayout HorizontalOptions="Center"
                                                         Spacing="6">
                                     <Border StrokeShape="RoundRectangle 10"
                                             StrokeThickness="0"
@@ -232,16 +228,16 @@
                                 </HorizontalStackLayout>
 
                                 <!-- Genre · Stream Count · Song Length -->
-                                <HorizontalStackLayout Grid.Row="2"
-                                                        Grid.Column="1"
-                                                        Grid.ColumnSpan="2"
+                                <HorizontalStackLayout HorizontalOptions="Center"
                                                         Spacing="4">
                                     <Label Text="{Binding Genre}"
                                            FontSize="12"
-                                           TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray400}}" />
+                                           TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray400}}"
+                                           IsVisible="{Binding Genre, Converter={toolkit:IsStringNotNullOrEmptyConverter}}" />
                                     <Label Text="·"
                                            FontSize="12"
-                                           TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}" />
+                                           TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}"
+                                           IsVisible="{Binding Genre, Converter={toolkit:IsStringNotNullOrEmptyConverter}}" />
                                     <Label FontSize="12"
                                            TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}">
                                         <Label.Text>
@@ -252,32 +248,29 @@
                                     <Label Text="·"
                                            FontSize="12"
                                            TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}" />
-                                    <Label x:Name="TrackLengthLabel"
-                                           FontSize="12"
+                                    <Label FontSize="12"
                                            TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}"
                                            Text="{Binding TrackLengthSeconds, Converter={StaticResource DurationConverter}}" />
                                 </HorizontalStackLayout>
 
-                                <!-- Like/Dislike buttons + Play button -->
-                                <Grid Grid.Row="3"
-                                      Grid.Column="1"
-                                      Grid.ColumnSpan="2"
-                                      ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto"
+                                <!-- Like/Dislike + Share + Play -->
+                                <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto"
                                       ColumnSpacing="6"
-                                      Margin="0,4,0,0">
+                                      HorizontalOptions="Center">
 
                                     <!-- Like Button -->
-                                    <Button Grid.Column="0"
-                                            Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MusicLibraryViewModel}}, Path=LikeSongCommand}"
-                                            CommandParameter="{Binding .}"
-                                            Text="👍"
-                                            FontSize="16"
-                                            HeightRequest="32"
-                                            WidthRequest="32"
-                                            Padding="0"
-                                            BackgroundColor="Transparent"
-                                            BorderWidth="0"
-                                            VerticalOptions="Center" />
+                                    <Grid Grid.Column="0" HeightRequest="32" WidthRequest="32">
+                                        <Grid.GestureRecognizers>
+                                            <TapGestureRecognizer
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MusicLibraryViewModel}}, Path=LikeSongCommand}"
+                                                CommandParameter="{Binding .}" />
+                                        </Grid.GestureRecognizers>
+                                        <Path Data="{Binding UserLikeStatus, Converter={StaticResource LikeGlyphConverter}}"
+                                              Fill="{Binding UserLikeStatus, Converter={StaticResource LikeFillConverter}}"
+                                              Aspect="Uniform"
+                                              HeightRequest="18" WidthRequest="18"
+                                              HorizontalOptions="Center" VerticalOptions="Center" />
+                                    </Grid>
 
                                     <!-- Like Count -->
                                     <Label Grid.Column="1"
@@ -287,17 +280,18 @@
                                            VerticalOptions="Center" />
 
                                     <!-- Dislike Button -->
-                                    <Button Grid.Column="2"
-                                            Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MusicLibraryViewModel}}, Path=DislikeSongCommand}"
-                                            CommandParameter="{Binding .}"
-                                            Text="👎"
-                                            FontSize="16"
-                                            HeightRequest="32"
-                                            WidthRequest="32"
-                                            Padding="0"
-                                            BackgroundColor="Transparent"
-                                            BorderWidth="0"
-                                            VerticalOptions="Center" />
+                                    <Grid Grid.Column="2" HeightRequest="32" WidthRequest="32">
+                                        <Grid.GestureRecognizers>
+                                            <TapGestureRecognizer
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MusicLibraryViewModel}}, Path=DislikeSongCommand}"
+                                                CommandParameter="{Binding .}" />
+                                        </Grid.GestureRecognizers>
+                                        <Path Data="{Binding UserLikeStatus, Converter={StaticResource DislikeGlyphConverter}}"
+                                              Fill="{Binding UserLikeStatus, Converter={StaticResource DislikeFillConverter}}"
+                                              Aspect="Uniform"
+                                              HeightRequest="18" WidthRequest="18"
+                                              HorizontalOptions="Center" VerticalOptions="Center" />
+                                    </Grid>
 
                                     <!-- Dislike Count -->
                                     <Label Grid.Column="3"
@@ -306,8 +300,19 @@
                                            TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource LikeButtonDarkText}}"
                                            VerticalOptions="Center" />
 
+                                    <!-- Facebook Share Button -->
+                                    <views:FacebookShareButton Grid.Column="4"
+                                                               ShareUrl="{Binding ShareUrl}"
+                                                               VerticalOptions="Center" />
+
+                                    <!-- Share Button -->
+                                    <views:ShareButton Grid.Column="5"
+                                                       ShareTitle="{Binding SongTitle}"
+                                                       ShareUrl="{Binding ShareUrl}"
+                                                       VerticalOptions="Center" />
+
                                     <!-- Play Button -->
-                                    <Button Grid.Column="5"
+                                    <Button Grid.Column="7"
                                             Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MusicLibraryViewModel}}, Path=PlaySongCommand}"
                                             CommandParameter="{Binding .}"
                                             Text="&#x25B6;"
@@ -320,108 +325,20 @@
                                             BackgroundColor="{StaticResource Primary}"
                                             VerticalOptions="Center" />
                                 </Grid>
-                            </Grid>
+                            </VerticalStackLayout>
                         </Border>
                     </DataTemplate>
                 </CollectionView.ItemTemplate>
             </CollectionView>
         </RefreshView>
 
-        <!-- Now Playing Bar -->
-        <Border Grid.Row="3"
-                Padding="0"
-                BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource CardBackgroundDark}}"
-                StrokeThickness="0"
-                IsVisible="{Binding CurrentlyPlayingSong, Converter={toolkit:IsNotNullConverter}}">
-            <VerticalStackLayout Spacing="0">
-                <!-- Progress Slider Row -->
-                <Grid ColumnDefinitions="Auto,*,Auto"
-                      ColumnSpacing="8"
-                      Padding="12,8,12,0">
-                    <Label Grid.Column="0"
-                           Text="{Binding FormattedPosition}"
-                           FontSize="11"
-                           TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource StreamIconDark}}"
-                           VerticalOptions="Center" />
-                    <Slider Grid.Column="1"
-                            x:Name="ProgressSlider"
-                            Minimum="0"
-                            Maximum="1"
-                            MinimumTrackColor="{StaticResource Primary}"
-                            MaximumTrackColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource ProgressTrack}}"
-                            ThumbColor="{StaticResource Primary}"
-                            VerticalOptions="Center" />
-                    <Label Grid.Column="2"
-                           Text="{Binding FormattedDuration}"
-                           FontSize="11"
-                           TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource StreamIconDark}}"
-                           VerticalOptions="Center" />
-                </Grid>
-
-                <!-- Song Info + Controls Row -->
-                <Grid ColumnDefinitions="48,*,Auto,Auto"
-                      ColumnSpacing="12"
-                      Padding="12,4,12,8">
-
-                    <!-- Mini Album Art -->
-                    <Border StrokeShape="RoundRectangle 6"
-                            StrokeThickness="0"
-                            HeightRequest="48"
-                            WidthRequest="48">
-                        <Image Source="{Binding CurrentlyPlayingSong.AlbumArtUrl}"
-                               Aspect="AspectFill"
-                               HeightRequest="48"
-                               WidthRequest="48" />
-                    </Border>
-
-                    <!-- Song Info -->
-                    <VerticalStackLayout Grid.Column="1"
-                                         VerticalOptions="Center"
-                                         Spacing="2">
-                        <Label Text="{Binding CurrentlyPlayingSong.SongTitle}"
-                               FontSize="14"
-                               FontAttributes="Bold"
-                               TextColor="{AppThemeBinding Light=Black, Dark=White}"
-                               LineBreakMode="TailTruncation"
-                               MaxLines="1" />
-                        <Label Text="{Binding CurrentlyPlayingSong.ArtistName}"
-                               FontSize="12"
-                               TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
-                               LineBreakMode="TailTruncation"
-                               MaxLines="1" />
-                    </VerticalStackLayout>
-
-                    <!-- Play/Pause Button -->
-                    <Button Grid.Column="2"
-                            Command="{Binding TogglePlayPauseCommand}"
-                            Text="{Binding IsPlaying, Converter={StaticResource PlayPauseGlyphConverter}}"
-                            TextColor="Black"
-                            FontSize="18"
-                            HeightRequest="40"
-                            WidthRequest="40"
-                            Padding="0"
-                            CornerRadius="20"
-                            BackgroundColor="{StaticResource Primary}"
-                            VerticalOptions="Center" />
-
-                    <!-- Stop Button -->
-                    <Button Grid.Column="3"
-                            Command="{Binding StopCommand}"
-                            Text="&#x25A0;"
-                            TextColor="{AppThemeBinding Light=Black, Dark=White}"
-                            FontSize="16"
-                            HeightRequest="40"
-                            WidthRequest="40"
-                            Padding="0"
-                            CornerRadius="20"
-                            BackgroundColor="{AppThemeBinding Light={StaticResource Gray300}, Dark={StaticResource Gray600}}"
-                            VerticalOptions="Center" />
-                </Grid>
-            </VerticalStackLayout>
-        </Border>
+        <!-- Now Playing Bar (reusable component) -->
+        <views:NowPlayingView x:Name="NowPlayingBar"
+                              Grid.Row="3" />
 
         <!-- MediaElement for audio playback (hidden) -->
         <toolkit:MediaElement x:Name="AudioPlayer"
+                              Grid.Row="4"
                               IsVisible="false"
                               ShouldAutoPlay="True"
                               ShouldKeepScreenOn="False" />

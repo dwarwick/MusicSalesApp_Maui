@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="MusicSalesApp.Maui.Views.NowPlayingView">
+
+    <Border x:Name="PlayerBorder"
+            Padding="0"
+            BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource PlayerBarDark}}"
+            StrokeThickness="0"
+            IsVisible="False">
+        <VerticalStackLayout Spacing="0">
+            <!-- Progress Slider Row -->
+            <Grid ColumnDefinitions="Auto,*,Auto"
+                  ColumnSpacing="8"
+                  Padding="12,8,12,0">
+                <Label Grid.Column="0"
+                       x:Name="PositionLabel"
+                       Text="0:00"
+                       FontSize="11"
+                       TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource TimeText}}"
+                       VerticalOptions="Center" />
+                <Grid Grid.Column="1"
+                      VerticalOptions="Center">
+                    <Slider x:Name="ProgressSlider"
+                            Minimum="0"
+                            Maximum="1"
+                            MinimumTrackColor="{StaticResource Primary}"
+                            MaximumTrackColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource ProgressTrack}}"
+                            ThumbColor="{StaticResource Primary}"
+                            VerticalOptions="Center" />
+                    <!-- 60-second preview limit marker -->
+                    <BoxView x:Name="PreviewMarker"
+                             WidthRequest="3"
+                             HeightRequest="20"
+                             Color="#FFA500"
+                             CornerRadius="1"
+                             VerticalOptions="Center"
+                             HorizontalOptions="Start"
+                             IsVisible="False"
+                             InputTransparent="True"
+                             ZIndex="2" />
+                </Grid>
+                <Label Grid.Column="2"
+                       x:Name="DurationLabel"
+                       Text="0:00"
+                       FontSize="11"
+                       TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource TimeText}}"
+                       VerticalOptions="Center" />
+            </Grid>
+
+            <!-- Song Info + Controls Row -->
+            <Grid ColumnDefinitions="48,*,Auto,Auto,Auto"
+                  ColumnSpacing="10"
+                  Padding="12,4,12,8">
+
+                <!-- Mini Album Art -->
+                <Border StrokeShape="RoundRectangle 6"
+                        StrokeThickness="0"
+                        HeightRequest="48"
+                        WidthRequest="48">
+                    <Image x:Name="AlbumArtImage"
+                           Aspect="AspectFill"
+                           HeightRequest="48"
+                           WidthRequest="48" />
+                </Border>
+
+                <!-- Song Info -->
+                <VerticalStackLayout Grid.Column="1"
+                                     VerticalOptions="Center"
+                                     Spacing="2">
+                    <Label x:Name="SongTitleLabel"
+                           FontSize="14"
+                           FontAttributes="Bold"
+                           TextColor="{AppThemeBinding Light=Black, Dark=White}"
+                           LineBreakMode="TailTruncation"
+                           MaxLines="1" />
+                    <Label x:Name="ArtistNameLabel"
+                           FontSize="12"
+                           TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
+                           LineBreakMode="TailTruncation"
+                           MaxLines="1" />
+                </VerticalStackLayout>
+
+                <!-- Play/Pause Button -->
+                <Button Grid.Column="2"
+                        x:Name="PlayPauseButton"
+                        TextColor="Black"
+                        FontSize="18"
+                        HeightRequest="40"
+                        WidthRequest="40"
+                        Padding="0"
+                        CornerRadius="20"
+                        BackgroundColor="{StaticResource Primary}"
+                        VerticalOptions="Center" />
+
+                <!-- Stop Button -->
+                <Button Grid.Column="3"
+                        x:Name="StopButton"
+                        Text="&#x25A0;"
+                        TextColor="{AppThemeBinding Light=Black, Dark=White}"
+                        FontSize="16"
+                        HeightRequest="40"
+                        WidthRequest="40"
+                        Padding="0"
+                        CornerRadius="20"
+                        BackgroundColor="{AppThemeBinding Light={StaticResource Gray300}, Dark={StaticResource Gray600}}"
+                        VerticalOptions="Center" />
+
+                <!-- Repeat Button -->
+                <Border Grid.Column="4"
+                        x:Name="RepeatBorder"
+                        StrokeShape="RoundRectangle 20"
+                        StrokeThickness="0"
+                        HeightRequest="40"
+                        WidthRequest="40"
+                        BackgroundColor="Transparent"
+                        VerticalOptions="Center">
+                    <Grid>
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer x:Name="RepeatTap" />
+                        </Grid.GestureRecognizers>
+                        <Path x:Name="RepeatIcon"
+                              Data="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"
+                              Aspect="Uniform"
+                              HeightRequest="20" WidthRequest="20"
+                              HorizontalOptions="Center" VerticalOptions="Center" />
+                    </Grid>
+                </Border>
+            </Grid>
+        </VerticalStackLayout>
+    </Border>
+</ContentView>

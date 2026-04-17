@@ -20,13 +20,27 @@ public class MusicService : IMusicService
         var client = _httpClientFactory.CreateClient("MusicSalesApi");
         try
         {
-            var songs = await client.GetFromJsonAsync<List<SongDto>>("api/music/songs");
-            return songs ?? [];
+            return await client.GetFromJsonAsync<List<SongDto>>("api/music/songs") ?? [];
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to fetch songs from API");
             return [];
+        }
+    }
+
+    public async Task<SongDto?> GetSongByTitleAsync(string title)
+    {
+        var client = _httpClientFactory.CreateClient("MusicSalesApi");
+        try
+        {
+            var encoded = Uri.EscapeDataString(title);
+            return await client.GetFromJsonAsync<SongDto>($"api/music/song-by-title/{encoded}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to fetch song by title '{Title}'", title);
+            return null;
         }
     }
 
@@ -119,4 +133,26 @@ public class MusicService : IMusicService
             return null;
         }
     }
+
+    public async Task<Dictionary<int, bool?>> GetBulkUserLikeStatusAsync(IEnumerable<int> songIds)
+    {
+        var client = _httpClientFactory.CreateClient("MusicSalesApi");
+        try
+        {
+            var ids = string.Join(",", songIds);
+            if (string.IsNullOrEmpty(ids)) return new();
+
+            var result = await client.GetFromJsonAsync<List<UserLikeStatusDto>>($"api/music/likes/user-status?ids={ids}");
+            if (result == null) return new();
+
+            return result.ToDictionary(r => r.SongMetadataId, r => r.UserLikeStatus);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to fetch bulk user like status");
+            return new();
+        }
+    }
+
+    private sealed record UserLikeStatusDto(int SongMetadataId, bool? UserLikeStatus);
 }

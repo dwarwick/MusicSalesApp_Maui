@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             xmlns:vm="clr-namespace:MusicSalesApp.Maui.ViewModels"
+             xmlns:views="clr-namespace:MusicSalesApp.Maui.Views"
+             x:Class="MusicSalesApp.Maui.Views.SongPlayerPage"
+             x:DataType="vm:SongPlayerViewModel"
+             Title="Now Playing"
+             BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
+
+    <Grid RowDefinitions="*,Auto">
+        <!-- Scrollable song details -->
+        <ScrollView Grid.Row="0"
+                    Padding="0">
+            <VerticalStackLayout Spacing="16"
+                                 Padding="20,24,20,16">
+
+                <!-- Large Album Art -->
+                <Border HorizontalOptions="Center"
+                        StrokeShape="RoundRectangle 12"
+                        StrokeThickness="0">
+                    <Image Source="{Binding Song.AlbumArtUrl}"
+                           Aspect="AspectFill"
+                           HeightRequest="300"
+                           WidthRequest="300" />
+                </Border>
+
+                <!-- Song Title -->
+                <Label Text="{Binding Song.SongTitle}"
+                       FontSize="24"
+                       FontAttributes="Bold"
+                       TextColor="{AppThemeBinding Light=Black, Dark=White}"
+                       HorizontalTextAlignment="Center"
+                       LineBreakMode="WordWrap"
+                       MaxLines="2" />
+
+                <!-- Artist Name -->
+                <HorizontalStackLayout HorizontalOptions="Center"
+                                        Spacing="8">
+                    <Border StrokeShape="RoundRectangle 12"
+                            StrokeThickness="0"
+                            HeightRequest="24"
+                            WidthRequest="24"
+                            VerticalOptions="Center"
+                            IsVisible="{Binding Song.PersonaImageUrl, Converter={toolkit:IsNotNullConverter}}">
+                        <Image Source="{Binding Song.PersonaImageUrl}"
+                               Aspect="AspectFill"
+                               HeightRequest="24"
+                               WidthRequest="24" />
+                    </Border>
+                    <Label Text="{Binding Song.ArtistName}"
+                           FontSize="16"
+                           TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
+                           VerticalOptions="Center" />
+                </HorizontalStackLayout>
+
+                <!-- Genre · Stream Count · Duration -->
+                <HorizontalStackLayout HorizontalOptions="Center"
+                                        Spacing="6">
+                    <Border Padding="8,4"
+                            StrokeShape="RoundRectangle 12"
+                            StrokeThickness="1"
+                            Stroke="{AppThemeBinding Light={StaticResource Gray300}, Dark={StaticResource Gray600}}"
+                            BackgroundColor="Transparent"
+                            IsVisible="{Binding Song.Genre, Converter={toolkit:IsStringNotNullOrEmptyConverter}}">
+                        <Label Text="{Binding Song.Genre}"
+                               FontSize="12"
+                               TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}" />
+                    </Border>
+                    <Label Text="·"
+                           FontSize="14"
+                           TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}"
+                           VerticalOptions="Center"
+                           IsVisible="{Binding Song.Genre, Converter={toolkit:IsStringNotNullOrEmptyConverter}}" />
+                    <Label FontSize="13"
+                           TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}"
+                           VerticalOptions="Center">
+                        <Label.Text>
+                            <Binding Path="Song.StreamCount"
+                                     StringFormat="{}{0:N0} streams" />
+                        </Label.Text>
+                    </Label>
+                    <Label Text="·"
+                           FontSize="14"
+                           TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}"
+                           VerticalOptions="Center" />
+                    <Label FontSize="13"
+                           TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}"
+                           VerticalOptions="Center"
+                           Text="{Binding Song.TrackLengthSeconds, Converter={StaticResource DurationConverter}}" />
+                </HorizontalStackLayout>
+
+                <!-- Subscription Badge -->
+                <Border HorizontalOptions="Center"
+                        Padding="12,6"
+                        StrokeShape="RoundRectangle 16"
+                        StrokeThickness="0"
+                        BackgroundColor="{Binding HasActiveSubscription, Converter={StaticResource SubBadgeBgConverter}}">
+                    <Label FontSize="12"
+                           FontAttributes="Bold"
+                           TextColor="White"
+                           HorizontalTextAlignment="Center">
+                        <Label.Text>
+                            <Binding Path="HasActiveSubscription"
+                                     Converter="{StaticResource SubBadgeTextConverter}" />
+                        </Label.Text>
+                    </Label>
+                </Border>
+
+                <!-- Action Row: Like, Dislike, Share -->
+                <HorizontalStackLayout HorizontalOptions="Center"
+                                        Spacing="16">
+
+                    <!-- Like Button -->
+                    <VerticalStackLayout VerticalOptions="Center"
+                                         Spacing="2">
+                        <Grid HeightRequest="40" WidthRequest="40"
+                              HorizontalOptions="Center">
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding LikeSongCommand}" />
+                            </Grid.GestureRecognizers>
+                            <Path Data="{Binding Song.UserLikeStatus, Converter={StaticResource LikeGlyphConverter}}"
+                                  Fill="{Binding Song.UserLikeStatus, Converter={StaticResource LikeFillConverter}}"
+                                  Aspect="Uniform"
+                                  HeightRequest="24" WidthRequest="24"
+                                  HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Grid>
+                        <Label Text="{Binding Song.LikeCount}"
+                               FontSize="11"
+                               TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource LikeButtonDarkText}}"
+                               HorizontalTextAlignment="Center" />
+                    </VerticalStackLayout>
+
+                    <!-- Dislike Button -->
+                    <VerticalStackLayout VerticalOptions="Center"
+                                         Spacing="2">
+                        <Grid HeightRequest="40" WidthRequest="40"
+                              HorizontalOptions="Center">
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding DislikeSongCommand}" />
+                            </Grid.GestureRecognizers>
+                            <Path Data="{Binding Song.UserLikeStatus, Converter={StaticResource DislikeGlyphConverter}}"
+                                  Fill="{Binding Song.UserLikeStatus, Converter={StaticResource DislikeFillConverter}}"
+                                  Aspect="Uniform"
+                                  HeightRequest="24" WidthRequest="24"
+                                  HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Grid>
+                        <Label Text="{Binding Song.DislikeCount}"
+                               FontSize="11"
+                               TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource LikeButtonDarkText}}"
+                               HorizontalTextAlignment="Center" />
+                    </VerticalStackLayout>
+
+                    <!-- Facebook Share Button -->
+                    <views:FacebookShareButton ShareUrl="{Binding ShareUrl}"
+                                               VerticalOptions="Center" />
+
+                    <!-- Share Button -->
+                    <views:ShareButton ShareTitle="{Binding Song.SongTitle}"
+                                       ShareUrl="{Binding ShareUrl}"
+                                       VerticalOptions="Center" />
+                </HorizontalStackLayout>
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- Now Playing Bar at bottom -->
+        <views:NowPlayingView x:Name="NowPlayingBar"
+                              CollapseWhenEmpty="False"
+                              Grid.Row="1" />
+    </Grid>
+</ContentPage>

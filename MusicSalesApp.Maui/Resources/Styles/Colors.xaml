@@ -43,6 +43,13 @@
     <Color x:Key="ProgressTrack">#4D4D4D</Color>
     <Color x:Key="ProgressFill">#B3B3B3</Color>
 
+    <!-- Player bar colors -->
+    <Color x:Key="PlayerBarDark">#181818</Color>
+    <Color x:Key="PlayerBarLight">#282828</Color>
+    <Color x:Key="ControlInactive">#B3B3B3</Color>
+    <Color x:Key="TimeText">#A7A7A7</Color>
+    <Color x:Key="PreviewOrange">#FFA500</Color>
+
     <Color x:Key="Gray100">#E1E1E1</Color>
     <Color x:Key="Gray200">#C8C8C8</Color>
     <Color x:Key="Gray300">#ACACAC</Color>

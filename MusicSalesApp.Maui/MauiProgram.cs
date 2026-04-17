@@ -43,6 +43,28 @@ public static class MauiProgram
 			builder.Configuration.AddJsonStream(envStream);
 		}
 
+		// When UseLocalHost is false, override settings with the DavidTest section
+		// so the app connects to the remote test server instead of localhost.
+		var useLocalHost = builder.Configuration.GetValue<bool>("UseLocalHost", true);
+		if (!useLocalHost)
+		{
+			var davidTest = builder.Configuration.GetSection("DavidTest");
+			if (davidTest.Exists())
+			{
+				builder.Configuration["ApiBaseUrl"] = davidTest["ApiBaseUrl"];
+				builder.Configuration["MobileApiKey"] = davidTest["MobileApiKey"];
+				// Override Azure settings
+				var dtAzure = davidTest.GetSection("Azure");
+				if (dtAzure.Exists())
+				{
+					foreach (var kvp in dtAzure.GetChildren())
+					{
+						builder.Configuration[$"Azure:{kvp.Key}"] = kvp.Value;
+					}
+				}
+			}
+		}
+
 		// Register HttpClientFactory with the API base URL
 		var apiBaseUrl = builder.Configuration["ApiBaseUrl"] ?? "https://localhost:7173";
 #if ANDROID && DEBUG
@@ -62,9 +84,11 @@ public static class MauiProgram
 				.Replace(":7173", ":5162");
 		}
 #endif
+		var isLocalDev = apiBaseUrl.Contains("localhost") || apiBaseUrl.Contains("127.0.0.1") || apiBaseUrl.Contains("10.0.2.2");
+
 		builder.Services.AddTransient<AuthDelegatingHandler>();
 		var mobileApiKey = builder.Configuration["MobileApiKey"];
-		builder.Services.AddHttpClient("MusicSalesApi", client =>
+		var httpClientBuilder = builder.Services.AddHttpClient("MusicSalesApi", client =>
 		{
 			client.BaseAddress = new Uri(apiBaseUrl);
 			// Required for ngrok free tier to skip the browser interstitial page
@@ -73,27 +97,40 @@ public static class MauiProgram
 			if (!string.IsNullOrEmpty(mobileApiKey))
 				client.DefaultRequestHeaders.Add("X-Api-Key", mobileApiKey);
 		})
-		.AddHttpMessageHandler<AuthDelegatingHandler>()
-#if DEBUG
-		.ConfigurePrimaryHttpMessageHandler(() =>
+		.AddHttpMessageHandler<AuthDelegatingHandler>();
+
+		if (isLocalDev)
 		{
-			// Use SocketsHttpHandler to bypass Android's default AndroidMessageHandler,
-			// which doesn't support custom certificate validation.
-			return new SocketsHttpHandler
+#if DEBUG
+			// For localhost, use SocketsHttpHandler to bypass dev certificate validation
+			httpClientBuilder.ConfigurePrimaryHttpMessageHandler(() =>
 			{
-				SslOptions = new System.Net.Security.SslClientAuthenticationOptions
+				return new SocketsHttpHandler
 				{
-					// Accept any certificate in debug builds (ngrok, dev certs, etc.)
-					RemoteCertificateValidationCallback = (_, _, _, _) => true
-				}
-			};
-		})
+					SslOptions = new System.Net.Security.SslClientAuthenticationOptions
+					{
+						RemoteCertificateValidationCallback = (_, _, _, _) => true
+					}
+				};
+			});
 #endif
-		;
+		}
+		else
+		{
+#if ANDROID
+			// For remote servers (Cloudflare, etc.), use Android's native handler
+			// which correctly negotiates TLS. SocketsHttpHandler (the HttpClientFactory
+			// default) uses managed TLS that can fail with Cloudflare.
+			httpClientBuilder.ConfigurePrimaryHttpMessageHandler(() => new Xamarin.Android.Net.AndroidMessageHandler());
+#endif
+		}
 
 		// Register IConfiguration as a singleton (already available via builder.Configuration,
 		// but this makes it injectable via DI throughout the app)
 		builder.Services.AddSingleton<IConfiguration>(builder.Configuration);
+
+		// Register centralized app config (resolves UseLocalHost / DavidTest / Production URLs once)
+		builder.Services.AddSingleton<IAppConfig, AppConfig>();
 
 		// Register services
 		builder.Services.AddSingleton<IAuthService, AuthService>();
@@ -101,6 +138,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IAlertService, AlertService>();
 		builder.Services.AddSingleton<ISignalRService, SignalRService>();
 		builder.Services.AddSingleton<INavigationService, NavigationService>();
+		builder.Services.AddSingleton<IPlaybackService, PlaybackService>();
 
 		// Register ViewModels and Pages
 		builder.Services.AddTransient<MusicLibraryViewModel>();
@@ -115,6 +153,8 @@ public static class MauiProgram
 		builder.Services.AddTransient<ForgotPasswordPage>();
 		builder.Services.AddTransient<ResetPasswordViewModel>();
 		builder.Services.AddTransient<ResetPasswordPage>();
+		builder.Services.AddTransient<SongPlayerViewModel>();
+		builder.Services.AddTransient<SongPlayerPage>();
 
 #if DEBUG
 		builder.Logging.AddDebug();

@@ -20,6 +20,7 @@ public partial class AppShell : Shell
 		Routing.RegisterRoute("verify-email", typeof(VerifyEmailPage));
 		Routing.RegisterRoute("forgot-password", typeof(ForgotPasswordPage));
 		Routing.RegisterRoute("reset-password", typeof(ResetPasswordPage));
+		Routing.RegisterRoute("song-player", typeof(SongPlayerPage));
 
 		UpdateMenuVisibility();
 	}

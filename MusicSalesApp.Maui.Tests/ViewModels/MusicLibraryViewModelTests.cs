@@ -12,6 +12,8 @@ public class MusicLibraryViewModelTests
     private Mock<ISignalRService> _mockSignalRService;
     private Mock<IAuthService> _mockAuthService;
     private Mock<INavigationService> _mockNavigationService;
+    private Mock<IPlaybackService> _mockPlaybackService;
+    private Mock<IAppConfig> _mockAppConfig;
     private MusicLibraryViewModel _viewModel;
 
     [SetUp]
@@ -22,8 +24,14 @@ public class MusicLibraryViewModelTests
         _mockSignalRService = new Mock<ISignalRService>();
         _mockAuthService = new Mock<IAuthService>();
         _mockNavigationService = new Mock<INavigationService>();
+        _mockPlaybackService = new Mock<IPlaybackService>();
+        _mockAppConfig = new Mock<IAppConfig>();
+        _mockAppConfig.Setup(c => c.WebBaseUrl).Returns("https://streamtunes.net");
+        _mockAppConfig.Setup(c => c.ApiBaseUrl).Returns("https://streamtunes.net");
         _viewModel = new MusicLibraryViewModel(
-            _mockMusicService.Object, _mockAlertService.Object, _mockSignalRService.Object, _mockAuthService.Object, _mockNavigationService.Object);
+            _mockMusicService.Object, _mockAlertService.Object, _mockSignalRService.Object,
+            _mockAuthService.Object, _mockNavigationService.Object,
+            _mockPlaybackService.Object, _mockAppConfig.Object);
     }
 
     [Test]
@@ -98,161 +106,36 @@ public class MusicLibraryViewModelTests
     }
 
     [Test]
-    public void PlaySong_SetsCurrentlyPlayingSongAndIsPlaying()
+    public void PlaySong_DelegatesToPlaybackService()
     {
         // Arrange
-        var song = new SongDto { Id = 1, SongTitle = "Test" };
+        var song = new SongDto { Id = 1, SongTitle = "Test", StreamUrl = "https://example.com/test.mp3" };
 
         // Act
         _viewModel.PlaySongCommand.Execute(song);
 
         // Assert
-        Assert.That(_viewModel.CurrentlyPlayingSong, Is.SameAs(song));
-        Assert.That(_viewModel.IsPlaying, Is.True);
+        _mockPlaybackService.Verify(p => p.PlaySong(song), Times.Once);
     }
 
     [Test]
-    public void PlaySong_TappingSameSongPauses()
-    {
-        // Arrange
-        var song = new SongDto { Id = 1, SongTitle = "Test" };
-        _viewModel.PlaySongCommand.Execute(song);
-        Assert.That(_viewModel.IsPlaying, Is.True);
-
-        // Act — tap same song again
-        _viewModel.PlaySongCommand.Execute(song);
-
-        // Assert
-        Assert.That(_viewModel.IsPlaying, Is.False);
-    }
-
-    [Test]
-    public void PlaySong_SwitchingToNewSongStartsPlaying()
-    {
-        // Arrange
-        var song1 = new SongDto { Id = 1, SongTitle = "First" };
-        var song2 = new SongDto { Id = 2, SongTitle = "Second" };
-        _viewModel.PlaySongCommand.Execute(song1);
-
-        // Act
-        _viewModel.PlaySongCommand.Execute(song2);
-
-        // Assert
-        Assert.That(_viewModel.CurrentlyPlayingSong, Is.SameAs(song2));
-        Assert.That(_viewModel.IsPlaying, Is.True);
-    }
-
-    [Test]
-    public void TogglePlayPause_TogglesIsPlaying()
-    {
-        // Arrange
-        var song = new SongDto { Id = 1, SongTitle = "Test" };
-        _viewModel.PlaySongCommand.Execute(song);
-        Assert.That(_viewModel.IsPlaying, Is.True);
-
-        // Act
-        _viewModel.TogglePlayPauseCommand.Execute(null);
-
-        // Assert
-        Assert.That(_viewModel.IsPlaying, Is.False);
-
-        // Act again
-        _viewModel.TogglePlayPauseCommand.Execute(null);
-
-        // Assert
-        Assert.That(_viewModel.IsPlaying, Is.True);
-    }
-
-    [Test]
-    public void TogglePlayPause_DoesNothingWhenNoSong()
+    public void TogglePlayPause_DelegatesToPlaybackService()
     {
         // Act
         _viewModel.TogglePlayPauseCommand.Execute(null);
 
         // Assert
-        Assert.That(_viewModel.IsPlaying, Is.False);
-        Assert.That(_viewModel.CurrentlyPlayingSong, Is.Null);
+        _mockPlaybackService.Verify(p => p.TogglePlayPause(), Times.Once);
     }
 
     [Test]
-    public void Stop_ClearsPlaybackState()
+    public void Stop_DelegatesToPlaybackService()
     {
-        // Arrange
-        var song = new SongDto { Id = 1, SongTitle = "Test" };
-        _viewModel.PlaySongCommand.Execute(song);
-
         // Act
         _viewModel.StopCommand.Execute(null);
 
         // Assert
-        Assert.That(_viewModel.IsPlaying, Is.False);
-        Assert.That(_viewModel.CurrentlyPlayingSong, Is.Null);
-    }
-
-    [Test]
-    public void FormatDuration_FormatsMinutesAndSeconds()
-    {
-        Assert.That(_viewModel.FormatDuration(65), Is.EqualTo("1:05"));
-        Assert.That(_viewModel.FormatDuration(180.5), Is.EqualTo("3:00"));
-        Assert.That(_viewModel.FormatDuration(3661), Is.EqualTo("1:01:01"));
-    }
-
-    [Test]
-    public void FormatDuration_ReturnsPlaceholderForNull()
-    {
-        Assert.That(_viewModel.FormatDuration(null), Is.EqualTo("0:00"));
-    }
-
-    [Test]
-    public void FormatDuration_ReturnsZeroForNaN()
-    {
-        Assert.That(_viewModel.FormatDuration(double.NaN), Is.EqualTo("0:00"));
-    }
-
-    [Test]
-    public void FormatDuration_ReturnsZeroForInfinity()
-    {
-        Assert.That(_viewModel.FormatDuration(double.PositiveInfinity), Is.EqualTo("0:00"));
-        Assert.That(_viewModel.FormatDuration(double.NegativeInfinity), Is.EqualTo("0:00"));
-    }
-
-    // --- Playback progress ---
-
-    [Test]
-    public void UpdatePlaybackPosition_SetsProgressAndFormattedStrings()
-    {
-        // Act
-        _viewModel.UpdatePlaybackPosition(
-            TimeSpan.FromSeconds(30),
-            TimeSpan.FromSeconds(120));
-
-        // Assert
-        Assert.That(_viewModel.PlaybackProgress, Is.EqualTo(0.25));
-        Assert.That(_viewModel.FormattedPosition, Is.EqualTo("0:30"));
-        Assert.That(_viewModel.FormattedDuration, Is.EqualTo("2:00"));
-    }
-
-    [Test]
-    public void UpdatePlaybackPosition_WithZeroDuration_SetsProgressToZero()
-    {
-        // Act
-        _viewModel.UpdatePlaybackPosition(TimeSpan.Zero, TimeSpan.Zero);
-
-        // Assert
-        Assert.That(_viewModel.PlaybackProgress, Is.EqualTo(0));
-    }
-
-    [Test]
-    public void GetSeekPosition_ReturnsCorrectTimeSpan()
-    {
-        // Arrange - set duration to 200 seconds
-        _viewModel.UpdatePlaybackPosition(TimeSpan.Zero, TimeSpan.FromSeconds(200));
-
-        // Act
-        var seekPos = _viewModel.GetSeekPosition(0.5);
-
-        // Assert
-        Assert.That(seekPos.TotalSeconds, Is.EqualTo(100));
+        _mockPlaybackService.Verify(p => p.Stop(), Times.Once);
     }
 
     // --- Like counts ---
@@ -320,18 +203,11 @@ public class MusicLibraryViewModelTests
     [Test]
     public void Stop_ResetsPlaybackProgress()
     {
-        // Arrange
-        var song = new SongDto { Id = 1, SongTitle = "Test" };
-        _viewModel.PlaySongCommand.Execute(song);
-        _viewModel.UpdatePlaybackPosition(TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(180));
-
-        // Act
+        // Arrange / Act
         _viewModel.StopCommand.Execute(null);
 
-        // Assert
-        Assert.That(_viewModel.PlaybackProgress, Is.EqualTo(0));
-        Assert.That(_viewModel.FormattedPosition, Is.EqualTo("0:00"));
-        Assert.That(_viewModel.FormattedDuration, Is.EqualTo("0:00"));
+        // Assert - delegates to playback service
+        _mockPlaybackService.Verify(p => p.Stop(), Times.Once);
     }
 
     // --- SignalR real-time updates ---
@@ -409,7 +285,7 @@ public class MusicLibraryViewModelTests
     // --- Stream count tracking ---
 
     [Test]
-    public async Task LoadStreamQualifyingSecondsAsync_FetchesFromService()
+    public async Task LoadStreamQualifyingSecondsAsync_DelegatesToPlaybackService()
     {
         // Arrange
         _mockMusicService.Setup(s => s.GetStreamQualifyingSecondsAsync()).ReturnsAsync(45);
@@ -418,165 +294,7 @@ public class MusicLibraryViewModelTests
         await _viewModel.LoadStreamQualifyingSecondsAsync();
 
         // Assert
-        _mockMusicService.Verify(s => s.GetStreamQualifyingSecondsAsync(), Times.Once);
-    }
-
-    [Test]
-    public void StreamTracking_RecordsStreamAfterQualifyingSeconds()
-    {
-        // Arrange - set qualifying seconds to 5 for fast test
-        _mockMusicService.Setup(s => s.GetStreamQualifyingSecondsAsync()).ReturnsAsync(5);
-        _viewModel.LoadStreamQualifyingSecondsAsync().GetAwaiter().GetResult();
-
-        var song = new SongDto { Id = 10, SongTitle = "Test" };
-        _viewModel.Songs.Add(song);
-        _viewModel.PlaySongCommand.Execute(song);
-
-        // Act - simulate 6 ticks of ~1 second each (exceeds 5s threshold)
-        for (int i = 1; i <= 6; i++)
-        {
-            _viewModel.UpdatePlaybackPosition(
-                TimeSpan.FromSeconds(i),
-                TimeSpan.FromSeconds(180));
-        }
-
-        // Assert - RecordStreamAsync should have been called once
-        _mockMusicService.Verify(s => s.RecordStreamAsync(10), Times.Once);
-    }
-
-    [Test]
-    public void StreamTracking_DoesNotRecordBeforeThreshold()
-    {
-        // Arrange - set qualifying seconds to 30
-        _mockMusicService.Setup(s => s.GetStreamQualifyingSecondsAsync()).ReturnsAsync(30);
-        _viewModel.LoadStreamQualifyingSecondsAsync().GetAwaiter().GetResult();
-
-        var song = new SongDto { Id = 10, SongTitle = "Test" };
-        _viewModel.Songs.Add(song);
-        _viewModel.PlaySongCommand.Execute(song);
-
-        // Act - simulate 10 seconds of playback (below 30s threshold)
-        for (int i = 1; i <= 10; i++)
-        {
-            _viewModel.UpdatePlaybackPosition(
-                TimeSpan.FromSeconds(i),
-                TimeSpan.FromSeconds(180));
-        }
-
-        // Assert - RecordStreamAsync should NOT have been called
-        _mockMusicService.Verify(s => s.RecordStreamAsync(It.IsAny<int>()), Times.Never);
-    }
-
-    [Test]
-    public void StreamTracking_RecordsOnlyOncePerSong()
-    {
-        // Arrange
-        _mockMusicService.Setup(s => s.GetStreamQualifyingSecondsAsync()).ReturnsAsync(3);
-        _viewModel.LoadStreamQualifyingSecondsAsync().GetAwaiter().GetResult();
-
-        var song = new SongDto { Id = 10, SongTitle = "Test" };
-        _viewModel.Songs.Add(song);
-        _viewModel.PlaySongCommand.Execute(song);
-
-        // Act - simulate 10 seconds (well past 3s threshold)
-        for (int i = 1; i <= 10; i++)
-        {
-            _viewModel.UpdatePlaybackPosition(
-                TimeSpan.FromSeconds(i),
-                TimeSpan.FromSeconds(180));
-        }
-
-        // Assert - only called once despite exceeding threshold many ticks ago
-        _mockMusicService.Verify(s => s.RecordStreamAsync(10), Times.Once);
-    }
-
-    [Test]
-    public void StreamTracking_ResetsOnSongChange()
-    {
-        // Arrange
-        _mockMusicService.Setup(s => s.GetStreamQualifyingSecondsAsync()).ReturnsAsync(5);
-        _viewModel.LoadStreamQualifyingSecondsAsync().GetAwaiter().GetResult();
-
-        var song1 = new SongDto { Id = 10, SongTitle = "First" };
-        var song2 = new SongDto { Id = 20, SongTitle = "Second" };
-        _viewModel.Songs.Add(song1);
-        _viewModel.Songs.Add(song2);
-
-        // Play song1 for 3 seconds (under threshold)
-        _viewModel.PlaySongCommand.Execute(song1);
-        for (int i = 1; i <= 3; i++)
-        {
-            _viewModel.UpdatePlaybackPosition(
-                TimeSpan.FromSeconds(i),
-                TimeSpan.FromSeconds(180));
-        }
-
-        // Switch to song2 - play for 6 seconds (over threshold)
-        _viewModel.PlaySongCommand.Execute(song2);
-        for (int i = 1; i <= 6; i++)
-        {
-            _viewModel.UpdatePlaybackPosition(
-                TimeSpan.FromSeconds(i),
-                TimeSpan.FromSeconds(180));
-        }
-
-        // Assert - only song2 exceeded threshold
-        _mockMusicService.Verify(s => s.RecordStreamAsync(10), Times.Never);
-        _mockMusicService.Verify(s => s.RecordStreamAsync(20), Times.Once);
-    }
-
-    [Test]
-    public void StreamTracking_IgnoresSeeks()
-    {
-        // Arrange
-        _mockMusicService.Setup(s => s.GetStreamQualifyingSecondsAsync()).ReturnsAsync(10);
-        _viewModel.LoadStreamQualifyingSecondsAsync().GetAwaiter().GetResult();
-
-        var song = new SongDto { Id = 10, SongTitle = "Test" };
-        _viewModel.Songs.Add(song);
-        _viewModel.PlaySongCommand.Execute(song);
-
-        // Act - simulate a jump from 2s to 50s (seek, not continuous)
-        _viewModel.UpdatePlaybackPosition(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(180));
-        _viewModel.UpdatePlaybackPosition(TimeSpan.FromSeconds(50), TimeSpan.FromSeconds(180));
-
-        // Assert - should not record (48-second jump is a seek, not continuous play)
-        _mockMusicService.Verify(s => s.RecordStreamAsync(It.IsAny<int>()), Times.Never);
-    }
-
-    [Test]
-    public void StreamTracking_ResetsOnStop()
-    {
-        // Arrange
-        _mockMusicService.Setup(s => s.GetStreamQualifyingSecondsAsync()).ReturnsAsync(5);
-        _viewModel.LoadStreamQualifyingSecondsAsync().GetAwaiter().GetResult();
-
-        var song = new SongDto { Id = 10, SongTitle = "Test" };
-        _viewModel.Songs.Add(song);
-        _viewModel.PlaySongCommand.Execute(song);
-
-        // Play for 3 seconds
-        for (int i = 1; i <= 3; i++)
-        {
-            _viewModel.UpdatePlaybackPosition(
-                TimeSpan.FromSeconds(i),
-                TimeSpan.FromSeconds(180));
-        }
-
-        // Stop
-        _viewModel.StopCommand.Execute(null);
-
-        // Play same song again, 3 more seconds - total would be 6 but should be 3 (reset)
-        _viewModel.PlaySongCommand.Execute(song);
-        for (int i = 1; i <= 3; i++)
-        {
-            _viewModel.UpdatePlaybackPosition(
-                TimeSpan.FromSeconds(i),
-                TimeSpan.FromSeconds(180));
-        }
-
-        // Assert - never reached 5s threshold continuously
-        _mockMusicService.Verify(s => s.RecordStreamAsync(It.IsAny<int>()), Times.Never);
+        _mockPlaybackService.Verify(p => p.SetStreamQualifyingSeconds(45), Times.Once);
     }
 
     // --- Filtering ---
@@ -961,110 +679,31 @@ public class MusicLibraryViewModelTests
         _mockMusicService.Verify(s => s.ToggleDislikeAsync(42), Times.Once);
     }
 
-    // --- Playback restriction ---
+    // --- Playback restriction (now in PlaybackService) ---
+    // Preview limit tests have been moved to PlaybackServiceTests
 
     [Test]
-    public void PreviewLimit_NonSubscriber_PausesAt60Seconds()
+    public async Task OpenSong_NavigatesToSongPlayer()
     {
-        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+        // Arrange
         var song = new SongDto { Id = 1, SongTitle = "Test" };
-        _viewModel.PlaySongCommand.Execute(song);
 
-        // Simulate playback reaching 60 seconds
-        for (int i = 1; i <= 61; i++)
-        {
-            _viewModel.UpdatePlaybackPosition(
-                TimeSpan.FromSeconds(i),
-                TimeSpan.FromSeconds(180));
-        }
+        // Act
+        await _viewModel.OpenSongCommand.ExecuteAsync(song);
 
-        Assert.That(_viewModel.IsPlaying, Is.False);
-        Assert.That(_viewModel.PreviewLimitReached, Is.True);
+        // Assert
+        _mockNavigationService.Verify(n => n.GoToAsync("song-player",
+            It.Is<Dictionary<string, object>>(d => d.ContainsKey("Song") && d["Song"] == song)),
+            Times.Once);
     }
 
     [Test]
-    public void PreviewLimit_Subscriber_PlaysFullSong()
+    public async Task OpenSong_NullSong_DoesNotNavigate()
     {
-        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(true);
-        var song = new SongDto { Id = 1, SongTitle = "Test" };
-        _viewModel.PlaySongCommand.Execute(song);
+        // Act
+        await _viewModel.OpenSongCommand.ExecuteAsync(null);
 
-        for (int i = 1; i <= 120; i++)
-        {
-            _viewModel.UpdatePlaybackPosition(
-                TimeSpan.FromSeconds(i),
-                TimeSpan.FromSeconds(180));
-        }
-
-        Assert.That(_viewModel.IsPlaying, Is.True);
-        Assert.That(_viewModel.PreviewLimitReached, Is.False);
-    }
-
-    [Test]
-    public void PreviewLimit_CreatorOwnSong_PlaysFullWithoutStreamCount()
-    {
-        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
-        _mockAuthService.Setup(a => a.IsCreator).Returns(true);
-        _mockAuthService.Setup(a => a.UserId).Returns(100);
-
-        // Set qualifying seconds low to verify no stream recorded
-        _mockMusicService.Setup(s => s.GetStreamQualifyingSecondsAsync()).ReturnsAsync(5);
-        _viewModel.LoadStreamQualifyingSecondsAsync().GetAwaiter().GetResult();
-
-        var song = new SongDto { Id = 1, SongTitle = "My Song", CreatorUserId = 100 };
-        _viewModel.PlaySongCommand.Execute(song);
-
-        for (int i = 1; i <= 120; i++)
-        {
-            _viewModel.UpdatePlaybackPosition(
-                TimeSpan.FromSeconds(i),
-                TimeSpan.FromSeconds(180));
-        }
-
-        Assert.That(_viewModel.IsPlaying, Is.True);
-        Assert.That(_viewModel.PreviewLimitReached, Is.False);
-        _mockMusicService.Verify(s => s.RecordStreamAsync(It.IsAny<int>()), Times.Never);
-    }
-
-    [Test]
-    public void PreviewLimit_CreatorOtherSong_LimitedAt60s()
-    {
-        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
-        _mockAuthService.Setup(a => a.IsCreator).Returns(true);
-        _mockAuthService.Setup(a => a.UserId).Returns(100);
-
-        var song = new SongDto { Id = 1, SongTitle = "Other Song", CreatorUserId = 200 };
-        _viewModel.PlaySongCommand.Execute(song);
-
-        for (int i = 1; i <= 61; i++)
-        {
-            _viewModel.UpdatePlaybackPosition(
-                TimeSpan.FromSeconds(i),
-                TimeSpan.FromSeconds(180));
-        }
-
-        Assert.That(_viewModel.IsPlaying, Is.False);
-        Assert.That(_viewModel.PreviewLimitReached, Is.True);
-    }
-
-    [Test]
-    public void PreviewLimit_ResetsOnNewSong()
-    {
-        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
-        var song1 = new SongDto { Id = 1, SongTitle = "Song 1" };
-        var song2 = new SongDto { Id = 2, SongTitle = "Song 2" };
-
-        _viewModel.PlaySongCommand.Execute(song1);
-        for (int i = 1; i <= 61; i++)
-        {
-            _viewModel.UpdatePlaybackPosition(TimeSpan.FromSeconds(i), TimeSpan.FromSeconds(180));
-        }
-
-        Assert.That(_viewModel.PreviewLimitReached, Is.True);
-
-        // Play a new song - preview limit should reset
-        _viewModel.PlaySongCommand.Execute(song2);
-        Assert.That(_viewModel.PreviewLimitReached, Is.False);
-        Assert.That(_viewModel.IsPlaying, Is.True);
+        // Assert
+        _mockNavigationService.Verify(n => n.GoToAsync(It.IsAny<string>(), It.IsAny<Dictionary<string, object>>()), Times.Never);
     }
 }

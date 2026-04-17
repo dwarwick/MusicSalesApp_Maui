@@ -12,38 +12,43 @@ public partial class MusicLibraryViewModel : ObservableObject
     private readonly ISignalRService _signalRService;
     private readonly IAuthService _authService;
     private readonly INavigationService _navigationService;
+    private readonly IPlaybackService _playbackService;
+    private readonly IAppConfig _appConfig;
     private readonly Dictionary<int, (int likes, int dislikes)> _likeCounts = new();
 
     // All songs (unfiltered source of truth)
     private readonly List<SongDto> _allSongs = [];
 
-    // Stream tracking state
-    private int _streamQualifyingSeconds = 30; // default, overwritten from server
-    private int _streamTrackingSongId;
-    private double _continuousPlaybackSeconds;
-    private bool _streamRecordedForCurrentSong;
-
-    // Playback restriction state (subscribe CTA)
-    private const double PreviewLimitSeconds = 60.0;
-    private const int MinPreviewInterval = 2;
-    private const int MaxPreviewIntervalExclusive = 5;
-    private int _previewEndCount;
-    private int _nextCtaThreshold;
-    private readonly Random _random = new();
-
-    public MusicLibraryViewModel(IMusicService musicService, IAlertService alertService, ISignalRService signalRService, IAuthService authService, INavigationService navigationService)
+    public MusicLibraryViewModel(
+        IMusicService musicService,
+        IAlertService alertService,
+        ISignalRService signalRService,
+        IAuthService authService,
+        INavigationService navigationService,
+        IPlaybackService playbackService,
+        IAppConfig appConfig)
     {
         _musicService = musicService;
         _alertService = alertService;
         _signalRService = signalRService;
         _authService = authService;
         _navigationService = navigationService;
-        _nextCtaThreshold = 0; // show on first preview end
+        _playbackService = playbackService;
+        _appConfig = appConfig;
 
         // Subscribe to real-time updates
         _signalRService.OnStreamCountUpdated += HandleStreamCountUpdated;
         _signalRService.OnLikeCountUpdated += HandleLikeCountUpdated;
+
+        // Wire subscribe CTA from playback service
+        _playbackService.ShowSubscribeCtaRequested += OnShowSubscribeCta;
     }
+
+    /// <summary>Expose the shared playback service so the page can bind NowPlayingView.</summary>
+    public IPlaybackService PlaybackService => _playbackService;
+
+    /// <summary>Web base URL for share links.</summary>
+    public string WebBaseUrl => _appConfig.WebBaseUrl;
 
     public ObservableCollection<SongDto> Songs { get; } = [];
 
@@ -319,147 +324,13 @@ public partial class MusicLibraryViewModel : ObservableObject
     [ObservableProperty]
     public partial string? ErrorMessage { get; set; }
 
-    [ObservableProperty]
-    public partial SongDto? CurrentlyPlayingSong { get; set; }
-
-    [ObservableProperty]
-    public partial bool IsPlaying { get; set; }
-
-    // --- Playback progress ---
-
-    [ObservableProperty]
-    public partial double PlaybackProgress { get; set; }
-
-    [ObservableProperty]
-    public partial string FormattedPosition { get; set; } = "0:00";
-
-    [ObservableProperty]
-    public partial string FormattedDuration { get; set; } = "0:00";
-
-    private TimeSpan _playbackPosition;
-    private TimeSpan _playbackDuration;
-
-    /// <summary>
-    /// Called by the code-behind timer to update playback position/duration.
-    /// Also tracks continuous playback time for stream count qualification
-    /// and enforces preview limits for non-subscribers.
-    /// </summary>
-    public void UpdatePlaybackPosition(TimeSpan position, TimeSpan duration)
-    {
-        var previousPosition = _playbackPosition;
-        _playbackPosition = position;
-        _playbackDuration = duration;
-
-        PlaybackProgress = duration.TotalSeconds > 0
-            ? position.TotalSeconds / duration.TotalSeconds
-            : 0;
-
-        FormattedPosition = FormatDuration(position.TotalSeconds);
-        FormattedDuration = FormatDuration(duration.TotalSeconds);
-
-        // Track continuous playback for stream count
-        TrackStreamPlayback(position, previousPosition);
-
-        // Enforce preview limit for non-subscribers
-        CheckPreviewLimit(position);
-    }
-
-    /// <summary>
-    /// Checks if the current playback should be limited to 60 seconds.
-    /// Returns true if playback should be paused due to preview limit.
-    /// </summary>
-    private void CheckPreviewLimit(TimeSpan position)
-    {
-        if (CurrentlyPlayingSong == null || !IsPlaying)
-            return;
-
-        // Don't limit subscribers
-        if (_authService.HasActiveSubscription)
-            return;
-
-        // Don't limit creators playing their own songs
-        if (_authService.IsCreator && CurrentlyPlayingSong.CreatorUserId == _authService.UserId)
-            return;
-
-        // Enforce 60s limit
-        if (position.TotalSeconds >= PreviewLimitSeconds)
-        {
-            IsPlaying = false;
-            PreviewLimitReached = true;
-            _previewEndCount++;
-            ShowSubscribeCtaIfNeeded();
-        }
-    }
-
-    [ObservableProperty]
-    public partial bool PreviewLimitReached { get; set; }
-
-    private async void ShowSubscribeCtaIfNeeded()
-    {
-        if (_previewEndCount >= _nextCtaThreshold)
-        {
-            _nextCtaThreshold = _previewEndCount + _random.Next(MinPreviewInterval, MaxPreviewIntervalExclusive);
-
-            await _alertService.DisplayAlertAsync("Preview Limit",
-                "Subscribe at streamtunes.net for unlimited listening!", "OK");
-        }
-    }
-
-    private void TrackStreamPlayback(TimeSpan position, TimeSpan previousPosition)
-    {
-        if (CurrentlyPlayingSong == null || !IsPlaying || _streamRecordedForCurrentSong)
-            return;
-
-        // Don't count streams for creators listening to their own songs
-        if (_authService.IsCreator && CurrentlyPlayingSong.CreatorUserId == _authService.UserId)
-        {
-            _streamRecordedForCurrentSong = true; // prevent further checks
-            return;
-        }
-
-        // If the song changed, reset tracking
-        if (CurrentlyPlayingSong.Id != _streamTrackingSongId)
-        {
-            _streamTrackingSongId = CurrentlyPlayingSong.Id;
-            _continuousPlaybackSeconds = 0;
-            _streamRecordedForCurrentSong = false;
-        }
-
-        // Calculate elapsed since last tick (timer fires every 500ms)
-        var elapsed = position.TotalSeconds - previousPosition.TotalSeconds;
-
-        // Only count forward progress within reasonable bounds (not seeks)
-        if (elapsed > 0 && elapsed < 2.0)
-        {
-            _continuousPlaybackSeconds += elapsed;
-        }
-
-        if (_continuousPlaybackSeconds >= _streamQualifyingSeconds)
-        {
-            _streamRecordedForCurrentSong = true;
-            _ = RecordStreamInBackgroundAsync(CurrentlyPlayingSong.Id);
-        }
-    }
-
-    private async Task RecordStreamInBackgroundAsync(int songMetadataId)
-    {
-        await _musicService.RecordStreamAsync(songMetadataId);
-    }
-
     /// <summary>
     /// Fetches the stream qualifying seconds from the server. Call once at startup.
     /// </summary>
     public async Task LoadStreamQualifyingSecondsAsync()
     {
-        _streamQualifyingSeconds = await _musicService.GetStreamQualifyingSecondsAsync();
-    }
-
-    /// <summary>
-    /// Returns the TimeSpan for a given progress value (0-1), used for seeking.
-    /// </summary>
-    public TimeSpan GetSeekPosition(double progress)
-    {
-        return TimeSpan.FromSeconds(progress * _playbackDuration.TotalSeconds);
+        var seconds = await _musicService.GetStreamQualifyingSecondsAsync();
+        _playbackService.SetStreamQualifyingSeconds(seconds);
     }
 
     // --- Like/dislike ---
@@ -482,7 +353,11 @@ public partial class MusicLibraryViewModel : ObservableObject
         if (!await RequireAuthenticatedUserAsync("like songs"))
             return;
 
-        await _musicService.ToggleLikeAsync(song.Id);
+        var result = await _musicService.ToggleLikeAsync(song.Id);
+        if (result != null)
+        {
+            song.UserLikeStatus = result.IsLiked ? true : null;
+        }
     }
 
     [RelayCommand]
@@ -493,14 +368,18 @@ public partial class MusicLibraryViewModel : ObservableObject
         if (!await RequireAuthenticatedUserAsync("dislike songs"))
             return;
 
-        await _musicService.ToggleDislikeAsync(song.Id);
+        var result = await _musicService.ToggleDislikeAsync(song.Id);
+        if (result != null)
+        {
+            song.UserLikeStatus = result.IsDisliked ? false : null;
+        }
     }
 
     /// <summary>
     /// Returns true if the user is logged in with a confirmed email (User role).
     /// Shows appropriate alerts and navigation if not.
     /// </summary>
-    private async Task<bool> RequireAuthenticatedUserAsync(string action)
+    internal async Task<bool> RequireAuthenticatedUserAsync(string action)
     {
         if (!_authService.IsLoggedIn)
         {
@@ -521,6 +400,18 @@ public partial class MusicLibraryViewModel : ObservableObject
         return true;
     }
 
+    // --- Navigation ---
+
+    [RelayCommand]
+    private async Task OpenSongAsync(SongDto? song)
+    {
+        if (song == null) return;
+        await _navigationService.GoToAsync("song-player", new Dictionary<string, object>
+        {
+            ["Song"] = song
+        });
+    }
+
     // --- Songs loading ---
 
     [RelayCommand]
@@ -534,6 +425,15 @@ public partial class MusicLibraryViewModel : ObservableObject
         try
         {
             var songs = await _musicService.GetSongsAsync();
+
+            System.Diagnostics.Debug.WriteLine($"[MusicLibrary] WebBaseUrl = '{_appConfig.WebBaseUrl}'");
+            Console.WriteLine($"[MusicLibrary] WebBaseUrl = '{_appConfig.WebBaseUrl}'");
+            foreach (var song in songs)
+            {
+                song.ShareUrl = SongDto.BuildShareUrl(song.Id, _appConfig.WebBaseUrl);
+                System.Diagnostics.Debug.WriteLine($"[MusicLibrary] Song '{song.SongTitle}' → ShareUrl = '{song.ShareUrl}'");
+                Console.WriteLine($"[MusicLibrary] Song '{song.SongTitle}' → ShareUrl = '{song.ShareUrl}'");
+            }
 
             _allSongs.Clear();
             _allSongs.AddRange(songs);
@@ -549,8 +449,10 @@ public partial class MusicLibraryViewModel : ObservableObject
             RefreshAvailableArtists();
             ApplyFilters();
 
-            // Load like counts in parallel
-            await LoadLikeCountsAsync(songs);
+            // Load like counts and user like status in parallel
+            await Task.WhenAll(
+                LoadLikeCountsAsync(songs),
+                LoadUserLikeStatusAsync(songs));
         }
         catch (Exception ex)
         {
@@ -575,7 +477,6 @@ public partial class MusicLibraryViewModel : ObservableObject
             {
                 _likeCounts[lc.SongMetadataId] = (lc.LikeCount, lc.DislikeCount);
 
-                // Also set on the SongDto for data binding in the card template
                 var song = songs.FirstOrDefault(s => s.Id == lc.SongMetadataId);
                 if (song != null)
                 {
@@ -586,16 +487,37 @@ public partial class MusicLibraryViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            // Non-fatal — cards still display without like counts
             System.Diagnostics.Debug.WriteLine($"Failed to load like counts: {ex.Message}");
+        }
+    }
+
+    private async Task LoadUserLikeStatusAsync(List<SongDto> songs)
+    {
+        if (!_authService.IsLoggedIn) return;
+
+        try
+        {
+            var ids = songs.Select(s => s.Id).ToList();
+            if (ids.Count == 0) return;
+
+            var statuses = await _musicService.GetBulkUserLikeStatusAsync(ids);
+            foreach (var (songId, status) in statuses)
+            {
+                var song = songs.FirstOrDefault(s => s.Id == songId);
+                if (song != null)
+                {
+                    song.UserLikeStatus = status;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to load user like status: {ex.Message}");
         }
     }
 
     // --- SignalR real-time updates ---
 
-    /// <summary>
-    /// Starts the SignalR hub connections. Call from the page code-behind on appearing.
-    /// </summary>
     public async Task StartSignalRAsync()
     {
         await _signalRService.StartAsync();
@@ -622,62 +544,20 @@ public partial class MusicLibraryViewModel : ObservableObject
         }
     }
 
-    // --- Playback commands ---
+    // --- Playback delegation ---
 
     [RelayCommand]
-    private void PlaySong(SongDto song)
-    {
-        if (CurrentlyPlayingSong?.Id == song.Id && IsPlaying)
-        {
-            // Tapping the same song that's playing — pause it
-            IsPlaying = false;
-            return;
-        }
-
-        // Reset stream tracking for the new song
-        _continuousPlaybackSeconds = 0;
-        _streamRecordedForCurrentSong = false;
-        _streamTrackingSongId = song.Id;
-        PreviewLimitReached = false;
-
-        CurrentlyPlayingSong = song;
-        IsPlaying = true;
-    }
+    private void PlaySong(SongDto song) => _playbackService.PlaySong(song);
 
     [RelayCommand]
-    private void TogglePlayPause()
-    {
-        if (CurrentlyPlayingSong == null) return;
-        IsPlaying = !IsPlaying;
-    }
+    private void TogglePlayPause() => _playbackService.TogglePlayPause();
 
     [RelayCommand]
-    private void Stop()
-    {
-        IsPlaying = false;
-        CurrentlyPlayingSong = null;
-        ResetPlaybackState();
-    }
+    private void Stop() => _playbackService.Stop();
 
-    private void ResetPlaybackState()
+    private async Task OnShowSubscribeCta()
     {
-        PlaybackProgress = 0;
-        FormattedPosition = "0:00";
-        FormattedDuration = "0:00";
-        _playbackPosition = TimeSpan.Zero;
-        _playbackDuration = TimeSpan.Zero;
-        _continuousPlaybackSeconds = 0;
-        _streamRecordedForCurrentSong = false;
-        PreviewLimitReached = false;
-    }
-
-    public string FormatDuration(double? seconds)
-    {
-        if (seconds == null || double.IsNaN(seconds.Value) || double.IsInfinity(seconds.Value))
-            return "0:00";
-        var ts = TimeSpan.FromSeconds(seconds.Value);
-        return ts.TotalHours >= 1
-            ? ts.ToString(@"h\:mm\:ss")
-            : ts.ToString(@"m\:ss");
+        await _alertService.DisplayAlertAsync("Preview Limit",
+            "Subscribe at streamtunes.net for unlimited listening!", "OK");
     }
 }

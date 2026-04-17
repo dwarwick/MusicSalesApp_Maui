@@ -28,4 +28,24 @@ public partial class SongDto : ObservableObject
 
     [ObservableProperty]
     public partial int DislikeCount { get; set; }
+
+    /// <summary>
+    /// Per-user like status: true = liked, false = disliked, null = none.
+    /// Populated from bulk user-status endpoint.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool? UserLikeStatus { get; set; }
+
+    /// <summary>
+    /// Pre-built share URL for this song (e.g. https://domain/song/Encoded%20Title).
+    /// Set by the ViewModel after loading songs.
+    /// </summary>
+    public string ShareUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Builds a share URL using the song's numeric ID to avoid encoding issues.
+    /// The server redirects /share/{id} → /song/{encoded-title} with OG tags.
+    /// </summary>
+    public static string BuildShareUrl(int songId, string webBaseUrl) =>
+        $"{webBaseUrl}/share/{songId}";
 }
