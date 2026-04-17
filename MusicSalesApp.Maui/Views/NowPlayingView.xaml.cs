@@ -40,6 +40,7 @@ public partial class NowPlayingView : ContentView
         // Set initial state
         UpdateSongInfo();
         UpdatePlayPauseText();
+        UpdateStopButtonVisibility();
         UpdateRepeatVisual();
         UpdateTimeLabels();
     }
@@ -79,6 +80,7 @@ public partial class NowPlayingView : ContentView
                     break;
                 case nameof(IPlaybackService.IsPlaying):
                     UpdatePlayPauseText();
+                    UpdateStopButtonVisibility();
                     break;
                 case nameof(IPlaybackService.IsRepeatEnabled):
                     UpdateRepeatVisual();
@@ -127,6 +129,11 @@ public partial class NowPlayingView : ContentView
     private void UpdatePlayPauseText()
     {
         PlayPauseButton.Text = _playbackService?.IsPlaying == true ? "\u23F8" : "\u25B6";
+    }
+
+    private void UpdateStopButtonVisibility()
+    {
+        StopButton.IsVisible = _playbackService?.IsPlaying == true;
     }
 
     private void UpdateTimeLabels()

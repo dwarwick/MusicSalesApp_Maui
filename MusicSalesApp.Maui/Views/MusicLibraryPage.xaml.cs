@@ -96,7 +96,7 @@ public partial class MusicLibraryPage : ContentPage
     {
         MainThread.BeginInvokeOnMainThread(() =>
         {
-            if (AudioPlayer.CurrentState == MediaElementState.Paused)
+            if (AudioPlayer.CurrentState is MediaElementState.Paused or MediaElementState.Stopped)
             {
                 AudioPlayer.Play();
                 _logger.LogInformation("[Audio] Resumed.");
@@ -121,7 +121,6 @@ public partial class MusicLibraryPage : ContentPage
         {
             StopProgressTimer();
             AudioPlayer.Stop();
-            AudioPlayer.Source = null;
             _logger.LogInformation("[Audio] Stopped.");
         });
     }

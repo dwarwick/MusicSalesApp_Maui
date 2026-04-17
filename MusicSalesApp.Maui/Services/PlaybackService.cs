@@ -145,7 +145,6 @@ public class PlaybackService : IPlaybackService
     public void Stop()
     {
         IsPlaying = false;
-        CurrentSong = null;
         ResetPlaybackState();
         StopRequested?.Invoke();
     }

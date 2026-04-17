@@ -138,10 +138,26 @@ public class PlaybackServiceTests
         _service.Stop();
 
         Assert.That(_service.IsPlaying, Is.False);
-        Assert.That(_service.CurrentSong, Is.Null);
+        Assert.That(_service.CurrentSong, Is.SameAs(song));
         Assert.That(_service.PlaybackProgress, Is.EqualTo(0));
         Assert.That(_service.FormattedPosition, Is.EqualTo("0:00"));
         Assert.That(_service.FormattedDuration, Is.EqualTo("0:00"));
+    }
+
+    [Test]
+    public void Stop_ThenTogglePlayPause_ResumesPlayback()
+    {
+        bool resumeFired = false;
+        _service.ResumeRequested += () => resumeFired = true;
+        var song = new SongDto { Id = 1, SongTitle = "Test" };
+        _service.PlaySong(song);
+
+        _service.Stop();
+        Assert.That(_service.IsPlaying, Is.False);
+
+        _service.TogglePlayPause();
+        Assert.That(_service.IsPlaying, Is.True);
+        Assert.That(resumeFired, Is.True);
     }
 
     [Test]
