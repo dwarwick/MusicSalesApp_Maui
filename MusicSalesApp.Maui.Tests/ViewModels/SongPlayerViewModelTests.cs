@@ -228,4 +228,79 @@ public class SongPlayerViewModelTests
     {
         Assert.That(_viewModel.PlaybackService, Is.SameAs(_mockPlaybackService.Object));
     }
+
+    // --- ViewBio command ---
+
+    [Test]
+    public async Task ViewBio_WithArtistName_NavigatesToPersonaPage()
+    {
+        _viewModel.Song = new SongDto
+        {
+            Id = 1, SongTitle = "Test", ArtistName = "Artist",
+            PersonaImageUrl = "https://img.test/pic.jpg", PersonaBio = "A great artist."
+        };
+
+        await _viewModel.ViewBioCommand.ExecuteAsync(null);
+
+        _mockNavigationService.Verify(n => n.GoToAsync("persona",
+            It.Is<IDictionary<string, object>>(d =>
+                d["PersonaName"].ToString() == "Artist" &&
+                d["PersonaImageUrl"].ToString() == "https://img.test/pic.jpg" &&
+                d["PersonaBio"].ToString() == "A great artist.")), Times.Once);
+    }
+
+    [Test]
+    public async Task ViewBio_NullSong_DoesNotNavigate()
+    {
+        await _viewModel.ViewBioCommand.ExecuteAsync(null);
+
+        _mockNavigationService.Verify(n => n.GoToAsync("persona",
+            It.IsAny<IDictionary<string, object>>()), Times.Never);
+    }
+
+    [Test]
+    public async Task ViewBio_EmptyArtistName_DoesNotNavigate()
+    {
+        _viewModel.Song = new SongDto
+        {
+            Id = 1, SongTitle = "Test", ArtistName = "", PersonaBio = "Some bio"
+        };
+
+        await _viewModel.ViewBioCommand.ExecuteAsync(null);
+
+        _mockNavigationService.Verify(n => n.GoToAsync("persona",
+            It.IsAny<IDictionary<string, object>>()), Times.Never);
+    }
+
+    [Test]
+    public async Task ViewBio_NullPersonaImageUrl_PassesEmptyString()
+    {
+        _viewModel.Song = new SongDto
+        {
+            Id = 1, SongTitle = "Test", ArtistName = "Artist",
+            PersonaImageUrl = null, PersonaBio = "Bio text"
+        };
+
+        await _viewModel.ViewBioCommand.ExecuteAsync(null);
+
+        _mockNavigationService.Verify(n => n.GoToAsync("persona",
+            It.Is<IDictionary<string, object>>(d =>
+                d["PersonaImageUrl"].ToString() == string.Empty)), Times.Once);
+    }
+
+    [Test]
+    public async Task ViewBio_NullBio_PassesEmptyString()
+    {
+        _viewModel.Song = new SongDto
+        {
+            Id = 1, SongTitle = "Test", ArtistName = "Artist",
+            PersonaBio = null
+        };
+
+        await _viewModel.ViewBioCommand.ExecuteAsync(null);
+
+        _mockNavigationService.Verify(n => n.GoToAsync("persona",
+            It.Is<IDictionary<string, object>>(d =>
+                d["PersonaBio"].ToString() == string.Empty)), Times.Once);
+    }
 }

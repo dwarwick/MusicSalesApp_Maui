@@ -164,6 +164,19 @@ public partial class SongPlayerViewModel : ObservableObject
         }
     }
 
+    [RelayCommand]
+    private async Task ViewBioAsync()
+    {
+        if (Song == null || string.IsNullOrEmpty(Song.ArtistName)) return;
+
+        await _navigationService.GoToAsync("persona", new Dictionary<string, object>
+        {
+            ["PersonaName"] = Song.ArtistName,
+            ["PersonaImageUrl"] = Song.PersonaImageUrl ?? string.Empty,
+            ["PersonaBio"] = Song.PersonaBio ?? string.Empty
+        });
+    }
+
     /// <summary>
     /// Loads a song by title (for deep linking).
     /// </summary>

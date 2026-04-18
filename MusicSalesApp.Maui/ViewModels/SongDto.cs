@@ -15,6 +15,7 @@ public partial class SongDto : ObservableObject
     public string Genre { get; set; } = string.Empty;
     public string? AlbumArtUrl { get; set; }
     public string? PersonaImageUrl { get; set; }
+    public string? PersonaBio { get; set; }
     public string StreamUrl { get; set; } = string.Empty;
     public double? TrackLengthSeconds { get; set; }
     public int? CreatorUserId { get; set; }

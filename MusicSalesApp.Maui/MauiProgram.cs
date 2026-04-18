@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using MusicSalesApp.Maui.Services;
 using MusicSalesApp.Maui.ViewModels;
 using MusicSalesApp.Maui.Views;
+using SkiaSharp.Views.Maui.Controls.Hosting;
 
 namespace MusicSalesApp.Maui;
 
@@ -22,6 +23,7 @@ public static class MauiProgram
 			.UseMauiApp<App>()
 			.UseMauiCommunityToolkit()
 			.UseMauiCommunityToolkitMediaElement(isAndroidForegroundServiceEnabled: false)
+			.UseSkiaSharp()
 			.ConfigureFonts(fonts =>
 			{
 				fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
@@ -134,6 +136,7 @@ public static class MauiProgram
 
 		// Register services
 		builder.Services.AddSingleton<IAuthService, AuthService>();
+		builder.Services.AddSingleton<IAppSettingsService, AppSettingsService>();
 		builder.Services.AddSingleton<IMusicService, MusicService>();
 		builder.Services.AddSingleton<IAlertService, AlertService>();
 		builder.Services.AddSingleton<ISignalRService, SignalRService>();
@@ -141,6 +144,8 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IPlaybackService, PlaybackService>();
 
 		// Register ViewModels and Pages
+		builder.Services.AddTransient<HomeViewModel>();
+		builder.Services.AddTransient<HomePage>();
 		builder.Services.AddTransient<MusicLibraryViewModel>();
 		builder.Services.AddTransient<MusicLibraryPage>();
 		builder.Services.AddTransient<LoginViewModel>();
@@ -155,6 +160,8 @@ public static class MauiProgram
 		builder.Services.AddTransient<ResetPasswordPage>();
 		builder.Services.AddTransient<SongPlayerViewModel>();
 		builder.Services.AddTransient<SongPlayerPage>();
+		builder.Services.AddTransient<PersonaViewModel>();
+		builder.Services.AddTransient<PersonaPage>();
 
 #if DEBUG
 		builder.Logging.AddDebug();

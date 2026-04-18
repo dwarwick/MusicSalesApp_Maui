@@ -53,6 +53,16 @@
                            FontSize="16"
                            TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
                            VerticalOptions="Center" />
+                    <Button Text="Bio"
+                            FontSize="12"
+                            Padding="8,2"
+                            CornerRadius="12"
+                            HeightRequest="28"
+                            VerticalOptions="Center"
+                            BackgroundColor="#8e44ad"
+                            TextColor="White"
+                            Command="{Binding ViewBioCommand}"
+                            IsVisible="{Binding Song.ArtistName, Converter={toolkit:IsStringNotNullOrEmptyConverter}}" />
                 </HorizontalStackLayout>
 
                 <!-- Genre · Stream Count · Duration -->

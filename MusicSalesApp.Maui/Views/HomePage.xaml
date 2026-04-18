@@ -1,0 +1,344 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             xmlns:skia="clr-namespace:SkiaSharp.Extended.UI.Controls;assembly=SkiaSharp.Extended.UI"
+             xmlns:vm="clr-namespace:MusicSalesApp.Maui.ViewModels"
+             x:Class="MusicSalesApp.Maui.Views.HomePage"
+             x:DataType="vm:HomeViewModel"
+             Title="Home"
+             BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
+
+    <ScrollView>
+        <VerticalStackLayout Spacing="0" Padding="0">
+
+            <!-- ========== HERO SECTION ========== -->
+            <VerticalStackLayout Padding="24,32,24,24" Spacing="12"
+                  BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
+
+                <!-- Title row: text + Lottie, wraps like flex-row -->
+                <FlexLayout Direction="Row" Wrap="Wrap" JustifyContent="SpaceBetween" AlignItems="Center">
+                    <VerticalStackLayout Spacing="0" VerticalOptions="Center">
+                        <Label Text="Your Music."
+                               FontSize="36"
+                               FontAttributes="Bold"
+                               LineBreakMode="NoWrap"
+                               TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+                        <Label Text="Unlimited."
+                               FontSize="36"
+                               FontAttributes="Bold"
+                               LineBreakMode="NoWrap"
+                               TextColor="{StaticResource Primary}" />
+                    </VerticalStackLayout>
+
+                    <skia:SKLottieView Source="hero_animation.json"
+                                       RepeatCount="-1"
+                                       RepeatMode="Restart"
+                                       HeightRequest="140"
+                                       WidthRequest="140" />
+                </FlexLayout>
+
+                <Label Text="Stream all songs, discover new artists, and create the perfect playlist for every moment. All for less than $5 per month."
+                       FontSize="15"
+                       LineBreakMode="WordWrap"
+                       TextColor="{AppThemeBinding Light=#4a4a6a, Dark=#b3b3b3}" />
+
+                <!-- CTA: Not logged in -->
+                <HorizontalStackLayout Spacing="12"
+                                       IsVisible="{Binding ShowLoginRegister}"
+                                       Margin="0,8,0,0">
+                    <Button Text="Log In"
+                            Command="{Binding NavigateToLoginCommand}"
+                            BackgroundColor="#8e44ad"
+                            TextColor="White"
+                            FontAttributes="Bold"
+                            CornerRadius="24"
+                            HeightRequest="44"
+                            MinimumWidthRequest="100"
+                            Padding="20,0" />
+                    <Button Text="Register"
+                            Command="{Binding NavigateToRegisterCommand}"
+                            BackgroundColor="{StaticResource Primary}"
+                            TextColor="White"
+                            FontAttributes="Bold"
+                            CornerRadius="24"
+                            HeightRequest="44"
+                            MinimumWidthRequest="100"
+                            Padding="20,0" />
+                </HorizontalStackLayout>
+
+                <!-- CTA: Logged in, email not verified -->
+                <Button Text="Validate Your Email"
+                        Command="{Binding NavigateToValidateEmailCommand}"
+                        IsVisible="{Binding ShowValidateEmail}"
+                        BackgroundColor="{StaticResource Primary}"
+                        TextColor="White"
+                        FontAttributes="Bold"
+                        CornerRadius="24"
+                        HeightRequest="44"
+                        HorizontalOptions="Start"
+                        Padding="20,0"
+                        Margin="0,8,0,0" />
+
+                <!-- CTA: Logged in, verified, no subscription -->
+                <Button Text="{Binding SubscribeButtonText}"
+                        Command="{Binding SubscribeCommand}"
+                        IsVisible="{Binding ShowSubscribeNow}"
+                        BackgroundColor="{StaticResource Primary}"
+                        TextColor="White"
+                        FontAttributes="Bold"
+                        CornerRadius="24"
+                        HeightRequest="44"
+                        HorizontalOptions="Start"
+                        Padding="20,0"
+                        Margin="0,8,0,0" />
+
+                <!-- CTA: Has active subscription -->
+                <Button Text="Browse Music"
+                        Command="{Binding NavigateToMusicLibraryCommand}"
+                        IsVisible="{Binding ShowBrowseMusic}"
+                        BackgroundColor="{StaticResource Primary}"
+                        TextColor="White"
+                        FontAttributes="Bold"
+                        CornerRadius="24"
+                        HeightRequest="44"
+                        HorizontalOptions="Start"
+                        Padding="20,0"
+                        Margin="0,8,0,0" />
+
+            </VerticalStackLayout>
+
+            <!-- ========== SUBSCRIBER CTA CARD ========== -->
+            <VerticalStackLayout IsVisible="{Binding ShowSubscriptionContent}" Padding="20,16,20,0" Spacing="0">
+                <Border StrokeShape="RoundRectangle 24"
+                        Stroke="Transparent"
+                        BackgroundColor="{AppThemeBinding Light=White, Dark=#2a2a2a}"
+                        Padding="24">
+                    <Border.Shadow>
+                        <Shadow Brush="{AppThemeBinding Light=#b3b3b3, Dark=#00000066}"
+                                Offset="0,4"
+                                Radius="20" />
+                    </Border.Shadow>
+                    <VerticalStackLayout Spacing="16" HorizontalOptions="Center">
+
+                        <!-- Green icon circle with Material Design music note -->
+                        <Border WidthRequest="80" HeightRequest="80"
+                                StrokeShape="RoundRectangle 40"
+                                BackgroundColor="{StaticResource Primary}"
+                                Stroke="Transparent"
+                                HorizontalOptions="Center">
+                            <Path Data="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
+                                  Fill="White"
+                                  Aspect="Uniform"
+                                  HeightRequest="40"
+                                  WidthRequest="40"
+                                  HorizontalOptions="Center"
+                                  VerticalOptions="Center" />
+                        </Border>
+
+                        <Label Text="Unlimited Music Streaming"
+                               FontSize="22"
+                               FontAttributes="Bold"
+                               HorizontalTextAlignment="Center"
+                               TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+
+                        <Label Text="Stream all songs with no limits. Access our entire catalog for less than $5 per month."
+                               FontSize="14"
+                               HorizontalTextAlignment="Center"
+                               TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+
+                        <!-- Benefits list -->
+                        <VerticalStackLayout Spacing="12" Padding="0,8,0,0">
+                            <HorizontalStackLayout Spacing="10">
+                                <Label Text="✓" TextColor="{StaticResource Primary}" FontAttributes="Bold" FontSize="18" VerticalTextAlignment="Center" />
+                                <Label Text="Full-length streaming of all songs" FontSize="14"
+                                       TextColor="{AppThemeBinding Light=#333333, Dark=#e0e0e0}" VerticalTextAlignment="Center" />
+                            </HorizontalStackLayout>
+                            <HorizontalStackLayout Spacing="10">
+                                <Label Text="✓" TextColor="{StaticResource Primary}" FontAttributes="Bold" FontSize="18" VerticalTextAlignment="Center" />
+                                <Label Text="Create unlimited playlists" FontSize="14"
+                                       TextColor="{AppThemeBinding Light=#333333, Dark=#e0e0e0}" VerticalTextAlignment="Center" />
+                            </HorizontalStackLayout>
+                            <HorizontalStackLayout Spacing="10">
+                                <Label Text="✓" TextColor="{StaticResource Primary}" FontAttributes="Bold" FontSize="18" VerticalTextAlignment="Center" />
+                                <Label Text="Personalized recommendations" FontSize="14"
+                                       TextColor="{AppThemeBinding Light=#333333, Dark=#e0e0e0}" VerticalTextAlignment="Center" />
+                            </HorizontalStackLayout>
+                            <HorizontalStackLayout Spacing="10">
+                                <Label Text="✓" TextColor="{StaticResource Primary}" FontAttributes="Bold" FontSize="18" VerticalTextAlignment="Center" />
+                                <Label Text="No ads, no interruptions" FontSize="14"
+                                       TextColor="{AppThemeBinding Light=#333333, Dark=#e0e0e0}" VerticalTextAlignment="Center" />
+                            </HorizontalStackLayout>
+                        </VerticalStackLayout>
+
+                        <!-- Price highlight -->
+                        <Label HorizontalTextAlignment="Center" Padding="0,8,0,0">
+                            <Label.FormattedText>
+                                <FormattedString>
+                                    <Span Text="Just " FontSize="16"
+                                          TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+                                    <Span Text="{Binding SubscriptionPrice, StringFormat='${0}'}"
+                                          FontSize="24" FontAttributes="Bold"
+                                          TextColor="{StaticResource Primary}" />
+                                    <Span Text=" per month" FontSize="16"
+                                          TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+                                </FormattedString>
+                            </Label.FormattedText>
+                        </Label>
+
+                        <!-- Card CTA buttons -->
+                        <VerticalStackLayout Spacing="8" Padding="0,8,0,0"
+                                             IsVisible="{Binding ShowLoginRegister}">
+                            <Label Text="Log In or Register to Get Started"
+                                   FontSize="13"
+                                   HorizontalTextAlignment="Center"
+                                   TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+                            <HorizontalStackLayout Spacing="12" HorizontalOptions="Center">
+                                <Button Text="Log In"
+                                        Command="{Binding NavigateToLoginCommand}"
+                                        BackgroundColor="#8e44ad"
+                                        TextColor="White"
+                                        FontAttributes="Bold"
+                                        CornerRadius="24"
+                                        HeightRequest="44"
+                                        MinimumWidthRequest="110"
+                                        Padding="20,0" />
+                                <Button Text="Register"
+                                        Command="{Binding NavigateToRegisterCommand}"
+                                        BackgroundColor="{StaticResource Primary}"
+                                        TextColor="White"
+                                        FontAttributes="Bold"
+                                        CornerRadius="24"
+                                        HeightRequest="44"
+                                        MinimumWidthRequest="110"
+                                        Padding="20,0" />
+                            </HorizontalStackLayout>
+                        </VerticalStackLayout>
+
+                        <Button Text="Validate Your Email"
+                                Command="{Binding NavigateToValidateEmailCommand}"
+                                IsVisible="{Binding ShowValidateEmail}"
+                                BackgroundColor="{StaticResource Primary}"
+                                TextColor="White"
+                                FontAttributes="Bold"
+                                CornerRadius="24"
+                                HeightRequest="44"
+                                HorizontalOptions="Center"
+                                Padding="20,0" />
+
+                        <Button Text="{Binding SubscribeButtonText}"
+                                Command="{Binding SubscribeCommand}"
+                                IsVisible="{Binding ShowSubscribeNow}"
+                                BackgroundColor="{StaticResource Primary}"
+                                TextColor="White"
+                                FontAttributes="Bold"
+                                CornerRadius="24"
+                                HeightRequest="44"
+                                HorizontalOptions="Center"
+                                Padding="20,0" />
+
+                    </VerticalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+
+            <!-- ========== WHY STREAMTUNES SECTION ========== -->
+            <VerticalStackLayout IsVisible="{Binding ShowSubscriptionContent}" Padding="20,32,20,32" Spacing="20">
+
+                <Label Text="Why StreamTunes?"
+                       FontSize="24"
+                       FontAttributes="Bold"
+                       HorizontalTextAlignment="Center"
+                       TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+
+                <!-- Feature Card 1: Unlimited Streaming -->
+                <Border StrokeShape="RoundRectangle 16"
+                        Stroke="Transparent"
+                        BackgroundColor="{AppThemeBinding Light=White, Dark=#2a2a2a}"
+                        Padding="24">
+                    <Border.Shadow>
+                        <Shadow Brush="{AppThemeBinding Light=#00000014, Dark=#00000066}"
+                                Offset="0,4"
+                                Radius="20" />
+                    </Border.Shadow>
+                    <VerticalStackLayout Spacing="12" HorizontalOptions="Center">
+                        <Border WidthRequest="72" HeightRequest="72"
+                                StrokeShape="RoundRectangle 36"
+                                BackgroundColor="{StaticResource Primary}"
+                                Stroke="Transparent"
+                                HorizontalOptions="Center">
+                            <Path Data="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
+                                  Fill="White" Aspect="Uniform"
+                                  HeightRequest="32" WidthRequest="32"
+                                  HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+                        <Label Text="Unlimited Streaming"
+                               FontSize="18" FontAttributes="Bold" HorizontalTextAlignment="Center"
+                               TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+                        <Label Text="Access our entire catalog of songs with no limits. Play any track, any time, as many times as you want."
+                               FontSize="14" HorizontalTextAlignment="Center"
+                               TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- Feature Card 2: Personal Playlists -->
+                <Border StrokeShape="RoundRectangle 16"
+                        Stroke="Transparent"
+                        BackgroundColor="{AppThemeBinding Light=White, Dark=#2a2a2a}"
+                        Padding="24">
+                    <Border.Shadow>
+                        <Shadow Brush="{AppThemeBinding Light=#00000014, Dark=#00000066}"
+                                Offset="0,4"
+                                Radius="20" />
+                    </Border.Shadow>
+                    <VerticalStackLayout Spacing="12" HorizontalOptions="Center">
+                        <Border WidthRequest="72" HeightRequest="72"
+                                StrokeShape="RoundRectangle 36"
+                                BackgroundColor="{StaticResource Primary}"
+                                Stroke="Transparent"
+                                HorizontalOptions="Center">
+                            <Label Text="&#x2764;" FontSize="32" TextColor="White"
+                                   HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />
+                        </Border>
+                        <Label Text="Personal Playlists"
+                               FontSize="18" FontAttributes="Bold" HorizontalTextAlignment="Center"
+                               TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+                        <Label Text="Create custom playlists, like your favorite songs, and get personalized recommendations based on your taste."
+                               FontSize="14" HorizontalTextAlignment="Center"
+                               TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- Feature Card 3: Cancel Anytime -->
+                <Border StrokeShape="RoundRectangle 16"
+                        Stroke="Transparent"
+                        BackgroundColor="{AppThemeBinding Light=White, Dark=#2a2a2a}"
+                        Padding="24">
+                    <Border.Shadow>
+                        <Shadow Brush="{AppThemeBinding Light=#00000014, Dark=#00000066}"
+                                Offset="0,4"
+                                Radius="20" />
+                    </Border.Shadow>
+                    <VerticalStackLayout Spacing="12" HorizontalOptions="Center">
+                        <Border WidthRequest="72" HeightRequest="72"
+                                StrokeShape="RoundRectangle 36"
+                                BackgroundColor="{StaticResource Primary}"
+                                Stroke="Transparent"
+                                HorizontalOptions="Center">
+                            <Label Text="&#x1F4B3;" FontSize="32" TextColor="White"
+                                   HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />
+                        </Border>
+                        <Label Text="Cancel Anytime"
+                               FontSize="18" FontAttributes="Bold" HorizontalTextAlignment="Center"
+                               TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+                        <Label Text="No contracts, no commitments. Subscribe month-to-month and cancel whenever you want."
+                               FontSize="14" HorizontalTextAlignment="Center"
+                               TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+                    </VerticalStackLayout>
+                </Border>
+
+            </VerticalStackLayout>
+
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>

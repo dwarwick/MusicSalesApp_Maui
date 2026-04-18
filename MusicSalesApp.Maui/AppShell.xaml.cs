@@ -21,6 +21,7 @@ public partial class AppShell : Shell
 		Routing.RegisterRoute("forgot-password", typeof(ForgotPasswordPage));
 		Routing.RegisterRoute("reset-password", typeof(ResetPasswordPage));
 		Routing.RegisterRoute("song-player", typeof(SongPlayerPage));
+		Routing.RegisterRoute("persona", typeof(PersonaPage));
 
 		UpdateMenuVisibility();
 	}

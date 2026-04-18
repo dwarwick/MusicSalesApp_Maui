@@ -31,6 +31,12 @@
         </Grid>
     </Shell.FlyoutHeader>
 
+    <FlyoutItem Title="Home" Icon="{FontImageSource FontFamily=OpenSansRegular, Glyph='&#x2302;', Size=20}">
+        <ShellContent
+            ContentTemplate="{DataTemplate views:HomePage}"
+            Route="Home" />
+    </FlyoutItem>
+
     <FlyoutItem Title="Music Library" Icon="{FontImageSource FontFamily=OpenSansRegular, Glyph='&#x266B;', Size=20}">
         <ShellContent
             ContentTemplate="{DataTemplate views:MusicLibraryPage}"

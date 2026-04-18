@@ -13,12 +13,14 @@ namespace MusicSalesApp.Maui.Tests.Services;
 public class MusicServiceTests
 {
     private Mock<IHttpClientFactory> _mockFactory;
+    private Mock<IAppSettingsService> _mockAppSettingsService;
     private Mock<ILogger<MusicService>> _mockLogger;
 
     [SetUp]
     public void Setup()
     {
         _mockFactory = new Mock<IHttpClientFactory>();
+        _mockAppSettingsService = new Mock<IAppSettingsService>();
         _mockLogger = new Mock<ILogger<MusicService>>();
     }
 
@@ -45,6 +47,8 @@ public class MusicServiceTests
         return handler;
     }
 
+    private MusicService CreateService() => new(_mockFactory.Object, _mockAppSettingsService.Object, _mockLogger.Object);
+
     [Test]
     public async Task GetSongsAsync_ReturnsSongsFromApi()
     {
@@ -56,7 +60,7 @@ public class MusicServiceTests
         };
         var handler = CreateHandlerWithResponse(HttpStatusCode.OK, expectedSongs);
         CreateMockHttpClient(handler.Object);
-        var service = new MusicService(_mockFactory.Object, _mockLogger.Object);
+        var service = CreateService();
 
         // Act
         var result = await service.GetSongsAsync();
@@ -73,7 +77,7 @@ public class MusicServiceTests
         // Arrange
         var handler = CreateHandlerWithResponse(HttpStatusCode.InternalServerError);
         CreateMockHttpClient(handler.Object);
-        var service = new MusicService(_mockFactory.Object, _mockLogger.Object);
+        var service = CreateService();
 
         // Act
         var result = await service.GetSongsAsync();
@@ -95,7 +99,7 @@ public class MusicServiceTests
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK));
         CreateMockHttpClient(handler.Object);
-        var service = new MusicService(_mockFactory.Object, _mockLogger.Object);
+        var service = CreateService();
 
         // Act & Assert — no exception
         await service.RecordStreamAsync(42);
@@ -113,7 +117,7 @@ public class MusicServiceTests
         // Arrange
         var handler = CreateHandlerWithResponse(HttpStatusCode.InternalServerError);
         CreateMockHttpClient(handler.Object);
-        var service = new MusicService(_mockFactory.Object, _mockLogger.Object);
+        var service = CreateService();
 
         // Act & Assert — should not throw
         Assert.DoesNotThrowAsync(() => service.RecordStreamAsync(1));
@@ -132,7 +136,7 @@ public class MusicServiceTests
         };
         var handler = CreateHandlerWithResponse(HttpStatusCode.OK, expected);
         CreateMockHttpClient(handler.Object);
-        var service = new MusicService(_mockFactory.Object, _mockLogger.Object);
+        var service = CreateService();
 
         // Act
         var result = await service.GetBulkLikeCountsAsync([1, 2]);
@@ -150,7 +154,7 @@ public class MusicServiceTests
         // Arrange
         var handler = CreateHandlerWithResponse(HttpStatusCode.InternalServerError);
         CreateMockHttpClient(handler.Object);
-        var service = new MusicService(_mockFactory.Object, _mockLogger.Object);
+        var service = CreateService();
 
         // Act
         var result = await service.GetBulkLikeCountsAsync([1, 2]);
@@ -165,7 +169,7 @@ public class MusicServiceTests
         // Arrange - shouldn't even need a handler since it short-circuits
         var handler = CreateHandlerWithResponse(HttpStatusCode.OK, Array.Empty<LikeCountDto>());
         CreateMockHttpClient(handler.Object);
-        var service = new MusicService(_mockFactory.Object, _mockLogger.Object);
+        var service = CreateService();
 
         // Act
         var result = await service.GetBulkLikeCountsAsync([]);
@@ -193,7 +197,7 @@ public class MusicServiceTests
                 Content = JsonContent.Create(expected)
             });
         CreateMockHttpClient(handler.Object);
-        var service = new MusicService(_mockFactory.Object, _mockLogger.Object);
+        var service = CreateService();
 
         // Act
         var result = await service.ToggleLikeAsync(42);
@@ -210,7 +214,7 @@ public class MusicServiceTests
         // Arrange
         var handler = CreateHandlerWithResponse(HttpStatusCode.Unauthorized);
         CreateMockHttpClient(handler.Object);
-        var service = new MusicService(_mockFactory.Object, _mockLogger.Object);
+        var service = CreateService();
 
         // Act
         var result = await service.ToggleLikeAsync(42);
@@ -238,7 +242,7 @@ public class MusicServiceTests
                 Content = JsonContent.Create(expected)
             });
         CreateMockHttpClient(handler.Object);
-        var service = new MusicService(_mockFactory.Object, _mockLogger.Object);
+        var service = CreateService();
 
         // Act
         var result = await service.ToggleDislikeAsync(42);
@@ -255,7 +259,7 @@ public class MusicServiceTests
         // Arrange
         var handler = CreateHandlerWithResponse(HttpStatusCode.InternalServerError);
         CreateMockHttpClient(handler.Object);
-        var service = new MusicService(_mockFactory.Object, _mockLogger.Object);
+        var service = CreateService();
 
         // Act
         var result = await service.ToggleDislikeAsync(42);
@@ -265,32 +269,19 @@ public class MusicServiceTests
     }
 
     [Test]
-    public async Task GetStreamQualifyingSecondsAsync_ReturnsValueFromApi()
+    public async Task GetStreamQualifyingSecondsAsync_DelegatesToAppSettingsService()
     {
         // Arrange
-        var handler = CreateHandlerWithResponse(HttpStatusCode.OK, new { streamQualifyingSeconds = 45 });
+        _mockAppSettingsService.Setup(s => s.GetStreamQualifyingSecondsAsync()).ReturnsAsync(45);
+        var handler = CreateHandlerWithResponse(HttpStatusCode.OK);
         CreateMockHttpClient(handler.Object);
-        var service = new MusicService(_mockFactory.Object, _mockLogger.Object);
+        var service = CreateService();
 
         // Act
         var result = await service.GetStreamQualifyingSecondsAsync();
 
         // Assert
         Assert.That(result, Is.EqualTo(45));
-    }
-
-    [Test]
-    public async Task GetStreamQualifyingSecondsAsync_ReturnsDefaultOnError()
-    {
-        // Arrange
-        var handler = CreateHandlerWithResponse(HttpStatusCode.InternalServerError);
-        CreateMockHttpClient(handler.Object);
-        var service = new MusicService(_mockFactory.Object, _mockLogger.Object);
-
-        // Act
-        var result = await service.GetStreamQualifyingSecondsAsync();
-
-        // Assert — default is 30 seconds
-        Assert.That(result, Is.EqualTo(30));
+        _mockAppSettingsService.Verify(s => s.GetStreamQualifyingSecondsAsync(), Times.Once);
     }
 }

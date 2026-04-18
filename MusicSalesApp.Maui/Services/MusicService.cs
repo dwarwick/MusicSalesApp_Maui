@@ -7,11 +7,13 @@ namespace MusicSalesApp.Maui.Services;
 public class MusicService : IMusicService
 {
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IAppSettingsService _appSettingsService;
     private readonly ILogger<MusicService> _logger;
 
-    public MusicService(IHttpClientFactory httpClientFactory, ILogger<MusicService> logger)
+    public MusicService(IHttpClientFactory httpClientFactory, IAppSettingsService appSettingsService, ILogger<MusicService> logger)
     {
         _httpClientFactory = httpClientFactory;
+        _appSettingsService = appSettingsService;
         _logger = logger;
     }
 
@@ -44,24 +46,10 @@ public class MusicService : IMusicService
         }
     }
 
-    public async Task<int> GetStreamQualifyingSecondsAsync()
+    public Task<int> GetStreamQualifyingSecondsAsync()
     {
-        var client = _httpClientFactory.CreateClient("MusicSalesApi");
-        try
-        {
-            var result = await client.GetFromJsonAsync<StreamQualifyingSecondsDto>("api/music/stream-qualifying-seconds");
-            return result?.StreamQualifyingSeconds ?? DefaultStreamQualifyingSeconds;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to fetch stream qualifying seconds, using default {Default}s", DefaultStreamQualifyingSeconds);
-            return DefaultStreamQualifyingSeconds;
-        }
+        return _appSettingsService.GetStreamQualifyingSecondsAsync();
     }
-
-    private const int DefaultStreamQualifyingSeconds = 30;
-
-    private sealed record StreamQualifyingSecondsDto(int StreamQualifyingSeconds);
 
     public async Task RecordStreamAsync(int songMetadataId)
     {

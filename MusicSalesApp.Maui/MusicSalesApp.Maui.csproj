@@ -91,6 +91,7 @@
 		<PackageReference Include="Microsoft.Extensions.Http" Version="10.0.5" />
 		<PackageReference Include="Microsoft.Maui.Controls" Version="10.0.41" />
 		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />
+		<PackageReference Include="SkiaSharp.Extended.UI.Maui" Version="3.0.0" />
 		<PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.8.0" />
 	</ItemGroup>
 
