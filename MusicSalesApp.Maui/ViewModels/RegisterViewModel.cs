@@ -9,7 +9,6 @@ public partial class RegisterViewModel : ObservableObject
     private readonly IAuthService _authService;
     private readonly INavigationService _navigationService;
     private readonly IAppConfig _appConfig;
-    private readonly IBrowserService _browserService;
 
     [ObservableProperty]
     public partial string Email { get; set; } = string.Empty;
@@ -29,41 +28,60 @@ public partial class RegisterViewModel : ObservableObject
     public partial bool AcceptPrivacyPolicy { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanRegister))]
+    public partial bool AcceptRefundPolicy { get; set; }
+
+    [ObservableProperty]
     public partial bool IsBusy { get; set; }
 
     [ObservableProperty]
     public partial string? ErrorMessage { get; set; }
 
-    public bool CanRegister => AcceptTermsOfUse && AcceptPrivacyPolicy;
+    public bool CanRegister => AcceptTermsOfUse && AcceptPrivacyPolicy && AcceptRefundPolicy;
 
-    public RegisterViewModel(IAuthService authService, INavigationService navigationService, IAppConfig appConfig, IBrowserService browserService)
+    public RegisterViewModel(IAuthService authService, INavigationService navigationService, IAppConfig appConfig)
     {
         _authService = authService;
         _navigationService = navigationService;
         _appConfig = appConfig;
-        _browserService = browserService;
     }
 
     [RelayCommand]
     private async Task OpenTermsOfUseAsync()
     {
-        var url = $"{_appConfig.WebBaseUrl}/terms-of-use";
-        await _browserService.OpenAsync(url);
+        await _navigationService.GoToAsync("policy", new Dictionary<string, object>
+        {
+            ["title"] = "Terms of Use",
+            ["path"] = "/terms-of-use"
+        });
     }
 
     [RelayCommand]
     private async Task OpenPrivacyPolicyAsync()
     {
-        var url = $"{_appConfig.WebBaseUrl}/privacy-policy";
-        await _browserService.OpenAsync(url);
+        await _navigationService.GoToAsync("policy", new Dictionary<string, object>
+        {
+            ["title"] = "Privacy Policy",
+            ["path"] = "/privacy-policy"
+        });
+    }
+
+    [RelayCommand]
+    private async Task OpenRefundPolicyAsync()
+    {
+        await _navigationService.GoToAsync("policy", new Dictionary<string, object>
+        {
+            ["title"] = "User Refund Policy",
+            ["path"] = "/user-refund-policy"
+        });
     }
 
     [RelayCommand]
     private async Task RegisterAsync()
     {
-        if (!AcceptTermsOfUse || !AcceptPrivacyPolicy)
+        if (!AcceptTermsOfUse || !AcceptPrivacyPolicy || !AcceptRefundPolicy)
         {
-            ErrorMessage = "You must accept the Terms of Use and Privacy Policy to register.";
+            ErrorMessage = "You must accept the Terms of Use, Privacy Policy, and Refund Policy to register.";
             return;
         }
 

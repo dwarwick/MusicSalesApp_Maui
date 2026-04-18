@@ -173,6 +173,8 @@ public static class MauiProgram
 		builder.Services.AddTransient<PersonaPage>();
 		builder.Services.AddTransient<AccountSettingsViewModel>();
 		builder.Services.AddTransient<AccountSettingsPage>();
+		builder.Services.AddTransient<PolicyViewModel>();
+		builder.Services.AddTransient<PolicyPage>();
 
 #if DEBUG
 		builder.Logging.AddDebug();

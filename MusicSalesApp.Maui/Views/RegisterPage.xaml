@@ -112,6 +112,27 @@
                     </Label>
                 </HorizontalStackLayout>
 
+                <!-- Refund Policy -->
+                <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
+                    <CheckBox IsChecked="{Binding AcceptRefundPolicy}"
+                              Color="{StaticResource Primary}" />
+                    <Label VerticalOptions="Center" FontSize="13"
+                           TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}">
+                        <Label.FormattedText>
+                            <FormattedString>
+                                <Span Text="I agree to the " />
+                                <Span Text="User Refund Policy"
+                                      TextColor="{StaticResource Primary}"
+                                      TextDecorations="Underline">
+                                    <Span.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding OpenRefundPolicyCommand}" />
+                                    </Span.GestureRecognizers>
+                                </Span>
+                            </FormattedString>
+                        </Label.FormattedText>
+                    </Label>
+                </HorizontalStackLayout>
+
             </VerticalStackLayout>
 
             <!-- Register Button -->

@@ -14,6 +14,8 @@ public partial class AppShell : Shell
 		_authService = authService;
 		_authService.AuthStateChanged += OnAuthStateChanged;
 
+		CopyrightLabel.Text = $"\u00A9 {DateTime.Now.Year} Streamtunes";
+
 		// Register routes for pages that aren't in the flyout
 		Routing.RegisterRoute("login", typeof(LoginPage));
 		Routing.RegisterRoute("register", typeof(RegisterPage));
@@ -23,6 +25,7 @@ public partial class AppShell : Shell
 		Routing.RegisterRoute("song-player", typeof(SongPlayerPage));
 		Routing.RegisterRoute("persona", typeof(PersonaPage));
 		Routing.RegisterRoute("account-settings", typeof(AccountSettingsPage));
+		Routing.RegisterRoute("policy", typeof(PolicyPage));
 
 		UpdateMenuVisibility();
 	}
@@ -74,6 +77,36 @@ public partial class AppShell : Shell
 	{
 		Shell.Current.FlyoutIsPresented = false;
 		await _authService.LogoutAsync();
+	}
+
+	private async void OnTermsOfUseClicked(object? sender, EventArgs e)
+	{
+		Shell.Current.FlyoutIsPresented = false;
+		await GoToAsync("policy", new Dictionary<string, object>
+		{
+			["title"] = "Terms of Use",
+			["path"] = "/terms-of-use"
+		});
+	}
+
+	private async void OnPrivacyPolicyClicked(object? sender, EventArgs e)
+	{
+		Shell.Current.FlyoutIsPresented = false;
+		await GoToAsync("policy", new Dictionary<string, object>
+		{
+			["title"] = "Privacy Policy",
+			["path"] = "/privacy-policy"
+		});
+	}
+
+	private async void OnRefundPolicyClicked(object? sender, EventArgs e)
+	{
+		Shell.Current.FlyoutIsPresented = false;
+		await GoToAsync("policy", new Dictionary<string, object>
+		{
+			["title"] = "User Refund Policy",
+			["path"] = "/user-refund-policy"
+		});
 	}
 
 	protected override bool OnBackButtonPressed()

@@ -10,7 +10,6 @@ public class RegisterViewModelTests
     private Mock<IAuthService> _mockAuthService;
     private Mock<INavigationService> _mockNavigationService;
     private Mock<IAppConfig> _mockAppConfig;
-    private Mock<IBrowserService> _mockBrowser;
     private RegisterViewModel _viewModel;
 
     [SetUp]
@@ -20,18 +19,17 @@ public class RegisterViewModelTests
         _mockNavigationService = new Mock<INavigationService>();
         _mockAppConfig = new Mock<IAppConfig>();
         _mockAppConfig.Setup(c => c.WebBaseUrl).Returns("https://streamtunes.net");
-        _mockBrowser = new Mock<IBrowserService>();
         _viewModel = new RegisterViewModel(
             _mockAuthService.Object,
             _mockNavigationService.Object,
-            _mockAppConfig.Object,
-            _mockBrowser.Object);
+            _mockAppConfig.Object);
     }
 
     private void AcceptAllTerms()
     {
         _viewModel.AcceptTermsOfUse = true;
         _viewModel.AcceptPrivacyPolicy = true;
+        _viewModel.AcceptRefundPolicy = true;
     }
 
     [Test]
@@ -131,7 +129,23 @@ public class RegisterViewModelTests
     {
         _viewModel.AcceptTermsOfUse = true;
         _viewModel.AcceptPrivacyPolicy = true;
+        _viewModel.AcceptRefundPolicy = true;
         Assert.That(_viewModel.CanRegister, Is.True);
+    }
+
+    [Test]
+    public void CanRegister_FalseWhenOnlyRefundAccepted()
+    {
+        _viewModel.AcceptRefundPolicy = true;
+        Assert.That(_viewModel.CanRegister, Is.False);
+    }
+
+    [Test]
+    public void CanRegister_FalseWhenRefundNotAccepted()
+    {
+        _viewModel.AcceptTermsOfUse = true;
+        _viewModel.AcceptPrivacyPolicy = true;
+        Assert.That(_viewModel.CanRegister, Is.False);
     }
 
     [Test]
@@ -143,7 +157,7 @@ public class RegisterViewModelTests
 
         await _viewModel.RegisterCommand.ExecuteAsync(null);
 
-        Assert.That(_viewModel.ErrorMessage, Does.Contain("Terms of Use").And.Contain("Privacy Policy"));
+        Assert.That(_viewModel.ErrorMessage, Does.Contain("Terms of Use").And.Contain("Privacy Policy").And.Contain("Refund Policy"));
         _mockAuthService.Verify(a => a.RegisterAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
     }
 
@@ -157,7 +171,7 @@ public class RegisterViewModelTests
 
         await _viewModel.RegisterCommand.ExecuteAsync(null);
 
-        Assert.That(_viewModel.ErrorMessage, Does.Contain("Terms of Use").And.Contain("Privacy Policy"));
+        Assert.That(_viewModel.ErrorMessage, Does.Contain("Terms of Use").And.Contain("Privacy Policy").And.Contain("Refund Policy"));
         _mockAuthService.Verify(a => a.RegisterAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
     }
 
@@ -175,5 +189,34 @@ public class RegisterViewModelTests
 
         _mockAuthService.Verify(a => a.RegisterAsync("test@test.com", "Passw0rd!"), Times.Once);
         _mockNavigationService.Verify(n => n.GoToAsync("verify-email", It.IsAny<Dictionary<string, object>>()), Times.Once);
+    }
+
+    // --- Open policy commands navigate in-app ---
+
+    [Test]
+    public async Task OpenTermsOfUseCommand_NavigatesToPolicyPage()
+    {
+        await _viewModel.OpenTermsOfUseCommand.ExecuteAsync(null);
+
+        _mockNavigationService.Verify(n => n.GoToAsync("policy", It.Is<Dictionary<string, object>>(d =>
+            (string)d["title"] == "Terms of Use" && (string)d["path"] == "/terms-of-use")), Times.Once);
+    }
+
+    [Test]
+    public async Task OpenPrivacyPolicyCommand_NavigatesToPolicyPage()
+    {
+        await _viewModel.OpenPrivacyPolicyCommand.ExecuteAsync(null);
+
+        _mockNavigationService.Verify(n => n.GoToAsync("policy", It.Is<Dictionary<string, object>>(d =>
+            (string)d["title"] == "Privacy Policy" && (string)d["path"] == "/privacy-policy")), Times.Once);
+    }
+
+    [Test]
+    public async Task OpenRefundPolicyCommand_NavigatesToPolicyPage()
+    {
+        await _viewModel.OpenRefundPolicyCommand.ExecuteAsync(null);
+
+        _mockNavigationService.Verify(n => n.GoToAsync("policy", It.Is<Dictionary<string, object>>(d =>
+            (string)d["title"] == "User Refund Policy" && (string)d["path"] == "/user-refund-policy")), Times.Once);
     }
 }
