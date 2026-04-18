@@ -353,6 +353,28 @@ public class AuthService : IAuthService
         }
     }
 
+    public async Task<(bool Success, string Error)> DeleteAccountAsync()
+    {
+        var client = _httpClientFactory.CreateClient("MusicSalesApi");
+        try
+        {
+            var response = await client.DeleteAsync("api/mobile-auth/account");
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await ReadErrorMessageAsync(response);
+                return (false, error);
+            }
+
+            await LogoutAsync();
+            return (true, string.Empty);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Account deletion failed");
+            return (false, "Unable to connect to server. Please check your internet connection.");
+        }
+    }
+
     private static async Task<string> ReadErrorMessageAsync(HttpResponseMessage response)
     {
         try

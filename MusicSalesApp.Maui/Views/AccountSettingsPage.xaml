@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             xmlns:vm="clr-namespace:MusicSalesApp.Maui.ViewModels"
+             x:Class="MusicSalesApp.Maui.Views.AccountSettingsPage"
+             x:DataType="vm:AccountSettingsViewModel"
+             Title="Account Settings"
+             BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
+
+    <Grid>
+        <!-- Main content -->
+        <ScrollView>
+            <VerticalStackLayout Padding="24,24" Spacing="24">
+
+                <!-- Account Info -->
+                <VerticalStackLayout Spacing="4">
+                    <Label Text="Account"
+                           FontSize="22"
+                           FontAttributes="Bold"
+                           TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+                    <Label Text="{Binding UserEmail}"
+                           FontSize="15"
+                           TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+                </VerticalStackLayout>
+
+                <!-- Divider -->
+                <BoxView HeightRequest="1"
+                         Color="{AppThemeBinding Light=#E0E0E0, Dark=#333333}" />
+
+                <!-- Cancel Subscription Section -->
+                <VerticalStackLayout Spacing="12"
+                                     IsVisible="{Binding ShowCancelSubscription}">
+                    <Label Text="Subscription"
+                           FontSize="18"
+                           FontAttributes="Bold"
+                           TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+                    <Label Text="You have an active subscription. If you cancel, you will still have access until the end of your current billing period."
+                           FontSize="14"
+                           TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+                    <Button Text="Cancel Subscription"
+                            Command="{Binding CancelSubscriptionCommand}"
+                            IsEnabled="{Binding IsCancelling, Converter={toolkit:InvertedBoolConverter}}"
+                            BackgroundColor="#d9534f"
+                            TextColor="White"
+                            FontAttributes="Bold"
+                            CornerRadius="8"
+                            HeightRequest="44"
+                            HorizontalOptions="Start"
+                            Padding="20,0" />
+
+                    <!-- Divider -->
+                    <BoxView HeightRequest="1"
+                             Color="{AppThemeBinding Light=#E0E0E0, Dark=#333333}" />
+                </VerticalStackLayout>
+
+                <!-- Delete Account Section -->
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="Delete Account"
+                           FontSize="18"
+                           FontAttributes="Bold"
+                           TextColor="#d9534f" />
+
+                    <!-- Warning box -->
+                    <Border StrokeShape="RoundRectangle 8"
+                            Stroke="#d9534f"
+                            BackgroundColor="{AppThemeBinding Light=#FFF3F3, Dark=#3a1a1a}"
+                            Padding="16">
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="⚠ Warning"
+                                   FontSize="15"
+                                   FontAttributes="Bold"
+                                   TextColor="#d9534f" />
+                            <Label Text="• All your data including purchases, playlists, and subscriptions will be permanently deleted."
+                                   FontSize="13"
+                                   TextColor="{AppThemeBinding Light=#333333, Dark=#e0e0e0}" />
+                            <Label Text="• You will no longer have access to your existing playlists if you create an account in the future."
+                                   FontSize="13"
+                                   TextColor="{AppThemeBinding Light=#333333, Dark=#e0e0e0}" />
+                            <Label Text="• This action cannot be undone!"
+                                   FontSize="13"
+                                   FontAttributes="Bold"
+                                   TextColor="#d9534f" />
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <!-- Active subscription blocking message -->
+                    <Label Text="You must cancel your active subscription before deleting your account."
+                           FontSize="14"
+                           FontAttributes="Italic"
+                           TextColor="#d9534f"
+                           IsVisible="{Binding HasActiveSubscription}" />
+
+                    <Button Text="Delete My Account"
+                            Command="{Binding ShowDeleteAccountPromptCommand}"
+                            IsEnabled="{Binding CanDeleteAccount}"
+                            BackgroundColor="#d9534f"
+                            TextColor="White"
+                            FontAttributes="Bold"
+                            CornerRadius="8"
+                            HeightRequest="44"
+                            HorizontalOptions="Start"
+                            Padding="20,0" />
+                </VerticalStackLayout>
+
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- Delete Confirmation Overlay -->
+        <Grid IsVisible="{Binding ShowDeleteConfirmation}"
+              BackgroundColor="{AppThemeBinding Light=#CC000000, Dark=#CC000000}">
+            <Border StrokeShape="RoundRectangle 16"
+                    Stroke="{AppThemeBinding Light=#E0E0E0, Dark=#444444}"
+                    BackgroundColor="{AppThemeBinding Light=White, Dark=#1e1e1e}"
+                    Padding="24"
+                    VerticalOptions="Center"
+                    HorizontalOptions="Center"
+                    MaximumWidthRequest="400"
+                    Margin="24">
+                <VerticalStackLayout Spacing="16">
+                    <Label Text="Confirm Account Deletion"
+                           FontSize="20"
+                           FontAttributes="Bold"
+                           TextColor="#d9534f"
+                           HorizontalTextAlignment="Center" />
+
+                    <Label Text="This will permanently delete your account and all associated data. Type DELETE below to confirm."
+                           FontSize="14"
+                           TextColor="{AppThemeBinding Light=#333333, Dark=#e0e0e0}"
+                           HorizontalTextAlignment="Center" />
+
+                    <Entry Placeholder="Type DELETE to confirm"
+                           Text="{Binding ConfirmationText}"
+                           FontSize="16"
+                           HorizontalTextAlignment="Center"
+                           BackgroundColor="{AppThemeBinding Light=#F5F5F5, Dark=#2a2a2a}"
+                           TextColor="{AppThemeBinding Light=Black, Dark=White}"
+                           PlaceholderColor="{AppThemeBinding Light=#999999, Dark=#666666}" />
+
+                    <!-- Error message -->
+                    <Label Text="{Binding ErrorMessage}"
+                           FontSize="13"
+                           TextColor="#d9534f"
+                           HorizontalTextAlignment="Center"
+                           IsVisible="{Binding ErrorMessage, Converter={toolkit:IsNotNullOrEmptyConverter}}" />
+
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                        <Button Grid.Column="0"
+                                Text="Cancel"
+                                Command="{Binding CancelDeleteCommand}"
+                                BackgroundColor="{AppThemeBinding Light=#E0E0E0, Dark=#333333}"
+                                TextColor="{AppThemeBinding Light=#333333, Dark=#e0e0e0}"
+                                FontAttributes="Bold"
+                                CornerRadius="8"
+                                HeightRequest="44" />
+                        <Button Grid.Column="1"
+                                Text="Delete"
+                                Command="{Binding ConfirmDeleteCommand}"
+                                IsEnabled="{Binding CanConfirmDelete}"
+                                BackgroundColor="#d9534f"
+                                TextColor="White"
+                                FontAttributes="Bold"
+                                CornerRadius="8"
+                                HeightRequest="44" />
+                    </Grid>
+
+                    <!-- Deleting indicator -->
+                    <ActivityIndicator IsRunning="{Binding IsDeleting}"
+                                       IsVisible="{Binding IsDeleting}"
+                                       Color="#d9534f"
+                                       HorizontalOptions="Center" />
+                </VerticalStackLayout>
+            </Border>
+        </Grid>
+    </Grid>
+
+</ContentPage>

@@ -32,7 +32,7 @@ if ($LASTEXITCODE -eq 0) {
 
 # --- Step 3: Force rebuild and install ---
 Write-Host '=== Building and installing (clean) ===' -ForegroundColor Cyan
-dotnet build $csproj -f net10.0-android -c Debug -t:Install --no-incremental
+dotnet build $csproj -f net10.0-android -c Debug -t:Install --no-incremental /p:EmbedAssembliesIntoApk=true
 if ($LASTEXITCODE -ne 0) {
     Write-Host 'Build/install failed!' -ForegroundColor Red
     exit 1

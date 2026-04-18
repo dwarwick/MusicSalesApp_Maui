@@ -56,6 +56,11 @@
               Shell.FlyoutItemIsVisible="False"
               Clicked="OnValidateEmailClicked" />
 
+    <MenuItem x:Name="AccountSettingsMenuItem"
+              Text="Account Settings"
+              Shell.FlyoutItemIsVisible="False"
+              Clicked="OnAccountSettingsClicked" />
+
     <MenuItem x:Name="LogoutMenuItem"
               Text="Logout"
               Shell.FlyoutItemIsVisible="False"

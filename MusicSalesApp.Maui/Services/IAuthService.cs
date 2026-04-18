@@ -42,4 +42,7 @@ public interface IAuthService
 
     /// <summary>Re-fetch subscription and creator status from the server.</summary>
     Task RefreshUserStatusAsync();
+
+    /// <summary>Delete the user's account on the server and clear local session.</summary>
+    Task<(bool Success, string Error)> DeleteAccountAsync();
 }

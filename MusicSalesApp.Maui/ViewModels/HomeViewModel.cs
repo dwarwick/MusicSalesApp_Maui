@@ -29,11 +29,7 @@ public partial class HomeViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowSubscriptionContent))]
     [NotifyPropertyChangedFor(nameof(ShowSubscribeNow))]
     [NotifyPropertyChangedFor(nameof(ShowBrowseMusic))]
-    [NotifyPropertyChangedFor(nameof(ShowCancelSubscription))]
     public partial bool HasActiveSubscription { get; set; }
-
-    [ObservableProperty]
-    public partial bool IsCancelling { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowValidateEmail))]
@@ -49,7 +45,6 @@ public partial class HomeViewModel : ObservableObject
     public bool ShowValidateEmail => IsAuthenticated && !IsEmailVerified;
     public bool ShowSubscribeNow => IsAuthenticated && IsEmailVerified && !HasActiveSubscription;
     public bool ShowBrowseMusic => IsAuthenticated && HasActiveSubscription;
-    public bool ShowCancelSubscription => IsAuthenticated && HasActiveSubscription;
 
     public string SubscribeButtonText => $"Subscribe Now — ${SubscriptionPrice}/mo";
 
@@ -142,47 +137,6 @@ public partial class HomeViewModel : ObservableObject
 
     [RelayCommand]
     private Task NavigateToMusicLibraryAsync() => _navigationService.GoToAsync("//MusicLibrary");
-
-    [RelayCommand]
-    private async Task CancelSubscriptionAsync()
-    {
-        var confirmed = await _alertService.ShowConfirmAsync(
-            "Cancel Subscription",
-            "Are you sure you want to cancel your subscription? You will still have access until the end of your current billing period.",
-            "Cancel Subscription",
-            "Keep Subscription");
-
-        if (!confirmed) return;
-
-        IsCancelling = true;
-        try
-        {
-            var (success, endDate) = await _musicService.CancelSubscriptionAsync();
-
-            if (success)
-            {
-                await _authService.RefreshUserStatusAsync();
-                RefreshAuthState();
-
-                var message = endDate.HasValue
-                    ? $"Your subscription has been cancelled. You can enjoy music until {endDate.Value.ToLocalTime():MMMM dd, yyyy}."
-                    : "Your subscription has been cancelled.";
-                await _alertService.DisplayAlertAsync("Subscription Cancelled", message, "OK");
-            }
-            else
-            {
-                await _alertService.DisplayAlertAsync("Error", "Failed to cancel subscription. Please try again.", "OK");
-            }
-        }
-        catch (Exception ex)
-        {
-            await _alertService.DisplayAlertAsync("Error", $"Failed to cancel subscription: {ex.Message}", "OK");
-        }
-        finally
-        {
-            IsCancelling = false;
-        }
-    }
 
     private void RefreshAuthState()
     {

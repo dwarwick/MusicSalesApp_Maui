@@ -171,6 +171,8 @@ public static class MauiProgram
 		builder.Services.AddTransient<SongPlayerPage>();
 		builder.Services.AddTransient<PersonaViewModel>();
 		builder.Services.AddTransient<PersonaPage>();
+		builder.Services.AddTransient<AccountSettingsViewModel>();
+		builder.Services.AddTransient<AccountSettingsPage>();
 
 #if DEBUG
 		builder.Logging.AddDebug();
