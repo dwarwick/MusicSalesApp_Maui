@@ -403,4 +403,59 @@ public class MusicServiceTests
             Assert.That(endDate, Is.Null);
         });
     }
+
+    // --- ReportSongAsync Tests ---
+
+    [Test]
+    public async Task ReportSongAsync_ReturnsTrue_OnSuccess()
+    {
+        var handler = CreateHandlerWithResponse(HttpStatusCode.OK);
+        CreateMockHttpClient(handler.Object);
+        var service = CreateService();
+
+        var result = await service.ReportSongAsync(42, "Copyright Violation");
+
+        Assert.That(result, Is.True);
+    }
+
+    [Test]
+    public async Task ReportSongAsync_ReturnsFalse_OnServerError()
+    {
+        var handler = CreateHandlerWithResponse(HttpStatusCode.BadRequest);
+        CreateMockHttpClient(handler.Object);
+        var service = CreateService();
+
+        var result = await service.ReportSongAsync(42, "Copyright Violation");
+
+        Assert.That(result, Is.False);
+    }
+
+    [Test]
+    public void ReportSongAsync_ThrowsInvalidOperationException_OnConflict()
+    {
+        var handler = CreateHandlerWithResponse(HttpStatusCode.Conflict);
+        CreateMockHttpClient(handler.Object);
+        var service = CreateService();
+
+        var ex = Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.ReportSongAsync(42, "Copyright Violation"));
+        Assert.That(ex!.Message, Does.Contain("already reported"));
+    }
+
+    [Test]
+    public async Task ReportSongAsync_ReturnsFalse_OnException()
+    {
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ThrowsAsync(new HttpRequestException("Network error"));
+        CreateMockHttpClient(handler.Object);
+        var service = CreateService();
+
+        var result = await service.ReportSongAsync(42, "Copyright Violation");
+
+        Assert.That(result, Is.False);
+    }
 }

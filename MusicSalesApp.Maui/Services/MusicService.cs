@@ -184,4 +184,25 @@ public class MusicService : IMusicService
     }
 
     private sealed record CancelResponse(bool Success, DateTime? EndDate);
+
+    public async Task<bool> ReportSongAsync(int songMetadataId, string reason)
+    {
+        var client = _httpClientFactory.CreateClient("MusicSalesApi");
+        try
+        {
+            var response = await client.PostAsJsonAsync($"api/music/report/{songMetadataId}", new { Reason = reason });
+            if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
+                throw new InvalidOperationException("You have already reported this song.");
+            return response.IsSuccessStatusCode;
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to report song {SongMetadataId}", songMetadataId);
+            return false;
+        }
+    }
 }

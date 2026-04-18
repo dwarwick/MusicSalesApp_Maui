@@ -14,6 +14,7 @@ public class HomeViewModelTests
     private Mock<IAppConfig> _mockAppConfig;
     private Mock<IBillingService> _mockBillingService;
     private Mock<IMusicService> _mockMusicService;
+    private Mock<IBrowserService> _mockBrowserService;
     private HomeViewModel _viewModel;
 
     [SetUp]
@@ -26,6 +27,7 @@ public class HomeViewModelTests
         _mockAppConfig = new Mock<IAppConfig>();
         _mockBillingService = new Mock<IBillingService>();
         _mockMusicService = new Mock<IMusicService>();
+        _mockBrowserService = new Mock<IBrowserService>();
 
         _mockAppSettingsService.Setup(s => s.GetSubscriptionPriceAsync()).ReturnsAsync("3.99");
         _mockAppConfig.Setup(c => c.WebBaseUrl).Returns("https://streamtunes.net");
@@ -42,7 +44,8 @@ public class HomeViewModelTests
             _mockAlertService.Object,
             _mockAppConfig.Object,
             _mockBillingService.Object,
-            _mockMusicService.Object);
+            _mockMusicService.Object,
+            _mockBrowserService.Object);
     }
 
     [Test]
@@ -281,5 +284,13 @@ public class HomeViewModelTests
         // The event handler calls MainThread.BeginInvokeOnMainThread which won't work in tests,
         // so we test RefreshAuthState behavior indirectly via LoadCommand instead
         // (AuthStateChanged tested through integration)
+    }
+
+    [Test]
+    public async Task OpenGooglePlaySubscriptions_OpensBrowserToSubscriptionsUrl()
+    {
+        await _viewModel.OpenGooglePlaySubscriptionsCommand.ExecuteAsync(null);
+
+        _mockBrowserService.Verify(b => b.OpenAsync("https://play.google.com/store/account/subscriptions"), Times.Once);
     }
 }

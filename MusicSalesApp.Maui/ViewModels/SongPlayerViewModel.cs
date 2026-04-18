@@ -134,6 +134,34 @@ public partial class SongPlayerViewModel : ObservableObject
         }
     }
 
+    [RelayCommand]
+    private async Task ReportSongAsync()
+    {
+        if (Song == null) return;
+        if (!await RequireValidatedUserAsync("report songs")) return;
+
+        var reason = await _alertService.ShowActionSheetAsync(
+            "Report Song", "Cancel", null,
+            "Copyright Violation", "Terms of Use Violation");
+
+        if (string.IsNullOrEmpty(reason) || reason == "Cancel")
+            return;
+
+        try
+        {
+            var success = await _musicService.ReportSongAsync(Song.Id, reason);
+            await _alertService.DisplayAlertAsync(
+                success ? "Report Submitted" : "Error",
+                success ? "Thank you. Your report has been submitted for review."
+                        : "Failed to submit report. Please try again later.",
+                "OK");
+        }
+        catch (InvalidOperationException ex)
+        {
+            await _alertService.DisplayAlertAsync("Already Reported", ex.Message, "OK");
+        }
+    }
+
     private async Task<bool> RequireAuthenticatedUserAsync(string action)
     {
         if (!_authService.IsLoggedIn)
@@ -149,6 +177,21 @@ public partial class SongPlayerViewModel : ObservableObject
         {
             await _alertService.DisplayAlertAsync("Email Not Verified",
                 "Please verify your email before you can interact with songs.", "OK");
+            return false;
+        }
+
+        return true;
+    }
+
+    private async Task<bool> RequireValidatedUserAsync(string action)
+    {
+        if (!await RequireAuthenticatedUserAsync(action))
+            return false;
+
+        if (!_authService.Roles.Contains("User"))
+        {
+            await _alertService.DisplayAlertAsync("Not Authorized",
+                "Your account must be fully verified to " + action + ".", "OK");
             return false;
         }
 

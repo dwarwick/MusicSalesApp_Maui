@@ -186,6 +186,12 @@
                             </Label.FormattedText>
                         </Label>
 
+                        <!-- Auto-renewal disclosure -->
+                        <Label Text="Subscription automatically renews monthly. Cancel anytime from your Google Play subscription settings."
+                               FontSize="12"
+                               HorizontalTextAlignment="Center"
+                               TextColor="{AppThemeBinding Light=#888888, Dark=#999999}" />
+
                         <!-- Card CTA buttons -->
                         <VerticalStackLayout Spacing="8" Padding="0,8,0,0"
                                              IsVisible="{Binding ShowLoginRegister}">
@@ -330,9 +336,19 @@
                         <Label Text="Cancel Anytime"
                                FontSize="18" FontAttributes="Bold" HorizontalTextAlignment="Center"
                                TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
-                        <Label Text="No contracts, no commitments. Subscribe month-to-month and cancel whenever you want."
+                        <Label Text="No contracts, no commitments. Your subscription renews monthly and you can cancel whenever you want."
                                FontSize="14" HorizontalTextAlignment="Center"
                                TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+                        <Label Text="Manage subscription in Google Play ›"
+                               FontSize="13"
+                               FontAttributes="Bold"
+                               HorizontalTextAlignment="Center"
+                               TextColor="{StaticResource Primary}"
+                               TextDecorations="Underline">
+                            <Label.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding OpenGooglePlaySubscriptionsCommand}" />
+                            </Label.GestureRecognizers>
+                        </Label>
                     </VerticalStackLayout>
                 </Border>
 

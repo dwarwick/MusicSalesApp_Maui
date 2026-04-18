@@ -13,6 +13,7 @@ public partial class HomeViewModel : ObservableObject
     private readonly IAppConfig _appConfig;
     private readonly IBillingService _billingService;
     private readonly IMusicService _musicService;
+    private readonly IBrowserService _browserService;
 
     [ObservableProperty]
     public partial bool IsLoading { get; set; } = true;
@@ -55,7 +56,8 @@ public partial class HomeViewModel : ObservableObject
         IAlertService alertService,
         IAppConfig appConfig,
         IBillingService billingService,
-        IMusicService musicService)
+        IMusicService musicService,
+        IBrowserService browserService)
     {
         _authService = authService;
         _appSettingsService = appSettingsService;
@@ -64,6 +66,7 @@ public partial class HomeViewModel : ObservableObject
         _appConfig = appConfig;
         _billingService = billingService;
         _musicService = musicService;
+        _browserService = browserService;
 
         _authService.AuthStateChanged += OnAuthStateChanged;
     }
@@ -137,6 +140,12 @@ public partial class HomeViewModel : ObservableObject
 
     [RelayCommand]
     private Task NavigateToMusicLibraryAsync() => _navigationService.GoToAsync("//MusicLibrary");
+
+    [RelayCommand]
+    private async Task OpenGooglePlaySubscriptionsAsync()
+    {
+        await _browserService.OpenAsync("https://play.google.com/store/account/subscriptions");
+    }
 
     private void RefreshAuthState()
     {

@@ -170,6 +170,26 @@
                     <views:ShareButton ShareTitle="{Binding Song.SongTitle}"
                                        ShareUrl="{Binding ShareUrl}"
                                        VerticalOptions="Center" />
+
+                    <!-- Report Button -->
+                    <VerticalStackLayout VerticalOptions="Center"
+                                         Spacing="2">
+                        <Grid HeightRequest="40" WidthRequest="40"
+                              HorizontalOptions="Center">
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding ReportSongCommand}" />
+                            </Grid.GestureRecognizers>
+                            <Path Data="M3 3v18h2V3H3zm4 0v12h8l-2-6 2-6H7z"
+                                  Fill="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource LikeButtonDarkText}}"
+                                  Aspect="Uniform"
+                                  HeightRequest="20" WidthRequest="20"
+                                  HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Grid>
+                        <Label Text="Report"
+                               FontSize="10"
+                               TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource LikeButtonDarkText}}"
+                               HorizontalTextAlignment="Center" />
+                    </VerticalStackLayout>
                 </HorizontalStackLayout>
             </VerticalStackLayout>
         </ScrollView>

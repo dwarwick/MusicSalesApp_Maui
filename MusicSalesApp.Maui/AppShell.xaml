@@ -99,6 +99,15 @@
                 </Label.GestureRecognizers>
             </Label>
 
+            <Label Text="Copyright Policy"
+                   FontSize="12"
+                   TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray400}}"
+                   TextDecorations="Underline">
+                <Label.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnCopyrightPolicyClicked" />
+                </Label.GestureRecognizers>
+            </Label>
+
             <Label x:Name="CopyrightLabel"
                    FontSize="11"
                    TextColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray500}}"

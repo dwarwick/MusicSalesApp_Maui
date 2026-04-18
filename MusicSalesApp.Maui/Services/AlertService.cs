@@ -18,4 +18,13 @@ public class AlertService : IAlertService
         }
         return false;
     }
+
+    public async Task<string?> ShowActionSheetAsync(string title, string cancel, string? destruction, params string[] buttons)
+    {
+        if (Application.Current?.Windows.FirstOrDefault()?.Page is Page page)
+        {
+            return await page.DisplayActionSheet(title, cancel, destruction, buttons);
+        }
+        return null;
+    }
 }

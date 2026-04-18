@@ -109,6 +109,16 @@ public partial class AppShell : Shell
 		});
 	}
 
+	private async void OnCopyrightPolicyClicked(object? sender, EventArgs e)
+	{
+		Shell.Current.FlyoutIsPresented = false;
+		await GoToAsync("policy", new Dictionary<string, object>
+		{
+			["title"] = "Copyright Policy",
+			["path"] = "/creator-agreement"
+		});
+	}
+
 	protected override bool OnBackButtonPressed()
 	{
 		// At the root page, the hardware/software back button should move the app to background

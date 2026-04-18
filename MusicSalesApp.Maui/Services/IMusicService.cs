@@ -22,4 +22,9 @@ public interface IMusicService
     /// Calls the server to cancel the user's active subscription (routes to the correct provider).
     /// </summary>
     Task<(bool Success, DateTime? EndDate)> CancelSubscriptionAsync();
+
+    /// <summary>
+    /// Reports a song for a policy violation (copyright or terms of use).
+    /// </summary>
+    Task<bool> ReportSongAsync(int songMetadataId, string reason);
 }

@@ -303,4 +303,80 @@ public class SongPlayerViewModelTests
             It.Is<IDictionary<string, object>>(d =>
                 d["PersonaBio"].ToString() == string.Empty)), Times.Once);
     }
+
+    // --- Report Song Tests ---
+
+    [Test]
+    public async Task ReportSong_WhenNotLoggedIn_ShowsLoginPrompt()
+    {
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(false);
+        _viewModel.Song = new SongDto { Id = 1, SongTitle = "Test" };
+
+        await _viewModel.ReportSongCommand.ExecuteAsync(null);
+
+        _mockAlertService.Verify(a => a.ShowConfirmAsync(
+            "Login Required", It.IsAny<string>(), "Login", "Cancel"), Times.Once);
+        _mockMusicService.Verify(s => s.ReportSongAsync(It.IsAny<int>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Test]
+    public async Task ReportSong_WhenNotValidatedUser_ShowsNotAuthorized()
+    {
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
+        _mockAuthService.Setup(a => a.Roles).Returns(new List<string> { "NonValidatedUser" });
+        _viewModel.Song = new SongDto { Id = 1, SongTitle = "Test" };
+
+        await _viewModel.ReportSongCommand.ExecuteAsync(null);
+
+        _mockAlertService.Verify(a => a.DisplayAlertAsync(
+            "Not Authorized", It.IsAny<string>(), "OK"), Times.Once);
+        _mockMusicService.Verify(s => s.ReportSongAsync(It.IsAny<int>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Test]
+    public async Task ReportSong_WhenValidatedUser_CallsService()
+    {
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
+        _mockAuthService.Setup(a => a.Roles).Returns(new List<string> { "User" });
+        _mockAlertService.Setup(a => a.ShowActionSheetAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string[]>()))
+            .ReturnsAsync("Terms of Use Violation");
+        _mockMusicService.Setup(s => s.ReportSongAsync(42, "Terms of Use Violation")).ReturnsAsync(true);
+        _viewModel.Song = new SongDto { Id = 42, SongTitle = "Test" };
+
+        await _viewModel.ReportSongCommand.ExecuteAsync(null);
+
+        _mockMusicService.Verify(s => s.ReportSongAsync(42, "Terms of Use Violation"), Times.Once);
+        _mockAlertService.Verify(a => a.DisplayAlertAsync("Report Submitted", It.IsAny<string>(), "OK"), Times.Once);
+    }
+
+    [Test]
+    public async Task ReportSong_NullSong_DoesNothing()
+    {
+        _viewModel.Song = null;
+
+        await _viewModel.ReportSongCommand.ExecuteAsync(null);
+
+        _mockMusicService.Verify(s => s.ReportSongAsync(It.IsAny<int>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Test]
+    public async Task ReportSong_WhenAlreadyReported_ShowsAlreadyReportedAlert()
+    {
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
+        _mockAuthService.Setup(a => a.Roles).Returns(new List<string> { "User" });
+        _mockAlertService.Setup(a => a.ShowActionSheetAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string[]>()))
+            .ReturnsAsync("Copyright Violation");
+        _mockMusicService.Setup(s => s.ReportSongAsync(42, "Copyright Violation"))
+            .ThrowsAsync(new InvalidOperationException("You have already reported this song."));
+        _viewModel.Song = new SongDto { Id = 42, SongTitle = "Test" };
+
+        await _viewModel.ReportSongCommand.ExecuteAsync(null);
+
+        _mockAlertService.Verify(a => a.DisplayAlertAsync("Already Reported", It.IsAny<string>(), "OK"), Times.Once);
+    }
 }
