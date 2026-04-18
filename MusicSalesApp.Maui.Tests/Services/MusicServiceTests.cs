@@ -284,4 +284,123 @@ public class MusicServiceTests
         Assert.That(result, Is.EqualTo(45));
         _mockAppSettingsService.Verify(s => s.GetStreamQualifyingSecondsAsync(), Times.Once);
     }
+
+    // --- Google Play Purchase Verification ---
+
+    [Test]
+    public async Task VerifyGooglePlayPurchaseAsync_ReturnsTrue_OnSuccess()
+    {
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.Is<HttpRequestMessage>(r =>
+                    r.Method == HttpMethod.Post &&
+                    r.RequestUri!.PathAndQuery.Contains("api/subscription/google-play/verify")),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new { success = true, subscriptionId = 1, status = "Active" })
+            });
+        CreateMockHttpClient(handler.Object);
+        var service = CreateService();
+
+        var result = await service.VerifyGooglePlayPurchaseAsync("token-123", "order-456");
+
+        Assert.That(result, Is.True);
+    }
+
+    [Test]
+    public async Task VerifyGooglePlayPurchaseAsync_ReturnsFalse_OnServerError()
+    {
+        var handler = CreateHandlerWithResponse(HttpStatusCode.BadRequest);
+        CreateMockHttpClient(handler.Object);
+        var service = CreateService();
+
+        var result = await service.VerifyGooglePlayPurchaseAsync("bad-token", null);
+
+        Assert.That(result, Is.False);
+    }
+
+    [Test]
+    public async Task VerifyGooglePlayPurchaseAsync_ReturnsFalse_OnException()
+    {
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ThrowsAsync(new HttpRequestException("Network error"));
+        CreateMockHttpClient(handler.Object);
+        var service = CreateService();
+
+        var result = await service.VerifyGooglePlayPurchaseAsync("token", "order");
+
+        Assert.That(result, Is.False);
+    }
+
+    // --- Cancel Subscription ---
+
+    [Test]
+    public async Task CancelSubscriptionAsync_ReturnsSuccessAndEndDate_OnOk()
+    {
+        var endDate = DateTime.UtcNow.AddDays(30);
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.Is<HttpRequestMessage>(r =>
+                    r.Method == HttpMethod.Post &&
+                    r.RequestUri!.PathAndQuery.Contains("api/subscription/cancel")),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new { success = true, endDate = endDate })
+            });
+        CreateMockHttpClient(handler.Object);
+        var service = CreateService();
+
+        var (success, resultEndDate) = await service.CancelSubscriptionAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(success, Is.True);
+            Assert.That(resultEndDate, Is.Not.Null);
+        });
+    }
+
+    [Test]
+    public async Task CancelSubscriptionAsync_ReturnsFailure_OnServerError()
+    {
+        var handler = CreateHandlerWithResponse(HttpStatusCode.BadRequest);
+        CreateMockHttpClient(handler.Object);
+        var service = CreateService();
+
+        var (success, endDate) = await service.CancelSubscriptionAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(success, Is.False);
+            Assert.That(endDate, Is.Null);
+        });
+    }
+
+    [Test]
+    public async Task CancelSubscriptionAsync_ReturnsFailure_OnException()
+    {
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ThrowsAsync(new HttpRequestException("Network error"));
+        CreateMockHttpClient(handler.Object);
+        var service = CreateService();
+
+        var (success, endDate) = await service.CancelSubscriptionAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(success, Is.False);
+            Assert.That(endDate, Is.Null);
+        });
+    }
 }

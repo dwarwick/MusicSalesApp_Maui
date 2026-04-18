@@ -12,6 +12,8 @@ public class HomeViewModelTests
     private Mock<INavigationService> _mockNavigationService;
     private Mock<IAlertService> _mockAlertService;
     private Mock<IAppConfig> _mockAppConfig;
+    private Mock<IBillingService> _mockBillingService;
+    private Mock<IMusicService> _mockMusicService;
     private HomeViewModel _viewModel;
 
     [SetUp]
@@ -22,6 +24,8 @@ public class HomeViewModelTests
         _mockNavigationService = new Mock<INavigationService>();
         _mockAlertService = new Mock<IAlertService>();
         _mockAppConfig = new Mock<IAppConfig>();
+        _mockBillingService = new Mock<IBillingService>();
+        _mockMusicService = new Mock<IMusicService>();
 
         _mockAppSettingsService.Setup(s => s.GetSubscriptionPriceAsync()).ReturnsAsync("3.99");
         _mockAppConfig.Setup(c => c.WebBaseUrl).Returns("https://streamtunes.net");
@@ -36,7 +40,9 @@ public class HomeViewModelTests
             _mockAppSettingsService.Object,
             _mockNavigationService.Object,
             _mockAlertService.Object,
-            _mockAppConfig.Object);
+            _mockAppConfig.Object,
+            _mockBillingService.Object,
+            _mockMusicService.Object);
     }
 
     [Test]
@@ -196,14 +202,55 @@ public class HomeViewModelTests
     }
 
     [Test]
-    public async Task SubscribeCommand_ShowsAlertWithWebUrl()
+    public async Task SubscribeCommand_SuccessfulPurchase_VerifiesWithServerAndRefreshesStatus()
     {
+        _mockBillingService.Setup(b => b.PurchaseSubscriptionAsync())
+            .ReturnsAsync(BillingPurchaseResult.Succeeded("test-token", "order-123"));
+        _mockMusicService.Setup(m => m.VerifyGooglePlayPurchaseAsync("test-token", "order-123"))
+            .ReturnsAsync(true);
+
         await _viewModel.SubscribeCommand.ExecuteAsync(null);
 
-        _mockAlertService.Verify(a => a.DisplayAlertAsync(
-            "Subscribe",
-            "Visit https://streamtunes.net in your browser to subscribe.",
-            "OK"), Times.Once);
+        _mockMusicService.Verify(m => m.VerifyGooglePlayPurchaseAsync("test-token", "order-123"), Times.Once);
+        _mockAuthService.Verify(a => a.RefreshUserStatusAsync(), Times.Once);
+        _mockAlertService.Verify(a => a.DisplayAlertAsync("Success", It.IsAny<string>(), "OK"), Times.Once);
+    }
+
+    [Test]
+    public async Task SubscribeCommand_PurchaseFailed_ShowsErrorAlert()
+    {
+        _mockBillingService.Setup(b => b.PurchaseSubscriptionAsync())
+            .ReturnsAsync(BillingPurchaseResult.Failed("Connection error"));
+
+        await _viewModel.SubscribeCommand.ExecuteAsync(null);
+
+        _mockAlertService.Verify(a => a.DisplayAlertAsync("Subscribe", "Connection error", "OK"), Times.Once);
+        _mockMusicService.Verify(m => m.VerifyGooglePlayPurchaseAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Test]
+    public async Task SubscribeCommand_UserCancelled_NoAlertShown()
+    {
+        _mockBillingService.Setup(b => b.PurchaseSubscriptionAsync())
+            .ReturnsAsync(BillingPurchaseResult.Cancelled());
+
+        await _viewModel.SubscribeCommand.ExecuteAsync(null);
+
+        _mockAlertService.Verify(a => a.DisplayAlertAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Test]
+    public async Task SubscribeCommand_ServerVerificationFails_ShowsError()
+    {
+        _mockBillingService.Setup(b => b.PurchaseSubscriptionAsync())
+            .ReturnsAsync(BillingPurchaseResult.Succeeded("test-token", "order-123"));
+        _mockMusicService.Setup(m => m.VerifyGooglePlayPurchaseAsync("test-token", "order-123"))
+            .ReturnsAsync(false);
+
+        await _viewModel.SubscribeCommand.ExecuteAsync(null);
+
+        _mockAlertService.Verify(a => a.DisplayAlertAsync("Subscribe", It.Is<string>(s => s.Contains("server verification failed")), "OK"), Times.Once);
+        _mockAuthService.Verify(a => a.RefreshUserStatusAsync(), Times.Never);
     }
 
     [Test]
@@ -234,5 +281,63 @@ public class HomeViewModelTests
         // The event handler calls MainThread.BeginInvokeOnMainThread which won't work in tests,
         // so we test RefreshAuthState behavior indirectly via LoadCommand instead
         // (AuthStateChanged tested through integration)
+    }
+
+    [Test]
+    public void ShowCancelSubscription_TrueWhenAuthenticatedAndSubscribed()
+    {
+        _viewModel.IsAuthenticated = true;
+        _viewModel.HasActiveSubscription = true;
+        Assert.That(_viewModel.ShowCancelSubscription, Is.True);
+    }
+
+    [Test]
+    public void ShowCancelSubscription_FalseWhenNotSubscribed()
+    {
+        _viewModel.IsAuthenticated = true;
+        _viewModel.HasActiveSubscription = false;
+        Assert.That(_viewModel.ShowCancelSubscription, Is.False);
+    }
+
+    [Test]
+    public async Task CancelSubscriptionCommand_UserDeclines_DoesNotCancel()
+    {
+        _mockAlertService.Setup(a => a.ShowConfirmAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(false);
+
+        await _viewModel.CancelSubscriptionCommand.ExecuteAsync(null);
+
+        _mockMusicService.Verify(m => m.CancelSubscriptionAsync(), Times.Never);
+    }
+
+    [Test]
+    public async Task CancelSubscriptionCommand_Success_RefreshesAuthAndShowsAlert()
+    {
+        _mockAlertService.Setup(a => a.ShowConfirmAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(true);
+        _mockMusicService.Setup(m => m.CancelSubscriptionAsync())
+            .ReturnsAsync((true, (DateTime?)DateTime.UtcNow.AddDays(30)));
+
+        await _viewModel.CancelSubscriptionCommand.ExecuteAsync(null);
+
+        _mockAuthService.Verify(a => a.RefreshUserStatusAsync(), Times.Once);
+        _mockAlertService.Verify(a => a.DisplayAlertAsync("Subscription Cancelled", It.IsAny<string>(), "OK"), Times.Once);
+    }
+
+    [Test]
+    public async Task CancelSubscriptionCommand_Failure_ShowsError()
+    {
+        _mockAlertService.Setup(a => a.ShowConfirmAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(true);
+        _mockMusicService.Setup(m => m.CancelSubscriptionAsync())
+            .ReturnsAsync((false, (DateTime?)null));
+
+        await _viewModel.CancelSubscriptionCommand.ExecuteAsync(null);
+
+        _mockAlertService.Verify(a => a.DisplayAlertAsync("Error", It.Is<string>(s => s.Contains("Failed to cancel")), "OK"), Times.Once);
+        _mockAuthService.Verify(a => a.RefreshUserStatusAsync(), Times.Never);
     }
 }

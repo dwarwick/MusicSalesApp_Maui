@@ -67,10 +67,57 @@
                              Clicked="OnToggleConfirmPasswordVisibility" />
             </Grid>
 
+            <!-- Legal Agreements -->
+            <VerticalStackLayout Spacing="8" Margin="0,4,0,0">
+
+                <!-- Terms of Use -->
+                <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
+                    <CheckBox IsChecked="{Binding AcceptTermsOfUse}"
+                              Color="{StaticResource Primary}" />
+                    <Label VerticalOptions="Center" FontSize="13"
+                           TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}">
+                        <Label.FormattedText>
+                            <FormattedString>
+                                <Span Text="I agree to the " />
+                                <Span Text="Terms of Use"
+                                      TextColor="{StaticResource Primary}"
+                                      TextDecorations="Underline">
+                                    <Span.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding OpenTermsOfUseCommand}" />
+                                    </Span.GestureRecognizers>
+                                </Span>
+                            </FormattedString>
+                        </Label.FormattedText>
+                    </Label>
+                </HorizontalStackLayout>
+
+                <!-- Privacy Policy -->
+                <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
+                    <CheckBox IsChecked="{Binding AcceptPrivacyPolicy}"
+                              Color="{StaticResource Primary}" />
+                    <Label VerticalOptions="Center" FontSize="13"
+                           TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}">
+                        <Label.FormattedText>
+                            <FormattedString>
+                                <Span Text="I agree to the " />
+                                <Span Text="Privacy Policy"
+                                      TextColor="{StaticResource Primary}"
+                                      TextDecorations="Underline">
+                                    <Span.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding OpenPrivacyPolicyCommand}" />
+                                    </Span.GestureRecognizers>
+                                </Span>
+                            </FormattedString>
+                        </Label.FormattedText>
+                    </Label>
+                </HorizontalStackLayout>
+
+            </VerticalStackLayout>
+
             <!-- Register Button -->
             <Button Text="Register"
                     Command="{Binding RegisterCommand}"
-                    IsEnabled="{Binding IsBusy, Converter={toolkit:InvertedBoolConverter}}"
+                    IsEnabled="{Binding CanRegister}"
                     BackgroundColor="{StaticResource Primary}"
                     TextColor="White"
                     FontAttributes="Bold"

@@ -8,6 +8,8 @@ public partial class RegisterViewModel : ObservableObject
 {
     private readonly IAuthService _authService;
     private readonly INavigationService _navigationService;
+    private readonly IAppConfig _appConfig;
+    private readonly IBrowserService _browserService;
 
     [ObservableProperty]
     public partial string Email { get; set; } = string.Empty;
@@ -19,20 +21,52 @@ public partial class RegisterViewModel : ObservableObject
     public partial string ConfirmPassword { get; set; } = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanRegister))]
+    public partial bool AcceptTermsOfUse { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanRegister))]
+    public partial bool AcceptPrivacyPolicy { get; set; }
+
+    [ObservableProperty]
     public partial bool IsBusy { get; set; }
 
     [ObservableProperty]
     public partial string? ErrorMessage { get; set; }
 
-    public RegisterViewModel(IAuthService authService, INavigationService navigationService)
+    public bool CanRegister => AcceptTermsOfUse && AcceptPrivacyPolicy;
+
+    public RegisterViewModel(IAuthService authService, INavigationService navigationService, IAppConfig appConfig, IBrowserService browserService)
     {
         _authService = authService;
         _navigationService = navigationService;
+        _appConfig = appConfig;
+        _browserService = browserService;
+    }
+
+    [RelayCommand]
+    private async Task OpenTermsOfUseAsync()
+    {
+        var url = $"{_appConfig.WebBaseUrl}/terms-of-use";
+        await _browserService.OpenAsync(url);
+    }
+
+    [RelayCommand]
+    private async Task OpenPrivacyPolicyAsync()
+    {
+        var url = $"{_appConfig.WebBaseUrl}/privacy-policy";
+        await _browserService.OpenAsync(url);
     }
 
     [RelayCommand]
     private async Task RegisterAsync()
     {
+        if (!AcceptTermsOfUse || !AcceptPrivacyPolicy)
+        {
+            ErrorMessage = "You must accept the Terms of Use and Privacy Policy to register.";
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(Email))
         {
             ErrorMessage = "Please enter your email.";

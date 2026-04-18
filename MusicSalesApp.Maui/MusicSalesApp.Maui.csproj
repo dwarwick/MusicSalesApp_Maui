@@ -98,6 +98,7 @@
 	<!-- Android-only packages -->
 	<ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
 		<PackageReference Include="Xamarin.AndroidX.Biometric" Version="1.1.0.32" />
+		<PackageReference Include="Xamarin.Android.Google.BillingClient" Version="8.3.0.2" />
 	</ItemGroup>
 
 </Project>

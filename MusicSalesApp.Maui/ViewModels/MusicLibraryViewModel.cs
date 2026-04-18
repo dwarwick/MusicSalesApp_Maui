@@ -14,6 +14,7 @@ public partial class MusicLibraryViewModel : ObservableObject
     private readonly INavigationService _navigationService;
     private readonly IPlaybackService _playbackService;
     private readonly IAppConfig _appConfig;
+    private readonly IBillingService _billingService;
     private readonly Dictionary<int, (int likes, int dislikes)> _likeCounts = new();
 
     // All songs (unfiltered source of truth)
@@ -26,7 +27,8 @@ public partial class MusicLibraryViewModel : ObservableObject
         IAuthService authService,
         INavigationService navigationService,
         IPlaybackService playbackService,
-        IAppConfig appConfig)
+        IAppConfig appConfig,
+        IBillingService billingService)
     {
         _musicService = musicService;
         _alertService = alertService;
@@ -35,6 +37,7 @@ public partial class MusicLibraryViewModel : ObservableObject
         _navigationService = navigationService;
         _playbackService = playbackService;
         _appConfig = appConfig;
+        _billingService = billingService;
 
         // Subscribe to real-time updates
         _signalRService.OnStreamCountUpdated += HandleStreamCountUpdated;
@@ -557,7 +560,31 @@ public partial class MusicLibraryViewModel : ObservableObject
 
     private async Task OnShowSubscribeCta()
     {
-        await _alertService.DisplayAlertAsync("Preview Limit",
-            "Subscribe at streamtunes.net for unlimited listening!", "OK");
+        var subscribe = await _alertService.ShowConfirmAsync("Preview Limit",
+            "Subscribe for unlimited listening!", "Subscribe Now", "Not Now");
+
+        if (subscribe)
+        {
+            var result = await _billingService.PurchaseSubscriptionAsync();
+
+            if (!result.Success)
+            {
+                if (result.ErrorMessage != "Purchase was cancelled.")
+                    await _alertService.DisplayAlertAsync("Subscribe", result.ErrorMessage ?? "Purchase failed.", "OK");
+                return;
+            }
+
+            var verified = await _musicService.VerifyGooglePlayPurchaseAsync(result.PurchaseToken!, result.OrderId);
+
+            if (verified)
+            {
+                await _authService.RefreshUserStatusAsync();
+                await _alertService.DisplayAlertAsync("Success", "You're now subscribed! Enjoy unlimited music.", "OK");
+            }
+            else
+            {
+                await _alertService.DisplayAlertAsync("Subscribe", "Purchase succeeded but server verification failed. Please try again.", "OK");
+            }
+        }
     }
 }

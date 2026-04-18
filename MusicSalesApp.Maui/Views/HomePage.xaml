@@ -106,6 +106,18 @@
                         Padding="20,0"
                         Margin="0,8,0,0" />
 
+                <!-- Cancel subscription -->
+                <Button Text="Cancel Subscription"
+                        Command="{Binding CancelSubscriptionCommand}"
+                        IsVisible="{Binding ShowCancelSubscription}"
+                        IsEnabled="{Binding IsCancelling, Converter={toolkit:InvertedBoolConverter}}"
+                        BackgroundColor="Transparent"
+                        TextColor="{AppThemeBinding Light=#888888, Dark=#999999}"
+                        FontSize="13"
+                        HorizontalOptions="Start"
+                        Padding="0"
+                        Margin="0,4,0,0" />
+
             </VerticalStackLayout>
 
             <!-- ========== SUBSCRIBER CTA CARD ========== -->

@@ -143,4 +143,45 @@ public class MusicService : IMusicService
     }
 
     private sealed record UserLikeStatusDto(int SongMetadataId, bool? UserLikeStatus);
+
+    public async Task<bool> VerifyGooglePlayPurchaseAsync(string purchaseToken, string? orderId)
+    {
+        var client = _httpClientFactory.CreateClient("MusicSalesApi");
+        try
+        {
+            var payload = new { PurchaseToken = purchaseToken, OrderId = orderId ?? "" };
+            var response = await client.PostAsJsonAsync("api/subscription/google-play/verify", payload);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to verify Google Play purchase with server");
+            return false;
+        }
+    }
+
+    public async Task<(bool Success, DateTime? EndDate)> CancelSubscriptionAsync()
+    {
+        var client = _httpClientFactory.CreateClient("MusicSalesApi");
+        try
+        {
+            var response = await client.PostAsync("api/subscription/cancel", null);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<CancelResponse>();
+                return (result?.Success ?? false, result?.EndDate);
+            }
+
+            var errorBody = await response.Content.ReadAsStringAsync();
+            _logger.LogWarning("Cancel subscription failed: {Status} {Body}", response.StatusCode, errorBody);
+            return (false, null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to cancel subscription");
+            return (false, null);
+        }
+    }
+
+    private sealed record CancelResponse(bool Success, DateTime? EndDate);
 }

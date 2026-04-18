@@ -14,6 +14,7 @@ public class MusicLibraryViewModelTests
     private Mock<INavigationService> _mockNavigationService;
     private Mock<IPlaybackService> _mockPlaybackService;
     private Mock<IAppConfig> _mockAppConfig;
+    private Mock<IBillingService> _mockBillingService;
     private MusicLibraryViewModel _viewModel;
 
     [SetUp]
@@ -26,12 +27,13 @@ public class MusicLibraryViewModelTests
         _mockNavigationService = new Mock<INavigationService>();
         _mockPlaybackService = new Mock<IPlaybackService>();
         _mockAppConfig = new Mock<IAppConfig>();
+        _mockBillingService = new Mock<IBillingService>();
         _mockAppConfig.Setup(c => c.WebBaseUrl).Returns("https://streamtunes.net");
         _mockAppConfig.Setup(c => c.ApiBaseUrl).Returns("https://streamtunes.net");
         _viewModel = new MusicLibraryViewModel(
             _mockMusicService.Object, _mockAlertService.Object, _mockSignalRService.Object,
             _mockAuthService.Object, _mockNavigationService.Object,
-            _mockPlaybackService.Object, _mockAppConfig.Object);
+            _mockPlaybackService.Object, _mockAppConfig.Object, _mockBillingService.Object);
     }
 
     [Test]

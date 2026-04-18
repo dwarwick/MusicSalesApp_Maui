@@ -25,6 +25,7 @@ public class AuthService : IAuthService
     public string? Email { get; private set; }
     public bool EmailConfirmed { get; private set; }
     public bool HasActiveSubscription { get; private set; }
+    public string? BillingSource { get; private set; }
     public bool IsCreator { get; private set; }
     public int? CreatorId { get; private set; }
     public IReadOnlyList<string> Roles { get; private set; } = [];
@@ -326,13 +327,14 @@ public class AuthService : IAuthService
         Email = null;
         EmailConfirmed = false;
         HasActiveSubscription = false;
+        BillingSource = null;
         IsCreator = false;
         CreatorId = null;
         Roles = [];
         IsLoggedIn = false;
     }
 
-    private async Task RefreshUserStatusAsync()
+    public async Task RefreshUserStatusAsync()
     {
         try
         {
@@ -343,6 +345,7 @@ public class AuthService : IAuthService
 
             var response = await client.GetFromJsonAsync<SubscriptionStatusDto>("api/subscription/status");
             HasActiveSubscription = response?.HasSubscription ?? false;
+            BillingSource = response?.BillingSource;
         }
         catch (Exception ex)
         {
@@ -363,5 +366,5 @@ public class AuthService : IAuthService
         }
     }
 
-    private sealed record SubscriptionStatusDto(bool HasSubscription);
+    private sealed record SubscriptionStatusDto(bool HasSubscription, string? BillingSource);
 }

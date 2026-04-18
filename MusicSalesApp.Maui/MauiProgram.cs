@@ -142,6 +142,15 @@ public static class MauiProgram
 		builder.Services.AddSingleton<ISignalRService, SignalRService>();
 		builder.Services.AddSingleton<INavigationService, NavigationService>();
 		builder.Services.AddSingleton<IPlaybackService, PlaybackService>();
+		builder.Services.AddSingleton<IBrowserService, BrowserService>();
+
+		// Register platform-specific services
+#if ANDROID
+		builder.Services.AddSingleton<IBillingService, MusicSalesApp.Maui.Platforms.Android.GooglePlayBillingService>();
+#else
+		// Non-Android platforms: register a no-op billing service
+		builder.Services.AddSingleton<IBillingService, NoBillingService>();
+#endif
 
 		// Register ViewModels and Pages
 		builder.Services.AddTransient<HomeViewModel>();

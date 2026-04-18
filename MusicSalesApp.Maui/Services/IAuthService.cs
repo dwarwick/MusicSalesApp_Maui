@@ -12,6 +12,7 @@ public interface IAuthService
     string? Email { get; }
     bool EmailConfirmed { get; }
     bool HasActiveSubscription { get; }
+    string? BillingSource { get; }
     bool IsCreator { get; }
     int? CreatorId { get; }
     IReadOnlyList<string> Roles { get; }
@@ -38,4 +39,7 @@ public interface IAuthService
 
     /// <summary>Retrieve stored credentials after biometric prompt and re-login.</summary>
     Task<(bool Success, string Error)> BiometricLoginAsync();
+
+    /// <summary>Re-fetch subscription and creator status from the server.</summary>
+    Task RefreshUserStatusAsync();
 }
