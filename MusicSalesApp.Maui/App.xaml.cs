@@ -6,12 +6,14 @@ public partial class App : Application
 {
 	private readonly IAuthService _authService;
 	private readonly IMusicService _musicService;
+	private readonly IBillingService _billingService;
 
-	public App(IAuthService authService, IMusicService musicService)
+	public App(IAuthService authService, IMusicService musicService, IBillingService billingService)
 	{
 		InitializeComponent();
 		_authService = authService;
 		_musicService = musicService;
+		_billingService = billingService;
 
 		// Sync the Android system theme to MAUI at startup.
 		// Application.Current is now set (we're in the constructor), so this is safe.
@@ -29,7 +31,19 @@ public partial class App : Application
 
 	protected override Window CreateWindow(IActivationState? activationState)
 	{
-		return new Window(new AppShell(_authService));
+		var window = new Window(new AppShell(_authService));
+
+		window.Created += async (_, _) =>
+		{
+			// Connect to Google Play Billing early (non-blocking)
+			try { await _billingService.InitializeAsync(); }
+			catch { /* logged inside service */ }
+
+			// Restore saved session and silently verify any unsynced purchases
+			await _authService.TryRestoreSessionAsync();
+		};
+
+		return window;
 	}
 
 	protected override async void OnAppLinkRequestReceived(Uri uri)

@@ -10,6 +10,8 @@ public class AuthService : IAuthService
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<AuthService> _logger;
+    private readonly IBillingService _billingService;
+    private readonly IMusicService _musicService;
 
     private const string TokenStorageKey = "auth_token";
     private const string UserIdStorageKey = "auth_user_id";
@@ -32,10 +34,13 @@ public class AuthService : IAuthService
     public string? Token { get; private set; }
     public bool IsBiometricEnabled => SecureStorage.Default.GetAsync(BioEmailKey).GetAwaiter().GetResult() != null;
 
-    public AuthService(IHttpClientFactory httpClientFactory, ILogger<AuthService> logger)
+    public AuthService(IHttpClientFactory httpClientFactory, ILogger<AuthService> logger,
+        IBillingService billingService, IMusicService musicService)
     {
         _httpClientFactory = httpClientFactory;
         _logger = logger;
+        _billingService = billingService;
+        _musicService = musicService;
     }
 
     public async Task<(bool Success, string Error)> LoginAsync(string email, string password)
@@ -250,6 +255,11 @@ public class AuthService : IAuthService
 
             // Refresh subscription/creator status from server
             await RefreshUserStatusAsync();
+
+            // Restore any unverified Google Play purchases
+            if (!HasActiveSubscription)
+                await TryRestoreBillingAsync();
+
             AuthStateChanged?.Invoke();
         }
         catch (Exception ex)
@@ -317,6 +327,10 @@ public class AuthService : IAuthService
         await SecureStorage.Default.SetAsync(EmailStorageKey, data.Email);
         await SecureStorage.Default.SetAsync(EmailConfirmedStorageKey, data.EmailConfirmed.ToString());
 
+        // Restore any unverified Google Play purchases after login
+        if (!HasActiveSubscription)
+            await TryRestoreBillingAsync();
+
         AuthStateChanged?.Invoke();
     }
 
@@ -350,6 +364,35 @@ public class AuthService : IAuthService
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Could not refresh subscription status on session restore");
+        }
+    }
+
+    /// <summary>
+    /// Silently restores any unverified Google Play purchases (e.g., after reinstall).
+    /// Verifies with the server and refreshes subscription status if a purchase is found.
+    /// </summary>
+    internal async Task TryRestoreBillingAsync()
+    {
+        try
+        {
+            var result = await _billingService.RestorePurchaseAsync();
+            if (result is not { Success: true })
+                return;
+
+            var verified = await _musicService.VerifyGooglePlayPurchaseAsync(result.PurchaseToken!, result.OrderId);
+            if (verified)
+            {
+                await RefreshUserStatusAsync();
+                _logger.LogInformation("Successfully restored Google Play subscription");
+            }
+            else
+            {
+                _logger.LogWarning("Restored Google Play purchase but server verification failed");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not restore Google Play purchases");
         }
     }
 

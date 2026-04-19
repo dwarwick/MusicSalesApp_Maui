@@ -50,6 +50,11 @@
 		<TargetPlatformMinVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</TargetPlatformMinVersion>
 	</PropertyGroup>
 
+	<!-- Allow test project to access internal members -->
+	<ItemGroup>
+		<InternalsVisibleTo Include="MusicSalesApp.Maui.Tests" />
+	</ItemGroup>
+
 	<!-- Use managed SocketsHttpHandler in Debug for custom SSL validation (e.g. dev tunnels).
 	     Release builds use the native platform handler for better performance. -->
 	<PropertyGroup Condition="'$(Configuration)' == 'Debug'">

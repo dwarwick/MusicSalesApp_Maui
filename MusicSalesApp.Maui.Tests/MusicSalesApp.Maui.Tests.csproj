@@ -2,6 +2,8 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <UseMaui>true</UseMaui>
+    <SkipValidateMauiImplicitPackageReferences>true</SkipValidateMauiImplicitPackageReferences>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
@@ -21,12 +23,13 @@
     </PackageReference>
     <PackageReference Include="NUnit3TestAdapter" Version="6.1.0" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.8.0" />
   </ItemGroup>
 
   <!-- Include source files from MAUI project that are testable (no MAUI platform deps) -->
   <ItemGroup>
     <Compile Include="..\MusicSalesApp.Maui\ViewModels\*.cs" Link="ViewModels\%(Filename)%(Extension)" />
-    <Compile Include="..\MusicSalesApp.Maui\Services\*.cs" Link="Services\%(Filename)%(Extension)" Exclude="..\MusicSalesApp.Maui\Services\AlertService.cs;..\MusicSalesApp.Maui\Services\SignalRService.cs;..\MusicSalesApp.Maui\Services\AuthService.cs;..\MusicSalesApp.Maui\Services\NavigationService.cs;..\MusicSalesApp.Maui\Services\BrowserService.cs" />
+    <Compile Include="..\MusicSalesApp.Maui\Services\*.cs" Link="Services\%(Filename)%(Extension)" Exclude="..\MusicSalesApp.Maui\Services\AlertService.cs;..\MusicSalesApp.Maui\Services\SignalRService.cs;..\MusicSalesApp.Maui\Services\NavigationService.cs;..\MusicSalesApp.Maui\Services\BrowserService.cs" />
   </ItemGroup>
 
   <ItemGroup>

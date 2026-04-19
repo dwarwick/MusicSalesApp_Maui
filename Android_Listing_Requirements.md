@@ -17,18 +17,27 @@ A privacy policy link must be accessible **within the app itself**, not just in 
 - [X] Add a link to `https://streamtunes.net/privacy-policy` inside the app (e.g., Settings or About page)
 
 ### 3. Data Safety Section
-Complete the Data Safety section in Play Console. Data collected by StreamTunes includes:
+Complete the Data Safety section in Play Console. Use the Google Play data type categories below.
 
-- [ ] Email address (account creation, authentication)
-- [ ] Username / display name
-- [ ] Password (authentication — stored hashed on server)
-- [ ] Listening history / stream counts
-- [ ] Liked songs
-- [ ] Playlists
-- [ ] Purchase history (subscription status)
+**Personal info:**
+- [ ] Email address (account creation, login, email changes)
+- [ ] User IDs (server-assigned user ID, stored locally and sent with API requests)
+
+**Financial info:**
+- [ ] Purchase history (Google Play subscription purchase tokens and order IDs sent to server for verification)
+
+**App activity:**
+- [ ] App interactions (stream counts recorded per song after qualifying listen duration)
+- [ ] Other actions (like/dislike on songs, song reports with reason text)
+
+**Data shared with third parties:**
+- [ ] Google (purchase tokens/order IDs via Google Play Billing SDK)
+- [ ] Facebook (public song URL only, user-initiated sharing via Android intent — no SDK)
+
+**Data NOT collected:** location, name, phone number, address, photos, videos, audio files, contacts, calendar, device IDs, crash logs, diagnostics, health/fitness, messages, web browsing, playlists (not implemented in app)
 
 ### 4. Privacy Policy URL in Play Console (Play Console only — not a code change)
-- [ ] Enter the privacy policy URL (`https://streamtunes.net/privacy-policy`) in the designated Play Console field
+- [ X ] Enter the privacy policy URL (`https://streamtunes.net/privacy-policy`) in the designated Play Console field
 
 ## MEDIUM Priority
 
