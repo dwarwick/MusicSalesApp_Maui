@@ -116,7 +116,8 @@ public partial class RegisterViewModel : ObservableObject
                 {
                     ["UserId"] = userId,
                     ["Email"] = Email.Trim(),
-                    ["Password"] = Password
+                    ["Password"] = Password,
+                    ["CodeAlreadySent"] = true
                 };
                 await _navigationService.GoToAsync("verify-email", parameters);
             }

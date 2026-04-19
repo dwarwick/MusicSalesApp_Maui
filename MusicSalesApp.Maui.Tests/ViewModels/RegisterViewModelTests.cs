@@ -188,7 +188,11 @@ public class RegisterViewModelTests
         await _viewModel.RegisterCommand.ExecuteAsync(null);
 
         _mockAuthService.Verify(a => a.RegisterAsync("test@test.com", "Passw0rd!"), Times.Once);
-        _mockNavigationService.Verify(n => n.GoToAsync("verify-email", It.IsAny<Dictionary<string, object>>()), Times.Once);
+        _mockNavigationService.Verify(n => n.GoToAsync("verify-email", It.Is<Dictionary<string, object>>(d =>
+            (int)d["UserId"] == 42 &&
+            (string)d["Email"] == "test@test.com" &&
+            (string)d["Password"] == "Passw0rd!" &&
+            (bool)d["CodeAlreadySent"] == true)), Times.Once);
     }
 
     // --- Open policy commands navigate in-app ---

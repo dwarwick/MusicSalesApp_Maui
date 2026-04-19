@@ -7,6 +7,7 @@ namespace MusicSalesApp.Maui.ViewModels;
 [QueryProperty(nameof(UserId), "UserId")]
 [QueryProperty(nameof(Email), "Email")]
 [QueryProperty(nameof(Password), "Password")]
+[QueryProperty(nameof(CodeAlreadySent), "CodeAlreadySent")]
 public partial class VerifyEmailViewModel : ObservableObject
 {
     private readonly IAuthService _authService;
@@ -27,6 +28,13 @@ public partial class VerifyEmailViewModel : ObservableObject
 
     [ObservableProperty]
     public partial string Code { get; set; } = string.Empty;
+
+    /// <summary>
+    /// When true, a verification code was already sent (e.g. during registration),
+    /// so OnAppearingAsync skips the redundant resend that would hit the cooldown.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool CodeAlreadySent { get; set; }
 
     [ObservableProperty]
     public partial bool IsBusy { get; set; }
@@ -67,6 +75,12 @@ public partial class VerifyEmailViewModel : ObservableObject
             return;
 
         _hasAutoSent = true;
+
+        if (CodeAlreadySent)
+        {
+            StatusMessage = "A verification code has been sent to your email.";
+            return;
+        }
 
         try
         {

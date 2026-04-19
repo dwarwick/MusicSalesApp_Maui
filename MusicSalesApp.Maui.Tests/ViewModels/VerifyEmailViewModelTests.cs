@@ -319,5 +319,41 @@ public class VerifyEmailViewModelTests
         Assert.That(_viewModel.ErrorMessage, Is.Null);
     }
 
+    [Test]
+    public async Task OnAppearingAsync_CodeAlreadySent_SkipsResendAndSetsStatus()
+    {
+        _viewModel.CodeAlreadySent = true;
+
+        await _viewModel.OnAppearingAsync();
+
+        _mockAuthService.Verify(a => a.ResendCodeAsync(It.IsAny<int>()), Times.Never);
+        Assert.That(_viewModel.StatusMessage, Does.Contain("verification code"));
+    }
+
+    [Test]
+    public async Task OnAppearingAsync_CodeAlreadySent_False_StillCallsResend()
+    {
+        _viewModel.CodeAlreadySent = false;
+        _mockAuthService.Setup(a => a.ResendCodeAsync(1))
+            .ReturnsAsync((true, string.Empty));
+
+        await _viewModel.OnAppearingAsync();
+
+        _mockAuthService.Verify(a => a.ResendCodeAsync(1), Times.Once);
+        Assert.That(_viewModel.StatusMessage, Does.Contain("verification code"));
+    }
+
+    [Test]
+    public async Task OnAppearingAsync_CodeAlreadySent_OnlySetsStatusOnce()
+    {
+        _viewModel.CodeAlreadySent = true;
+
+        await _viewModel.OnAppearingAsync();
+        await _viewModel.OnAppearingAsync();
+
+        _mockAuthService.Verify(a => a.ResendCodeAsync(It.IsAny<int>()), Times.Never);
+        Assert.That(_viewModel.StatusMessage, Does.Contain("verification code"));
+    }
+
     #endregion
 }
