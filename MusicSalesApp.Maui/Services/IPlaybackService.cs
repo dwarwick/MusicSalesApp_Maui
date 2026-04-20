@@ -19,11 +19,35 @@ public interface IPlaybackService
     bool IsRepeatEnabled { get; }
     bool PreviewLimitReached { get; }
 
+    // --- Playlist state ---
+    List<SongDto>? Playlist { get; }
+    int CurrentTrackIndex { get; }
+    bool HasPlaylist { get; }
+    bool IsShuffleEnabled { get; }
+
     // --- Commands / actions ---
     void PlaySong(SongDto song);
     void TogglePlayPause();
     void Stop();
     void ToggleRepeat();
+
+    /// <summary>Loads a playlist and starts playing at the given index.</summary>
+    void SetPlaylist(List<SongDto> songs, int startIndex);
+
+    /// <summary>Exits playlist mode without stopping playback.</summary>
+    void ClearPlaylist();
+
+    /// <summary>Advances to the next track (respects shuffle/repeat).</summary>
+    void PlayNext();
+
+    /// <summary>Goes to the previous track.</summary>
+    void PlayPrevious();
+
+    /// <summary>Jumps to a specific track in the playlist by index.</summary>
+    void PlayTrackAtIndex(int index);
+
+    /// <summary>Toggles shuffle on/off, regenerating shuffle order as needed.</summary>
+    void ToggleShuffle();
 
     /// <summary>Called by MediaElement timer tick to update position/duration.</summary>
     void UpdatePosition(TimeSpan position, TimeSpan duration);

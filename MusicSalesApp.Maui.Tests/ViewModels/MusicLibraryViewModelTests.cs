@@ -108,16 +108,17 @@ public class MusicLibraryViewModelTests
     }
 
     [Test]
-    public void PlaySong_DelegatesToPlaybackService()
+    public void PlaySong_SetsPlaylistOnPlaybackService()
     {
         // Arrange
         var song = new SongDto { Id = 1, SongTitle = "Test", StreamUrl = "https://example.com/test.mp3" };
+        _viewModel.Songs.Add(song);
 
         // Act
         _viewModel.PlaySongCommand.Execute(song);
 
-        // Assert
-        _mockPlaybackService.Verify(p => p.PlaySong(song), Times.Once);
+        // Assert — now uses SetPlaylist instead of PlaySong
+        _mockPlaybackService.Verify(p => p.SetPlaylist(It.Is<List<SongDto>>(l => l.Count == 1 && l[0] == song), 0), Times.Once);
     }
 
     [Test]
@@ -789,5 +790,63 @@ public class MusicLibraryViewModelTests
         await _viewModel.ReportSongCommand.ExecuteAsync(song);
 
         _mockAlertService.Verify(a => a.DisplayAlertAsync("Already Reported", It.IsAny<string>(), "OK"), Times.Once);
+    }
+
+    // --- Navigate to Genre/Artist ---
+
+    [Test]
+    public async Task NavigateToGenre_NavigatesToPlaylistPlayer()
+    {
+        await _viewModel.NavigateToGenreCommand.ExecuteAsync("Rock");
+
+        _mockNavigationService.Verify(n =>
+            n.GoToAsync("playlist-player", It.Is<IDictionary<string, object>>(d =>
+                d.ContainsKey("GenreName") && (string)d["GenreName"] == "Rock")),
+            Times.Once);
+    }
+
+    [Test]
+    public async Task NavigateToArtist_NavigatesToPlaylistPlayer()
+    {
+        await _viewModel.NavigateToArtistCommand.ExecuteAsync("Band A");
+
+        _mockNavigationService.Verify(n =>
+            n.GoToAsync("playlist-player", It.Is<IDictionary<string, object>>(d =>
+                d.ContainsKey("ArtistName") && (string)d["ArtistName"] == "Band A")),
+            Times.Once);
+    }
+
+    [Test]
+    public async Task NavigateToGenre_Null_DoesNothing()
+    {
+        await _viewModel.NavigateToGenreCommand.ExecuteAsync(null);
+
+        _mockNavigationService.Verify(n =>
+            n.GoToAsync(It.IsAny<string>(), It.IsAny<IDictionary<string, object>>()),
+            Times.Never);
+    }
+
+    // --- Play as Playlist ---
+
+    [Test]
+    public void PlaySong_SetsPlaylistWithFilteredSongs()
+    {
+        var songs = new List<SongDto>
+        {
+            new() { Id = 1, SongTitle = "Song A", Genre = "Rock", ArtistName = "A" },
+            new() { Id = 2, SongTitle = "Song B", Genre = "Pop", ArtistName = "B" },
+            new() { Id = 3, SongTitle = "Song C", Genre = "Rock", ArtistName = "C" },
+        };
+
+        // Simulate loading songs into the ViewModel
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
+        _viewModel.LoadSongsCommand.Execute(null);
+
+        // After loading, all 3 songs are in Songs collection
+        // Play the second song
+        _viewModel.PlaySongCommand.Execute(songs[1]);
+
+        _mockPlaybackService.Verify(p =>
+            p.SetPlaylist(It.Is<List<SongDto>>(l => l.Count == 3), 1), Times.Once);
     }
 }

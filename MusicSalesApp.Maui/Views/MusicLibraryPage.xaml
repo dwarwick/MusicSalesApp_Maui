@@ -152,7 +152,8 @@
         <!-- Song List -->
         <RefreshView x:Name="SongsRefreshView"
                      Grid.Row="2"
-                     IsRefreshing="{Binding IsLoading}">
+                     Command="{Binding LoadSongsCommand}"
+                     IsRefreshing="{Binding IsLoading, Mode=OneWay}">
             <CollectionView ItemsSource="{Binding Songs}"
                             SelectionMode="None">
                 <CollectionView.EmptyView>
@@ -224,7 +225,14 @@
                                            TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
                                            LineBreakMode="TailTruncation"
                                            MaxLines="1"
-                                           VerticalOptions="Center" />
+                                           VerticalOptions="Center"
+                                           TextDecorations="Underline">
+                                        <Label.GestureRecognizers>
+                                            <TapGestureRecognizer
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MusicLibraryViewModel}}, Path=NavigateToArtistCommand}"
+                                                CommandParameter="{Binding ArtistName}" />
+                                        </Label.GestureRecognizers>
+                                    </Label>
                                 </HorizontalStackLayout>
 
                                 <!-- Genre · Stream Count · Song Length -->
@@ -232,8 +240,15 @@
                                                         Spacing="4">
                                     <Label Text="{Binding Genre}"
                                            FontSize="12"
-                                           TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray400}}"
-                                           IsVisible="{Binding Genre, Converter={toolkit:IsStringNotNullOrEmptyConverter}}" />
+                                           TextColor="{StaticResource Primary}"
+                                           TextDecorations="Underline"
+                                           IsVisible="{Binding Genre, Converter={toolkit:IsStringNotNullOrEmptyConverter}}">
+                                        <Label.GestureRecognizers>
+                                            <TapGestureRecognizer
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MusicLibraryViewModel}}, Path=NavigateToGenreCommand}"
+                                                CommandParameter="{Binding Genre}" />
+                                        </Label.GestureRecognizers>
+                                    </Label>
                                     <Label Text="·"
                                            FontSize="12"
                                            TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}"

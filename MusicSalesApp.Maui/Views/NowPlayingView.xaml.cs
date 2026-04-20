@@ -31,6 +31,9 @@ public partial class NowPlayingView : ContentView
         PlayPauseButton.Clicked += OnPlayPauseClicked;
         StopButton.Clicked += OnStopClicked;
         RepeatTap.Tapped += OnRepeatClicked;
+        ShuffleTap.Tapped += OnShuffleClicked;
+        PrevTap.Tapped += OnPrevClicked;
+        NextTap.Tapped += OnNextClicked;
 
         _playbackService.StateChanged += OnPlaybackStateChanged;
 
@@ -43,6 +46,7 @@ public partial class NowPlayingView : ContentView
         UpdateStopButtonVisibility();
         UpdateRepeatVisual();
         UpdateTimeLabels();
+        UpdatePlaylistControls();
     }
 
     private bool _isSeeking;
@@ -58,6 +62,18 @@ public partial class NowPlayingView : ContentView
         _playbackService?.ToggleRepeat();
         UpdateRepeatVisual();
     }
+
+    private void OnShuffleClicked(object? sender, TappedEventArgs e)
+    {
+        _playbackService?.ToggleShuffle();
+        UpdateShuffleVisual();
+    }
+
+    private void OnPrevClicked(object? sender, TappedEventArgs e) =>
+        _playbackService?.PlayPrevious();
+
+    private void OnNextClicked(object? sender, TappedEventArgs e) =>
+        _playbackService?.PlayNext();
 
     private void OnSliderDragStarted(object? sender, EventArgs e) =>
         _isSeeking = true;
@@ -93,6 +109,12 @@ public partial class NowPlayingView : ContentView
                 case nameof(IPlaybackService.FormattedDuration):
                     UpdateTimeLabels();
                     UpdatePreviewMarker();
+                    break;
+                case nameof(IPlaybackService.HasPlaylist):
+                    UpdatePlaylistControls();
+                    break;
+                case nameof(IPlaybackService.IsShuffleEnabled):
+                    UpdateShuffleVisual();
                     break;
             }
         });
@@ -159,6 +181,36 @@ public partial class NowPlayingView : ContentView
                     ? Color.FromArgb("#B3B3B3")
                     : Colors.Black);
             RepeatBorder.BackgroundColor = Colors.Transparent;
+        }
+    }
+
+    private void UpdatePlaylistControls()
+    {
+        var hasPlaylist = _playbackService?.HasPlaylist == true;
+        ShuffleBorder.IsVisible = hasPlaylist;
+        PrevBorder.IsVisible = hasPlaylist;
+        NextBorder.IsVisible = hasPlaylist;
+        if (hasPlaylist)
+            UpdateShuffleVisual();
+    }
+
+    private void UpdateShuffleVisual()
+    {
+        var isShuffle = _playbackService?.IsShuffleEnabled == true;
+        if (isShuffle)
+        {
+            ShuffleIcon.Fill = new SolidColorBrush(Color.FromArgb("#1DB954"));
+            ShuffleBorder.BackgroundColor = Application.Current?.RequestedTheme == AppTheme.Dark
+                ? Color.FromArgb("#1DB95433")
+                : Color.FromArgb("#1DB95422");
+        }
+        else
+        {
+            ShuffleIcon.Fill = new SolidColorBrush(
+                Application.Current?.RequestedTheme == AppTheme.Dark
+                    ? Color.FromArgb("#B3B3B3")
+                    : Colors.Black);
+            ShuffleBorder.BackgroundColor = Colors.Transparent;
         }
     }
 

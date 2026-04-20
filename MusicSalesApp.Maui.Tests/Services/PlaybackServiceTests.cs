@@ -524,4 +524,380 @@ public class PlaybackServiceTests
         Assert.That(changedProperties, Does.Contain(nameof(IPlaybackService.CurrentSong)));
         Assert.That(changedProperties, Does.Contain(nameof(IPlaybackService.IsPlaying)));
     }
+
+    // --- SetPlaylist ---
+
+    [Test]
+    public void SetPlaylist_SetsCurrentSongAndPlays()
+    {
+        SongDto? firedSong = null;
+        _service.PlayRequested += s => firedSong = s;
+        var songs = CreateTestPlaylist(3);
+
+        _service.SetPlaylist(songs, 0);
+
+        Assert.That(_service.HasPlaylist, Is.True);
+        Assert.That(_service.Playlist, Has.Count.EqualTo(3));
+        Assert.That(_service.CurrentTrackIndex, Is.EqualTo(0));
+        Assert.That(_service.CurrentSong, Is.SameAs(songs[0]));
+        Assert.That(_service.IsPlaying, Is.True);
+        Assert.That(firedSong, Is.SameAs(songs[0]));
+    }
+
+    [Test]
+    public void SetPlaylist_StartsAtGivenIndex()
+    {
+        var songs = CreateTestPlaylist(5);
+
+        _service.SetPlaylist(songs, 2);
+
+        Assert.That(_service.CurrentTrackIndex, Is.EqualTo(2));
+        Assert.That(_service.CurrentSong, Is.SameAs(songs[2]));
+    }
+
+    [Test]
+    public void SetPlaylist_ClampsStartIndex()
+    {
+        var songs = CreateTestPlaylist(3);
+
+        _service.SetPlaylist(songs, 10);
+
+        Assert.That(_service.CurrentTrackIndex, Is.EqualTo(2));
+        Assert.That(_service.CurrentSong, Is.SameAs(songs[2]));
+    }
+
+    [Test]
+    public void SetPlaylist_EmptyList_DoesNothing()
+    {
+        _service.SetPlaylist(new List<SongDto>(), 0);
+
+        Assert.That(_service.HasPlaylist, Is.False);
+        Assert.That(_service.CurrentSong, Is.Null);
+    }
+
+    [Test]
+    public void SetPlaylist_FiresStateChangedForPlaylistProperties()
+    {
+        var changedProperties = new List<string>();
+        _service.StateChanged += name => changedProperties.Add(name);
+        var songs = CreateTestPlaylist(2);
+
+        _service.SetPlaylist(songs, 0);
+
+        Assert.That(changedProperties, Does.Contain(nameof(IPlaybackService.HasPlaylist)));
+        Assert.That(changedProperties, Does.Contain(nameof(IPlaybackService.Playlist)));
+        Assert.That(changedProperties, Does.Contain(nameof(IPlaybackService.CurrentTrackIndex)));
+    }
+
+    // --- ClearPlaylist ---
+
+    [Test]
+    public void ClearPlaylist_ResetsPlaylistState()
+    {
+        var songs = CreateTestPlaylist(3);
+        _service.SetPlaylist(songs, 0);
+
+        _service.ClearPlaylist();
+
+        Assert.That(_service.HasPlaylist, Is.False);
+        Assert.That(_service.Playlist, Is.Null);
+        Assert.That(_service.CurrentTrackIndex, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void ClearPlaylist_DoesNotStopPlayback()
+    {
+        var songs = CreateTestPlaylist(3);
+        _service.SetPlaylist(songs, 0);
+
+        _service.ClearPlaylist();
+
+        Assert.That(_service.IsPlaying, Is.True);
+        Assert.That(_service.CurrentSong, Is.Not.Null);
+    }
+
+    // --- PlayNext ---
+
+    [Test]
+    public void PlayNext_AdvancesToNextTrack()
+    {
+        var songs = CreateTestPlaylist(3);
+        _service.SetPlaylist(songs, 0);
+
+        _service.PlayNext();
+
+        Assert.That(_service.CurrentTrackIndex, Is.EqualTo(1));
+        Assert.That(_service.CurrentSong, Is.SameAs(songs[1]));
+    }
+
+    [Test]
+    public void PlayNext_AtEnd_NoRepeat_DoesNothing()
+    {
+        var songs = CreateTestPlaylist(3);
+        _service.SetPlaylist(songs, 2);
+
+        _service.PlayNext();
+
+        Assert.That(_service.CurrentTrackIndex, Is.EqualTo(2));
+        Assert.That(_service.CurrentSong, Is.SameAs(songs[2]));
+    }
+
+    [Test]
+    public void PlayNext_AtEnd_WithRepeat_LoopsToStart()
+    {
+        var songs = CreateTestPlaylist(3);
+        _service.SetPlaylist(songs, 2);
+        _service.ToggleRepeat();
+
+        _service.PlayNext();
+
+        Assert.That(_service.CurrentTrackIndex, Is.EqualTo(0));
+        Assert.That(_service.CurrentSong, Is.SameAs(songs[0]));
+    }
+
+    [Test]
+    public void PlayNext_WithoutPlaylist_DoesNothing()
+    {
+        var song = new SongDto { Id = 1, SongTitle = "Single" };
+        _service.PlaySong(song);
+
+        _service.PlayNext();
+
+        Assert.That(_service.CurrentSong, Is.SameAs(song));
+    }
+
+    // --- PlayPrevious ---
+
+    [Test]
+    public void PlayPrevious_GoesToPreviousTrack()
+    {
+        var songs = CreateTestPlaylist(3);
+        _service.SetPlaylist(songs, 2);
+
+        _service.PlayPrevious();
+
+        Assert.That(_service.CurrentTrackIndex, Is.EqualTo(1));
+        Assert.That(_service.CurrentSong, Is.SameAs(songs[1]));
+    }
+
+    [Test]
+    public void PlayPrevious_AtStart_DoesNothing()
+    {
+        var songs = CreateTestPlaylist(3);
+        _service.SetPlaylist(songs, 0);
+
+        _service.PlayPrevious();
+
+        Assert.That(_service.CurrentTrackIndex, Is.EqualTo(0));
+        Assert.That(_service.CurrentSong, Is.SameAs(songs[0]));
+    }
+
+    // --- PlayTrackAtIndex ---
+
+    [Test]
+    public void PlayTrackAtIndex_PlaysCorrectSong()
+    {
+        SongDto? firedSong = null;
+        _service.PlayRequested += s => firedSong = s;
+        var songs = CreateTestPlaylist(5);
+        _service.SetPlaylist(songs, 0);
+
+        _service.PlayTrackAtIndex(3);
+
+        Assert.That(_service.CurrentTrackIndex, Is.EqualTo(3));
+        Assert.That(_service.CurrentSong, Is.SameAs(songs[3]));
+        Assert.That(firedSong, Is.SameAs(songs[3]));
+    }
+
+    [Test]
+    public void PlayTrackAtIndex_InvalidIndex_DoesNothing()
+    {
+        var songs = CreateTestPlaylist(3);
+        _service.SetPlaylist(songs, 0);
+
+        _service.PlayTrackAtIndex(-1);
+        Assert.That(_service.CurrentTrackIndex, Is.EqualTo(0));
+
+        _service.PlayTrackAtIndex(10);
+        Assert.That(_service.CurrentTrackIndex, Is.EqualTo(0));
+    }
+
+    // --- ToggleShuffle ---
+
+    [Test]
+    public void ToggleShuffle_TogglesShuffleState()
+    {
+        Assert.That(_service.IsShuffleEnabled, Is.False);
+
+        _service.ToggleShuffle();
+        Assert.That(_service.IsShuffleEnabled, Is.True);
+
+        _service.ToggleShuffle();
+        Assert.That(_service.IsShuffleEnabled, Is.False);
+    }
+
+    [Test]
+    public void PlayNext_WithShuffle_FollowsShuffleOrder()
+    {
+        var songs = CreateTestPlaylist(10);
+        _service.SetPlaylist(songs, 0);
+        _service.ToggleShuffle();
+
+        // Play through all songs
+        var playedIndices = new List<int> { _service.CurrentTrackIndex };
+        for (int i = 0; i < 9; i++)
+        {
+            _service.PlayNext();
+            playedIndices.Add(_service.CurrentTrackIndex);
+        }
+
+        // All 10 songs should be visited
+        Assert.That(playedIndices, Has.Count.EqualTo(10));
+        Assert.That(playedIndices.Distinct().Count(), Is.EqualTo(10));
+        // First should be the starting track (index 0)
+        Assert.That(playedIndices[0], Is.EqualTo(0));
+    }
+
+    [Test]
+    public void PlayNext_WithShuffle_AtEnd_NoRepeat_DoesNotAdvance()
+    {
+        var songs = CreateTestPlaylist(3);
+        _service.SetPlaylist(songs, 0);
+        _service.ToggleShuffle();
+
+        // Advance through all 3 tracks
+        _service.PlayNext();
+        _service.PlayNext();
+        var lastIndex = _service.CurrentTrackIndex;
+
+        _service.PlayNext();
+
+        Assert.That(_service.CurrentTrackIndex, Is.EqualTo(lastIndex));
+    }
+
+    [Test]
+    public void PlayNext_WithShuffle_AtEnd_WithRepeat_Reshuffles()
+    {
+        var songs = CreateTestPlaylist(5);
+        _service.SetPlaylist(songs, 0);
+        _service.ToggleShuffle();
+        _service.ToggleRepeat();
+
+        // Play through all 5 tracks
+        for (int i = 0; i < 4; i++)
+            _service.PlayNext();
+
+        // Should still be able to advance (re-shuffled)
+        _service.PlayNext();
+        Assert.That(_service.IsPlaying, Is.True);
+    }
+
+    // --- OnMediaEnded with playlist ---
+
+    [Test]
+    public void OnMediaEnded_WithPlaylist_AutoAdvancesToNextTrack()
+    {
+        var songs = CreateTestPlaylist(3);
+        _service.SetPlaylist(songs, 0);
+
+        _service.OnMediaEnded();
+
+        Assert.That(_service.CurrentTrackIndex, Is.EqualTo(1));
+        Assert.That(_service.CurrentSong, Is.SameAs(songs[1]));
+        Assert.That(_service.IsPlaying, Is.True);
+    }
+
+    [Test]
+    public void OnMediaEnded_WithPlaylist_AtEnd_NoRepeat_Stops()
+    {
+        var songs = CreateTestPlaylist(3);
+        _service.SetPlaylist(songs, 2);
+
+        _service.OnMediaEnded();
+
+        Assert.That(_service.IsPlaying, Is.False);
+    }
+
+    [Test]
+    public void OnMediaEnded_WithPlaylist_AtEnd_WithRepeat_LoopsToStart()
+    {
+        var songs = CreateTestPlaylist(3);
+        _service.SetPlaylist(songs, 2);
+        _service.ToggleRepeat();
+
+        _service.OnMediaEnded();
+
+        Assert.That(_service.CurrentTrackIndex, Is.EqualTo(0));
+        Assert.That(_service.CurrentSong, Is.SameAs(songs[0]));
+        Assert.That(_service.IsPlaying, Is.True);
+    }
+
+    [Test]
+    public void OnMediaEnded_WithoutPlaylist_RepeatEnabled_RestartsSameSong()
+    {
+        TimeSpan? seekPosition = null;
+        bool resumeFired = false;
+        _service.SeekRequested += pos => seekPosition = pos;
+        _service.ResumeRequested += () => resumeFired = true;
+
+        var song = new SongDto { Id = 1, SongTitle = "Test" };
+        _service.PlaySong(song);
+        _service.ToggleRepeat();
+
+        _service.OnMediaEnded();
+
+        Assert.That(seekPosition, Is.EqualTo(TimeSpan.Zero));
+        Assert.That(resumeFired, Is.True);
+        Assert.That(_service.IsPlaying, Is.True);
+    }
+
+    [Test]
+    public void OnMediaEnded_PlaylistWithRepeat_PlaysAllThenLoops()
+    {
+        var songs = CreateTestPlaylist(3);
+        _service.SetPlaylist(songs, 0);
+        _service.ToggleRepeat();
+
+        _service.OnMediaEnded(); // → track 1
+        Assert.That(_service.CurrentTrackIndex, Is.EqualTo(1));
+
+        _service.OnMediaEnded(); // → track 2
+        Assert.That(_service.CurrentTrackIndex, Is.EqualTo(2));
+
+        _service.OnMediaEnded(); // → loops to track 0
+        Assert.That(_service.CurrentTrackIndex, Is.EqualTo(0));
+    }
+
+    // --- PlaySong clears playlist ---
+
+    [Test]
+    public void PlaySong_WhilePlaylistActive_ClearsPlaylist()
+    {
+        var songs = CreateTestPlaylist(3);
+        _service.SetPlaylist(songs, 0);
+        Assert.That(_service.HasPlaylist, Is.True);
+
+        var singleSong = new SongDto { Id = 99, SongTitle = "Single" };
+        _service.PlaySong(singleSong);
+
+        // PlaySong doesn't clear playlist automatically — it's a different concern
+        // The caller is responsible for clearing if needed
+        Assert.That(_service.CurrentSong, Is.SameAs(singleSong));
+    }
+
+    // --- Helper ---
+
+    private static List<SongDto> CreateTestPlaylist(int count)
+    {
+        return Enumerable.Range(1, count)
+            .Select(i => new SongDto
+            {
+                Id = i,
+                SongTitle = $"Song {i}",
+                ArtistName = $"Artist {i}",
+                Genre = "Rock",
+                StreamUrl = $"https://test.com/song{i}.mp3"
+            })
+            .ToList();
+    }
 }

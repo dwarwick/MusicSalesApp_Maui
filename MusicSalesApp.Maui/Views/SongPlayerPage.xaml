@@ -11,10 +11,12 @@
 
     <Grid RowDefinitions="*,Auto">
         <!-- Scrollable song details -->
-        <ScrollView Grid.Row="0"
-                    Padding="0">
-            <VerticalStackLayout Spacing="16"
-                                 Padding="20,24,20,16">
+        <RefreshView Grid.Row="0"
+                     Command="{Binding RefreshCommand}"
+                     IsRefreshing="{Binding IsRefreshing, Mode=OneWay}">
+            <ScrollView Padding="0">
+                <VerticalStackLayout Spacing="16"
+                                     Padding="20,24,20,16">
 
                 <!-- Large Album Art -->
                 <Border HorizontalOptions="Center"
@@ -52,7 +54,13 @@
                     <Label Text="{Binding Song.ArtistName}"
                            FontSize="16"
                            TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
-                           VerticalOptions="Center" />
+                           VerticalOptions="Center"
+                           TextDecorations="Underline">
+                        <Label.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding NavigateToArtistCommand}"
+                                                  CommandParameter="{Binding Song.ArtistName}" />
+                        </Label.GestureRecognizers>
+                    </Label>
                     <Button Text="Bio"
                             FontSize="12"
                             Padding="8,2"
@@ -76,7 +84,13 @@
                             IsVisible="{Binding Song.Genre, Converter={toolkit:IsStringNotNullOrEmptyConverter}}">
                         <Label Text="{Binding Song.Genre}"
                                FontSize="12"
-                               TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}" />
+                               TextColor="{StaticResource Primary}"
+                               TextDecorations="Underline">
+                            <Label.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding NavigateToGenreCommand}"
+                                                      CommandParameter="{Binding Song.Genre}" />
+                            </Label.GestureRecognizers>
+                        </Label>
                     </Border>
                     <Label Text="·"
                            FontSize="14"
@@ -101,11 +115,12 @@
                            Text="{Binding Song.TrackLengthSeconds, Converter={StaticResource DurationConverter}}" />
                 </HorizontalStackLayout>
 
-                <!-- Subscription Badge -->
+                <!-- Subscription Badge (hidden for subscribers) -->
                 <Border HorizontalOptions="Center"
                         Padding="12,6"
                         StrokeShape="RoundRectangle 16"
                         StrokeThickness="0"
+                        IsVisible="{Binding HasActiveSubscription, Converter={toolkit:InvertedBoolConverter}}"
                         BackgroundColor="{Binding HasActiveSubscription, Converter={StaticResource SubBadgeBgConverter}}">
                     <Label FontSize="12"
                            FontAttributes="Bold"
@@ -191,8 +206,9 @@
                                HorizontalTextAlignment="Center" />
                     </VerticalStackLayout>
                 </HorizontalStackLayout>
-            </VerticalStackLayout>
-        </ScrollView>
+                </VerticalStackLayout>
+            </ScrollView>
+        </RefreshView>
 
         <!-- Now Playing Bar at bottom -->
         <views:NowPlayingView x:Name="NowPlayingBar"

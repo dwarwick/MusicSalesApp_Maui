@@ -30,6 +30,13 @@ public class PlaybackService : IPlaybackService
     private int _nextCtaThreshold;
     private readonly Random _random = new();
 
+    // Playlist state
+    private List<SongDto>? _playlist;
+    private int _currentTrackIndex;
+    private bool _isShuffleEnabled;
+    private List<int>? _shuffledTrackOrder;
+    private int _currentShufflePosition;
+
     public PlaybackService(IAuthService authService, IMusicService musicService)
     {
         _authService = authService;
@@ -86,6 +93,18 @@ public class PlaybackService : IPlaybackService
     {
         get => _previewLimitReached;
         private set { _previewLimitReached = value; RaiseStateChanged(nameof(PreviewLimitReached)); }
+    }
+
+    public List<SongDto>? Playlist => _playlist;
+
+    public int CurrentTrackIndex => _currentTrackIndex;
+
+    public bool HasPlaylist => _playlist != null && _playlist.Count > 0;
+
+    public bool IsShuffleEnabled
+    {
+        get => _isShuffleEnabled;
+        private set { _isShuffleEnabled = value; RaiseStateChanged(nameof(IsShuffleEnabled)); }
     }
 
     // --- Events ---
@@ -193,9 +212,20 @@ public class PlaybackService : IPlaybackService
 
     public void OnMediaEnded()
     {
-        if (IsRepeatEnabled && CurrentSong != null)
+        // Playlist mode: auto-advance to next track
+        if (HasPlaylist)
         {
-            // Restart the same song
+            var nextIndex = GetNextTrackIndex();
+            if (nextIndex.HasValue)
+            {
+                PlayTrackAtIndex(nextIndex.Value);
+                return;
+            }
+            // End of playlist, no repeat — stop
+        }
+        else if (IsRepeatEnabled && CurrentSong != null)
+        {
+            // Single-song repeat (no playlist)
             ResetStreamTracking(CurrentSong.Id);
             PreviewLimitReached = false;
             SeekRequested?.Invoke(TimeSpan.Zero);
@@ -204,6 +234,166 @@ public class PlaybackService : IPlaybackService
         }
 
         IsPlaying = false;
+    }
+
+    // --- Playlist methods ---
+
+    public void SetPlaylist(List<SongDto> songs, int startIndex)
+    {
+        if (songs.Count == 0) return;
+
+        _playlist = new List<SongDto>(songs);
+        _currentTrackIndex = Math.Clamp(startIndex, 0, songs.Count - 1);
+
+        if (_isShuffleEnabled)
+            GenerateShuffleOrder();
+
+        RaiseStateChanged(nameof(HasPlaylist));
+        RaiseStateChanged(nameof(Playlist));
+        RaiseStateChanged(nameof(CurrentTrackIndex));
+
+        // Start playing the selected track
+        var song = _playlist[_currentTrackIndex];
+        ResetStreamTracking(song.Id);
+        PreviewLimitReached = false;
+        CurrentSong = song;
+        IsPlaying = true;
+        PlayRequested?.Invoke(song);
+    }
+
+    public void ClearPlaylist()
+    {
+        _playlist = null;
+        _currentTrackIndex = 0;
+        _shuffledTrackOrder = null;
+        _currentShufflePosition = 0;
+
+        RaiseStateChanged(nameof(HasPlaylist));
+        RaiseStateChanged(nameof(Playlist));
+        RaiseStateChanged(nameof(CurrentTrackIndex));
+    }
+
+    public void PlayNext()
+    {
+        if (!HasPlaylist) return;
+
+        var nextIndex = GetNextTrackIndex();
+        if (nextIndex.HasValue)
+            PlayTrackAtIndex(nextIndex.Value);
+    }
+
+    public void PlayPrevious()
+    {
+        if (!HasPlaylist) return;
+
+        var prevIndex = GetPreviousTrackIndex();
+        if (prevIndex.HasValue)
+            PlayTrackAtIndex(prevIndex.Value);
+    }
+
+    public void PlayTrackAtIndex(int index)
+    {
+        if (_playlist == null || index < 0 || index >= _playlist.Count)
+            return;
+
+        _currentTrackIndex = index;
+        RaiseStateChanged(nameof(CurrentTrackIndex));
+
+        // Update shuffle position if shuffle is active
+        if (_isShuffleEnabled && _shuffledTrackOrder != null)
+        {
+            var shufflePos = _shuffledTrackOrder.IndexOf(index);
+            if (shufflePos >= 0)
+                _currentShufflePosition = shufflePos;
+        }
+
+        var song = _playlist[index];
+        ResetStreamTracking(song.Id);
+        PreviewLimitReached = false;
+        CurrentSong = song;
+        IsPlaying = true;
+        PlayRequested?.Invoke(song);
+    }
+
+    public void ToggleShuffle()
+    {
+        IsShuffleEnabled = !_isShuffleEnabled;
+
+        if (_isShuffleEnabled)
+            GenerateShuffleOrder();
+        else
+            _shuffledTrackOrder = null;
+    }
+
+    private int? GetNextTrackIndex()
+    {
+        if (_playlist == null || _playlist.Count == 0) return null;
+
+        if (_isShuffleEnabled && _shuffledTrackOrder != null)
+        {
+            var nextShufflePos = _currentShufflePosition + 1;
+            if (nextShufflePos < _shuffledTrackOrder.Count)
+                return _shuffledTrackOrder[nextShufflePos];
+
+            // End of shuffle — if repeat, regenerate and start over
+            if (IsRepeatEnabled)
+            {
+                GenerateShuffleOrder();
+                return _shuffledTrackOrder.Count > 0 ? _shuffledTrackOrder[0] : null;
+            }
+            return null;
+        }
+
+        // Sequential mode
+        var nextIndex = _currentTrackIndex + 1;
+        if (nextIndex < _playlist.Count)
+            return nextIndex;
+
+        // End of playlist — if repeat, loop to start
+        return IsRepeatEnabled ? 0 : null;
+    }
+
+    private int? GetPreviousTrackIndex()
+    {
+        if (_playlist == null || _playlist.Count == 0) return null;
+
+        if (_isShuffleEnabled && _shuffledTrackOrder != null)
+        {
+            var prevShufflePos = _currentShufflePosition - 1;
+            if (prevShufflePos >= 0)
+                return _shuffledTrackOrder[prevShufflePos];
+            return null; // At start of shuffle order
+        }
+
+        // Sequential mode
+        var prevIndex = _currentTrackIndex - 1;
+        return prevIndex >= 0 ? prevIndex : null;
+    }
+
+    private void GenerateShuffleOrder()
+    {
+        if (_playlist == null || _playlist.Count == 0)
+        {
+            _shuffledTrackOrder = null;
+            return;
+        }
+
+        // Build list of all indices except current
+        var remainingIndices = Enumerable.Range(0, _playlist.Count)
+            .Where(i => i != _currentTrackIndex)
+            .ToList();
+
+        // Fisher-Yates shuffle
+        for (int i = remainingIndices.Count - 1; i > 0; i--)
+        {
+            int j = _random.Next(i + 1);
+            (remainingIndices[i], remainingIndices[j]) = (remainingIndices[j], remainingIndices[i]);
+        }
+
+        // Current track is always first in shuffle order
+        _shuffledTrackOrder = new List<int> { _currentTrackIndex };
+        _shuffledTrackOrder.AddRange(remainingIndices);
+        _currentShufflePosition = 0;
     }
 
     public void SetStreamQualifyingSeconds(int seconds)
