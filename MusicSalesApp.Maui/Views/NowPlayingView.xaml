@@ -130,15 +130,26 @@
                 </Border>
 
                 <!-- Play/Pause Button -->
-                <Button x:Name="PlayPauseButton"
-                        TextColor="Black"
-                        FontSize="18"
+                <Border x:Name="PlayPauseBorder"
+                        StrokeShape="RoundRectangle 20"
+                        StrokeThickness="0"
                         HeightRequest="40"
                         WidthRequest="40"
-                        Padding="0"
-                        CornerRadius="20"
-                        BackgroundColor="{StaticResource Primary}"
-                        VerticalOptions="Center" />
+                        BackgroundColor="Transparent"
+                        VerticalOptions="Center">
+                    <Grid>
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer x:Name="PlayPauseTap" />
+                        </Grid.GestureRecognizers>
+                        <Path x:Name="PlayPauseIcon"
+                              Fill="{AppThemeBinding Light=Black, Dark=White}"
+                              Aspect="Uniform"
+                              HeightRequest="18"
+                              WidthRequest="18"
+                              HorizontalOptions="Center"
+                              VerticalOptions="Center" />
+                    </Grid>
+                </Border>
 
                 <!-- Next Track Button (playlist only) -->
                 <Border x:Name="NextBorder"
@@ -162,16 +173,27 @@
                 </Border>
 
                 <!-- Stop Button -->
-                <Button x:Name="StopButton"
-                        Text="&#x25A0;"
-                        TextColor="{AppThemeBinding Light=Black, Dark=White}"
-                        FontSize="16"
+                <Border x:Name="StopBorder"
+                        StrokeShape="RoundRectangle 20"
+                        StrokeThickness="0"
                         HeightRequest="40"
                         WidthRequest="40"
-                        Padding="0"
-                        CornerRadius="20"
-                        BackgroundColor="{AppThemeBinding Light={StaticResource Gray300}, Dark={StaticResource Gray600}}"
-                        VerticalOptions="Center" />
+                        BackgroundColor="Transparent"
+                        VerticalOptions="Center">
+                    <Grid>
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer x:Name="StopTap" />
+                        </Grid.GestureRecognizers>
+                        <Path x:Name="StopIcon"
+                              Data="M6 6h12v12H6z"
+                              Fill="{AppThemeBinding Light=Black, Dark=White}"
+                              Aspect="Uniform"
+                              HeightRequest="18"
+                              WidthRequest="18"
+                              HorizontalOptions="Center"
+                              VerticalOptions="Center" />
+                    </Grid>
+                </Border>
 
                 <!-- Repeat Button -->
                 <Border x:Name="RepeatBorder"

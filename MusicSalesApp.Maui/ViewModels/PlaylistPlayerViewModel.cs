@@ -7,6 +7,8 @@ namespace MusicSalesApp.Maui.ViewModels;
 
 [QueryProperty(nameof(GenreName), "GenreName")]
 [QueryProperty(nameof(ArtistName), "ArtistName")]
+[QueryProperty(nameof(PlaylistIdParam), "PlaylistId")]
+[QueryProperty(nameof(RecommendedUserIdParam), "RecommendedUserId")]
 public partial class PlaylistPlayerViewModel : ObservableObject
 {
     private readonly IMusicService _musicService;
@@ -17,6 +19,12 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     private readonly ISignalRService _signalRService;
     private readonly IAppConfig _appConfig;
     private readonly IBillingService _billingService;
+    private readonly IPlaylistService _playlistService;
+
+    /// <summary>Id of the currently loaded custom playlist, if any.</summary>
+    private int? _loadedPlaylistId;
+    /// <summary>Maps a song's SongMetadataId to its UserPlaylist row id for reorder/remove.</summary>
+    private readonly Dictionary<int, int> _userPlaylistIdBySongId = [];
 
     public PlaylistPlayerViewModel(
         IMusicService musicService,
@@ -26,7 +34,8 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         IPlaybackService playbackService,
         ISignalRService signalRService,
         IAppConfig appConfig,
-        IBillingService billingService)
+        IBillingService billingService,
+        IPlaylistService playlistService)
     {
         _musicService = musicService;
         _alertService = alertService;
@@ -36,11 +45,17 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         _signalRService = signalRService;
         _appConfig = appConfig;
         _billingService = billingService;
+        _playlistService = playlistService;
 
         _signalRService.OnStreamCountUpdated += HandleStreamCountUpdated;
         _signalRService.OnLikeCountUpdated += HandleLikeCountUpdated;
         _playbackService.StateChanged += OnPlaybackStateChanged;
         _playbackService.ShowSubscribeCtaRequested += OnShowSubscribeCta;
+
+        Songs.CollectionChanged += (_, _) =>
+        {
+            HasSongs = Songs.Count > 0;
+        };
     }
 
     public IPlaybackService PlaybackService => _playbackService;
@@ -51,9 +66,11 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     public partial string PlaylistTitle { get; set; } = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowTracksHeader))]
     public partial SongDto? CurrentSong { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowEmptyPlaylistPrompt))]
     public partial bool IsLoading { get; set; }
 
     [ObservableProperty]
@@ -68,6 +85,35 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     [ObservableProperty]
     public partial string? ArtistName { get; set; }
 
+    /// <summary>Raw query param for PlaylistId (Shell passes int or string).</summary>
+    [ObservableProperty]
+    public partial string? PlaylistIdParam { get; set; }
+
+    /// <summary>Raw query param for RecommendedUserId.</summary>
+    [ObservableProperty]
+    public partial string? RecommendedUserIdParam { get; set; }
+
+    /// <summary>True when the loaded playlist is a user-owned custom playlist (reorder/remove allowed).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsReorderEnabled))]
+    [NotifyPropertyChangedFor(nameof(ShowTracksHeader))]
+    [NotifyPropertyChangedFor(nameof(ShowEmptyPlaylistPrompt))]
+    public partial bool IsUserPlaylist { get; set; }
+
+    /// <summary>True when the user can drag-reorder tracks (custom playlist + active subscription).</summary>
+    public bool IsReorderEnabled => IsUserPlaylist && HasActiveSubscription;
+
+    /// <summary>Tracks Songs.Count changes so computed properties refresh.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowEmptyPlaylistPrompt))]
+    public partial bool HasSongs { get; set; }
+
+    /// <summary>Show the "Tracks" header + Add Songs button whenever a playlist is loaded for the user, or there's a current song.</summary>
+    public bool ShowTracksHeader => IsUserPlaylist || CurrentSong is not null;
+
+    /// <summary>Show the empty-custom-playlist call-to-action when we've finished loading a user playlist that has no songs.</summary>
+    public bool ShowEmptyPlaylistPrompt => IsUserPlaylist && !HasSongs && !IsLoading;
+
     partial void OnGenreNameChanged(string? value)
     {
         if (!string.IsNullOrEmpty(value))
@@ -78,6 +124,23 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     {
         if (!string.IsNullOrEmpty(value))
             _ = LoadPlaylistAsync();
+    }
+
+    partial void OnPlaylistIdParamChanged(string? value)
+    {
+        if (!string.IsNullOrEmpty(value) && int.TryParse(Uri.UnescapeDataString(value), out _))
+            _ = LoadPlaylistAsync();
+    }
+
+    partial void OnRecommendedUserIdParamChanged(string? value)
+    {
+        if (!string.IsNullOrEmpty(value))
+            _ = LoadPlaylistAsync();
+    }
+
+    partial void OnHasActiveSubscriptionChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsReorderEnabled));
     }
 
     public string ShareUrl => CurrentSong?.ShareUrl ?? string.Empty;
@@ -123,6 +186,25 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     {
         ErrorMessage = null;
 
+        // Branch 1: Custom playlist or system playlist (Liked Songs) by id
+        if (TryParseQueryInt(PlaylistIdParam, out var playlistId))
+        {
+            await LoadFromPlaylistServiceAsync(playlistId, loadRecommended: false);
+            return;
+        }
+
+        // Branch 2: Recommended playlist (server scopes to current user from JWT)
+        if (!string.IsNullOrEmpty(RecommendedUserIdParam))
+        {
+            await LoadFromPlaylistServiceAsync(null, loadRecommended: true);
+            return;
+        }
+
+        // Legacy: filter by Genre / Artist using full song list
+        IsUserPlaylist = false;
+        _loadedPlaylistId = null;
+        _userPlaylistIdBySongId.Clear();
+
         var allSongs = await _musicService.GetSongsAsync();
         List<SongDto> filtered;
 
@@ -155,25 +237,171 @@ public partial class PlaylistPlayerViewModel : ObservableObject
             return;
         }
 
-        // Set share URLs
-        foreach (var song in filtered)
+        await FinalizeLoadedSongsAsync(filtered);
+    }
+
+    private async Task LoadFromPlaylistServiceAsync(int? playlistId, bool loadRecommended)
+    {
+        _userPlaylistIdBySongId.Clear();
+        _loadedPlaylistId = null;
+
+        PlaylistSongsDto? result;
+        if (playlistId.HasValue)
+        {
+            result = await _playlistService.GetPlaylistSongsAsync(playlistId.Value);
+            if (result == null)
+            {
+                ErrorMessage = "Failed to load playlist.";
+                IsUserPlaylist = false;
+                return;
+            }
+            _loadedPlaylistId = result.PlaylistId;
+            // Only non-system ("custom") playlists support reorder.
+            IsUserPlaylist = !result.IsSystemGenerated;
+        }
+        else if (loadRecommended)
+        {
+            result = await _playlistService.GetRecommendedSongsAsync();
+            if (result == null)
+            {
+                ErrorMessage = "Failed to load recommended playlist.";
+                IsUserPlaylist = false;
+                return;
+            }
+            IsUserPlaylist = false;
+        }
+        else
+        {
+            return;
+        }
+
+        PlaylistTitle = result.PlaylistName;
+
+        if (result.Songs.Count == 0)
+        {
+            ErrorMessage = "This playlist has no songs yet.";
+            Songs.Clear();
+            return;
+        }
+
+        var mapped = result.Songs.Select(MapToSongDto).ToList();
+        foreach (var ps in result.Songs.Where(ps => ps.UserPlaylistId.HasValue))
+            _userPlaylistIdBySongId[ps.SongMetadataId] = ps.UserPlaylistId!.Value;
+
+        await FinalizeLoadedSongsAsync(mapped);
+    }
+
+    private async Task FinalizeLoadedSongsAsync(List<SongDto> list)
+    {
+        foreach (var song in list)
             song.ShareUrl = SongDto.BuildShareUrl(song.Id, _appConfig.WebBaseUrl);
 
-        // Load like counts and user status
         await Task.WhenAll(
-            LoadLikeCountsAsync(filtered),
-            LoadUserLikeStatusAsync(filtered));
+            LoadLikeCountsAsync(list),
+            LoadUserLikeStatusAsync(list));
 
         Songs.Clear();
-        foreach (var song in filtered)
+        foreach (var song in list)
             Songs.Add(song);
 
         HasActiveSubscription = _authService.HasActiveSubscription;
 
-        // Start playback
-        _playbackService.SetPlaylist(filtered, 0);
+        _playbackService.SetPlaylist(list, 0);
         CurrentSong = _playbackService.CurrentSong;
         OnPropertyChanged(nameof(ShareUrl));
+    }
+
+    private static SongDto MapToSongDto(PlaylistSongDto ps) => new()
+    {
+        Id = ps.SongMetadataId != 0 ? ps.SongMetadataId : ps.Id,
+        SongTitle = ps.SongTitle,
+        ArtistName = ps.ArtistName,
+        Genre = ps.Genre,
+        AlbumArtUrl = ps.AlbumArtUrl,
+        PersonaImageUrl = ps.PersonaImageUrl,
+        PersonaBio = ps.PersonaBio,
+        StreamUrl = ps.StreamUrl,
+        TrackLengthSeconds = ps.TrackLengthSeconds,
+        StreamCount = ps.StreamCount,
+        CreatorUserId = ps.CreatorUserId,
+    };
+
+    private static bool TryParseQueryInt(string? raw, out int value)
+    {
+        value = 0;
+        if (string.IsNullOrEmpty(raw)) return false;
+        return int.TryParse(Uri.UnescapeDataString(raw), out value);
+    }
+
+    /// <summary>
+    /// Persist a new track order to the server. Returns true on success.
+    /// </summary>
+    public async Task<bool> PersistReorderAsync()
+    {
+        if (!IsReorderEnabled || _loadedPlaylistId is null) return false;
+
+        var ids = new List<int>(Songs.Count);
+        foreach (var s in Songs)
+        {
+            if (_userPlaylistIdBySongId.TryGetValue(s.Id, out var upId))
+                ids.Add(upId);
+        }
+        if (ids.Count != Songs.Count)
+            return false;
+
+        var result = await _playlistService.ReorderAsync(_loadedPlaylistId.Value, ids);
+        if (!result.Success)
+        {
+            ErrorMessage = result.ErrorMessage ?? "Failed to save new order.";
+            await LoadPlaylistAsync();
+            return false;
+        }
+        return true;
+    }
+
+    [RelayCommand]
+    private async Task MoveTrackUpAsync(SongDto? song)
+    {
+        if (song == null || !IsReorderEnabled) return;
+        var idx = Songs.IndexOf(song);
+        if (idx <= 0) return;
+        Songs.Move(idx, idx - 1);
+        await PersistReorderAsync();
+    }
+
+    [RelayCommand]
+    private async Task MoveTrackDownAsync(SongDto? song)
+    {
+        if (song == null || !IsReorderEnabled) return;
+        var idx = Songs.IndexOf(song);
+        if (idx < 0 || idx >= Songs.Count - 1) return;
+        Songs.Move(idx, idx + 1);
+        await PersistReorderAsync();
+    }
+
+    // --- Remove song (custom playlists only) ---
+
+    [RelayCommand]
+    private async Task RemoveSongFromPlaylistAsync(SongDto? song)
+    {
+        if (song == null || !IsUserPlaylist || _loadedPlaylistId is null) return;
+        if (!_userPlaylistIdBySongId.TryGetValue(song.Id, out var userPlaylistId)) return;
+
+        var confirmed = await _alertService.ShowConfirmAsync(
+            "Remove song",
+            $"Remove \"{song.SongTitle}\" from this playlist?",
+            "Remove",
+            "Cancel");
+        if (!confirmed) return;
+
+        var result = await _playlistService.RemoveSongAsync(_loadedPlaylistId.Value, userPlaylistId);
+        if (!result.Success)
+        {
+            ErrorMessage = result.ErrorMessage ?? "Failed to remove song from playlist.";
+            return;
+        }
+
+        await LoadPlaylistAsync();
     }
 
     // --- Playback commands ---
@@ -252,6 +480,12 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         {
             ["ArtistName"] = artist
         });
+    }
+
+    [RelayCommand]
+    private async Task GoToMusicLibraryAsync()
+    {
+        await _navigationService.GoToAsync("//MusicLibrary");
     }
 
     // --- Auth helpers ---

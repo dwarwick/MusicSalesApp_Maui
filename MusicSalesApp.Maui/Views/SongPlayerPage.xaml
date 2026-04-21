@@ -186,6 +186,11 @@
                                        ShareUrl="{Binding ShareUrl}"
                                        VerticalOptions="Center" />
 
+                    <!-- Add to Playlist Button -->
+                    <views:AddToPlaylistButton SongId="{Binding Song.Id}"
+                                               SongTitle="{Binding Song.SongTitle}"
+                                               VerticalOptions="Center" />
+
                     <!-- Report Button -->
                     <VerticalStackLayout VerticalOptions="Center"
                                          Spacing="2">

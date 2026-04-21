@@ -9,6 +9,11 @@ namespace MusicSalesApp.Maui.Views;
 /// </summary>
 public partial class NowPlayingView : ContentView
 {
+    private const string PlayIconPathData = "M8 5v14l11-7z";
+    private const string PauseIconPathData = "M6 19h4V5H6zm8-14v14h4V5z";
+    private static readonly Microsoft.Maui.Controls.Shapes.Geometry? PlayIconGeometry = CreateGeometry(PlayIconPathData);
+    private static readonly Microsoft.Maui.Controls.Shapes.Geometry? PauseIconGeometry = CreateGeometry(PauseIconPathData);
+
     private IPlaybackService? _playbackService;
     private IAuthService? _authService;
 
@@ -28,8 +33,8 @@ public partial class NowPlayingView : ContentView
         _playbackService = playbackService;
         _authService = authService;
 
-        PlayPauseButton.Clicked += OnPlayPauseClicked;
-        StopButton.Clicked += OnStopClicked;
+        PlayPauseTap.Tapped += OnPlayPauseClicked;
+        StopTap.Tapped += OnStopClicked;
         RepeatTap.Tapped += OnRepeatClicked;
         ShuffleTap.Tapped += OnShuffleClicked;
         PrevTap.Tapped += OnPrevClicked;
@@ -42,7 +47,7 @@ public partial class NowPlayingView : ContentView
 
         // Set initial state
         UpdateSongInfo();
-        UpdatePlayPauseText();
+        UpdatePlayPauseIcon();
         UpdateStopButtonVisibility();
         UpdateRepeatVisual();
         UpdateTimeLabels();
@@ -51,10 +56,10 @@ public partial class NowPlayingView : ContentView
 
     private bool _isSeeking;
 
-    private void OnPlayPauseClicked(object? sender, EventArgs e) =>
+    private void OnPlayPauseClicked(object? sender, TappedEventArgs e) =>
         _playbackService?.TogglePlayPause();
 
-    private void OnStopClicked(object? sender, EventArgs e) =>
+    private void OnStopClicked(object? sender, TappedEventArgs e) =>
         _playbackService?.Stop();
 
     private void OnRepeatClicked(object? sender, TappedEventArgs e)
@@ -95,7 +100,7 @@ public partial class NowPlayingView : ContentView
                     UpdatePreviewMarker();
                     break;
                 case nameof(IPlaybackService.IsPlaying):
-                    UpdatePlayPauseText();
+                    UpdatePlayPauseIcon();
                     UpdateStopButtonVisibility();
                     break;
                 case nameof(IPlaybackService.IsRepeatEnabled):
@@ -148,20 +153,28 @@ public partial class NowPlayingView : ContentView
         }
     }
 
-    private void UpdatePlayPauseText()
+    private void UpdatePlayPauseIcon()
     {
-        PlayPauseButton.Text = _playbackService?.IsPlaying == true ? "\u23F8" : "\u25B6";
+        PlayPauseIcon.Data = _playbackService?.IsPlaying == true
+            ? PauseIconGeometry
+            : PlayIconGeometry;
     }
 
     private void UpdateStopButtonVisibility()
     {
-        StopButton.IsVisible = _playbackService?.IsPlaying == true;
+        StopBorder.IsVisible = _playbackService?.IsPlaying == true;
     }
 
     private void UpdateTimeLabels()
     {
         PositionLabel.Text = _playbackService?.FormattedPosition ?? "0:00";
         DurationLabel.Text = _playbackService?.FormattedDuration ?? "0:00";
+    }
+
+    private static Microsoft.Maui.Controls.Shapes.Geometry? CreateGeometry(string pathData)
+    {
+        var converter = new Microsoft.Maui.Controls.Shapes.PathGeometryConverter();
+        return converter.ConvertFromInvariantString(pathData) as Microsoft.Maui.Controls.Shapes.Geometry;
     }
 
     private void UpdateRepeatVisual()

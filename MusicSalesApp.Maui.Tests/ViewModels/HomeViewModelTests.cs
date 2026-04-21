@@ -15,6 +15,7 @@ public class HomeViewModelTests
     private Mock<IBillingService> _mockBillingService;
     private Mock<IMusicService> _mockMusicService;
     private Mock<IBrowserService> _mockBrowserService;
+    private Mock<IPlaylistService> _mockPlaylistService;
     private HomeViewModel _viewModel;
 
     [SetUp]
@@ -28,9 +29,12 @@ public class HomeViewModelTests
         _mockBillingService = new Mock<IBillingService>();
         _mockMusicService = new Mock<IMusicService>();
         _mockBrowserService = new Mock<IBrowserService>();
+        _mockPlaylistService = new Mock<IPlaylistService>();
 
         _mockAppSettingsService.Setup(s => s.GetSubscriptionPriceAsync()).ReturnsAsync("3.99");
         _mockAppConfig.Setup(c => c.WebBaseUrl).Returns("https://streamtunes.net");
+        _mockPlaylistService.Setup(p => p.GetHomePlaylistsAsync())
+            .ReturnsAsync(new HomePlaylistsDto());
 
         _viewModel = CreateViewModel();
     }
@@ -45,7 +49,8 @@ public class HomeViewModelTests
             _mockAppConfig.Object,
             _mockBillingService.Object,
             _mockMusicService.Object,
-            _mockBrowserService.Object);
+            _mockBrowserService.Object,
+            _mockPlaylistService.Object);
     }
 
     [Test]
@@ -292,5 +297,37 @@ public class HomeViewModelTests
         await _viewModel.OpenGooglePlaySubscriptionsCommand.ExecuteAsync(null);
 
         _mockBrowserService.Verify(b => b.OpenAsync("https://play.google.com/store/account/subscriptions"), Times.Once);
+    }
+
+    [Test]
+    public async Task OpenRecommendedCommand_PassesUserIdAsString()
+    {
+        // Shell.ApplyQueryAttributes throws InvalidCastException when a non-string value is
+        // assigned to a string? query property, so the id must be passed as a string.
+        _mockAuthService.Setup(a => a.UserId).Returns(7);
+
+        await _viewModel.OpenRecommendedCommand.ExecuteAsync(null);
+
+        _mockNavigationService.Verify(n => n.GoToAsync("playlist-player",
+            It.Is<IDictionary<string, object>>(d => (string)d["RecommendedUserId"] == "7")), Times.Once);
+    }
+
+    [Test]
+    public async Task OpenPlaylistCommand_PassesPlaylistIdAsString()
+    {
+        var playlist = new PlaylistDto { Id = 99, Name = "Workout" };
+
+        await _viewModel.OpenPlaylistCommand.ExecuteAsync(playlist);
+
+        _mockNavigationService.Verify(n => n.GoToAsync("playlist-player",
+            It.Is<IDictionary<string, object>>(d => (string)d["PlaylistId"] == "99")), Times.Once);
+    }
+
+    [Test]
+    public async Task OpenPlaylistCommand_Null_DoesNothing()
+    {
+        await _viewModel.OpenPlaylistCommand.ExecuteAsync(null);
+
+        _mockNavigationService.Verify(n => n.GoToAsync(It.IsAny<string>(), It.IsAny<IDictionary<string, object>>()), Times.Never);
     }
 }

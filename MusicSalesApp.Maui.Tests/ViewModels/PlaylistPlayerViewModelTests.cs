@@ -15,6 +15,7 @@ public class PlaylistPlayerViewModelTests
     private Mock<ISignalRService> _mockSignalRService;
     private Mock<IAppConfig> _mockAppConfig;
     private Mock<IBillingService> _mockBillingService;
+    private Mock<IPlaylistService> _mockPlaylistService;
     private PlaylistPlayerViewModel _viewModel;
 
     [SetUp]
@@ -28,6 +29,7 @@ public class PlaylistPlayerViewModelTests
         _mockSignalRService = new Mock<ISignalRService>();
         _mockAppConfig = new Mock<IAppConfig>();
         _mockBillingService = new Mock<IBillingService>();
+        _mockPlaylistService = new Mock<IPlaylistService>();
         _mockAppConfig.Setup(c => c.WebBaseUrl).Returns("https://streamtunes.net");
 
         _viewModel = CreateViewModel();
@@ -37,7 +39,8 @@ public class PlaylistPlayerViewModelTests
         _mockMusicService.Object, _mockAlertService.Object,
         _mockAuthService.Object, _mockNavigationService.Object,
         _mockPlaybackService.Object, _mockSignalRService.Object,
-        _mockAppConfig.Object, _mockBillingService.Object);
+        _mockAppConfig.Object, _mockBillingService.Object,
+        _mockPlaylistService.Object);
 
     private List<SongDto> CreateTestSongs() =>
     [
@@ -486,5 +489,327 @@ public class PlaylistPlayerViewModelTests
         Assert.That(_viewModel.IsLoading, Is.False);
         Assert.That(_viewModel.Songs, Has.Count.EqualTo(3));
         _mockMusicService.Verify(s => s.GetSongsAsync(), Times.AtLeast(2));
+    }
+
+    // --- Loading by PlaylistId / RecommendedUserId (mobile-playlist endpoints) ---
+
+    private PlaylistSongsDto MakePlaylistSongs(int playlistId, string name, bool isSystem, params (int SongMetaId, int UserPlaylistId)[] entries)
+    {
+        var songs = entries.Select(e => new PlaylistSongDto
+        {
+            Id = e.SongMetaId,
+            SongMetadataId = e.SongMetaId,
+            UserPlaylistId = e.UserPlaylistId,
+            SongTitle = $"Song {e.SongMetaId}",
+            ArtistName = "Someone",
+            Genre = "Pop",
+            StreamUrl = $"http://{e.SongMetaId}.mp3",
+        }).ToList();
+        return new PlaylistSongsDto
+        {
+            PlaylistId = playlistId,
+            PlaylistName = name,
+            IsSystemGenerated = isSystem,
+            Songs = songs,
+        };
+    }
+
+    [Test]
+    public async Task PlaylistIdParam_CustomPlaylist_LoadsAndEnablesReorderWithSubscription()
+    {
+        _mockAuthService.SetupGet(a => a.HasActiveSubscription).Returns(true);
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+        _mockPlaylistService.Setup(p => p.GetPlaylistSongsAsync(42))
+            .ReturnsAsync(MakePlaylistSongs(42, "My Mix", isSystem: false, (10, 100), (11, 101)));
+
+        _viewModel.PlaylistIdParam = "42";
+        await Task.Delay(100);
+
+        Assert.That(_viewModel.PlaylistTitle, Is.EqualTo("My Mix"));
+        Assert.That(_viewModel.Songs, Has.Count.EqualTo(2));
+        Assert.That(_viewModel.IsUserPlaylist, Is.True);
+        Assert.That(_viewModel.IsReorderEnabled, Is.True);
+    }
+
+    [Test]
+    public async Task PlaylistIdParam_SystemPlaylist_DisablesReorder()
+    {
+        _mockAuthService.SetupGet(a => a.HasActiveSubscription).Returns(true);
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+        _mockPlaylistService.Setup(p => p.GetPlaylistSongsAsync(7))
+            .ReturnsAsync(MakePlaylistSongs(7, "Liked Songs", isSystem: true, (1, 200)));
+
+        _viewModel.PlaylistIdParam = "7";
+        await Task.Delay(100);
+
+        Assert.That(_viewModel.IsUserPlaylist, Is.False);
+        Assert.That(_viewModel.IsReorderEnabled, Is.False);
+    }
+
+    [Test]
+    public async Task PlaylistIdParam_NoSubscription_DisablesReorderEvenForCustom()
+    {
+        _mockAuthService.SetupGet(a => a.HasActiveSubscription).Returns(false);
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+        _mockPlaylistService.Setup(p => p.GetPlaylistSongsAsync(42))
+            .ReturnsAsync(MakePlaylistSongs(42, "My Mix", isSystem: false, (10, 100)));
+
+        _viewModel.PlaylistIdParam = "42";
+        await Task.Delay(100);
+
+        Assert.That(_viewModel.IsUserPlaylist, Is.True);
+        Assert.That(_viewModel.IsReorderEnabled, Is.False);
+    }
+
+    [Test]
+    public async Task RecommendedUserIdParam_LoadsRecommended()
+    {
+        _mockAuthService.SetupGet(a => a.HasActiveSubscription).Returns(true);
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+        _mockPlaylistService.Setup(p => p.GetRecommendedSongsAsync())
+            .ReturnsAsync(new PlaylistSongsDto
+            {
+                PlaylistId = 0,
+                PlaylistName = "Recommended",
+                IsSystemGenerated = true,
+                Songs =
+                [
+                    new PlaylistSongDto { Id = 5, SongMetadataId = 5, SongTitle = "Hit", ArtistName = "Star", Genre = "Pop", StreamUrl = "http://5.mp3" }
+                ]
+            });
+
+        _viewModel.RecommendedUserIdParam = "99";
+        await Task.Delay(100);
+
+        Assert.That(_viewModel.PlaylistTitle, Is.EqualTo("Recommended"));
+        Assert.That(_viewModel.Songs, Has.Count.EqualTo(1));
+        Assert.That(_viewModel.IsUserPlaylist, Is.False);
+        _mockPlaylistService.Verify(p => p.GetRecommendedSongsAsync(), Times.Once);
+    }
+
+    [Test]
+    public async Task MoveTrackUp_ReordersAndPersists()
+    {
+        _mockAuthService.SetupGet(a => a.HasActiveSubscription).Returns(true);
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+        _mockPlaylistService.Setup(p => p.GetPlaylistSongsAsync(42))
+            .ReturnsAsync(MakePlaylistSongs(42, "My Mix", isSystem: false, (10, 100), (11, 101), (12, 102)));
+        _mockPlaylistService.Setup(p => p.ReorderAsync(42, It.IsAny<IReadOnlyList<int>>()))
+            .ReturnsAsync(PlaylistOperationResult.Ok());
+
+        _viewModel.PlaylistIdParam = "42";
+        await Task.Delay(100);
+
+        // Move third item up
+        var third = _viewModel.Songs[2];
+        await _viewModel.MoveTrackUpCommand.ExecuteAsync(third);
+
+        Assert.That(_viewModel.Songs[1].Id, Is.EqualTo(12));
+        _mockPlaylistService.Verify(p => p.ReorderAsync(42,
+            It.Is<IReadOnlyList<int>>(ids => ids.SequenceEqual(new[] { 100, 102, 101 }))),
+            Times.Once);
+    }
+
+    [Test]
+    public async Task MoveTrackUp_FirstItem_DoesNothing()
+    {
+        _mockAuthService.SetupGet(a => a.HasActiveSubscription).Returns(true);
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+        _mockPlaylistService.Setup(p => p.GetPlaylistSongsAsync(42))
+            .ReturnsAsync(MakePlaylistSongs(42, "My Mix", isSystem: false, (10, 100), (11, 101)));
+
+        _viewModel.PlaylistIdParam = "42";
+        await Task.Delay(100);
+
+        await _viewModel.MoveTrackUpCommand.ExecuteAsync(_viewModel.Songs[0]);
+
+        _mockPlaylistService.Verify(p => p.ReorderAsync(It.IsAny<int>(), It.IsAny<IReadOnlyList<int>>()), Times.Never);
+    }
+
+    [Test]
+    public async Task MoveTrackDown_LastItem_DoesNothing()
+    {
+        _mockAuthService.SetupGet(a => a.HasActiveSubscription).Returns(true);
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+        _mockPlaylistService.Setup(p => p.GetPlaylistSongsAsync(42))
+            .ReturnsAsync(MakePlaylistSongs(42, "My Mix", isSystem: false, (10, 100), (11, 101)));
+
+        _viewModel.PlaylistIdParam = "42";
+        await Task.Delay(100);
+
+        await _viewModel.MoveTrackDownCommand.ExecuteAsync(_viewModel.Songs[^1]);
+
+        _mockPlaylistService.Verify(p => p.ReorderAsync(It.IsAny<int>(), It.IsAny<IReadOnlyList<int>>()), Times.Never);
+    }
+
+    [Test]
+    public async Task MoveTrack_WhenReorderDisabled_DoesNothing()
+    {
+        _mockAuthService.SetupGet(a => a.HasActiveSubscription).Returns(false);
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+        _mockPlaylistService.Setup(p => p.GetPlaylistSongsAsync(42))
+            .ReturnsAsync(MakePlaylistSongs(42, "My Mix", isSystem: false, (10, 100), (11, 101)));
+
+        _viewModel.PlaylistIdParam = "42";
+        await Task.Delay(100);
+
+        Assume.That(_viewModel.IsReorderEnabled, Is.False);
+        await _viewModel.MoveTrackDownCommand.ExecuteAsync(_viewModel.Songs[0]);
+
+        _mockPlaylistService.Verify(p => p.ReorderAsync(It.IsAny<int>(), It.IsAny<IReadOnlyList<int>>()), Times.Never);
+    }
+
+    // --- Add / Remove songs (custom playlists only) ---
+
+    private async Task LoadCustomPlaylistAsync()
+    {
+        _mockAuthService.SetupGet(a => a.HasActiveSubscription).Returns(true);
+        _mockAuthService.SetupGet(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.SetupGet(a => a.EmailConfirmed).Returns(true);
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+        _mockPlaylistService.Setup(p => p.GetPlaylistSongsAsync(42))
+            .ReturnsAsync(MakePlaylistSongs(42, "My Mix", isSystem: false, (10, 100), (11, 101)));
+        _viewModel.PlaylistIdParam = "42";
+        await Task.Delay(100);
+        Assume.That(_viewModel.IsUserPlaylist, Is.True);
+    }
+
+    [Test]
+    public async Task RemoveSongFromPlaylist_Confirmed_CallsServiceAndReloads()
+    {
+        await LoadCustomPlaylistAsync();
+        _mockAlertService.Setup(a => a.ShowConfirmAsync("Remove song",
+            It.IsAny<string>(), "Remove", "Cancel")).ReturnsAsync(true);
+        _mockPlaylistService.Setup(p => p.RemoveSongAsync(42, 100))
+            .ReturnsAsync(PlaylistOperationResult.Ok());
+
+        var target = _viewModel.Songs.First(s => s.Id == 10);
+        await _viewModel.RemoveSongFromPlaylistCommand.ExecuteAsync(target);
+
+        _mockPlaylistService.Verify(p => p.RemoveSongAsync(42, 100), Times.Once);
+        _mockPlaylistService.Verify(p => p.GetPlaylistSongsAsync(42), Times.AtLeast(2));
+    }
+
+    [Test]
+    public async Task RemoveSongFromPlaylist_Cancelled_DoesNothing()
+    {
+        await LoadCustomPlaylistAsync();
+        _mockAlertService.Setup(a => a.ShowConfirmAsync("Remove song",
+            It.IsAny<string>(), "Remove", "Cancel")).ReturnsAsync(false);
+
+        var target = _viewModel.Songs.First(s => s.Id == 10);
+        await _viewModel.RemoveSongFromPlaylistCommand.ExecuteAsync(target);
+
+        _mockPlaylistService.Verify(p => p.RemoveSongAsync(It.IsAny<int>(), It.IsAny<int>()), Times.Never);
+    }
+
+    [Test]
+    public async Task RemoveSongFromPlaylist_NotUserPlaylist_DoesNothing()
+    {
+        // Liked Songs is a system playlist — remove should be a no-op
+        _mockAuthService.SetupGet(a => a.HasActiveSubscription).Returns(true);
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+        _mockPlaylistService.Setup(p => p.GetPlaylistSongsAsync(7))
+            .ReturnsAsync(MakePlaylistSongs(7, "Liked", isSystem: true, (1, 200)));
+        _viewModel.PlaylistIdParam = "7";
+        await Task.Delay(100);
+
+        var target = _viewModel.Songs.First();
+        await _viewModel.RemoveSongFromPlaylistCommand.ExecuteAsync(target);
+
+        _mockPlaylistService.Verify(p => p.RemoveSongAsync(It.IsAny<int>(), It.IsAny<int>()), Times.Never);
+    }
+
+    [Test]
+    public async Task RemoveSongFromPlaylist_Failure_SetsErrorMessage()
+    {
+        await LoadCustomPlaylistAsync();
+        _mockAlertService.Setup(a => a.ShowConfirmAsync(It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>())).ReturnsAsync(true);
+        _mockPlaylistService.Setup(p => p.RemoveSongAsync(42, 100))
+            .ReturnsAsync(PlaylistOperationResult.Fail("Boom"));
+
+        var target = _viewModel.Songs.First(s => s.Id == 10);
+        await _viewModel.RemoveSongFromPlaylistCommand.ExecuteAsync(target);
+
+        Assert.That(_viewModel.ErrorMessage, Is.EqualTo("Boom"));
+    }
+
+    // --- Empty custom playlist UI flags ---
+
+    [Test]
+    public async Task EmptyCustomPlaylist_ExposesAddSongsAffordance()
+    {
+        _mockAuthService.SetupGet(a => a.HasActiveSubscription).Returns(true);
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+        _mockPlaylistService.Setup(p => p.GetPlaylistSongsAsync(42))
+            .ReturnsAsync(new PlaylistSongsDto
+            {
+                PlaylistId = 42,
+                PlaylistName = "Empty Mix",
+                IsSystemGenerated = false,
+                Songs = [],
+            });
+
+        _viewModel.PlaylistIdParam = "42";
+        await Task.Delay(100);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.IsUserPlaylist, Is.True);
+            Assert.That(_viewModel.HasSongs, Is.False);
+            Assert.That(_viewModel.ShowTracksHeader, Is.True, "Header must be visible so the Add Songs button shows.");
+            Assert.That(_viewModel.ShowEmptyPlaylistPrompt, Is.True, "Empty custom playlists must show the Add Songs prompt.");
+            Assert.That(_viewModel.IsLoading, Is.False);
+        });
+    }
+
+    [Test]
+    public async Task EmptySystemPlaylist_DoesNotShowEmptyPrompt()
+    {
+        _mockAuthService.SetupGet(a => a.HasActiveSubscription).Returns(true);
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+        _mockPlaylistService.Setup(p => p.GetPlaylistSongsAsync(7))
+            .ReturnsAsync(new PlaylistSongsDto
+            {
+                PlaylistId = 7,
+                PlaylistName = "Liked",
+                IsSystemGenerated = true,
+                Songs = [],
+            });
+
+        _viewModel.PlaylistIdParam = "7";
+        await Task.Delay(100);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.IsUserPlaylist, Is.False);
+            Assert.That(_viewModel.ShowEmptyPlaylistPrompt, Is.False);
+        });
+    }
+
+    [Test]
+    public async Task CustomPlaylist_WithSongs_HidesEmptyPromptAndShowsHeader()
+    {
+        await LoadCustomPlaylistAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.HasSongs, Is.True);
+            Assert.That(_viewModel.ShowEmptyPlaylistPrompt, Is.False);
+            Assert.That(_viewModel.ShowTracksHeader, Is.True);
+        });
     }
 }

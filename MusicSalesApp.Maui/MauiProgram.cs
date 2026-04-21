@@ -1,7 +1,9 @@
 ﻿using System.Reflection;
 using CommunityToolkit.Maui;
+using MediaManager;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Maui.LifecycleEvents;
 using MusicSalesApp.Maui.Services;
 using MusicSalesApp.Maui.ViewModels;
 using MusicSalesApp.Maui.Views;
@@ -22,7 +24,6 @@ public static class MauiProgram
 		builder
 			.UseMauiApp<App>()
 			.UseMauiCommunityToolkit()
-			.UseMauiCommunityToolkitMediaElement(isAndroidForegroundServiceEnabled: false)
 			.UseSkiaSharp()
 			.ConfigureFonts(fonts =>
 			{
@@ -141,9 +142,25 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IAlertService, AlertService>();
 		builder.Services.AddSingleton<ISignalRService, SignalRService>();
 		builder.Services.AddSingleton<INavigationService, NavigationService>();
+		builder.Services.AddSingleton<IMediaManager>(CrossMediaManager.Current);
 		builder.Services.AddSingleton<IPlaybackService, PlaybackService>();
 		builder.Services.AddSingleton<IBrowserService, BrowserService>();
-
+		builder.Services.AddSingleton<IPlaylistService, PlaylistService>();
+		builder.Services.AddSingleton<IAddToPlaylistHandler, AddToPlaylistHandler>();
+			// Initialize Plugin.MediaManager with the platform context
+			builder.ConfigureLifecycleEvents(events =>
+			{
+#if ANDROID
+				events.AddAndroid(android => android.OnCreate((activity, _) =>
+					CrossMediaManager.Current.Init(activity)));
+#elif IOS
+				events.AddiOS(ios => ios.FinishedLaunching((app, _) =>
+				{
+					CrossMediaManager.Current.Init();
+					return true;
+				}));
+#endif
+			});
 		// Register platform-specific services
 #if ANDROID
 		builder.Services.AddSingleton<IBillingService, MusicSalesApp.Maui.Platforms.Android.GooglePlayBillingService>();
@@ -177,6 +194,8 @@ public static class MauiProgram
 		builder.Services.AddTransient<PolicyPage>();
 		builder.Services.AddTransient<PlaylistPlayerViewModel>();
 		builder.Services.AddTransient<PlaylistPlayerPage>();
+		builder.Services.AddTransient<MyPlaylistsViewModel>();
+		builder.Services.AddTransient<MyPlaylistsPage>();
 
 #if DEBUG
 		builder.Logging.AddDebug();

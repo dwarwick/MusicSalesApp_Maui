@@ -49,37 +49,16 @@ public interface IPlaybackService
     /// <summary>Toggles shuffle on/off, regenerating shuffle order as needed.</summary>
     void ToggleShuffle();
 
-    /// <summary>Called by MediaElement timer tick to update position/duration.</summary>
-    void UpdatePosition(TimeSpan position, TimeSpan duration);
-
     /// <summary>Returns the seek TimeSpan for a given slider progress (0..1).</summary>
     TimeSpan GetSeekPosition(double progress);
 
-    /// <summary>Seeks to the given slider progress (0..1), fires SeekRequested.</summary>
+    /// <summary>Seeks to the given slider progress (0..1).</summary>
     void Seek(double progress);
-
-    /// <summary>Called by MediaElement when media ends.</summary>
-    void OnMediaEnded();
 
     /// <summary>Called once at startup with the server's qualifying-seconds threshold.</summary>
     void SetStreamQualifyingSeconds(int seconds);
 
-    // --- Events to drive MediaElement (code-behind subscribes) ---
-
-    /// <summary>Fired when a new song should be loaded and played.</summary>
-    event Action<SongDto>? PlayRequested;
-
-    /// <summary>Fired when playback should resume (from paused).</summary>
-    event Action? ResumeRequested;
-
-    /// <summary>Fired when playback should pause.</summary>
-    event Action? PauseRequested;
-
-    /// <summary>Fired when playback should stop and source cleared.</summary>
-    event Action? StopRequested;
-
-    /// <summary>Fired when a seek is needed (e.g. repeat restart).</summary>
-    event Action<TimeSpan>? SeekRequested;
+    // --- Events ---
 
     /// <summary>Fired when a subscribe CTA should be shown.</summary>
     event Func<Task>? ShowSubscribeCtaRequested;
