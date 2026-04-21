@@ -48,67 +48,155 @@
                        VerticalOptions="Center" />
             </Grid>
 
-            <!-- Song Info + Controls Row -->
-            <Grid ColumnDefinitions="48,*,Auto,Auto,Auto"
-                  ColumnSpacing="10"
-                  Padding="12,4,12,8">
+            <!-- Song Info Row -->
+            <Grid ColumnDefinitions="36,*"
+                  ColumnSpacing="8"
+                  Padding="12,4,12,0">
 
                 <!-- Mini Album Art -->
-                <Border StrokeShape="RoundRectangle 6"
+                <Border StrokeShape="RoundRectangle 4"
                         StrokeThickness="0"
-                        HeightRequest="48"
-                        WidthRequest="48">
+                        HeightRequest="36"
+                        WidthRequest="36">
                     <Image x:Name="AlbumArtImage"
                            Aspect="AspectFill"
-                           HeightRequest="48"
-                           WidthRequest="48" />
+                           HeightRequest="36"
+                           WidthRequest="36" />
                 </Border>
 
                 <!-- Song Info -->
                 <VerticalStackLayout Grid.Column="1"
                                      VerticalOptions="Center"
-                                     Spacing="2">
+                                     Spacing="0">
                     <Label x:Name="SongTitleLabel"
-                           FontSize="14"
+                           FontSize="13"
                            FontAttributes="Bold"
                            TextColor="{AppThemeBinding Light=Black, Dark=White}"
                            LineBreakMode="TailTruncation"
                            MaxLines="1" />
                     <Label x:Name="ArtistNameLabel"
-                           FontSize="12"
+                           FontSize="11"
                            TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
                            LineBreakMode="TailTruncation"
                            MaxLines="1" />
                 </VerticalStackLayout>
+            </Grid>
+
+            <!-- Controls Row -->
+            <HorizontalStackLayout Spacing="12"
+                                   HorizontalOptions="Center"
+                                   Padding="12,2,12,6">
+
+                <!-- Shuffle Button (playlist only) -->
+                <Border x:Name="ShuffleBorder"
+                        StrokeShape="RoundRectangle 16"
+                        StrokeThickness="0"
+                        HeightRequest="32"
+                        WidthRequest="32"
+                        BackgroundColor="Transparent"
+                        VerticalOptions="Center"
+                        IsVisible="False">
+                    <Grid>
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer x:Name="ShuffleTap" />
+                        </Grid.GestureRecognizers>
+                        <Path x:Name="ShuffleIcon"
+                              Data="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"
+                              Aspect="Uniform"
+                              HeightRequest="18" WidthRequest="18"
+                              HorizontalOptions="Center" VerticalOptions="Center" />
+                    </Grid>
+                </Border>
+
+                <!-- Previous Track Button (playlist only) -->
+                <Border x:Name="PrevBorder"
+                        StrokeShape="RoundRectangle 16"
+                        StrokeThickness="0"
+                        HeightRequest="32"
+                        WidthRequest="32"
+                        BackgroundColor="Transparent"
+                        VerticalOptions="Center"
+                        IsVisible="False">
+                    <Grid>
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer x:Name="PrevTap" />
+                        </Grid.GestureRecognizers>
+                        <Path Data="M6 6h2v12H6zm3.5 6l8.5 6V6z"
+                              Fill="{AppThemeBinding Light=Black, Dark=White}"
+                              Aspect="Uniform"
+                              HeightRequest="18" WidthRequest="18"
+                              HorizontalOptions="Center" VerticalOptions="Center" />
+                    </Grid>
+                </Border>
 
                 <!-- Play/Pause Button -->
-                <Button Grid.Column="2"
-                        x:Name="PlayPauseButton"
-                        TextColor="Black"
-                        FontSize="18"
+                <Border x:Name="PlayPauseBorder"
+                        StrokeShape="RoundRectangle 20"
+                        StrokeThickness="0"
                         HeightRequest="40"
                         WidthRequest="40"
-                        Padding="0"
-                        CornerRadius="20"
-                        BackgroundColor="{StaticResource Primary}"
-                        VerticalOptions="Center" />
+                        BackgroundColor="Transparent"
+                        VerticalOptions="Center">
+                    <Grid>
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer x:Name="PlayPauseTap" />
+                        </Grid.GestureRecognizers>
+                        <Path x:Name="PlayPauseIcon"
+                              Fill="{AppThemeBinding Light=Black, Dark=White}"
+                              Aspect="Uniform"
+                              HeightRequest="18"
+                              WidthRequest="18"
+                              HorizontalOptions="Center"
+                              VerticalOptions="Center" />
+                    </Grid>
+                </Border>
+
+                <!-- Next Track Button (playlist only) -->
+                <Border x:Name="NextBorder"
+                        StrokeShape="RoundRectangle 16"
+                        StrokeThickness="0"
+                        HeightRequest="32"
+                        WidthRequest="32"
+                        BackgroundColor="Transparent"
+                        VerticalOptions="Center"
+                        IsVisible="False">
+                    <Grid>
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer x:Name="NextTap" />
+                        </Grid.GestureRecognizers>
+                        <Path Data="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"
+                              Fill="{AppThemeBinding Light=Black, Dark=White}"
+                              Aspect="Uniform"
+                              HeightRequest="18" WidthRequest="18"
+                              HorizontalOptions="Center" VerticalOptions="Center" />
+                    </Grid>
+                </Border>
 
                 <!-- Stop Button -->
-                <Button Grid.Column="3"
-                        x:Name="StopButton"
-                        Text="&#x25A0;"
-                        TextColor="{AppThemeBinding Light=Black, Dark=White}"
-                        FontSize="16"
+                <Border x:Name="StopBorder"
+                        StrokeShape="RoundRectangle 20"
+                        StrokeThickness="0"
                         HeightRequest="40"
                         WidthRequest="40"
-                        Padding="0"
-                        CornerRadius="20"
-                        BackgroundColor="{AppThemeBinding Light={StaticResource Gray300}, Dark={StaticResource Gray600}}"
-                        VerticalOptions="Center" />
+                        BackgroundColor="Transparent"
+                        VerticalOptions="Center">
+                    <Grid>
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer x:Name="StopTap" />
+                        </Grid.GestureRecognizers>
+                        <Path x:Name="StopIcon"
+                              Data="M6 6h12v12H6z"
+                              Fill="{AppThemeBinding Light=Black, Dark=White}"
+                              Aspect="Uniform"
+                              HeightRequest="18"
+                              WidthRequest="18"
+                              HorizontalOptions="Center"
+                              VerticalOptions="Center" />
+                    </Grid>
+                </Border>
 
                 <!-- Repeat Button -->
-                <Border Grid.Column="4"
-                        x:Name="RepeatBorder"
+                <Border x:Name="RepeatBorder"
                         StrokeShape="RoundRectangle 20"
                         StrokeThickness="0"
                         HeightRequest="40"
@@ -126,7 +214,7 @@
                               HorizontalOptions="Center" VerticalOptions="Center" />
                     </Grid>
                 </Border>
-            </Grid>
+            </HorizontalStackLayout>
         </VerticalStackLayout>
     </Border>
 </ContentView>

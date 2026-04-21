@@ -463,6 +463,26 @@ public partial class MusicLibraryViewModel : ObservableObject
         });
     }
 
+    [RelayCommand]
+    private async Task NavigateToGenreAsync(string? genre)
+    {
+        if (string.IsNullOrEmpty(genre)) return;
+        await _navigationService.GoToAsync("playlist-player", new Dictionary<string, object>
+        {
+            ["GenreName"] = genre
+        });
+    }
+
+    [RelayCommand]
+    private async Task NavigateToArtistAsync(string? artist)
+    {
+        if (string.IsNullOrEmpty(artist)) return;
+        await _navigationService.GoToAsync("playlist-player", new Dictionary<string, object>
+        {
+            ["ArtistName"] = artist
+        });
+    }
+
     // --- Songs loading ---
 
     [RelayCommand]
@@ -598,7 +618,14 @@ public partial class MusicLibraryViewModel : ObservableObject
     // --- Playback delegation ---
 
     [RelayCommand]
-    private void PlaySong(SongDto song) => _playbackService.PlaySong(song);
+    private void PlaySong(SongDto song)
+    {
+        // Load the current filtered library as a playlist, starting at the tapped song
+        var filteredSongs = Songs.ToList();
+        var index = filteredSongs.IndexOf(song);
+        if (index < 0) index = 0;
+        _playbackService.SetPlaylist(filteredSongs, index);
+    }
 
     [RelayCommand]
     private void TogglePlayPause() => _playbackService.TogglePlayPause();

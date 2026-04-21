@@ -45,6 +45,48 @@ public partial class SongPlayerViewModel : ObservableObject
     public partial bool HasActiveSubscription { get; set; }
 
     [ObservableProperty]
+    public partial bool IsRefreshing { get; set; }
+
+    [RelayCommand]
+    private async Task RefreshAsync()
+    {
+        if (Song == null) { IsRefreshing = false; return; }
+
+        IsRefreshing = true;
+        try
+        {
+            HasActiveSubscription = _authService.HasActiveSubscription;
+
+            if (_authService.IsLoggedIn)
+            {
+                try
+                {
+                    var statuses = await _musicService.GetBulkUserLikeStatusAsync([Song.Id]);
+                    if (statuses.TryGetValue(Song.Id, out var status))
+                        Song.UserLikeStatus = status;
+                }
+                catch { /* Non-fatal */ }
+
+                try
+                {
+                    var likeCounts = await _musicService.GetBulkLikeCountsAsync([Song.Id]);
+                    var lc = likeCounts.FirstOrDefault(l => l.SongMetadataId == Song.Id);
+                    if (lc != null)
+                    {
+                        Song.LikeCount = lc.LikeCount;
+                        Song.DislikeCount = lc.DislikeCount;
+                    }
+                }
+                catch { /* Non-fatal */ }
+            }
+        }
+        finally
+        {
+            IsRefreshing = false;
+        }
+    }
+
+    [ObservableProperty]
     public partial string? SongTitle { get; set; }
 
     partial void OnSongTitleChanged(string? value)
@@ -217,6 +259,26 @@ public partial class SongPlayerViewModel : ObservableObject
             ["PersonaName"] = Song.ArtistName,
             ["PersonaImageUrl"] = Song.PersonaImageUrl ?? string.Empty,
             ["PersonaBio"] = Song.PersonaBio ?? string.Empty
+        });
+    }
+
+    [RelayCommand]
+    private async Task NavigateToGenreAsync(string? genre)
+    {
+        if (string.IsNullOrEmpty(genre)) return;
+        await _navigationService.GoToAsync("playlist-player", new Dictionary<string, object>
+        {
+            ["GenreName"] = genre
+        });
+    }
+
+    [RelayCommand]
+    private async Task NavigateToArtistAsync(string? artist)
+    {
+        if (string.IsNullOrEmpty(artist)) return;
+        await _navigationService.GoToAsync("playlist-player", new Dictionary<string, object>
+        {
+            ["ArtistName"] = artist
         });
     }
 

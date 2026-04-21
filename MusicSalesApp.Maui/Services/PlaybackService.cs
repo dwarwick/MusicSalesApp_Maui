@@ -1,16 +1,25 @@
+using MediaManager;
+using MediaManager.Library;
+using MediaManager.Media;
+using MediaManager.Playback;
+using MediaManager.Player;
+using MediaManager.Queue;
 using MusicSalesApp.Maui.ViewModels;
+using MmPositionChangedEventArgs = MediaManager.Playback.PositionChangedEventArgs;
 
 namespace MusicSalesApp.Maui.Services;
 
 /// <summary>
 /// Singleton playback service shared between MusicLibraryPage and SongPlayerPage.
-/// Manages all playback state, stream tracking, preview limits, and repeat logic.
-/// Does NOT own the MediaElement — communicates via events to the code-behind.
+/// Manages all playback state, stream tracking, and preview limits.
+/// Uses Plugin.MediaManager for actual audio output, foreground service, and
+/// notification controls (Next/Previous buttons appear automatically from the queue).
 /// </summary>
 public class PlaybackService : IPlaybackService
 {
     private readonly IAuthService _authService;
     private readonly IMusicService _musicService;
+    private readonly IMediaManager _mediaManager;
 
     // Stream tracking state
     private int _streamQualifyingSeconds = 30;
@@ -30,11 +39,25 @@ public class PlaybackService : IPlaybackService
     private int _nextCtaThreshold;
     private readonly Random _random = new();
 
-    public PlaybackService(IAuthService authService, IMusicService musicService)
+    // Playlist state
+    private List<SongDto>? _playlist;
+    private int _currentTrackIndex;
+    private bool _isShuffleEnabled;
+
+    // Map MediaItem URL -> SongDto for auto-advance detection via MediaItemChanged
+    private readonly Dictionary<string, SongDto> _urlToSong = new();
+
+    public PlaybackService(IAuthService authService, IMusicService musicService, IMediaManager mediaManager)
     {
         _authService = authService;
         _musicService = musicService;
-        _nextCtaThreshold = 0; // show on first preview end
+        _mediaManager = mediaManager;
+        _nextCtaThreshold = 0;
+
+        _mediaManager.StateChanged += OnMediaManagerStateChanged;
+        _mediaManager.MediaItemChanged += OnMediaItemChanged;
+        _mediaManager.PositionChanged += OnPositionChanged;
+        _mediaManager.MediaItemFinished += OnMediaItemFinished;
     }
 
     // --- Observable state ---
@@ -88,13 +111,20 @@ public class PlaybackService : IPlaybackService
         private set { _previewLimitReached = value; RaiseStateChanged(nameof(PreviewLimitReached)); }
     }
 
+    public List<SongDto>? Playlist => _playlist;
+
+    public int CurrentTrackIndex => _currentTrackIndex;
+
+    public bool HasPlaylist => _playlist != null && _playlist.Count > 0;
+
+    public bool IsShuffleEnabled
+    {
+        get => _isShuffleEnabled;
+        private set { _isShuffleEnabled = value; RaiseStateChanged(nameof(IsShuffleEnabled)); }
+    }
+
     // --- Events ---
 
-    public event Action<SongDto>? PlayRequested;
-    public event Action? ResumeRequested;
-    public event Action? PauseRequested;
-    public event Action? StopRequested;
-    public event Action<TimeSpan>? SeekRequested;
     public event Func<Task>? ShowSubscribeCtaRequested;
     public event Action<string>? StateChanged;
 
@@ -106,7 +136,7 @@ public class PlaybackService : IPlaybackService
         {
             // Tapping the same song that's playing — pause it
             IsPlaying = false;
-            PauseRequested?.Invoke();
+            _ = _mediaManager.Pause();
             return;
         }
 
@@ -122,12 +152,14 @@ public class PlaybackService : IPlaybackService
         if (isSameSong)
         {
             // Same song replay (e.g., after preview limit) — seek to start and resume
-            SeekRequested?.Invoke(TimeSpan.Zero);
-            ResumeRequested?.Invoke();
+            _ = _mediaManager.SeekTo(TimeSpan.Zero);
+            _ = _mediaManager.Play();
         }
         else
         {
-            PlayRequested?.Invoke(song);
+            _urlToSong.Clear();
+            _urlToSong[song.StreamUrl ?? ""] = song;
+            _ = _mediaManager.Play(CreateMediaItem(song));
         }
     }
 
@@ -137,24 +169,26 @@ public class PlaybackService : IPlaybackService
 
         IsPlaying = !IsPlaying;
         if (IsPlaying)
-            ResumeRequested?.Invoke();
+            _ = _mediaManager.Play();
         else
-            PauseRequested?.Invoke();
+            _ = _mediaManager.Pause();
     }
 
     public void Stop()
     {
         IsPlaying = false;
         ResetPlaybackState();
-        StopRequested?.Invoke();
+        _ = _mediaManager.Pause();
+        _ = _mediaManager.SeekTo(TimeSpan.Zero);
     }
 
     public void ToggleRepeat()
     {
         IsRepeatEnabled = !IsRepeatEnabled;
+        _mediaManager.RepeatMode = IsRepeatEnabled ? RepeatMode.All : RepeatMode.Off;
     }
 
-    public void UpdatePosition(TimeSpan position, TimeSpan duration)
+    internal void UpdatePosition(TimeSpan position, TimeSpan duration)
     {
         var previousPosition = _playbackPosition;
         _playbackPosition = position;
@@ -188,22 +222,96 @@ public class PlaybackService : IPlaybackService
     public void Seek(double progress)
     {
         var position = GetSeekPosition(progress);
-        SeekRequested?.Invoke(position);
+        _ = _mediaManager.SeekTo(position);
     }
 
-    public void OnMediaEnded()
+    internal void OnMediaEnded()
     {
-        if (IsRepeatEnabled && CurrentSong != null)
+        if (!HasPlaylist && IsRepeatEnabled && CurrentSong != null)
         {
-            // Restart the same song
+            // Single-song repeat: restart
             ResetStreamTracking(CurrentSong.Id);
             PreviewLimitReached = false;
-            SeekRequested?.Invoke(TimeSpan.Zero);
-            ResumeRequested?.Invoke();
+            _ = _mediaManager.SeekTo(TimeSpan.Zero);
+            _ = _mediaManager.Play();
             return;
         }
 
-        IsPlaying = false;
+        if (!HasPlaylist)
+            IsPlaying = false;
+        // HasPlaylist: Plugin.MediaManager auto-advances through the queue.
+        // OnMediaItemChanged updates state when the next song starts.
+    }
+
+    // --- Playlist methods ---
+
+    public void SetPlaylist(List<SongDto> songs, int startIndex)
+    {
+        if (songs.Count == 0) return;
+
+        _playlist = new List<SongDto>(songs);
+        _currentTrackIndex = Math.Clamp(startIndex, 0, songs.Count - 1);
+
+        RaiseStateChanged(nameof(HasPlaylist));
+        RaiseStateChanged(nameof(Playlist));
+        RaiseStateChanged(nameof(CurrentTrackIndex));
+
+        var song = _playlist[_currentTrackIndex];
+        ResetStreamTracking(song.Id);
+        PreviewLimitReached = false;
+        CurrentSong = song;
+        IsPlaying = true;
+
+        _mediaManager.RepeatMode = IsRepeatEnabled ? RepeatMode.All : RepeatMode.Off;
+        _mediaManager.ShuffleMode = _isShuffleEnabled ? ShuffleMode.All : ShuffleMode.Off;
+
+        BuildAndStartQueue(startIndex);
+    }
+
+    public void ClearPlaylist()
+    {
+        _playlist = null;
+        _currentTrackIndex = 0;
+
+        RaiseStateChanged(nameof(HasPlaylist));
+        RaiseStateChanged(nameof(Playlist));
+        RaiseStateChanged(nameof(CurrentTrackIndex));
+    }
+
+    public void PlayNext()
+    {
+        if (!HasPlaylist) return;
+        _ = _mediaManager.PlayNext();
+        // State updated via OnMediaItemChanged when Plugin.MediaManager advances
+    }
+
+    public void PlayPrevious()
+    {
+        if (!HasPlaylist) return;
+        _ = _mediaManager.PlayPrevious();
+        // State updated via OnMediaItemChanged when Plugin.MediaManager goes back
+    }
+
+    public void PlayTrackAtIndex(int index)
+    {
+        if (_playlist == null || index < 0 || index >= _playlist.Count)
+            return;
+
+        _currentTrackIndex = index;
+        RaiseStateChanged(nameof(CurrentTrackIndex));
+
+        var song = _playlist[index];
+        ResetStreamTracking(song.Id);
+        PreviewLimitReached = false;
+        CurrentSong = song;
+        IsPlaying = true;
+        _ = _mediaManager.PlayQueueItem(index);
+    }
+
+    public void ToggleShuffle()
+    {
+        IsShuffleEnabled = !_isShuffleEnabled;
+        _mediaManager.ShuffleMode = _isShuffleEnabled ? ShuffleMode.All : ShuffleMode.Off;
     }
 
     public void SetStreamQualifyingSeconds(int seconds)
@@ -282,7 +390,7 @@ public class PlaybackService : IPlaybackService
         {
             IsPlaying = false;
             PreviewLimitReached = true;
-            PauseRequested?.Invoke();
+            _ = _mediaManager.Pause();
             _previewEndCount++;
 
             if (_previewEndCount >= _nextCtaThreshold)
@@ -291,6 +399,93 @@ public class PlaybackService : IPlaybackService
                 _ = ShowSubscribeCtaRequested?.Invoke();
             }
         }
+    }
+
+    // --- Plugin.MediaManager event handlers ---
+
+    private void OnMediaManagerStateChanged(object? sender, StateChangedEventArgs e)
+    {
+        switch (e.State)
+        {
+            case MediaPlayerState.Playing:
+                if (!IsPlaying) IsPlaying = true;
+                break;
+            case MediaPlayerState.Paused:
+            case MediaPlayerState.Stopped:
+                if (IsPlaying) IsPlaying = false;
+                break;
+            case MediaPlayerState.Failed:
+                IsPlaying = false;
+                break;
+        }
+    }
+
+    private void OnMediaItemChanged(object? sender, MediaItemEventArgs e)
+    {
+        if (e.MediaItem == null) return;
+
+        var url = e.MediaItem.MediaUri;
+        if (string.IsNullOrEmpty(url) || !_urlToSong.TryGetValue(url, out var song)) return;
+
+        // Skip if we already set this song (e.g., from PlayTrackAtIndex or PlaySong)
+        if (song.Id == CurrentSong?.Id) return;
+
+        // Auto-advance from Plugin.MediaManager (song ended naturally or user tapped Next in notification)
+        if (_playlist != null)
+        {
+            var idx = _playlist.FindIndex(s => s.Id == song.Id);
+            if (idx >= 0)
+            {
+                _currentTrackIndex = idx;
+                RaiseStateChanged(nameof(CurrentTrackIndex));
+            }
+        }
+
+        ResetStreamTracking(song.Id);
+        PreviewLimitReached = false;
+        CurrentSong = song;
+        IsPlaying = true;
+    }
+
+    private void OnPositionChanged(object? sender, MmPositionChangedEventArgs e)
+    {
+        UpdatePosition(e.Position, _mediaManager.Duration);
+    }
+
+    private void OnMediaItemFinished(object? sender, MediaItemEventArgs e)
+        => OnMediaEnded();
+
+    // --- Queue helpers ---
+
+    private void BuildAndStartQueue(int startIndex)
+    {
+        _urlToSong.Clear();
+        var items = _playlist!.Select(s =>
+        {
+            var item = CreateMediaItem(s);
+            _urlToSong[s.StreamUrl ?? ""] = s;
+            return item;
+        }).ToArray();
+
+        var capturedStart = startIndex;
+        _ = _mediaManager.Play((IEnumerable<IMediaItem>)items)
+            .ContinueWith(t =>
+            {
+                if (!t.IsFaulted && capturedStart > 0)
+                    return _mediaManager.PlayQueueItem(capturedStart);
+                return Task.CompletedTask;
+            })
+            .Unwrap();
+    }
+
+    private IMediaItem CreateMediaItem(SongDto song)
+    {
+        return new MediaItem(song.StreamUrl ?? string.Empty)
+        {
+            Title = song.SongTitle ?? string.Empty,
+            Artist = song.ArtistName ?? string.Empty,
+            AlbumImageUri = song.AlbumArtUrl ?? string.Empty,
+        };
     }
 
     // --- Helpers ---

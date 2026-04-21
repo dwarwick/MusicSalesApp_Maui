@@ -24,8 +24,10 @@ public partial class AppShell : Shell
 		Routing.RegisterRoute("reset-password", typeof(ResetPasswordPage));
 		Routing.RegisterRoute("song-player", typeof(SongPlayerPage));
 		Routing.RegisterRoute("persona", typeof(PersonaPage));
+		Routing.RegisterRoute("playlist-player", typeof(PlaylistPlayerPage));
 		Routing.RegisterRoute("account-settings", typeof(AccountSettingsPage));
 		Routing.RegisterRoute("policy", typeof(PolicyPage));
+		Routing.RegisterRoute("my-playlists", typeof(MyPlaylistsPage));
 
 		UpdateMenuVisibility();
 	}
@@ -42,6 +44,7 @@ public partial class AppShell : Shell
 		Shell.SetFlyoutItemIsVisible(ValidateEmailMenuItem, _authService.IsLoggedIn && !_authService.EmailConfirmed);
 		Shell.SetFlyoutItemIsVisible(AccountSettingsMenuItem, _authService.IsLoggedIn);
 		Shell.SetFlyoutItemIsVisible(LogoutMenuItem, _authService.IsLoggedIn);
+		Shell.SetFlyoutItemIsVisible(MyPlaylistsMenuItem, _authService.IsLoggedIn && _authService.EmailConfirmed);
 	}
 
 	private async void OnLoginClicked(object? sender, EventArgs e)
@@ -71,6 +74,12 @@ public partial class AppShell : Shell
 	{
 		Shell.Current.FlyoutIsPresented = false;
 		await GoToAsync("account-settings");
+	}
+
+	private async void OnMyPlaylistsClicked(object? sender, EventArgs e)
+	{
+		Shell.Current.FlyoutIsPresented = false;
+		await GoToAsync("my-playlists");
 	}
 
 	private async void OnLogoutClicked(object? sender, EventArgs e)

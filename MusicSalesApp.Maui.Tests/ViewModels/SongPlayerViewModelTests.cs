@@ -379,4 +379,90 @@ public class SongPlayerViewModelTests
 
         _mockAlertService.Verify(a => a.DisplayAlertAsync("Already Reported", It.IsAny<string>(), "OK"), Times.Once);
     }
+
+    // --- Navigate to Genre/Artist ---
+
+    [Test]
+    public async Task NavigateToGenre_NavigatesToPlaylistPlayer()
+    {
+        await _viewModel.NavigateToGenreCommand.ExecuteAsync("Rock");
+
+        _mockNavigationService.Verify(n =>
+            n.GoToAsync("playlist-player", It.Is<IDictionary<string, object>>(d =>
+                d.ContainsKey("GenreName") && (string)d["GenreName"] == "Rock")),
+            Times.Once);
+    }
+
+    [Test]
+    public async Task NavigateToArtist_NavigatesToPlaylistPlayer()
+    {
+        await _viewModel.NavigateToArtistCommand.ExecuteAsync("Band A");
+
+        _mockNavigationService.Verify(n =>
+            n.GoToAsync("playlist-player", It.Is<IDictionary<string, object>>(d =>
+                d.ContainsKey("ArtistName") && (string)d["ArtistName"] == "Band A")),
+            Times.Once);
+    }
+
+    [Test]
+    public async Task NavigateToGenre_NullGenre_DoesNothing()
+    {
+        await _viewModel.NavigateToGenreCommand.ExecuteAsync(null);
+
+        _mockNavigationService.Verify(n =>
+            n.GoToAsync(It.IsAny<string>(), It.IsAny<IDictionary<string, object>>()),
+            Times.Never);
+    }
+
+    [Test]
+    public async Task NavigateToArtist_EmptyString_DoesNothing()
+    {
+        await _viewModel.NavigateToArtistCommand.ExecuteAsync(string.Empty);
+
+        _mockNavigationService.Verify(n =>
+            n.GoToAsync(It.IsAny<string>(), It.IsAny<IDictionary<string, object>>()),
+            Times.Never);
+    }
+
+    // --- Refresh ---
+
+    [Test]
+    public async Task Refresh_WhenNoSong_SetsIsRefreshingFalse()
+    {
+        await _viewModel.RefreshCommand.ExecuteAsync(null);
+
+        Assert.That(_viewModel.IsRefreshing, Is.False);
+    }
+
+    [Test]
+    public async Task Refresh_UpdatesSubscriptionStatus()
+    {
+        _viewModel.Song = new SongDto { Id = 1, SongTitle = "Test" };
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(true);
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(false);
+
+        await _viewModel.RefreshCommand.ExecuteAsync(null);
+
+        Assert.That(_viewModel.HasActiveSubscription, Is.True);
+        Assert.That(_viewModel.IsRefreshing, Is.False);
+    }
+
+    [Test]
+    public async Task Refresh_WhenLoggedIn_ReloadsLikeData()
+    {
+        var song = new SongDto { Id = 5, SongTitle = "Test" };
+        _viewModel.Song = song;
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockMusicService.Setup(s => s.GetBulkUserLikeStatusAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new Dictionary<int, bool?> { { 5, true } });
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync([new LikeCountDto { SongMetadataId = 5, LikeCount = 10, DislikeCount = 2 }]);
+
+        await _viewModel.RefreshCommand.ExecuteAsync(null);
+
+        Assert.That(song.UserLikeStatus, Is.True);
+        Assert.That(song.LikeCount, Is.EqualTo(10));
+        Assert.That(song.DislikeCount, Is.EqualTo(2));
+        Assert.That(_viewModel.IsRefreshing, Is.False);
+    }
 }

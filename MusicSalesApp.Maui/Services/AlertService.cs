@@ -23,7 +23,16 @@ public class AlertService : IAlertService
     {
         if (Application.Current?.Windows.FirstOrDefault()?.Page is Page page)
         {
-            return await page.DisplayActionSheet(title, cancel, destruction, buttons);
+            return await page.DisplayActionSheetAsync(title, cancel, destruction, buttons);
+        }
+        return null;
+    }
+
+    public async Task<string?> ShowPromptAsync(string title, string message, string accept = "OK", string cancel = "Cancel", string? placeholder = null, string? initialValue = null, int maxLength = -1)
+    {
+        if (Application.Current?.Windows.FirstOrDefault()?.Page is Page page)
+        {
+            return await page.DisplayPromptAsync(title, message, accept, cancel, placeholder, maxLength, null, initialValue ?? string.Empty);
         }
         return null;
     }

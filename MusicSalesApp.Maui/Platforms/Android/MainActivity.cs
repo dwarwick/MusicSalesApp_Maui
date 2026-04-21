@@ -3,6 +3,7 @@ using Android.Content;
 using Android.Content.PM;
 using Android.Content.Res;
 using Android.OS;
+using MediaManager;
 
 namespace MusicSalesApp.Maui;
 
@@ -38,6 +39,8 @@ public class MainActivity : MauiAppCompatActivity
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
+
+        CrossMediaManager.Current.Init(this);
 
         // Register a fallback back-pressed callback so the system back button
         // moves the app to background instead of finishing the activity.

@@ -59,7 +59,8 @@ public partial class AccountSettingsViewModel : ObservableObject
     {
         var confirmed = await _alertService.ShowConfirmAsync(
             "Cancel Subscription",
-            "Are you sure you want to cancel your subscription? You will still have access until the end of your current billing period.",
+            "Are you sure you want to cancel your subscription? You will still have access until the end of your current billing period. " +
+            "Any custom playlists you have created will be deleted at the end of your subscription term.",
             "Cancel Subscription",
             "Keep Subscription");
 
@@ -113,6 +114,7 @@ public partial class AccountSettingsViewModel : ObservableObject
             "Delete Account",
             "Warning: This will permanently delete your account.\n\n" +
             "• All your data including purchases, playlists, and subscriptions will be permanently deleted.\n" +
+            "• Your custom playlists will be deleted immediately.\n" +
             "• You will no longer have access to your existing playlists if you create an account in the future.\n\n" +
             "This action cannot be undone!",
             "Continue",

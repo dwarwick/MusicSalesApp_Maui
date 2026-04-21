@@ -43,6 +43,12 @@
             Route="MusicLibrary" />
     </FlyoutItem>
 
+    <MenuItem x:Name="MyPlaylistsMenuItem"
+              Text="My Playlists"
+              IconImageSource="{FontImageSource FontFamily=OpenSansRegular, Glyph='&#x2630;', Size=20}"
+              Shell.FlyoutItemIsVisible="False"
+              Clicked="OnMyPlaylistsClicked" />
+
     <MenuItem x:Name="LoginMenuItem"
               Text="Login"
               Clicked="OnLoginClicked" />

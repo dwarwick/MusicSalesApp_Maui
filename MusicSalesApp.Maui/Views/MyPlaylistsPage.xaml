@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             xmlns:vm="clr-namespace:MusicSalesApp.Maui.ViewModels"
+             x:Class="MusicSalesApp.Maui.Views.MyPlaylistsPage"
+             x:DataType="vm:MyPlaylistsViewModel"
+             Title="My Playlists"
+             BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
+
+    <Grid RowDefinitions="Auto,Auto,*" Padding="16,12,16,16" RowSpacing="12">
+
+        <!-- Create button + subscription banner -->
+        <VerticalStackLayout Grid.Row="0" Spacing="8">
+            <Button Text="+ Create Playlist"
+                    Command="{Binding CreatePlaylistCommand}"
+                    BackgroundColor="{StaticResource Primary}"
+                    TextColor="White"
+                    FontAttributes="Bold"
+                    CornerRadius="20"
+                    HeightRequest="44"
+                    HorizontalOptions="Start"
+                    Padding="20,0" />
+
+            <Border IsVisible="{Binding HasActiveSubscription, Converter={toolkit:InvertedBoolConverter}}"
+                    StrokeShape="RoundRectangle 8"
+                    Stroke="#FFB300"
+                    StrokeThickness="1"
+                    BackgroundColor="{AppThemeBinding Light=#FFF8E1, Dark=#3A2E12}"
+                    Padding="12,10">
+                <Label Text="{Binding SubscriptionBannerText}"
+                       FontSize="13"
+                       TextColor="{AppThemeBinding Light=#5D4037, Dark=#FFE082}" />
+            </Border>
+        </VerticalStackLayout>
+
+        <!-- Error message -->
+        <Label Grid.Row="1"
+               Text="{Binding ErrorMessage}"
+               IsVisible="{Binding ErrorMessage, Converter={toolkit:IsStringNotNullOrEmptyConverter}}"
+               TextColor="#e74c3c"
+               FontSize="13" />
+
+        <!-- Playlist list -->
+        <RefreshView Grid.Row="2"
+                     Command="{Binding LoadCommand}"
+                     IsRefreshing="{Binding IsLoading}">
+            <ScrollView>
+                <VerticalStackLayout Spacing="10">
+
+                    <!-- Empty state -->
+                    <Label IsVisible="{Binding ShowEmptyState}"
+                           Text="You don't have any playlists yet. Tap 'Create Playlist' to get started."
+                           FontSize="14"
+                           HorizontalTextAlignment="Center"
+                           Padding="24"
+                           TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+
+                    <!-- Playlist cards -->
+                    <CollectionView IsVisible="{Binding ShowPlaylists}"
+                                    ItemsSource="{Binding Playlists}">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="vm:PlaylistDto">
+                                <Border StrokeShape="RoundRectangle 12"
+                                        Stroke="Transparent"
+                                        BackgroundColor="{AppThemeBinding Light=White, Dark=#2a2a2a}"
+                                        Margin="0,0,0,10"
+                                        Padding="14">
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MyPlaylistsViewModel}}, Path=OpenPlaylistCommand}"
+                                                              CommandParameter="{Binding .}" />
+                                    </Border.GestureRecognizers>
+                                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8" VerticalOptions="Center">
+                                        <VerticalStackLayout Grid.Column="0" Spacing="2" VerticalOptions="Center">
+                                            <Label Text="{Binding Name}"
+                                                   FontSize="16"
+                                                   FontAttributes="Bold"
+                                                   TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+                                            <Label Text="{Binding SongCount, StringFormat='{0} songs'}"
+                                                   FontSize="12"
+                                                   TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+                                        </VerticalStackLayout>
+                                        <!-- Rename (hidden for system playlists) -->
+                                        <Button Grid.Column="1"
+                                                Text="✎"
+                                                FontSize="18"
+                                                HeightRequest="36"
+                                                WidthRequest="40"
+                                                Padding="0"
+                                                BackgroundColor="Transparent"
+                                                TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}"
+                                                IsVisible="{Binding IsSystemGenerated, Converter={toolkit:InvertedBoolConverter}}"
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MyPlaylistsViewModel}}, Path=RenamePlaylistCommand}"
+                                                CommandParameter="{Binding .}" />
+                                        <!-- Delete (hidden for system playlists) -->
+                                        <Button Grid.Column="2"
+                                                Text="🗑"
+                                                FontSize="16"
+                                                HeightRequest="36"
+                                                WidthRequest="40"
+                                                Padding="0"
+                                                BackgroundColor="Transparent"
+                                                TextColor="#e74c3c"
+                                                IsVisible="{Binding IsSystemGenerated, Converter={toolkit:InvertedBoolConverter}}"
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MyPlaylistsViewModel}}, Path=DeletePlaylistCommand}"
+                                                CommandParameter="{Binding .}" />
+                                        <!-- Play -->
+                                        <Label Grid.Column="3"
+                                               Text="▶"
+                                               FontSize="22"
+                                               TextColor="{StaticResource Primary}"
+                                               VerticalTextAlignment="Center"
+                                               Margin="8,0,0,0" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+
+                </VerticalStackLayout>
+            </ScrollView>
+        </RefreshView>
+
+    </Grid>
+
+</ContentPage>

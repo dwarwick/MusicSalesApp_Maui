@@ -306,4 +306,40 @@ public class AccountSettingsViewModelTests
             Assert.That(_viewModel.HasActiveSubscription, Is.True);
         });
     }
+
+    [Test]
+    public async Task CancelSubscription_PromptsWithCustomPlaylistWarning()
+    {
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(true);
+        _viewModel = CreateViewModel();
+        _mockAlertService.Setup(a => a.ShowConfirmAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(false);
+
+        await _viewModel.CancelSubscriptionCommand.ExecuteAsync(null);
+
+        _mockAlertService.Verify(a => a.ShowConfirmAsync(
+            "Cancel Subscription",
+            It.Is<string>(s => s.Contains("custom playlists") && s.Contains("end of your subscription term")),
+            It.IsAny<string>(),
+            It.IsAny<string>()), Times.Once);
+    }
+
+    [Test]
+    public async Task ShowDeleteAccountPrompt_IncludesCustomPlaylistsImmediateWarning()
+    {
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+        _viewModel = CreateViewModel();
+        _mockAlertService.Setup(a => a.ShowConfirmAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(false);
+
+        await _viewModel.ShowDeleteAccountPromptCommand.ExecuteAsync(null);
+
+        _mockAlertService.Verify(a => a.ShowConfirmAsync(
+            "Delete Account",
+            It.Is<string>(s => s.Contains("custom playlists will be deleted immediately")),
+            It.IsAny<string>(),
+            It.IsAny<string>()), Times.Once);
+    }
 }
