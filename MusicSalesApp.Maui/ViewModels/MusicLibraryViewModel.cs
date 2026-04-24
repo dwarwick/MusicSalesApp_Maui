@@ -496,6 +496,10 @@ public partial class MusicLibraryViewModel : ObservableObject
         try
         {
             var songs = await _musicService.GetSongsAsync();
+            if (songs.Count == 0 && !string.IsNullOrWhiteSpace(_musicService.LastSongsError))
+            {
+                ErrorMessage = _musicService.LastSongsError;
+            }
 
             System.Diagnostics.Debug.WriteLine($"[MusicLibrary] WebBaseUrl = '{_appConfig.WebBaseUrl}'");
             Console.WriteLine($"[MusicLibrary] WebBaseUrl = '{_appConfig.WebBaseUrl}'");
@@ -649,16 +653,19 @@ public partial class MusicLibraryViewModel : ObservableObject
                 return;
             }
 
-            var verified = await _musicService.VerifyGooglePlayPurchaseAsync(result.PurchaseToken!, result.OrderId);
+            var verificationResult = await _musicService.VerifyGooglePlayPurchaseAsync(result.PurchaseToken!, result.OrderId);
 
-            if (verified)
+            if (verificationResult.Success)
             {
                 await _authService.RefreshUserStatusAsync();
                 await _alertService.DisplayAlertAsync("Success", "You're now subscribed! Enjoy unlimited music.", "OK");
             }
             else
             {
-                await _alertService.DisplayAlertAsync("Subscribe", "Purchase succeeded but server verification failed. Please try again.", "OK");
+                var errorMessage = string.IsNullOrWhiteSpace(verificationResult.ErrorMessage)
+                    ? "Purchase succeeded but server verification failed. Please try again."
+                    : verificationResult.ErrorMessage;
+                await _alertService.DisplayAlertAsync("Subscribe", errorMessage, "OK");
             }
         }
     }

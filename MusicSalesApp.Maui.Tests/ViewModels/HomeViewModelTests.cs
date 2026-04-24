@@ -215,7 +215,7 @@ public class HomeViewModelTests
         _mockBillingService.Setup(b => b.PurchaseSubscriptionAsync())
             .ReturnsAsync(BillingPurchaseResult.Succeeded("test-token", "order-123"));
         _mockMusicService.Setup(m => m.VerifyGooglePlayPurchaseAsync("test-token", "order-123"))
-            .ReturnsAsync(true);
+            .ReturnsAsync((true, string.Empty));
 
         await _viewModel.SubscribeCommand.ExecuteAsync(null);
 
@@ -253,11 +253,12 @@ public class HomeViewModelTests
         _mockBillingService.Setup(b => b.PurchaseSubscriptionAsync())
             .ReturnsAsync(BillingPurchaseResult.Succeeded("test-token", "order-123"));
         _mockMusicService.Setup(m => m.VerifyGooglePlayPurchaseAsync("test-token", "order-123"))
-            .ReturnsAsync(false);
+            .ReturnsAsync((false, "Configured Google Play service account key file was not found on the server."));
 
         await _viewModel.SubscribeCommand.ExecuteAsync(null);
 
-        _mockAlertService.Verify(a => a.DisplayAlertAsync("Subscribe", It.Is<string>(s => s.Contains("server verification failed")), "OK"), Times.Once);
+        _mockAlertService.Verify(a => a.DisplayAlertAsync("Subscribe",
+            It.Is<string>(s => s.Contains("Configured Google Play service account key file was not found on the server.")), "OK"), Times.Once);
         _mockAuthService.Verify(a => a.RefreshUserStatusAsync(), Times.Never);
     }
 

@@ -46,6 +46,19 @@
       "command": "pwsh -ExecutionPolicy Bypass -File ${workspaceFolder:MusicSalesApp_Maui}/.vscode/deploy-phone.ps1",
       "problemMatcher": "$msCompile",
       "group": "build"
+    },
+    {
+      "label": "create-aab-for-upload",
+      "type": "process",
+      "command": "pwsh",
+      "args": [
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder:MusicSalesApp_Maui}/.vscode/local/create-aab-for-upload.ps1"
+      ],
+      "problemMatcher": "$msCompile",
+      "group": "build"
     }
   ]
 }

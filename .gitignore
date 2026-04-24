@@ -31,6 +31,7 @@ msbuild.wrn
 
 ## VS Code files (keep .vscode for shared settings)
 # .vscode/
+.vscode/local/
 
 ## NuGet Packages
 *.nupkg
@@ -40,6 +41,7 @@ msbuild.wrn
 ## Appsettings with secrets — CRITICAL: keep these out of source control
 **/appsettings.Development.json
 **/appsettings.Production.json
+**/appsettings.Test.json
 
 ## Test Results
 [Tt]est[Rr]esult*/

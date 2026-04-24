@@ -120,6 +120,11 @@
                    HorizontalOptions="Center"
                    Margin="0,4,0,0" />
 
+                 <Label x:Name="VersionLabel"
+                     FontSize="11"
+                     TextColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray500}}"
+                     HorizontalOptions="Center" />
+
         </VerticalStackLayout>
     </Shell.FlyoutFooter>
 

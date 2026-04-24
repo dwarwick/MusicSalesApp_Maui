@@ -15,6 +15,7 @@ public partial class AppShell : Shell
 		_authService.AuthStateChanged += OnAuthStateChanged;
 
 		CopyrightLabel.Text = $"\u00A9 {DateTime.Now.Year} Streamtunes";
+		VersionLabel.Text = $"version: {AppInfo.Current.VersionString} ({AppInfo.Current.BuildString})";
 
 		// Register routes for pages that aren't in the flyout
 		Routing.RegisterRoute("login", typeof(LoginPage));

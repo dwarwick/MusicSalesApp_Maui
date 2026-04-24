@@ -68,6 +68,20 @@ public class ApiMessageResponse
     public string Message { get; set; } = string.Empty;
 }
 
+public class SubscriptionStatusDto
+{
+    public bool HasSubscription { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public DateTime? StartDate { get; set; }
+    public DateTime? EndDate { get; set; }
+    public DateTime? NextBillingDate { get; set; }
+    public decimal MonthlyPrice { get; set; }
+    public string PaypalSubscriptionId { get; set; } = string.Empty;
+    public string BillingSource { get; set; } = string.Empty;
+    public bool IsSubscriptionBlocked { get; set; }
+    public string SubscriptionPrice { get; set; } = string.Empty;
+}
+
 public class ForgotPasswordResponseDto
 {
     public int UserId { get; set; }

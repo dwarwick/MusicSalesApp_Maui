@@ -10,17 +10,48 @@ public partial class AccountSettingsViewModel : ObservableObject
     private readonly IAlertService _alertService;
     private readonly INavigationService _navigationService;
     private readonly IMusicService _musicService;
+    private readonly IBillingService _billingService;
 
     [ObservableProperty]
     public partial string UserEmail { get; set; } = string.Empty;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowCancelSubscription))]
+    [NotifyPropertyChangedFor(nameof(CanCreateSubscription))]
     [NotifyPropertyChangedFor(nameof(CanDeleteAccount))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionStatusText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionStatusMessage))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionEndDate))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionEndDateText))]
+    [NotifyPropertyChangedFor(nameof(SubscribeButtonText))]
     public partial bool HasActiveSubscription { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowCancelSubscription))]
+    [NotifyPropertyChangedFor(nameof(CanCreateSubscription))]
+    [NotifyPropertyChangedFor(nameof(CanDeleteAccount))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionStatusText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionStatusMessage))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionEndDate))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionEndDateText))]
+    [NotifyPropertyChangedFor(nameof(SubscribeButtonText))]
+    public partial DateTime? SubscriptionEndDate { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowBillingSource))]
+    [NotifyPropertyChangedFor(nameof(BillingSourceText))]
+    public partial string SubscriptionBillingSource { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SubscriptionStatusText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionStatusMessage))]
+    public partial string SubscriptionStatus { get; set; } = string.Empty;
+
+    [ObservableProperty]
     public partial bool IsCancelling { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsSubscribing { get; set; }
 
     [ObservableProperty]
     public partial bool IsDeleting { get; set; }
@@ -35,23 +66,58 @@ public partial class AccountSettingsViewModel : ObservableObject
     [ObservableProperty]
     public partial string ErrorMessage { get; set; } = string.Empty;
 
-    public bool ShowCancelSubscription => HasActiveSubscription;
-    public bool CanDeleteAccount => !HasActiveSubscription;
+    public bool ShowCancelSubscription => HasActiveSubscription && !SubscriptionEndDate.HasValue;
+    public bool CanCreateSubscription => !ShowCancelSubscription;
+    public bool CanDeleteAccount => !ShowCancelSubscription;
     public bool CanConfirmDelete => string.Equals(ConfirmationText?.Trim(), "DELETE", StringComparison.OrdinalIgnoreCase);
+    public bool ShowSubscriptionEndDate => SubscriptionEndDate.HasValue && HasActiveSubscription;
+    public bool ShowBillingSource => !string.IsNullOrWhiteSpace(SubscriptionBillingSource);
+    public string SubscriptionStatusText => ShowCancelSubscription
+        ? "Active"
+        : SubscriptionEndDate.HasValue
+            ? (HasActiveSubscription ? "Cancelled" : "Expired")
+            : "No Active Subscription";
+    public string SubscriptionStatusMessage => ShowCancelSubscription
+        ? "You have an active subscription. If you cancel, you will still have access until the end of your current billing period."
+        : SubscriptionEndDate.HasValue && HasActiveSubscription
+            ? $"Your subscription has been cancelled. You still have full access until {SubscriptionEndDate.Value.ToLocalTime():MMMM dd, yyyy h:mm tt}."
+            : SubscriptionEndDate.HasValue
+                ? $"Your previous subscription ended on {SubscriptionEndDate.Value.ToLocalTime():MMMM dd, yyyy h:mm tt}."
+                : "You do not currently have an active subscription.";
+    public string SubscriptionEndDateText => SubscriptionEndDate.HasValue
+        ? $"Access Until: {SubscriptionEndDate.Value.ToLocalTime():MMMM dd, yyyy h:mm tt}"
+        : string.Empty;
+    public string BillingSourceText => $"Billed via: {SubscriptionBillingSource}";
+    public string SubscribeButtonText => SubscriptionEndDate.HasValue ? "Create New Subscription" : "Subscribe Now";
 
     public AccountSettingsViewModel(
         IAuthService authService,
         IAlertService alertService,
         INavigationService navigationService,
-        IMusicService musicService)
+        IMusicService musicService,
+        IBillingService billingService)
     {
         _authService = authService;
         _alertService = alertService;
         _navigationService = navigationService;
         _musicService = musicService;
+        _billingService = billingService;
 
         _authService.AuthStateChanged += OnAuthStateChanged;
-        RefreshState();
+        ApplySubscriptionState(null);
+    }
+
+    public async Task OnAppearingAsync()
+    {
+        await _authService.RefreshUserStatusAsync();
+        ApplySubscriptionState(null);
+    }
+
+    [RelayCommand]
+    private async Task LoadAsync()
+    {
+        var status = await _musicService.GetSubscriptionStatusAsync();
+        ApplySubscriptionState(status);
     }
 
     [RelayCommand]
@@ -74,7 +140,7 @@ public partial class AccountSettingsViewModel : ObservableObject
             if (success)
             {
                 await _authService.RefreshUserStatusAsync();
-                RefreshState();
+                await LoadAsync();
 
                 var message = endDate.HasValue
                     ? $"Your subscription has been cancelled. You can enjoy music until {endDate.Value.ToLocalTime():MMMM dd, yyyy}."
@@ -93,6 +159,45 @@ public partial class AccountSettingsViewModel : ObservableObject
         finally
         {
             IsCancelling = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task SubscribeAsync()
+    {
+        IsSubscribing = true;
+        try
+        {
+            var result = await _billingService.PurchaseSubscriptionAsync();
+
+            if (!result.Success)
+            {
+                if (result.ErrorMessage != "Purchase was cancelled.")
+                    await _alertService.DisplayAlertAsync("Subscribe", result.ErrorMessage ?? "Purchase failed.", "OK");
+                return;
+            }
+
+            var verificationResult = await _musicService.VerifyGooglePlayPurchaseAsync(result.PurchaseToken!, result.OrderId);
+            if (!verificationResult.Success)
+            {
+                var errorMessage = string.IsNullOrWhiteSpace(verificationResult.ErrorMessage)
+                    ? "Purchase succeeded but server verification failed. Please try again."
+                    : verificationResult.ErrorMessage;
+                await _alertService.DisplayAlertAsync("Subscribe", errorMessage, "OK");
+                return;
+            }
+
+            await _authService.RefreshUserStatusAsync();
+            await LoadAsync();
+            await _alertService.DisplayAlertAsync("Success", "You're now subscribed! Enjoy unlimited music.", "OK");
+        }
+        catch (Exception ex)
+        {
+            await _alertService.DisplayAlertAsync("Error", $"Subscription failed: {ex.Message}", "OK");
+        }
+        finally
+        {
+            IsSubscribing = false;
         }
     }
 
@@ -174,14 +279,17 @@ public partial class AccountSettingsViewModel : ObservableObject
         ErrorMessage = string.Empty;
     }
 
-    private void RefreshState()
+    private void ApplySubscriptionState(SubscriptionStatusDto? status)
     {
         UserEmail = _authService.Email ?? string.Empty;
-        HasActiveSubscription = _authService.HasActiveSubscription;
+        HasActiveSubscription = status?.HasSubscription ?? _authService.HasActiveSubscription;
+        SubscriptionEndDate = status?.EndDate ?? _authService.SubscriptionEndDate;
+        SubscriptionStatus = status?.Status ?? _authService.SubscriptionStatus ?? string.Empty;
+        SubscriptionBillingSource = status?.BillingSource ?? _authService.BillingSource ?? string.Empty;
     }
 
     private void OnAuthStateChanged()
     {
-        RefreshState();
+        _ = LoadAsync();
     }
 }

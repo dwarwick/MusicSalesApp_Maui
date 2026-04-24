@@ -99,6 +99,18 @@ public class PlaylistPlayerViewModelTests
     }
 
     [Test]
+    public async Task GenreName_WhenSongsRequestFails_ShowsMusicServiceError()
+    {
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync([]);
+        _mockMusicService.SetupGet(s => s.LastSongsError).Returns("Request to https://davidtest.dev/api/music/songs failed (500).");
+
+        _viewModel.GenreName = "Rock";
+        await Task.Delay(100);
+
+        Assert.That(_viewModel.ErrorMessage, Does.Contain("https://davidtest.dev/api/music/songs"));
+    }
+
+    [Test]
     public async Task GenreName_CaseInsensitiveMatch()
     {
         _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(CreateTestSongs());
@@ -112,6 +124,28 @@ public class PlaylistPlayerViewModelTests
     }
 
     // --- Loading by Artist ---
+
+        [Test]
+        public async Task OnShowSubscribeCta_WhenServerVerificationFails_ShowsSpecificErrorMessage()
+        {
+            _mockAlertService.Setup(a => a.ShowConfirmAsync("Preview Limit", It.IsAny<string>(), "Subscribe Now", "Not Now"))
+                .ReturnsAsync(true);
+            _mockBillingService.Setup(b => b.PurchaseSubscriptionAsync())
+                .ReturnsAsync(BillingPurchaseResult.Succeeded("test-token", "order-123"));
+            _mockMusicService.Setup(s => s.VerifyGooglePlayPurchaseAsync("test-token", "order-123"))
+                .ReturnsAsync((false, "Configured Google Play service account key file was not found on the server."));
+
+            var method = typeof(PlaylistPlayerViewModel).GetMethod(
+                "OnShowSubscribeCta",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+            var task = (Task)method!.Invoke(_viewModel, null)!;
+            await task;
+
+            _mockAlertService.Verify(a => a.DisplayAlertAsync("Subscribe",
+                It.Is<string>(s => s.Contains("Configured Google Play service account key file was not found on the server.")),
+                "OK"), Times.Once);
+        }
 
     [Test]
     public async Task ArtistName_WhenSet_LoadsFilteredSongs()

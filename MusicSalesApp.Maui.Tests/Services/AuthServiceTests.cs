@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Moq.Protected;
@@ -62,7 +63,7 @@ public class AuthServiceTests
         _mockBillingService.Setup(b => b.RestorePurchaseAsync())
             .ReturnsAsync(BillingPurchaseResult.Succeeded(purchaseToken, orderId));
         _mockMusicService.Setup(m => m.VerifyGooglePlayPurchaseAsync(purchaseToken, orderId))
-            .ReturnsAsync(true);
+            .ReturnsAsync((true, string.Empty));
 
         // Mock HttpClient for RefreshUserStatusAsync
         SetupMockSubscriptionStatusResponse(hasSubscription: true, billingSource: "GooglePlay");
@@ -78,13 +79,16 @@ public class AuthServiceTests
         _mockBillingService.Setup(b => b.RestorePurchaseAsync())
             .ReturnsAsync(BillingPurchaseResult.Succeeded("token", "order"));
         _mockMusicService.Setup(m => m.VerifyGooglePlayPurchaseAsync("token", "order"))
-            .ReturnsAsync(true);
+            .ReturnsAsync((true, string.Empty));
 
-        SetupMockSubscriptionStatusResponse(hasSubscription: true, billingSource: "GooglePlay");
+        var endDate = DateTime.UtcNow.AddDays(10);
+        SetupMockSubscriptionStatusResponse(hasSubscription: true, billingSource: "GooglePlay", status: "CANCELLED", endDate: endDate);
 
         await _authService.TryRestoreBillingAsync();
 
         Assert.That(_authService.HasActiveSubscription, Is.True);
+        Assert.That(_authService.SubscriptionStatus, Is.EqualTo("CANCELLED"));
+        Assert.That(_authService.SubscriptionEndDate, Is.EqualTo(endDate));
     }
 
     [Test]
@@ -93,7 +97,7 @@ public class AuthServiceTests
         _mockBillingService.Setup(b => b.RestorePurchaseAsync())
             .ReturnsAsync(BillingPurchaseResult.Succeeded("token", "order"));
         _mockMusicService.Setup(m => m.VerifyGooglePlayPurchaseAsync("token", "order"))
-            .ReturnsAsync(false);
+            .ReturnsAsync((false, "Google Play verification failed on the server."));
 
         await _authService.TryRestoreBillingAsync();
 
@@ -122,7 +126,36 @@ public class AuthServiceTests
         Assert.DoesNotThrowAsync(() => _authService.TryRestoreBillingAsync());
     }
 
-    private void SetupMockSubscriptionStatusResponse(bool hasSubscription, string? billingSource)
+    [Test]
+    public async Task LoginAsync_ReturnsRawResponseBody_WhenErrorBodyIsPlainText()
+    {
+        var messageHandler = new Mock<HttpMessageHandler>();
+        messageHandler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent("Email and password are required.", Encoding.UTF8, "text/plain")
+            });
+
+        var httpClient = new HttpClient(messageHandler.Object)
+        {
+            BaseAddress = new Uri("https://test.example.com/")
+        };
+
+        _mockHttpClientFactory.Setup(f => f.CreateClient("MusicSalesApi")).Returns(httpClient);
+
+        var (success, error) = await _authService.LoginAsync("user@example.com", "bad-password");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(success, Is.False);
+            Assert.That(error, Does.Contain("Email and password are required."));
+        });
+    }
+
+    private void SetupMockSubscriptionStatusResponse(bool hasSubscription, string? billingSource, string? status = null, DateTime? endDate = null)
     {
         var messageHandler = new Mock<HttpMessageHandler>();
         messageHandler.Protected()
@@ -131,7 +164,7 @@ public class AuthServiceTests
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = JsonContent.Create(new { HasSubscription = hasSubscription, BillingSource = billingSource })
+                Content = JsonContent.Create(new { HasSubscription = hasSubscription, BillingSource = billingSource, Status = status, EndDate = endDate })
             });
 
         var httpClient = new HttpClient(messageHandler.Object)

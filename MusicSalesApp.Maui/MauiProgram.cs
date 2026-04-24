@@ -36,15 +36,19 @@ public static class MauiProgram
 		builder.Configuration.AddJsonStream(
 			assembly.GetManifestResourceStream("MusicSalesApp.Maui.appsettings.json")!);
 
-		var environment = "Development";
+		var isReleaseBuild = false;
 #if RELEASE
-		environment = "Production";
+		isReleaseBuild = true;
 #endif
-		var envStream = assembly.GetManifestResourceStream($"MusicSalesApp.Maui.appsettings.{environment}.json");
-		if (envStream is not null)
+		var settingsEnvironment = AppSettingsEnvironmentResolver.GetEnvironmentName(assembly, isReleaseBuild);
+		var envStream = assembly.GetManifestResourceStream(AppSettingsEnvironmentResolver.GetResourceName(settingsEnvironment));
+		if (envStream is null)
 		{
-			builder.Configuration.AddJsonStream(envStream);
+			throw new InvalidOperationException($"Embedded appsettings resource not found for environment '{settingsEnvironment}'.");
 		}
+
+		builder.Configuration.AddJsonStream(envStream);
+		Console.WriteLine($"[MauiProgram] App settings environment: {settingsEnvironment}");
 
 		// When UseLocalHost is false, override settings with the DavidTest section
 		// so the app connects to the remote test server instead of localhost.

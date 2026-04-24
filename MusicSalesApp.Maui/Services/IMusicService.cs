@@ -4,6 +4,7 @@ namespace MusicSalesApp.Maui.Services;
 
 public interface IMusicService
 {
+    string? LastSongsError { get; }
     Task<List<SongDto>> GetSongsAsync();
     Task<SongDto?> GetSongByTitleAsync(string title);
     Task<int> GetStreamQualifyingSecondsAsync();
@@ -16,7 +17,9 @@ public interface IMusicService
     /// <summary>
     /// Sends a Google Play purchase token to the server for verification and subscription recording.
     /// </summary>
-    Task<bool> VerifyGooglePlayPurchaseAsync(string purchaseToken, string? orderId);
+    Task<(bool Success, string ErrorMessage)> VerifyGooglePlayPurchaseAsync(string purchaseToken, string? orderId);
+
+    Task<SubscriptionStatusDto?> GetSubscriptionStatusAsync();
 
     /// <summary>
     /// Calls the server to cancel the user's active subscription (routes to the correct provider).

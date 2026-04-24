@@ -184,9 +184,9 @@ public partial class HomeViewModel : ObservableObject
             }
 
             // Verify purchase with the server and record the subscription
-            var verified = await _musicService.VerifyGooglePlayPurchaseAsync(result.PurchaseToken!, result.OrderId);
+            var verificationResult = await _musicService.VerifyGooglePlayPurchaseAsync(result.PurchaseToken!, result.OrderId);
 
-            if (verified)
+            if (verificationResult.Success)
             {
                 await _authService.RefreshUserStatusAsync();
                 RefreshAuthState();
@@ -194,7 +194,10 @@ public partial class HomeViewModel : ObservableObject
             }
             else
             {
-                await _alertService.DisplayAlertAsync("Subscribe", "Purchase succeeded but server verification failed. Please try again.", "OK");
+                var errorMessage = string.IsNullOrWhiteSpace(verificationResult.ErrorMessage)
+                    ? "Purchase succeeded but server verification failed. Please try again."
+                    : verificationResult.ErrorMessage;
+                await _alertService.DisplayAlertAsync("Subscribe", errorMessage, "OK");
             }
         }
         catch (Exception ex)

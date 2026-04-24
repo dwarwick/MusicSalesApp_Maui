@@ -206,6 +206,12 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         _userPlaylistIdBySongId.Clear();
 
         var allSongs = await _musicService.GetSongsAsync();
+        if (allSongs.Count == 0 && !string.IsNullOrWhiteSpace(_musicService.LastSongsError))
+        {
+            ErrorMessage = _musicService.LastSongsError;
+            return;
+        }
+
         List<SongDto> filtered;
 
         if (!string.IsNullOrEmpty(GenreName))
@@ -604,9 +610,9 @@ public partial class PlaylistPlayerViewModel : ObservableObject
                 return;
             }
 
-            var verified = await _musicService.VerifyGooglePlayPurchaseAsync(result.PurchaseToken!, result.OrderId);
+            var verificationResult = await _musicService.VerifyGooglePlayPurchaseAsync(result.PurchaseToken!, result.OrderId);
 
-            if (verified)
+            if (verificationResult.Success)
             {
                 await _authService.RefreshUserStatusAsync();
                 HasActiveSubscription = true;
@@ -614,7 +620,10 @@ public partial class PlaylistPlayerViewModel : ObservableObject
             }
             else
             {
-                await _alertService.DisplayAlertAsync("Subscribe", "Purchase succeeded but server verification failed. Please try again.", "OK");
+                var errorMessage = string.IsNullOrWhiteSpace(verificationResult.ErrorMessage)
+                    ? "Purchase succeeded but server verification failed. Please try again."
+                    : verificationResult.ErrorMessage;
+                await _alertService.DisplayAlertAsync("Subscribe", errorMessage, "OK");
             }
         }
     }

@@ -27,6 +27,8 @@ public class AuthService : IAuthService
     public string? Email { get; private set; }
     public bool EmailConfirmed { get; private set; }
     public bool HasActiveSubscription { get; private set; }
+    public string? SubscriptionStatus { get; private set; }
+    public DateTime? SubscriptionEndDate { get; private set; }
     public string? BillingSource { get; private set; }
     public bool IsCreator { get; private set; }
     public int? CreatorId { get; private set; }
@@ -318,6 +320,8 @@ public class AuthService : IAuthService
         Roles = data.Roles;
         EmailConfirmed = data.EmailConfirmed;
         HasActiveSubscription = data.HasActiveSubscription;
+        SubscriptionStatus = data.HasActiveSubscription ? "ACTIVE" : null;
+        SubscriptionEndDate = null;
         IsCreator = data.IsCreator;
         CreatorId = data.CreatorId;
         IsLoggedIn = true;
@@ -341,6 +345,8 @@ public class AuthService : IAuthService
         Email = null;
         EmailConfirmed = false;
         HasActiveSubscription = false;
+        SubscriptionStatus = null;
+        SubscriptionEndDate = null;
         BillingSource = null;
         IsCreator = false;
         CreatorId = null;
@@ -359,6 +365,8 @@ public class AuthService : IAuthService
 
             var response = await client.GetFromJsonAsync<SubscriptionStatusDto>("api/subscription/status");
             HasActiveSubscription = response?.HasSubscription ?? false;
+            SubscriptionStatus = response?.Status;
+            SubscriptionEndDate = response?.EndDate;
             BillingSource = response?.BillingSource;
         }
         catch (Exception ex)
@@ -379,15 +387,16 @@ public class AuthService : IAuthService
             if (result is not { Success: true })
                 return;
 
-            var verified = await _musicService.VerifyGooglePlayPurchaseAsync(result.PurchaseToken!, result.OrderId);
-            if (verified)
+            var verificationResult = await _musicService.VerifyGooglePlayPurchaseAsync(result.PurchaseToken!, result.OrderId);
+            if (verificationResult.Success)
             {
                 await RefreshUserStatusAsync();
                 _logger.LogInformation("Successfully restored Google Play subscription");
             }
             else
             {
-                _logger.LogWarning("Restored Google Play purchase but server verification failed");
+                _logger.LogWarning("Restored Google Play purchase but server verification failed: {ErrorMessage}",
+                    verificationResult.ErrorMessage);
             }
         }
         catch (Exception ex)
@@ -420,16 +429,6 @@ public class AuthService : IAuthService
 
     private static async Task<string> ReadErrorMessageAsync(HttpResponseMessage response)
     {
-        try
-        {
-            var error = await response.Content.ReadFromJsonAsync<ApiMessageResponse>();
-            return error?.Message ?? $"Request failed ({(int)response.StatusCode}).";
-        }
-        catch
-        {
-            return $"Request failed ({(int)response.StatusCode}).";
-        }
+        return await ApiErrorMessageFormatter.ReadDisplayMessageAsync(response);
     }
-
-    private sealed record SubscriptionStatusDto(bool HasSubscription, string? BillingSource);
 }

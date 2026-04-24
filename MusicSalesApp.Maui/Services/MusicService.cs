@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using MusicSalesApp.Maui.ViewModels;
 
@@ -6,9 +7,12 @@ namespace MusicSalesApp.Maui.Services;
 
 public class MusicService : IMusicService
 {
+    private const string SongsRequestPath = "api/music/songs";
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IAppSettingsService _appSettingsService;
     private readonly ILogger<MusicService> _logger;
+
+    public string? LastSongsError { get; private set; }
 
     public MusicService(IHttpClientFactory httpClientFactory, IAppSettingsService appSettingsService, ILogger<MusicService> logger)
     {
@@ -20,12 +24,45 @@ public class MusicService : IMusicService
     public async Task<List<SongDto>> GetSongsAsync()
     {
         var client = _httpClientFactory.CreateClient("MusicSalesApi");
+        LastSongsError = null;
+
         try
         {
-            return await client.GetFromJsonAsync<List<SongDto>>("api/music/songs") ?? [];
+            var response = await client.GetAsync(SongsRequestPath);
+            var responseBody = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                LastSongsError = ApiErrorMessageFormatter.FormatRequestFailure(
+                    client.BaseAddress,
+                    SongsRequestPath,
+                    response.StatusCode,
+                    responseBody);
+
+                _logger.LogWarning(
+                    "Failed to fetch songs from {RequestUri}: {StatusCode} {ResponseBody}",
+                    new Uri(client.BaseAddress ?? new Uri("https://localhost/"), SongsRequestPath),
+                    response.StatusCode,
+                    responseBody);
+
+                return [];
+            }
+
+            try
+            {
+                return JsonSerializer.Deserialize<List<SongDto>>(responseBody, new JsonSerializerOptions(JsonSerializerDefaults.Web)) ?? [];
+            }
+            catch (JsonException ex)
+            {
+                LastSongsError = ApiErrorMessageFormatter.FormatException(client.BaseAddress, SongsRequestPath, ex);
+                _logger.LogError(ex, "Failed to deserialize songs response from {RequestUri}. Body: {ResponseBody}",
+                    new Uri(client.BaseAddress ?? new Uri("https://localhost/"), SongsRequestPath), responseBody);
+                return [];
+            }
         }
         catch (Exception ex)
         {
+            LastSongsError = ApiErrorMessageFormatter.FormatException(client.BaseAddress, SongsRequestPath, ex);
             _logger.LogError(ex, "Failed to fetch songs from API");
             return [];
         }
@@ -144,19 +181,42 @@ public class MusicService : IMusicService
 
     private sealed record UserLikeStatusDto(int SongMetadataId, bool? UserLikeStatus);
 
-    public async Task<bool> VerifyGooglePlayPurchaseAsync(string purchaseToken, string? orderId)
+    public async Task<(bool Success, string ErrorMessage)> VerifyGooglePlayPurchaseAsync(string purchaseToken, string? orderId)
     {
         var client = _httpClientFactory.CreateClient("MusicSalesApi");
         try
         {
             var payload = new { PurchaseToken = purchaseToken, OrderId = orderId ?? "" };
             var response = await client.PostAsJsonAsync("api/subscription/google-play/verify", payload);
-            return response.IsSuccessStatusCode;
+
+            if (response.IsSuccessStatusCode)
+            {
+                return (true, string.Empty);
+            }
+
+            var errorMessage = await ApiErrorMessageFormatter.ReadDisplayMessageAsync(response);
+            _logger.LogWarning("Google Play purchase verification failed: {StatusCode} {ErrorMessage}",
+                response.StatusCode, errorMessage);
+            return (false, errorMessage);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to verify Google Play purchase with server");
-            return false;
+            return (false, $"Unable to connect to server: {ex.Message}");
+        }
+    }
+
+    public async Task<SubscriptionStatusDto?> GetSubscriptionStatusAsync()
+    {
+        var client = _httpClientFactory.CreateClient("MusicSalesApi");
+        try
+        {
+            return await client.GetFromJsonAsync<SubscriptionStatusDto>("api/subscription/status");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load subscription status");
+            return null;
         }
     }
 

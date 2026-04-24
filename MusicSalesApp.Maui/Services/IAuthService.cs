@@ -12,6 +12,8 @@ public interface IAuthService
     string? Email { get; }
     bool EmailConfirmed { get; }
     bool HasActiveSubscription { get; }
+    string? SubscriptionStatus { get; }
+    DateTime? SubscriptionEndDate { get; }
     string? BillingSource { get; }
     bool IsCreator { get; }
     int? CreatorId { get; }

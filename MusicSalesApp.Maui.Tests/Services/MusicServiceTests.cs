@@ -69,10 +69,11 @@ public class MusicServiceTests
         Assert.That(result, Has.Count.EqualTo(2));
         Assert.That(result[0].SongTitle, Is.EqualTo("Test Song"));
         Assert.That(result[1].SongTitle, Is.EqualTo("Another"));
+        Assert.That(service.LastSongsError, Is.Null);
     }
 
     [Test]
-    public async Task GetSongsAsync_ReturnsEmptyListOnError()
+    public async Task GetSongsAsync_ReturnsEmptyListOnError_AndCapturesLastSongsError()
     {
         // Arrange
         var handler = CreateHandlerWithResponse(HttpStatusCode.InternalServerError);
@@ -84,6 +85,33 @@ public class MusicServiceTests
 
         // Assert
         Assert.That(result, Is.Empty);
+        Assert.That(service.LastSongsError, Does.Contain("500"));
+        Assert.That(service.LastSongsError, Does.Contain("api/music/songs"));
+    }
+
+    [Test]
+    public async Task GetSongsAsync_ReturnsEmptyListOnInvalidJson_AndCapturesLastSongsError()
+    {
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("not-json", System.Text.Encoding.UTF8, "application/json")
+            });
+        CreateMockHttpClient(handler.Object);
+        var service = CreateService();
+
+        var result = await service.GetSongsAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Is.Empty);
+            Assert.That(service.LastSongsError, Does.Contain("Unable to load data from"));
+            Assert.That(service.LastSongsError, Does.Contain("api/music/songs"));
+        });
     }
 
     [Test]
@@ -306,23 +334,26 @@ public class MusicServiceTests
 
         var result = await service.VerifyGooglePlayPurchaseAsync("token-123", "order-456");
 
-        Assert.That(result, Is.True);
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.ErrorMessage, Is.Empty);
     }
 
     [Test]
-    public async Task VerifyGooglePlayPurchaseAsync_ReturnsFalse_OnServerError()
+    public async Task VerifyGooglePlayPurchaseAsync_ReturnsServerErrorMessage_OnServerError()
     {
-        var handler = CreateHandlerWithResponse(HttpStatusCode.BadRequest);
+        var handler = CreateHandlerWithResponse(HttpStatusCode.BadRequest,
+            new { error = "Configured Google Play service account key file was not found on the server." });
         CreateMockHttpClient(handler.Object);
         var service = CreateService();
 
         var result = await service.VerifyGooglePlayPurchaseAsync("bad-token", null);
 
-        Assert.That(result, Is.False);
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.ErrorMessage, Does.Contain("Configured Google Play service account key file was not found on the server."));
     }
 
     [Test]
-    public async Task VerifyGooglePlayPurchaseAsync_ReturnsFalse_OnException()
+    public async Task VerifyGooglePlayPurchaseAsync_ReturnsConnectionMessage_OnException()
     {
         var handler = new Mock<HttpMessageHandler>();
         handler.Protected()
@@ -335,7 +366,8 @@ public class MusicServiceTests
 
         var result = await service.VerifyGooglePlayPurchaseAsync("token", "order");
 
-        Assert.That(result, Is.False);
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.ErrorMessage, Does.Contain("Unable to connect to server"));
     }
 
     // --- Cancel Subscription ---
@@ -416,6 +448,44 @@ public class MusicServiceTests
         var result = await service.ReportSongAsync(42, "Copyright Violation");
 
         Assert.That(result, Is.True);
+    }
+
+    [Test]
+    public async Task GetSubscriptionStatusAsync_ReturnsSubscriptionStatusDto()
+    {
+        var handler = CreateHandlerWithResponse(HttpStatusCode.OK, new
+        {
+            hasSubscription = true,
+            status = "CANCELLED",
+            endDate = DateTime.UtcNow.AddDays(5),
+            billingSource = "GooglePlay"
+        });
+        CreateMockHttpClient(handler.Object);
+        var service = CreateService();
+
+        var result = await service.GetSubscriptionStatusAsync();
+
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result!.HasSubscription, Is.True);
+        Assert.That(result.Status, Is.EqualTo("CANCELLED"));
+        Assert.That(result.BillingSource, Is.EqualTo("GooglePlay"));
+    }
+
+    [Test]
+    public async Task GetSubscriptionStatusAsync_ReturnsNull_OnException()
+    {
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ThrowsAsync(new HttpRequestException("Network error"));
+        CreateMockHttpClient(handler.Object);
+        var service = CreateService();
+
+        var result = await service.GetSubscriptionStatusAsync();
+
+        Assert.That(result, Is.Null);
     }
 
     [Test]
