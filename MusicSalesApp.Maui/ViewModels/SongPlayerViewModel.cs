@@ -15,6 +15,7 @@ public partial class SongPlayerViewModel : ObservableObject
     private readonly IPlaybackService _playbackService;
     private readonly ISignalRService _signalRService;
     private readonly IAppConfig _appConfig;
+    private readonly IBillingService _billingService;
 
     public SongPlayerViewModel(
         IMusicService musicService,
@@ -23,7 +24,8 @@ public partial class SongPlayerViewModel : ObservableObject
         INavigationService navigationService,
         IPlaybackService playbackService,
         ISignalRService signalRService,
-        IAppConfig appConfig)
+        IAppConfig appConfig,
+        IBillingService billingService)
     {
         _musicService = musicService;
         _alertService = alertService;
@@ -32,8 +34,10 @@ public partial class SongPlayerViewModel : ObservableObject
         _playbackService = playbackService;
         _signalRService = signalRService;
         _appConfig = appConfig;
+        _billingService = billingService;
 
         _signalRService.OnLikeCountUpdated += HandleLikeCountUpdated;
+        _playbackService.ShowSubscribeCtaRequested += OnShowSubscribeCta;
     }
 
     public IPlaybackService PlaybackService => _playbackService;
@@ -249,6 +253,41 @@ public partial class SongPlayerViewModel : ObservableObject
         }
     }
 
+    private async Task OnShowSubscribeCta()
+    {
+        var subscribe = await _alertService.ShowConfirmAsync("Preview Limit",
+            "Subscribe for unlimited listening!", "Subscribe Now", "Not Now");
+
+        if (!subscribe)
+            return;
+
+        var result = await _billingService.PurchaseSubscriptionAsync();
+
+        if (!result.Success)
+        {
+            if (result.ErrorMessage != "Purchase was cancelled.")
+                await _alertService.DisplayAlertAsync("Subscribe", result.ErrorMessage ?? "Purchase failed.", "OK");
+            return;
+        }
+
+        var verificationResult = await _musicService.VerifyGooglePlayPurchaseAsync(result.PurchaseToken!, result.OrderId);
+
+        if (verificationResult.Success)
+        {
+            await _authService.RefreshUserStatusAsync();
+            _playbackService.HandleSubscriptionActivated();
+            HasActiveSubscription = true;
+            await _alertService.DisplayAlertAsync("Success", "You're now subscribed! Enjoy unlimited music.", "OK");
+        }
+        else
+        {
+            var errorMessage = string.IsNullOrWhiteSpace(verificationResult.ErrorMessage)
+                ? "Purchase succeeded but server verification failed. Please try again."
+                : verificationResult.ErrorMessage;
+            await _alertService.DisplayAlertAsync("Subscribe", errorMessage, "OK");
+        }
+    }
+
     [RelayCommand]
     private async Task ViewBioAsync()
     {
@@ -305,5 +344,11 @@ public partial class SongPlayerViewModel : ObservableObject
             await _alertService.DisplayAlertAsync("Error",
                 $"Failed to load song: {ex.Message}", "OK");
         }
+    }
+
+    public void Cleanup()
+    {
+        _signalRService.OnLikeCountUpdated -= HandleLikeCountUpdated;
+        _playbackService.ShowSubscribeCtaRequested -= OnShowSubscribeCta;
     }
 }

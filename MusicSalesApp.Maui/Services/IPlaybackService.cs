@@ -58,6 +58,9 @@ public interface IPlaybackService
     /// <summary>Called once at startup with the server's qualifying-seconds threshold.</summary>
     void SetStreamQualifyingSeconds(int seconds);
 
+    /// <summary>Clears any active preview restriction after a successful subscription upgrade.</summary>
+    void HandleSubscriptionActivated();
+
     // --- Events ---
 
     /// <summary>Fired when a subscribe CTA should be shown.</summary>

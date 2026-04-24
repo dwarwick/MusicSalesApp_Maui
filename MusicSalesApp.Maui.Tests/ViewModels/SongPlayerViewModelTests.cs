@@ -14,6 +14,7 @@ public class SongPlayerViewModelTests
     private Mock<IPlaybackService> _mockPlaybackService;
     private Mock<ISignalRService> _mockSignalRService;
     private Mock<IAppConfig> _mockAppConfig;
+    private Mock<IBillingService> _mockBillingService;
     private SongPlayerViewModel _viewModel;
 
     [SetUp]
@@ -26,6 +27,7 @@ public class SongPlayerViewModelTests
         _mockPlaybackService = new Mock<IPlaybackService>();
         _mockSignalRService = new Mock<ISignalRService>();
         _mockAppConfig = new Mock<IAppConfig>();
+        _mockBillingService = new Mock<IBillingService>();
         _mockAppConfig.Setup(c => c.WebBaseUrl).Returns("https://streamtunes.net");
         _mockAppConfig.Setup(c => c.ApiBaseUrl).Returns("https://streamtunes.net");
 
@@ -33,7 +35,7 @@ public class SongPlayerViewModelTests
             _mockMusicService.Object, _mockAlertService.Object,
             _mockAuthService.Object, _mockNavigationService.Object,
             _mockPlaybackService.Object, _mockSignalRService.Object,
-            _mockAppConfig.Object);
+            _mockAppConfig.Object, _mockBillingService.Object);
     }
 
     // --- Song property ---
@@ -227,6 +229,34 @@ public class SongPlayerViewModelTests
     public void PlaybackService_IsExposed()
     {
         Assert.That(_viewModel.PlaybackService, Is.SameAs(_mockPlaybackService.Object));
+    }
+
+    [Test]
+    public async Task ShowSubscribeCtaRequested_WhenRaised_ShowsPreviewPromptAndHandlesVerificationFailure()
+    {
+        _mockAlertService.Setup(a => a.ShowConfirmAsync("Preview Limit", It.IsAny<string>(), "Subscribe Now", "Not Now"))
+            .ReturnsAsync(true);
+        _mockBillingService.Setup(b => b.PurchaseSubscriptionAsync())
+            .ReturnsAsync(BillingPurchaseResult.Succeeded("test-token", "order-123"));
+        _mockMusicService.Setup(s => s.VerifyGooglePlayPurchaseAsync("test-token", "order-123"))
+            .ReturnsAsync((false, "Configured Google Play service account key file was not found on the server."));
+
+        _mockPlaybackService.Raise(p => p.ShowSubscribeCtaRequested += null);
+        await Task.Delay(50);
+
+        _mockAlertService.Verify(a => a.DisplayAlertAsync("Subscribe",
+            It.Is<string>(s => s.Contains("Configured Google Play service account key file was not found on the server.")),
+            "OK"), Times.Once);
+    }
+
+    [Test]
+    public void Cleanup_UnsubscribesFromPlaybackSubscribeCta()
+    {
+        _viewModel.Cleanup();
+
+        _mockPlaybackService.Raise(p => p.ShowSubscribeCtaRequested += null);
+
+        _mockAlertService.Verify(a => a.ShowConfirmAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
     }
 
     // --- ViewBio command ---

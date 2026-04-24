@@ -7,9 +7,11 @@ namespace MusicSalesApp.Maui.Views;
 public partial class SongPlayerPage : ContentPage
 {
     private readonly IPlaybackService _playbackService;
+    private readonly SongPlayerViewModel _viewModel;
 
     public SongPlayerPage(SongPlayerViewModel viewModel, IPlaybackService playbackService, IAuthService authService)
     {
+        _viewModel = viewModel;
         _playbackService = playbackService;
         BindingContext = viewModel;
 
@@ -27,6 +29,12 @@ public partial class SongPlayerPage : ContentPage
         InitializeComponent();
 
         NowPlayingBar.Initialize(playbackService, authService);
+    }
+
+    protected override void OnDisappearing()
+    {
+        base.OnDisappearing();
+        _viewModel.Cleanup();
     }
 }
 

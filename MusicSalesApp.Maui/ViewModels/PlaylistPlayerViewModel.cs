@@ -615,6 +615,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
             if (verificationResult.Success)
             {
                 await _authService.RefreshUserStatusAsync();
+                _playbackService.HandleSubscriptionActivated();
                 HasActiveSubscription = true;
                 await _alertService.DisplayAlertAsync("Success", "You're now subscribed! Enjoy unlimited music.", "OK");
             }

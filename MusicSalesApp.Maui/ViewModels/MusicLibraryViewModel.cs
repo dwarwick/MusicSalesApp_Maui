@@ -658,6 +658,7 @@ public partial class MusicLibraryViewModel : ObservableObject
             if (verificationResult.Success)
             {
                 await _authService.RefreshUserStatusAsync();
+                _playbackService.HandleSubscriptionActivated();
                 await _alertService.DisplayAlertAsync("Success", "You're now subscribed! Enjoy unlimited music.", "OK");
             }
             else

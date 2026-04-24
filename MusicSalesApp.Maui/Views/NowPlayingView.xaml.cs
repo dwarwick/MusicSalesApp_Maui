@@ -115,6 +115,9 @@ public partial class NowPlayingView : ContentView
                     UpdateTimeLabels();
                     UpdatePreviewMarker();
                     break;
+                case nameof(IPlaybackService.PreviewLimitReached):
+                    UpdatePreviewMarker();
+                    break;
                 case nameof(IPlaybackService.HasPlaylist):
                     UpdatePlaylistControls();
                     break;

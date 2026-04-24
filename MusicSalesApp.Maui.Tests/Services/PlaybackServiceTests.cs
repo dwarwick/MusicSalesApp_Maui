@@ -512,6 +512,46 @@ public class PlaybackServiceTests
         Assert.That(_service.IsPlaying, Is.True);
     }
 
+    [Test]
+    public void HandleSubscriptionActivated_AfterPreviewLimit_ClearsLimitAndResumesPlayback()
+    {
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+        var song = new SongDto { Id = 1, SongTitle = "Test", StreamUrl = "https://test.com/song.mp3" };
+        _service.PlaySong(song);
+
+        for (int i = 1; i <= 61; i++)
+        {
+            _service.UpdatePosition(TimeSpan.FromSeconds(i), TimeSpan.FromSeconds(180));
+        }
+
+        Assert.That(_service.PreviewLimitReached, Is.True);
+        Assert.That(_service.IsPlaying, Is.False);
+
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(true);
+
+        _service.HandleSubscriptionActivated();
+
+        Assert.That(_service.PreviewLimitReached, Is.False);
+        Assert.That(_service.IsPlaying, Is.True);
+        _mockMediaManager.Verify(m => m.Play(), Times.AtLeastOnce);
+    }
+
+    [Test]
+    public void HandleSubscriptionActivated_BeforePreviewLimit_ClearsMarkerStateWithoutRestartingPlayback()
+    {
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+        var song = new SongDto { Id = 1, SongTitle = "Test", StreamUrl = "https://test.com/song.mp3" };
+        _service.PlaySong(song);
+        _service.UpdatePosition(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(180));
+
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(true);
+
+        _service.HandleSubscriptionActivated();
+
+        Assert.That(_service.PreviewLimitReached, Is.False);
+        Assert.That(_service.IsPlaying, Is.True);
+    }
+
     // --- StateChanged event ---
 
     [Test]

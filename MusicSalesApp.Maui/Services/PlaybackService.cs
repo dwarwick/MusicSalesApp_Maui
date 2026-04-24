@@ -319,6 +319,21 @@ public class PlaybackService : IPlaybackService
         _streamQualifyingSeconds = seconds;
     }
 
+    public void HandleSubscriptionActivated()
+    {
+        if (!_authService.HasActiveSubscription)
+            return;
+
+        var shouldResumePlayback = PreviewLimitReached && CurrentSong != null && !IsPlaying;
+        PreviewLimitReached = false;
+
+        if (shouldResumePlayback)
+        {
+            IsPlaying = true;
+            _ = _mediaManager.Play();
+        }
+    }
+
     public string FormatDuration(double? seconds)
     {
         if (seconds == null || double.IsNaN(seconds.Value) || double.IsInfinity(seconds.Value))
