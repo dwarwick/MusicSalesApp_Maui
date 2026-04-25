@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MusicSalesApp.Maui.Services;
@@ -13,6 +14,7 @@ public partial class HomeViewModel : ObservableObject
     private readonly IAppConfig _appConfig;
     private readonly IBillingService _billingService;
     private readonly IMusicService _musicService;
+    private readonly IPlaybackService _playbackService;
     private readonly IBrowserService _browserService;
     private readonly IPlaylistService _playlistService;
 
@@ -42,15 +44,18 @@ public partial class HomeViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SubscribeButtonText))]
     public partial string SubscriptionPrice { get; set; } = "3.99";
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowFeaturedMusic))]
+    public partial ObservableCollection<SongDto> FeaturedSongs { get; set; } = new();
+
     public bool ShowSubscriptionContent => !HasActiveSubscription;
     public bool ShowLoginRegister => !IsAuthenticated;
     public bool ShowValidateEmail => IsAuthenticated && !IsEmailVerified;
     public bool ShowSubscribeNow => IsAuthenticated && IsEmailVerified && !HasActiveSubscription;
     public bool ShowBrowseMusic => IsAuthenticated && HasActiveSubscription;
+    public bool ShowFeaturedMusic => FeaturedSongs.Count > 0;
 
     public string SubscribeButtonText => $"Subscribe Now — ${SubscriptionPrice}/mo";
-
-    // --- Home playlist tiles (Recommended + Liked Songs) ---
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowPlaylists))]
@@ -62,7 +67,6 @@ public partial class HomeViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowLikedSongs))]
     public partial PlaylistDto? LikedSongsPlaylist { get; set; }
 
-    /// <summary>True when at least one dynamic playlist has songs for the user.</summary>
     public bool ShowPlaylists => IsAuthenticated && IsEmailVerified
         && (RecommendedPlaylist != null || LikedSongsPlaylist != null);
 
@@ -77,6 +81,7 @@ public partial class HomeViewModel : ObservableObject
         IAppConfig appConfig,
         IBillingService billingService,
         IMusicService musicService,
+        IPlaybackService playbackService,
         IBrowserService browserService,
         IPlaylistService playlistService)
     {
@@ -87,6 +92,7 @@ public partial class HomeViewModel : ObservableObject
         _appConfig = appConfig;
         _billingService = billingService;
         _musicService = musicService;
+        _playbackService = playbackService;
         _browserService = browserService;
         _playlistService = playlistService;
 
@@ -102,7 +108,9 @@ public partial class HomeViewModel : ObservableObject
             SubscriptionPrice = await _appSettingsService.GetSubscriptionPriceAsync();
             OnPropertyChanged(nameof(SubscribeButtonText));
             RefreshAuthState();
+            await LoadStreamQualifyingSecondsAsync();
             await LoadHomePlaylistsAsync();
+            await LoadFeaturedSongsAsync();
         }
         finally
         {
@@ -124,6 +132,217 @@ public partial class HomeViewModel : ObservableObject
         LikedSongsPlaylist = home?.LikedSongs;
     }
 
+    private async Task LoadFeaturedSongsAsync()
+    {
+        var songs = await _musicService.GetSongsAsync();
+        foreach (var song in songs)
+        {
+            song.ShareUrl = SongDto.BuildShareUrl(song.Id, _appConfig.WebBaseUrl);
+        }
+
+        var featuredSongs = songs
+            .Where(song => song.DisplayOnHomePage)
+            .ToList();
+
+        await Task.WhenAll(
+            LoadLikeCountsAsync(featuredSongs),
+            LoadUserLikeStatusAsync(featuredSongs));
+
+        FeaturedSongs = new ObservableCollection<SongDto>(featuredSongs);
+    }
+
+    private async Task LoadStreamQualifyingSecondsAsync()
+    {
+        var seconds = await _musicService.GetStreamQualifyingSecondsAsync();
+        _playbackService.SetStreamQualifyingSeconds(seconds);
+    }
+
+    private async Task LoadLikeCountsAsync(List<SongDto> songs)
+    {
+        if (songs.Count == 0) return;
+
+        var counts = await _musicService.GetBulkLikeCountsAsync(songs.Select(song => song.Id));
+        foreach (var count in counts)
+        {
+            var song = songs.FirstOrDefault(item => item.Id == count.SongMetadataId);
+            if (song == null) continue;
+
+            song.LikeCount = count.LikeCount;
+            song.DislikeCount = count.DislikeCount;
+        }
+    }
+
+    private async Task LoadUserLikeStatusAsync(List<SongDto> songs)
+    {
+        if (!_authService.IsLoggedIn || songs.Count == 0) return;
+
+        var statuses = await _musicService.GetBulkUserLikeStatusAsync(songs.Select(song => song.Id));
+        foreach (var (songId, status) in statuses)
+        {
+            var song = songs.FirstOrDefault(item => item.Id == songId);
+            if (song != null)
+            {
+                song.UserLikeStatus = status;
+            }
+        }
+    }
+
+    [RelayCommand]
+    private void PlaySong(SongDto? song)
+    {
+        if (song == null || FeaturedSongs.Count == 0) return;
+
+        var featuredSongs = FeaturedSongs.ToList();
+        var index = featuredSongs.IndexOf(song);
+        if (index < 0) index = 0;
+
+        _playbackService.SetPlaylist(featuredSongs, index);
+    }
+
+    [RelayCommand]
+    private Task OpenSongAsync(SongDto? song)
+    {
+        if (song == null) return Task.CompletedTask;
+
+        return _navigationService.GoToAsync("song-player", new Dictionary<string, object>
+        {
+            ["Song"] = song
+        });
+    }
+
+    [RelayCommand]
+    private Task NavigateToGenreAsync(string? genre)
+    {
+        if (string.IsNullOrWhiteSpace(genre)) return Task.CompletedTask;
+
+        return _navigationService.GoToAsync("playlist-player", new Dictionary<string, object>
+        {
+            ["GenreName"] = genre
+        });
+    }
+
+    [RelayCommand]
+    private Task NavigateToArtistAsync(string? artist)
+    {
+        if (string.IsNullOrWhiteSpace(artist)) return Task.CompletedTask;
+
+        return _navigationService.GoToAsync("playlist-player", new Dictionary<string, object>
+        {
+            ["ArtistName"] = artist
+        });
+    }
+
+    [RelayCommand]
+    private async Task LikeSongAsync(SongDto? song)
+    {
+        if (song == null) return;
+
+        if (!await RequireAuthenticatedUserAsync("like songs"))
+            return;
+
+        var result = await _musicService.ToggleLikeAsync(song.Id);
+        if (result != null)
+        {
+            song.UserLikeStatus = result.IsLiked ? true : null;
+            song.LikeCount = result.LikeCount;
+            song.DislikeCount = result.DislikeCount;
+        }
+    }
+
+    [RelayCommand]
+    private async Task DislikeSongAsync(SongDto? song)
+    {
+        if (song == null) return;
+
+        if (!await RequireAuthenticatedUserAsync("dislike songs"))
+            return;
+
+        var result = await _musicService.ToggleDislikeAsync(song.Id);
+        if (result != null)
+        {
+            song.UserLikeStatus = result.IsDisliked ? false : null;
+            song.LikeCount = result.LikeCount;
+            song.DislikeCount = result.DislikeCount;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ReportSongAsync(SongDto? song)
+    {
+        if (song == null) return;
+
+        if (!await RequireValidatedUserAsync("report songs"))
+            return;
+
+        var reason = await _alertService.ShowActionSheetAsync(
+            "Report Song", "Cancel", null,
+            "Copyright Violation", "Terms of Use Violation");
+
+        if (string.IsNullOrEmpty(reason) || reason == "Cancel")
+            return;
+
+        try
+        {
+            var success = await _musicService.ReportSongAsync(song.Id, reason);
+            await _alertService.DisplayAlertAsync(
+                success ? "Report Submitted" : "Error",
+                success ? "Thank you. Your report has been submitted for review."
+                        : "Failed to submit report. Please try again later.",
+                "OK");
+        }
+        catch (InvalidOperationException ex)
+        {
+            await _alertService.DisplayAlertAsync("Already Reported", ex.Message, "OK");
+        }
+    }
+
+    private async Task<bool> RequireAuthenticatedUserAsync(string action)
+    {
+        if (!_authService.IsLoggedIn)
+        {
+            var goToLogin = await _alertService.ShowConfirmAsync(
+                "Login Required",
+                $"Please log in to {action}.",
+                "Login",
+                "Cancel");
+
+            if (goToLogin)
+            {
+                await _navigationService.GoToAsync("login");
+            }
+
+            return false;
+        }
+
+        if (!_authService.EmailConfirmed)
+        {
+            await _alertService.DisplayAlertAsync(
+                "Email Not Verified",
+                "Please verify your email before you can interact with songs.",
+                "OK");
+            return false;
+        }
+
+        return true;
+    }
+
+    private async Task<bool> RequireValidatedUserAsync(string action)
+    {
+        if (!await RequireAuthenticatedUserAsync(action))
+            return false;
+
+        if (!_authService.Roles.Contains("User"))
+        {
+            await _alertService.DisplayAlertAsync(
+                "Not Authorized",
+                "Your account must be fully verified to " + action + ".",
+                "OK");
+            return false;
+        }
+
+        return true;
+    }
+
     [RelayCommand]
     private Task OpenRecommendedAsync()
     {
@@ -131,8 +350,6 @@ public partial class HomeViewModel : ObservableObject
         if (userId == null) return Task.CompletedTask;
         return _navigationService.GoToAsync("playlist-player", new Dictionary<string, object>
         {
-            // Shell.ApplyQueryAttributes does a direct cast for non-string values; the
-            // target RecommendedUserIdParam property is string?, so pass the int as a string.
             ["RecommendedUserId"] = userId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
         });
     }
@@ -143,8 +360,6 @@ public partial class HomeViewModel : ObservableObject
         if (playlist == null) return Task.CompletedTask;
         return _navigationService.GoToAsync("playlist-player", new Dictionary<string, object>
         {
-            // Target PlaylistIdParam property is string?; pass the int as a string to
-            // avoid InvalidCastException in ShellContent.ApplyQueryAttributes.
             ["PlaylistId"] = playlist.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)
         });
     }
@@ -183,7 +398,6 @@ public partial class HomeViewModel : ObservableObject
                 return;
             }
 
-            // Verify purchase with the server and record the subscription
             var verificationResult = await _musicService.VerifyGooglePlayPurchaseAsync(result.PurchaseToken!, result.OrderId);
 
             if (verificationResult.Success)
@@ -227,5 +441,6 @@ public partial class HomeViewModel : ObservableObject
     {
         RefreshAuthState();
         _ = LoadHomePlaylistsAsync();
+        _ = LoadFeaturedSongsAsync();
     }
 }

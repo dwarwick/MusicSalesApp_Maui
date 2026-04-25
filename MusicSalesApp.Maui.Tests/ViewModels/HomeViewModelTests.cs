@@ -1,6 +1,7 @@
 using Moq;
 using MusicSalesApp.Maui.Services;
 using MusicSalesApp.Maui.ViewModels;
+using System.Collections.ObjectModel;
 
 namespace MusicSalesApp.Maui.Tests.ViewModels;
 
@@ -14,6 +15,7 @@ public class HomeViewModelTests
     private Mock<IAppConfig> _mockAppConfig;
     private Mock<IBillingService> _mockBillingService;
     private Mock<IMusicService> _mockMusicService;
+    private Mock<IPlaybackService> _mockPlaybackService;
     private Mock<IBrowserService> _mockBrowserService;
     private Mock<IPlaylistService> _mockPlaylistService;
     private HomeViewModel _viewModel;
@@ -28,11 +30,18 @@ public class HomeViewModelTests
         _mockAppConfig = new Mock<IAppConfig>();
         _mockBillingService = new Mock<IBillingService>();
         _mockMusicService = new Mock<IMusicService>();
+        _mockPlaybackService = new Mock<IPlaybackService>();
         _mockBrowserService = new Mock<IBrowserService>();
         _mockPlaylistService = new Mock<IPlaylistService>();
 
         _mockAppSettingsService.Setup(s => s.GetSubscriptionPriceAsync()).ReturnsAsync("3.99");
         _mockAppConfig.Setup(c => c.WebBaseUrl).Returns("https://streamtunes.net");
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync([]);
+        _mockMusicService.Setup(s => s.GetStreamQualifyingSecondsAsync()).ReturnsAsync(30);
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync([]);
+        _mockMusicService.Setup(s => s.GetBulkUserLikeStatusAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new Dictionary<int, bool?>());
         _mockPlaylistService.Setup(p => p.GetHomePlaylistsAsync())
             .ReturnsAsync(new HomePlaylistsDto());
 
@@ -49,6 +58,7 @@ public class HomeViewModelTests
             _mockAppConfig.Object,
             _mockBillingService.Object,
             _mockMusicService.Object,
+                _mockPlaybackService.Object,
             _mockBrowserService.Object,
             _mockPlaylistService.Object);
     }
@@ -163,6 +173,50 @@ public class HomeViewModelTests
     }
 
     [Test]
+    public async Task LoadAsync_LoadsOnlyFeaturedSongsAndBuildsShareUrls()
+    {
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
+
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(
+        [
+            new SongDto { Id = 1, SongTitle = "Featured Song", DisplayOnHomePage = true },
+            new SongDto { Id = 2, SongTitle = "Library Song", DisplayOnHomePage = false }
+        ]);
+
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync([
+                new LikeCountDto { SongMetadataId = 1, LikeCount = 5, DislikeCount = 2 }
+            ]);
+
+        _mockMusicService.Setup(s => s.GetBulkUserLikeStatusAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new Dictionary<int, bool?> { [1] = true });
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.FeaturedSongs, Has.Count.EqualTo(1));
+            Assert.That(_viewModel.ShowFeaturedMusic, Is.True);
+            Assert.That(_viewModel.FeaturedSongs[0].Id, Is.EqualTo(1));
+            Assert.That(_viewModel.FeaturedSongs[0].ShareUrl, Is.EqualTo("https://streamtunes.net/share/1"));
+            Assert.That(_viewModel.FeaturedSongs[0].LikeCount, Is.EqualTo(5));
+            Assert.That(_viewModel.FeaturedSongs[0].DislikeCount, Is.EqualTo(2));
+            Assert.That(_viewModel.FeaturedSongs[0].UserLikeStatus, Is.True);
+        });
+    }
+
+    [Test]
+    public async Task LoadAsync_SetsPlaybackStreamQualifyingSeconds()
+    {
+        _mockMusicService.Setup(s => s.GetStreamQualifyingSecondsAsync()).ReturnsAsync(45);
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        _mockPlaybackService.Verify(p => p.SetStreamQualifyingSeconds(45), Times.Once);
+    }
+
+    [Test]
     public async Task LoadAsync_RefreshesAuthState()
     {
         _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
@@ -268,6 +322,40 @@ public class HomeViewModelTests
         await _viewModel.NavigateToMusicLibraryCommand.ExecuteAsync(null);
 
         _mockNavigationService.Verify(n => n.GoToAsync("//MusicLibrary"), Times.Once);
+    }
+
+    [Test]
+    public void PlaySongCommand_SetsFeaturedPlaylistOnPlaybackService()
+    {
+        var firstSong = new SongDto { Id = 1, SongTitle = "First" };
+        var secondSong = new SongDto { Id = 2, SongTitle = "Second" };
+        _viewModel.FeaturedSongs = new ObservableCollection<SongDto> { firstSong, secondSong };
+
+        _viewModel.PlaySongCommand.Execute(secondSong);
+
+        _mockPlaybackService.Verify(p => p.SetPlaylist(
+            It.Is<List<SongDto>>(songs => songs.Count == 2 && songs[0] == firstSong && songs[1] == secondSong),
+            1), Times.Once);
+    }
+
+    [Test]
+    public async Task LikeSong_WhenNotLoggedIn_ShowsLoginPrompt()
+    {
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(false);
+        _mockAlertService.Setup(a => a.ShowConfirmAsync(
+            "Login Required",
+            It.IsAny<string>(),
+            "Login",
+            "Cancel")).ReturnsAsync(false);
+
+        await _viewModel.LikeSongCommand.ExecuteAsync(new SongDto { Id = 10, SongTitle = "Test" });
+
+        _mockAlertService.Verify(a => a.ShowConfirmAsync(
+            "Login Required",
+            It.IsAny<string>(),
+            "Login",
+            "Cancel"), Times.Once);
+        _mockMusicService.Verify(s => s.ToggleLikeAsync(It.IsAny<int>()), Times.Never);
     }
 
     [Test]

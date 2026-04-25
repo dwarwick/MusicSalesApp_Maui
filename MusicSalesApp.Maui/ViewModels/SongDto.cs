@@ -18,6 +18,7 @@ public partial class SongDto : ObservableObject
     public string? PersonaBio { get; set; }
     public string StreamUrl { get; set; } = string.Empty;
     public double? TrackLengthSeconds { get; set; }
+    public bool DisplayOnHomePage { get; set; }
     public int? CreatorUserId { get; set; }
 
     [ObservableProperty]
