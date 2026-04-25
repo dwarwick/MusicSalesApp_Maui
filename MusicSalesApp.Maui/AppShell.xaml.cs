@@ -6,13 +6,20 @@ namespace MusicSalesApp.Maui;
 public partial class AppShell : Shell
 {
 	private readonly IAuthService _authService;
+	private readonly IBrowserService _browserService;
+	private string _testingServerBannerUrl = string.Empty;
 
-	public AppShell(IAuthService authService)
+	public AppShell(
+		IAuthService authService,
+		ITestingServerBannerService testingServerBannerService,
+		IBrowserService browserService)
 	{
 		InitializeComponent();
 
 		_authService = authService;
+		_browserService = browserService;
 		_authService.AuthStateChanged += OnAuthStateChanged;
+		InitializeTestingServerBanner(testingServerBannerService.GetBannerInfo());
 
 		CopyrightLabel.Text = $"\u00A9 {DateTime.Now.Year} Streamtunes";
 		VersionLabel.Text = $"version: {AppInfo.Current.VersionString} ({AppInfo.Current.BuildString})";
@@ -33,9 +40,32 @@ public partial class AppShell : Shell
 		UpdateMenuVisibility();
 	}
 
+	private void InitializeTestingServerBanner(TestingServerBannerInfo bannerInfo)
+	{
+		TestingServerBannerBorder.IsVisible = bannerInfo.IsVisible;
+		if (!bannerInfo.IsVisible)
+		{
+			return;
+		}
+
+		_testingServerBannerUrl = bannerInfo.Url;
+		TestingServerBannerTextLabel.Text = $"{bannerInfo.MessagePrefix} ";
+		TestingServerBannerUrlLabel.Text = bannerInfo.Url;
+	}
+
 	private void OnAuthStateChanged()
 	{
 		MainThread.BeginInvokeOnMainThread(UpdateMenuVisibility);
+	}
+
+	private async void OnTestingServerBannerUrlTapped(object? sender, TappedEventArgs e)
+	{
+		if (string.IsNullOrWhiteSpace(_testingServerBannerUrl))
+		{
+			return;
+		}
+
+		await _browserService.OpenAsync(_testingServerBannerUrl);
 	}
 
 	private void UpdateMenuVisibility()

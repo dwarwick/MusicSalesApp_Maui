@@ -138,6 +138,7 @@ public static class MauiProgram
 
 		// Register centralized app config (resolves UseLocalHost / DavidTest / Production URLs once)
 		builder.Services.AddSingleton<IAppConfig, AppConfig>();
+		builder.Services.AddSingleton<ITestingServerBannerService, TestingServerBannerService>();
 
 		// Register services
 		builder.Services.AddSingleton<IAuthService, AuthService>();

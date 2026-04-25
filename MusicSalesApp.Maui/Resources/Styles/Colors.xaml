@@ -50,6 +50,16 @@
     <Color x:Key="TimeText">#A7A7A7</Color>
     <Color x:Key="PreviewOrange">#FFA500</Color>
 
+    <!-- Testing server banner colors -->
+    <Color x:Key="TestingBannerLightBackground">#FFF3CD</Color>
+    <Color x:Key="TestingBannerLightBorder">#FFC107</Color>
+    <Color x:Key="TestingBannerLightText">#856404</Color>
+    <Color x:Key="TestingBannerLightLink">#664D03</Color>
+    <Color x:Key="TestingBannerDarkBackground">#26FFC107</Color>
+    <Color x:Key="TestingBannerDarkBorder">#FFC107</Color>
+    <Color x:Key="TestingBannerDarkText">#FFE082</Color>
+    <Color x:Key="TestingBannerDarkLink">#FFECB3</Color>
+
     <Color x:Key="Gray100">#E1E1E1</Color>
     <Color x:Key="Gray200">#C8C8C8</Color>
     <Color x:Key="Gray300">#ACACAC</Color>

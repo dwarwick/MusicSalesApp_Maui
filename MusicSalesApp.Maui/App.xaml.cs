@@ -7,13 +7,22 @@ public partial class App : Application
 	private readonly IAuthService _authService;
 	private readonly IMusicService _musicService;
 	private readonly IBillingService _billingService;
+	private readonly ITestingServerBannerService _testingServerBannerService;
+	private readonly IBrowserService _browserService;
 
-	public App(IAuthService authService, IMusicService musicService, IBillingService billingService)
+	public App(
+		IAuthService authService,
+		IMusicService musicService,
+		IBillingService billingService,
+		ITestingServerBannerService testingServerBannerService,
+		IBrowserService browserService)
 	{
 		InitializeComponent();
 		_authService = authService;
 		_musicService = musicService;
 		_billingService = billingService;
+		_testingServerBannerService = testingServerBannerService;
+		_browserService = browserService;
 
 		// Sync the Android system theme to MAUI at startup.
 		// Application.Current is now set (we're in the constructor), so this is safe.
@@ -31,7 +40,7 @@ public partial class App : Application
 
 	protected override Window CreateWindow(IActivationState? activationState)
 	{
-		var window = new Window(new AppShell(_authService));
+		var window = new Window(new AppShell(_authService, _testingServerBannerService, _browserService));
 
 		window.Created += async (_, _) =>
 		{

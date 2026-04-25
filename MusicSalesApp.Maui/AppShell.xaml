@@ -12,11 +12,49 @@
     FlyoutBackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
 
     <Shell.TitleView>
-        <Grid Padding="8,0" VerticalOptions="Center" HorizontalOptions="Start">
-            <Image Source="{AppThemeBinding Light=logo_light_small.png, Dark=logo_dark_small.png}"
-                   HeightRequest="35"
+          <Grid Padding="0,4,0,4"
+              RowDefinitions="Auto,Auto"
+              RowSpacing="3"
+              HorizontalOptions="Fill">
+            <Image Grid.Row="0"
+                   Margin="8,0,0,0"
+                   Source="{AppThemeBinding Light=logo_light_small.png, Dark=logo_dark_small.png}"
+                   HeightRequest="24"
                    Aspect="AspectFit"
-                   VerticalOptions="Center" />
+                   VerticalOptions="Center"
+                   HorizontalOptions="Start" />
+
+            <Border x:Name="TestingServerBannerBorder"
+                    Grid.Row="1"
+                    IsVisible="False"
+                    Margin="{OnPlatform Android='-56,0,-24,0', iOS='0', MacCatalyst='0', WinUI='0'}"
+                    Padding="12,4"
+                    AutomationId="TestingServerBanner"
+                    HorizontalOptions="Fill"
+                    StrokeThickness="1"
+                    Stroke="{AppThemeBinding Light={StaticResource TestingBannerLightBorder}, Dark={StaticResource TestingBannerDarkBorder}}"
+                    BackgroundColor="{AppThemeBinding Light={StaticResource TestingBannerLightBackground}, Dark={StaticResource TestingBannerDarkBackground}}">
+                <FlexLayout Direction="Row"
+                            Wrap="Wrap"
+                            JustifyContent="Center"
+                            AlignItems="Center">
+                    <Label x:Name="TestingServerBannerTextLabel"
+                           FontSize="10"
+                           LineBreakMode="WordWrap"
+                           TextColor="{AppThemeBinding Light={StaticResource TestingBannerLightText}, Dark={StaticResource TestingBannerDarkText}}" />
+
+                    <Label x:Name="TestingServerBannerUrlLabel"
+                           AutomationId="TestingServerBannerUrl"
+                           FontSize="10"
+                           LineBreakMode="WordWrap"
+                           TextDecorations="Underline"
+                           TextColor="{AppThemeBinding Light={StaticResource TestingBannerLightLink}, Dark={StaticResource TestingBannerDarkLink}}">
+                        <Label.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnTestingServerBannerUrlTapped" />
+                        </Label.GestureRecognizers>
+                    </Label>
+                </FlexLayout>
+            </Border>
         </Grid>
     </Shell.TitleView>
 
