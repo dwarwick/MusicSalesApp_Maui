@@ -109,6 +109,16 @@ public partial class AppShell : Shell
 		});
 	}
 
+	private async void OnAccountDeletionClicked(object? sender, EventArgs e)
+	{
+		Shell.Current.FlyoutIsPresented = false;
+		await GoToAsync("policy", new Dictionary<string, object>
+		{
+			["title"] = "Account Deletion",
+			["path"] = "/account-deletion"
+		});
+	}
+
 	private async void OnRefundPolicyClicked(object? sender, EventArgs e)
 	{
 		Shell.Current.FlyoutIsPresented = false;

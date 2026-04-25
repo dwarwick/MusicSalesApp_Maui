@@ -99,10 +99,10 @@
                                    FontSize="15"
                                    FontAttributes="Bold"
                                    TextColor="#d9534f" />
-                            <Label Text="• All your data including purchases, playlists, and subscriptions will be permanently deleted."
+                            <Label Text="• All your account data including playlists and subscription records will be permanently deleted."
                                    FontSize="13"
                                    TextColor="{AppThemeBinding Light=#333333, Dark=#e0e0e0}" />
-                            <Label Text="• You will no longer have access to your existing playlists if you create an account in the future."
+                            <Label Text="• If you create a new account later, your deleted playlists and preferences will not be restored."
                                    FontSize="13"
                                    TextColor="{AppThemeBinding Light=#333333, Dark=#e0e0e0}" />
                             <Label Text="• This action cannot be undone!"
@@ -118,6 +118,12 @@
                            FontAttributes="Italic"
                            TextColor="#d9534f"
                            IsVisible="{Binding ShowCancelSubscription}" />
+
+                    <Label Text="If you are an active creator, you must stop being a creator on the website before deleting your account."
+                           FontSize="14"
+                           FontAttributes="Italic"
+                           TextColor="#d9534f"
+                           IsVisible="{Binding ShowCreatorDeletionBlockedMessage}" />
 
                     <Button Text="Delete My Account"
                             Command="{Binding ShowDeleteAccountPromptCommand}"

@@ -66,12 +66,18 @@ public partial class AccountSettingsViewModel : ObservableObject
     [ObservableProperty]
     public partial string ErrorMessage { get; set; } = string.Empty;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanDeleteAccount))]
+    [NotifyPropertyChangedFor(nameof(ShowCreatorDeletionBlockedMessage))]
+    public partial bool IsActiveCreator { get; set; }
+
     public bool ShowCancelSubscription => HasActiveSubscription && !SubscriptionEndDate.HasValue;
     public bool CanCreateSubscription => !ShowCancelSubscription;
-    public bool CanDeleteAccount => !ShowCancelSubscription;
+    public bool CanDeleteAccount => !ShowCancelSubscription && !IsActiveCreator;
     public bool CanConfirmDelete => string.Equals(ConfirmationText?.Trim(), "DELETE", StringComparison.OrdinalIgnoreCase);
     public bool ShowSubscriptionEndDate => SubscriptionEndDate.HasValue && HasActiveSubscription;
     public bool ShowBillingSource => !string.IsNullOrWhiteSpace(SubscriptionBillingSource);
+    public bool ShowCreatorDeletionBlockedMessage => IsActiveCreator;
     public string SubscriptionStatusText => ShowCancelSubscription
         ? "Active"
         : SubscriptionEndDate.HasValue
@@ -206,6 +212,15 @@ public partial class AccountSettingsViewModel : ObservableObject
     {
         ErrorMessage = string.Empty;
 
+        if (IsActiveCreator)
+        {
+            await _alertService.DisplayAlertAsync(
+                "Creator Account",
+                "You must stop being a creator on the Streamtunes website before deleting your account.",
+                "OK");
+            return;
+        }
+
         if (HasActiveSubscription)
         {
             await _alertService.DisplayAlertAsync(
@@ -218,9 +233,9 @@ public partial class AccountSettingsViewModel : ObservableObject
         var confirmed = await _alertService.ShowConfirmAsync(
             "Delete Account",
             "Warning: This will permanently delete your account.\n\n" +
-            "• All your data including purchases, playlists, and subscriptions will be permanently deleted.\n" +
+            "• All your account data including playlists, likes/dislikes, reports, and subscription records will be permanently deleted.\n" +
             "• Your custom playlists will be deleted immediately.\n" +
-            "• You will no longer have access to your existing playlists if you create an account in the future.\n\n" +
+            "• If you create an account again later, your deleted playlists and preferences will not be restored.\n\n" +
             "This action cannot be undone!",
             "Continue",
             "Cancel");
@@ -286,6 +301,7 @@ public partial class AccountSettingsViewModel : ObservableObject
         SubscriptionEndDate = status?.EndDate ?? _authService.SubscriptionEndDate;
         SubscriptionStatus = status?.Status ?? _authService.SubscriptionStatus ?? string.Empty;
         SubscriptionBillingSource = status?.BillingSource ?? _authService.BillingSource ?? string.Empty;
+        IsActiveCreator = _authService.IsCreator;
     }
 
     private void OnAuthStateChanged()

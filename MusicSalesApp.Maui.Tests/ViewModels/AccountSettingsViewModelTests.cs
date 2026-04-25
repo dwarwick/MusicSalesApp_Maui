@@ -25,6 +25,7 @@ public class AccountSettingsViewModelTests
 
         _mockAuthService.Setup(a => a.Email).Returns("test@example.com");
         _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+        _mockAuthService.Setup(a => a.IsCreator).Returns(false);
         _mockMusicService.Setup(m => m.GetSubscriptionStatusAsync())
             .ReturnsAsync(new SubscriptionStatusDto { HasSubscription = false });
 
@@ -48,6 +49,7 @@ public class AccountSettingsViewModelTests
         {
             Assert.That(_viewModel.UserEmail, Is.EqualTo("test@example.com"));
             Assert.That(_viewModel.HasActiveSubscription, Is.False);
+            Assert.That(_viewModel.IsActiveCreator, Is.False);
             Assert.That(_viewModel.ShowCancelSubscription, Is.False);
             Assert.That(_viewModel.ShowDeleteConfirmation, Is.False);
             Assert.That(_viewModel.ConfirmationText, Is.EqualTo(string.Empty));
@@ -88,6 +90,13 @@ public class AccountSettingsViewModelTests
     }
 
     [Test]
+    public void CanDeleteAccount_FalseWhenActiveCreator()
+    {
+        _viewModel.IsActiveCreator = true;
+        Assert.That(_viewModel.CanDeleteAccount, Is.False);
+    }
+
+    [Test]
     public async Task OnAppearingAsync_RefreshesAuthStateAndAppliesLatestSubscriptionValues()
     {
         var endDate = DateTime.UtcNow.AddDays(30);
@@ -99,6 +108,7 @@ public class AccountSettingsViewModelTests
                 _mockAuthService.Setup(a => a.SubscriptionStatus).Returns("ACTIVE");
                 _mockAuthService.Setup(a => a.SubscriptionEndDate).Returns(endDate);
                 _mockAuthService.Setup(a => a.BillingSource).Returns("PayPal");
+                _mockAuthService.Setup(a => a.IsCreator).Returns(true);
             })
             .Returns(Task.CompletedTask);
 
@@ -107,6 +117,7 @@ public class AccountSettingsViewModelTests
         Assert.Multiple(() =>
         {
             Assert.That(_viewModel.HasActiveSubscription, Is.True);
+            Assert.That(_viewModel.IsActiveCreator, Is.True);
             Assert.That(_viewModel.SubscriptionStatus, Is.EqualTo("ACTIVE"));
             Assert.That(_viewModel.SubscriptionEndDate, Is.EqualTo(endDate));
             Assert.That(_viewModel.SubscriptionBillingSource, Is.EqualTo("PayPal"));
@@ -259,6 +270,20 @@ public class AccountSettingsViewModelTests
     }
 
     [Test]
+    public async Task ShowDeleteAccountPromptCommand_WithActiveCreator_ShowsBlockingAlert()
+    {
+        _viewModel.IsActiveCreator = true;
+
+        await _viewModel.ShowDeleteAccountPromptCommand.ExecuteAsync(null);
+
+        _mockAlertService.Verify(a => a.DisplayAlertAsync(
+            "Creator Account",
+            It.Is<string>(s => s.Contains("stop being a creator") && s.Contains("website")),
+            "OK"), Times.Once);
+        Assert.That(_viewModel.ShowDeleteConfirmation, Is.False);
+    }
+
+    [Test]
     public async Task SubscribeCommand_Success_PurchasesAndRefreshesStatus()
     {
         _mockBillingService.Setup(b => b.PurchaseSubscriptionAsync())
@@ -404,6 +429,7 @@ public class AccountSettingsViewModelTests
     {
         _mockAuthService.Setup(a => a.Email).Returns("new@example.com");
         _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(true);
+        _mockAuthService.Setup(a => a.IsCreator).Returns(true);
         _mockMusicService.Setup(m => m.GetSubscriptionStatusAsync())
             .ReturnsAsync(new SubscriptionStatusDto
             {
@@ -420,6 +446,7 @@ public class AccountSettingsViewModelTests
         {
             Assert.That(_viewModel.UserEmail, Is.EqualTo("new@example.com"));
             Assert.That(_viewModel.HasActiveSubscription, Is.True);
+            Assert.That(_viewModel.IsActiveCreator, Is.True);
         });
     }
 
