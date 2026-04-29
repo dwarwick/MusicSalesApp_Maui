@@ -14,6 +14,19 @@ public class RegisterRequestDto
     public string Password { get; set; } = string.Empty;
 }
 
+public class GoogleExchangeRequestDto
+{
+    public string ExchangeToken { get; set; } = string.Empty;
+}
+
+public class GoogleRegisterRequestDto
+{
+    public string PendingRegistrationToken { get; set; } = string.Empty;
+    public bool AcceptTermsOfUse { get; set; }
+    public bool AcceptPrivacyPolicy { get; set; }
+    public bool AcceptRefundPolicy { get; set; }
+}
+
 public class VerifyCodeRequestDto
 {
     public int UserId { get; set; }
@@ -61,6 +74,15 @@ public class RegisterResponseDto
 {
     public int UserId { get; set; }
     public string Message { get; set; } = string.Empty;
+}
+
+public class GoogleAuthResultDto
+{
+    public bool Success { get; set; }
+    public bool RequiresRegistration { get; set; }
+    public string ErrorMessage { get; set; } = string.Empty;
+    public string PendingRegistrationToken { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
 }
 
 public class ApiMessageResponse

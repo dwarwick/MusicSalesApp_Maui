@@ -1,10 +1,13 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Maui.Authentication;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Moq.Protected;
 using MusicSalesApp.Maui.Services;
+using MusicSalesApp.Maui.ViewModels;
 
 namespace MusicSalesApp.Maui.Tests.Services;
 
@@ -12,7 +15,9 @@ namespace MusicSalesApp.Maui.Tests.Services;
 public class AuthServiceTests
 {
     private Mock<IHttpClientFactory> _mockHttpClientFactory;
+    private Mock<IConfiguration> _mockConfiguration;
     private Mock<ILogger<AuthService>> _mockLogger;
+    private Mock<IWebAuthenticatorService> _mockWebAuthenticatorService;
     private Mock<IBillingService> _mockBillingService;
     private Mock<IMusicService> _mockMusicService;
     private AuthService _authService;
@@ -21,13 +26,18 @@ public class AuthServiceTests
     public void Setup()
     {
         _mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        _mockConfiguration = new Mock<IConfiguration>();
         _mockLogger = new Mock<ILogger<AuthService>>();
+        _mockWebAuthenticatorService = new Mock<IWebAuthenticatorService>();
         _mockBillingService = new Mock<IBillingService>();
         _mockMusicService = new Mock<IMusicService>();
+        _mockConfiguration.Setup(c => c["MobileExternalAuth:CallbackUrl"]).Returns("streamtunes://auth");
 
         _authService = new AuthService(
             _mockHttpClientFactory.Object,
+            _mockConfiguration.Object,
             _mockLogger.Object,
+            _mockWebAuthenticatorService.Object,
             _mockBillingService.Object,
             _mockMusicService.Object);
     }
@@ -153,6 +163,82 @@ public class AuthServiceTests
             Assert.That(success, Is.False);
             Assert.That(error, Does.Contain("Email and password are required."));
         });
+    }
+
+    [Test]
+    public async Task AuthenticateWithGoogleAsync_ReturnsPendingRegistration_WhenCallbackRequiresRegistration()
+    {
+        var httpClient = new HttpClient(new Mock<HttpMessageHandler>().Object)
+        {
+            BaseAddress = new Uri("https://test.example.com/")
+        };
+
+        _mockHttpClientFactory.Setup(f => f.CreateClient("MusicSalesApi")).Returns(httpClient);
+        _mockWebAuthenticatorService.Setup(w => w.AuthenticateAsync(
+                It.IsAny<Uri>(),
+                It.IsAny<Uri>()))
+            .ReturnsAsync(new WebAuthenticatorResult(new Dictionary<string, string>
+            {
+                ["pendingRegistrationToken"] = "pending-token",
+                ["email"] = "new-google@test.com"
+            }));
+
+        var result = await _authService.AuthenticateWithGoogleAsync();
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.RequiresRegistration, Is.True);
+        Assert.That(result.PendingRegistrationToken, Is.EqualTo("pending-token"));
+        Assert.That(result.Email, Is.EqualTo("new-google@test.com"));
+    }
+
+    [Test]
+    public async Task AuthenticateWithGoogleAsync_ReturnsError_WhenCallbackContainsError()
+    {
+        var httpClient = new HttpClient(new Mock<HttpMessageHandler>().Object)
+        {
+            BaseAddress = new Uri("https://test.example.com/")
+        };
+
+        _mockHttpClientFactory.Setup(f => f.CreateClient("MusicSalesApi")).Returns(httpClient);
+        _mockWebAuthenticatorService.Setup(w => w.AuthenticateAsync(
+                It.IsAny<Uri>(),
+                It.IsAny<Uri>()))
+            .ReturnsAsync(new WebAuthenticatorResult(new Dictionary<string, string>
+            {
+                ["error"] = "Google sign-in was cancelled."
+            }));
+
+        var result = await _authService.AuthenticateWithGoogleAsync();
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.RequiresRegistration, Is.False);
+        Assert.That(result.ErrorMessage, Is.EqualTo("Google sign-in was cancelled."));
+    }
+
+    [Test]
+    public async Task CompleteGoogleRegistrationAsync_ReturnsServerMessage_OnServerError()
+    {
+        var messageHandler = new Mock<HttpMessageHandler>();
+        messageHandler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent("Policies must be accepted.", Encoding.UTF8, "text/plain")
+            });
+
+        var httpClient = new HttpClient(messageHandler.Object)
+        {
+            BaseAddress = new Uri("https://test.example.com/")
+        };
+
+        _mockHttpClientFactory.Setup(f => f.CreateClient("MusicSalesApi")).Returns(httpClient);
+
+        var (success, error) = await _authService.CompleteGoogleRegistrationAsync("pending-token", true, true, true);
+
+        Assert.That(success, Is.False);
+        Assert.That(error, Does.Contain("Policies must be accepted."));
     }
 
     private void SetupMockSubscriptionStatusResponse(bool hasSubscription, string? billingSource, string? status = null, DateTime? endDate = null)

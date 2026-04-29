@@ -74,6 +74,20 @@
                              VerticalOptions="Center" />
             </Grid>
 
+
+                <ImageButton Source="google_logo.svg"
+                             Command="{Binding GoogleLoginCommand}"
+                             IsEnabled="{Binding IsBusy, Converter={toolkit:InvertedBoolConverter}}"
+                             BackgroundColor="White"
+                             BorderColor="{AppThemeBinding Light=#DADCE0, Dark=#DADCE0}"
+                             BorderWidth="1"
+                             CornerRadius="8"
+                             HeightRequest="48"
+                             Padding="12"
+                             Aspect="AspectFit"
+                             HorizontalOptions="Fill"
+                             SemanticProperties.Description="Continue with Google" />
+
             <!-- Activity Indicator -->
             <ActivityIndicator IsRunning="{Binding IsBusy}"
                                IsVisible="{Binding IsBusy}"

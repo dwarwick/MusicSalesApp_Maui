@@ -2,11 +2,14 @@ using MusicSalesApp.Maui.ViewModels;
 
 namespace MusicSalesApp.Maui.Views;
 
-public partial class RegisterPage : ContentPage
+public partial class RegisterPage : ContentPage, IQueryAttributable
 {
+    private readonly RegisterViewModel _viewModel;
+
     public RegisterPage(RegisterViewModel viewModel)
     {
         InitializeComponent();
+        _viewModel = viewModel;
         BindingContext = viewModel;
     }
 
@@ -15,4 +18,7 @@ public partial class RegisterPage : ContentPage
 
     private void OnToggleConfirmPasswordVisibility(object? sender, EventArgs e)
         => ConfirmPasswordEntry.IsPassword = !ConfirmPasswordEntry.IsPassword;
+
+    public void ApplyQueryAttributes(IDictionary<string, object> query)
+        => _viewModel.ApplyQueryAttributes(query);
 }

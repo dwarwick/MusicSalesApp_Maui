@@ -24,6 +24,9 @@ public interface IAuthService
     bool IsBiometricEnabled { get; }
 
     Task<(bool Success, string Error)> LoginAsync(string email, string password);
+    Task<GoogleAuthResultDto> AuthenticateWithGoogleAsync();
+    Task<(bool Success, string Error)> CompleteGoogleRegistrationAsync(string pendingRegistrationToken,
+        bool acceptTermsOfUse, bool acceptPrivacyPolicy, bool acceptRefundPolicy);
     Task<(bool Success, string Error, int UserId)> RegisterAsync(string email, string password);
     Task<(bool Success, string Error, LoginResponseDto? LoginData)> VerifyCodeAsync(int userId, string code);
     Task<(bool Success, string Error)> ResendCodeAsync(int userId);

@@ -1,7 +1,9 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Net.Http.Json;
 using System.Security.Claims;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Maui.Authentication;
 using MusicSalesApp.Maui.ViewModels;
 
 namespace MusicSalesApp.Maui.Services;
@@ -9,7 +11,9 @@ namespace MusicSalesApp.Maui.Services;
 public class AuthService : IAuthService
 {
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IConfiguration _configuration;
     private readonly ILogger<AuthService> _logger;
+    private readonly IWebAuthenticatorService _webAuthenticatorService;
     private readonly IBillingService _billingService;
     private readonly IMusicService _musicService;
 
@@ -36,11 +40,14 @@ public class AuthService : IAuthService
     public string? Token { get; private set; }
     public bool IsBiometricEnabled => SecureStorage.Default.GetAsync(BioEmailKey).GetAwaiter().GetResult() != null;
 
-    public AuthService(IHttpClientFactory httpClientFactory, ILogger<AuthService> logger,
+    public AuthService(IHttpClientFactory httpClientFactory, IConfiguration configuration,
+        ILogger<AuthService> logger, IWebAuthenticatorService webAuthenticatorService,
         IBillingService billingService, IMusicService musicService)
     {
         _httpClientFactory = httpClientFactory;
+        _configuration = configuration;
         _logger = logger;
+        _webAuthenticatorService = webAuthenticatorService;
         _billingService = billingService;
         _musicService = musicService;
     }
@@ -67,6 +74,116 @@ public class AuthService : IAuthService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Login failed");
+            return (false, "Unable to connect to server. Please check your internet connection.");
+        }
+    }
+
+    public async Task<GoogleAuthResultDto> AuthenticateWithGoogleAsync()
+    {
+        var client = _httpClientFactory.CreateClient("MusicSalesApi");
+        try
+        {
+            if (client.BaseAddress == null)
+            {
+                return new GoogleAuthResultDto { ErrorMessage = "Google sign-in is not configured." };
+            }
+
+            var callbackUrl = _configuration["MobileExternalAuth:CallbackUrl"] ?? "streamtunes://auth";
+            var authResult = await _webAuthenticatorService.AuthenticateAsync(
+                new Uri(client.BaseAddress, "api/mobile-auth/google/start"),
+                new Uri(callbackUrl));
+
+            if (authResult.Properties.TryGetValue("error", out var error) && !string.IsNullOrWhiteSpace(error))
+            {
+                return new GoogleAuthResultDto { ErrorMessage = error };
+            }
+
+            if (authResult.Properties.TryGetValue("pendingRegistrationToken", out var pendingToken) &&
+                !string.IsNullOrWhiteSpace(pendingToken))
+            {
+                authResult.Properties.TryGetValue("email", out var pendingEmail);
+                return new GoogleAuthResultDto
+                {
+                    RequiresRegistration = true,
+                    PendingRegistrationToken = pendingToken,
+                    Email = pendingEmail ?? string.Empty
+                };
+            }
+
+            if (!authResult.Properties.TryGetValue("exchangeToken", out var exchangeToken) ||
+                string.IsNullOrWhiteSpace(exchangeToken))
+            {
+                return new GoogleAuthResultDto { ErrorMessage = "Google sign-in returned an invalid response." };
+            }
+
+            var response = await client.PostAsJsonAsync("api/mobile-auth/google/exchange",
+                new GoogleExchangeRequestDto { ExchangeToken = exchangeToken });
+            if (!response.IsSuccessStatusCode)
+            {
+                var exchangeError = await ReadErrorMessageAsync(response);
+                return new GoogleAuthResultDto { ErrorMessage = exchangeError };
+            }
+
+            var data = await response.Content.ReadFromJsonAsync<LoginResponseDto>();
+            if (data == null)
+            {
+                return new GoogleAuthResultDto { ErrorMessage = "Invalid server response." };
+            }
+
+            await StoreSessionAsync(data);
+            return new GoogleAuthResultDto
+            {
+                Success = true,
+                Email = data.Email
+            };
+        }
+        catch (TaskCanceledException)
+        {
+            return new GoogleAuthResultDto { ErrorMessage = "Google sign-in was cancelled." };
+        }
+        catch (Exception ex) when (ex is NotSupportedException or PlatformNotSupportedException)
+        {
+            _logger.LogWarning(ex, "Google sign-in is not supported on this platform");
+            return new GoogleAuthResultDto { ErrorMessage = "Google sign-in is not available on this platform yet." };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Google sign-in failed");
+            return new GoogleAuthResultDto { ErrorMessage = "Unable to connect to server. Please check your internet connection." };
+        }
+    }
+
+    public async Task<(bool Success, string Error)> CompleteGoogleRegistrationAsync(string pendingRegistrationToken,
+        bool acceptTermsOfUse, bool acceptPrivacyPolicy, bool acceptRefundPolicy)
+    {
+        var client = _httpClientFactory.CreateClient("MusicSalesApi");
+        try
+        {
+            var response = await client.PostAsJsonAsync("api/mobile-auth/google/register", new GoogleRegisterRequestDto
+            {
+                PendingRegistrationToken = pendingRegistrationToken,
+                AcceptTermsOfUse = acceptTermsOfUse,
+                AcceptPrivacyPolicy = acceptPrivacyPolicy,
+                AcceptRefundPolicy = acceptRefundPolicy
+            });
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await ReadErrorMessageAsync(response);
+                return (false, error);
+            }
+
+            var data = await response.Content.ReadFromJsonAsync<LoginResponseDto>();
+            if (data == null)
+            {
+                return (false, "Invalid server response.");
+            }
+
+            await StoreSessionAsync(data);
+            return (true, string.Empty);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Google registration failed");
             return (false, "Unable to connect to server. Please check your internet connection.");
         }
     }

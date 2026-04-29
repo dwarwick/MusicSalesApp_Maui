@@ -20,6 +20,11 @@ public partial class RegisterViewModel : ObservableObject
     public partial string ConfirmPassword { get; set; } = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsGoogleRegistrationPending))]
+    [NotifyPropertyChangedFor(nameof(RegisterButtonText))]
+    public partial string PendingGoogleRegistrationToken { get; set; } = string.Empty;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanRegister))]
     public partial bool AcceptTermsOfUse { get; set; }
 
@@ -38,6 +43,8 @@ public partial class RegisterViewModel : ObservableObject
     public partial string? ErrorMessage { get; set; }
 
     public bool CanRegister => AcceptTermsOfUse && AcceptPrivacyPolicy && AcceptRefundPolicy;
+    public bool IsGoogleRegistrationPending => !string.IsNullOrWhiteSpace(PendingGoogleRegistrationToken);
+    public string RegisterButtonText => IsGoogleRegistrationPending ? "Complete Google Sign Up" : "Register";
 
     public RegisterViewModel(IAuthService authService, INavigationService navigationService, IAppConfig appConfig)
     {
@@ -82,6 +89,41 @@ public partial class RegisterViewModel : ObservableObject
         if (!AcceptTermsOfUse || !AcceptPrivacyPolicy || !AcceptRefundPolicy)
         {
             ErrorMessage = "You must accept the Terms of Use, Privacy Policy, and Refund Policy to register.";
+            return;
+        }
+
+        if (IsGoogleRegistrationPending)
+        {
+            IsBusy = true;
+            ErrorMessage = null;
+
+            try
+            {
+                var (success, message) = await _authService.CompleteGoogleRegistrationAsync(
+                    PendingGoogleRegistrationToken,
+                    AcceptTermsOfUse,
+                    AcceptPrivacyPolicy,
+                    AcceptRefundPolicy);
+
+                if (success)
+                {
+                    PendingGoogleRegistrationToken = string.Empty;
+                    await _navigationService.GoToAsync("//MusicLibrary");
+                }
+                else
+                {
+                    ErrorMessage = message ?? "Google registration failed.";
+                }
+            }
+            catch (Exception ex)
+            {
+                ErrorMessage = $"Connection error: {ex.Message}";
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+
             return;
         }
 
@@ -137,8 +179,76 @@ public partial class RegisterViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private async Task RegisterWithGoogleAsync()
+    {
+        if (!AcceptTermsOfUse || !AcceptPrivacyPolicy || !AcceptRefundPolicy)
+        {
+            ErrorMessage = "You must accept the Terms of Use, Privacy Policy, and Refund Policy to register.";
+            return;
+        }
+
+        IsBusy = true;
+        ErrorMessage = null;
+
+        try
+        {
+            var result = await _authService.AuthenticateWithGoogleAsync();
+            if (result.Success)
+            {
+                await _navigationService.GoToAsync("//MusicLibrary");
+                return;
+            }
+
+            if (result.RequiresRegistration && !string.IsNullOrWhiteSpace(result.PendingRegistrationToken))
+            {
+                var (success, message) = await _authService.CompleteGoogleRegistrationAsync(
+                    result.PendingRegistrationToken,
+                    AcceptTermsOfUse,
+                    AcceptPrivacyPolicy,
+                    AcceptRefundPolicy);
+
+                if (success)
+                {
+                    await _navigationService.GoToAsync("//MusicLibrary");
+                    return;
+                }
+
+                ErrorMessage = message ?? "Google registration failed.";
+                return;
+            }
+
+            ErrorMessage = string.IsNullOrWhiteSpace(result.ErrorMessage)
+                ? "Google sign-in failed."
+                : result.ErrorMessage;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Connection error: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
     private async Task GoToLoginAsync()
     {
         await _navigationService.GoToAsync("..");
+    }
+
+    public void ApplyQueryAttributes(IDictionary<string, object> query)
+    {
+        if (query.TryGetValue("PendingGoogleRegistrationToken", out var pendingToken) && pendingToken is string token)
+        {
+            PendingGoogleRegistrationToken = token;
+            Password = string.Empty;
+            ConfirmPassword = string.Empty;
+        }
+
+        if (query.TryGetValue("Email", out var email) && email is string emailValue)
+        {
+            Email = emailValue;
+        }
     }
 }

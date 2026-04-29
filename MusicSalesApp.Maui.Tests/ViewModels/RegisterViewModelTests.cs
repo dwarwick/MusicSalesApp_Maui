@@ -223,4 +223,48 @@ public class RegisterViewModelTests
         _mockNavigationService.Verify(n => n.GoToAsync("policy", It.Is<Dictionary<string, object>>(d =>
             (string)d["title"] == "User Refund Policy" && (string)d["path"] == "/user-refund-policy")), Times.Once);
     }
+
+    [Test]
+    public async Task RegisterAsync_WhenPendingGoogleRegistration_CompletesGoogleRegistration()
+    {
+        AcceptAllTerms();
+        _viewModel.PendingGoogleRegistrationToken = "pending-token";
+        _viewModel.Email = "new-google@test.com";
+        _mockAuthService.Setup(a => a.CompleteGoogleRegistrationAsync("pending-token", true, true, true))
+            .ReturnsAsync((true, string.Empty));
+
+        await _viewModel.RegisterCommand.ExecuteAsync(null);
+
+        _mockAuthService.Verify(a => a.CompleteGoogleRegistrationAsync("pending-token", true, true, true), Times.Once);
+        _mockNavigationService.Verify(n => n.GoToAsync("//MusicLibrary"), Times.Once);
+    }
+
+    [Test]
+    public async Task RegisterWithGoogleAsync_TermsNotAccepted_SetsErrorMessage()
+    {
+        await _viewModel.RegisterWithGoogleCommand.ExecuteAsync(null);
+
+        Assert.That(_viewModel.ErrorMessage, Does.Contain("Terms of Use").And.Contain("Privacy Policy").And.Contain("Refund Policy"));
+        _mockAuthService.Verify(a => a.AuthenticateWithGoogleAsync(), Times.Never);
+    }
+
+    [Test]
+    public async Task RegisterWithGoogleAsync_RequiresRegistration_CompletesGoogleRegistration()
+    {
+        AcceptAllTerms();
+        _mockAuthService.Setup(a => a.AuthenticateWithGoogleAsync())
+            .ReturnsAsync(new GoogleAuthResultDto
+            {
+                RequiresRegistration = true,
+                PendingRegistrationToken = "pending-token",
+                Email = "new-google@test.com"
+            });
+        _mockAuthService.Setup(a => a.CompleteGoogleRegistrationAsync("pending-token", true, true, true))
+            .ReturnsAsync((true, string.Empty));
+
+        await _viewModel.RegisterWithGoogleCommand.ExecuteAsync(null);
+
+        _mockAuthService.Verify(a => a.CompleteGoogleRegistrationAsync("pending-token", true, true, true), Times.Once);
+        _mockNavigationService.Verify(n => n.GoToAsync("//MusicLibrary"), Times.Once);
+    }
 }

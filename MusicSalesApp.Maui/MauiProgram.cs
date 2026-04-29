@@ -142,6 +142,7 @@ public static class MauiProgram
 
 		// Register services
 		builder.Services.AddSingleton<IAuthService, AuthService>();
+		builder.Services.AddSingleton<IWebAuthenticatorService, WebAuthenticatorService>();
 		builder.Services.AddSingleton<IAppSettingsService, AppSettingsService>();
 		builder.Services.AddSingleton<IMusicService, MusicService>();
 		builder.Services.AddSingleton<IAlertService, AlertService>();

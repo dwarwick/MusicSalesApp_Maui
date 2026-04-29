@@ -163,4 +163,34 @@ public class LoginViewModelTests
 
         _mockNavigationService.Verify(n => n.GoToAsync("//MusicLibrary"), Times.Once);
     }
+
+    [Test]
+    public async Task GoogleLoginAsync_Success_NavigatesToMusicLibrary()
+    {
+        _mockAuthService.Setup(a => a.AuthenticateWithGoogleAsync())
+            .ReturnsAsync(new GoogleAuthResultDto { Success = true, Email = "user@test.com" });
+
+        await _viewModel.GoogleLoginCommand.ExecuteAsync(null);
+
+        _mockNavigationService.Verify(n => n.GoToAsync("//MusicLibrary"), Times.Once);
+    }
+
+    [Test]
+    public async Task GoogleLoginAsync_RequiresRegistration_NavigatesToRegister()
+    {
+        _mockAuthService.Setup(a => a.AuthenticateWithGoogleAsync())
+            .ReturnsAsync(new GoogleAuthResultDto
+            {
+                RequiresRegistration = true,
+                PendingRegistrationToken = "pending-token",
+                Email = "new-google@test.com"
+            });
+
+        await _viewModel.GoogleLoginCommand.ExecuteAsync(null);
+
+        _mockNavigationService.Verify(n => n.GoToAsync("register", It.Is<IDictionary<string, object>>(d =>
+            (string)d["PendingGoogleRegistrationToken"] == "pending-token" &&
+            (string)d["Email"] == "new-google@test.com"
+        )), Times.Once);
+    }
 }

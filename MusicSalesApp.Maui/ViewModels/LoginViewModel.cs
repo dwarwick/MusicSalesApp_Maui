@@ -124,6 +124,45 @@ public partial class LoginViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private async Task GoogleLoginAsync()
+    {
+        IsBusy = true;
+        ErrorMessage = null;
+
+        try
+        {
+            var result = await _authService.AuthenticateWithGoogleAsync();
+            if (result.Success)
+            {
+                await _navigationService.GoToAsync("//MusicLibrary");
+                return;
+            }
+
+            if (result.RequiresRegistration && !string.IsNullOrWhiteSpace(result.PendingRegistrationToken))
+            {
+                await _navigationService.GoToAsync("register", new Dictionary<string, object>
+                {
+                    ["PendingGoogleRegistrationToken"] = result.PendingRegistrationToken,
+                    ["Email"] = result.Email
+                });
+                return;
+            }
+
+            ErrorMessage = string.IsNullOrWhiteSpace(result.ErrorMessage)
+                ? "Google sign-in failed."
+                : result.ErrorMessage;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Connection error: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
     private async Task GoToRegisterAsync()
     {
         await _navigationService.GoToAsync("register");
