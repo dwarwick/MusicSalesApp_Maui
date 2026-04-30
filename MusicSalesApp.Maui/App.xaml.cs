@@ -9,13 +9,15 @@ public partial class App : Application
 	private readonly IBillingService _billingService;
 	private readonly ITestingServerBannerService _testingServerBannerService;
 	private readonly IBrowserService _browserService;
+	private readonly ITipFlowHandler _tipFlowHandler;
 
 	public App(
 		IAuthService authService,
 		IMusicService musicService,
 		IBillingService billingService,
 		ITestingServerBannerService testingServerBannerService,
-		IBrowserService browserService)
+		IBrowserService browserService,
+		ITipFlowHandler tipFlowHandler)
 	{
 		InitializeComponent();
 		_authService = authService;
@@ -23,6 +25,7 @@ public partial class App : Application
 		_billingService = billingService;
 		_testingServerBannerService = testingServerBannerService;
 		_browserService = browserService;
+		_tipFlowHandler = tipFlowHandler;
 
 		// Sync the Android system theme to MAUI at startup.
 		// Application.Current is now set (we're in the constructor), so this is safe.
@@ -58,6 +61,11 @@ public partial class App : Application
 	protected override async void OnAppLinkRequestReceived(Uri uri)
 	{
 		base.OnAppLinkRequestReceived(uri);
+
+		if (await _tipFlowHandler.HandleAppLinkAsync(uri))
+		{
+			return;
+		}
 
 		// Handle deep links like https://streamtunes.net/song/{title}
 		if (uri.Scheme == "https"

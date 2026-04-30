@@ -55,7 +55,7 @@ public class MusicServiceTests
         // Arrange
         var expectedSongs = new List<SongDto>
         {
-            new() { Id = 1, SongTitle = "Test Song", ArtistName = "Artist", Genre = "Rock", StreamCount = 42 },
+            new() { Id = 1, SongTitle = "Test Song", ArtistName = "Artist", Genre = "Rock", StreamCount = 42, CreatorId = 77, CreatorUserId = 88 },
             new() { Id = 2, SongTitle = "Another", ArtistName = "Other", Genre = "Pop", StreamCount = 10 }
         };
         var handler = CreateHandlerWithResponse(HttpStatusCode.OK, expectedSongs);
@@ -68,8 +68,45 @@ public class MusicServiceTests
         // Assert
         Assert.That(result, Has.Count.EqualTo(2));
         Assert.That(result[0].SongTitle, Is.EqualTo("Test Song"));
+        Assert.That(result[0].CreatorId, Is.EqualTo(77));
+        Assert.That(result[0].CreatorUserId, Is.EqualTo(88));
         Assert.That(result[1].SongTitle, Is.EqualTo("Another"));
         Assert.That(service.LastSongsError, Is.Null);
+    }
+
+    [Test]
+    public async Task GetSongByTitleAsync_ReturnsSongWithCreatorIdentifiers()
+    {
+        // Arrange
+        var expectedSong = new SongDto
+        {
+            Id = 5,
+            SongTitle = "Deep Link Song",
+            ArtistName = "Artist",
+            CreatorId = 55,
+            CreatorUserId = 99
+        };
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.Is<HttpRequestMessage>(r =>
+                    r.Method == HttpMethod.Get &&
+                    r.RequestUri!.PathAndQuery.EndsWith("api/music/song-by-title/Deep%20Link%20Song")),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(expectedSong)
+            });
+        CreateMockHttpClient(handler.Object);
+        var service = CreateService();
+
+        // Act
+        var result = await service.GetSongByTitleAsync("Deep Link Song");
+
+        // Assert
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result!.CreatorId, Is.EqualTo(55));
+        Assert.That(result.CreatorUserId, Is.EqualTo(99));
     }
 
     [Test]

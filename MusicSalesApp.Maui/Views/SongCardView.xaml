@@ -165,7 +165,7 @@
                        VerticalTextAlignment="Center" />
             </HorizontalStackLayout>
 
-            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto"
+                        <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto"
                   ColumnSpacing="6"
                   HorizontalOptions="Center">
                 <views:FacebookShareButton Grid.Column="0"
@@ -185,7 +185,14 @@
                                IsVisible="{Binding Source={x:Reference Root}, Path=ShowAddToPlaylistButton}"
                                            VerticalOptions="Center" />
 
-                <Grid Grid.Column="3"
+                                <views:TipButton Grid.Column="3"
+                                                                 SongId="{Binding Id}"
+                                                                 SongTitle="{Binding SongTitle}"
+                                                                 CreatorId="{Binding CreatorId}"
+                                                                 CreatorUserId="{Binding CreatorUserId}"
+                                                                 VerticalOptions="Center" />
+
+                                <Grid Grid.Column="4"
                       HeightRequest="32"
                       WidthRequest="32">
                     <Grid.GestureRecognizers>
@@ -202,7 +209,7 @@
                           VerticalOptions="Center" />
                 </Grid>
 
-                <Button Grid.Column="5"
+                <Button Grid.Column="6"
                         Command="{Binding Source={x:Reference Root}, Path=PlaySongCommand}"
                         CommandParameter="{Binding .}"
                         Text="&#x25B6;"

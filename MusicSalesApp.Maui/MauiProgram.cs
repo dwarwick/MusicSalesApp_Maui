@@ -152,6 +152,9 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IPlaybackService, PlaybackService>();
 		builder.Services.AddSingleton<IBrowserService, BrowserService>();
 		builder.Services.AddSingleton<IPlaylistService, PlaylistService>();
+		builder.Services.AddSingleton<ITipApiService, TipApiService>();
+		builder.Services.AddSingleton<ITipAmountPicker, TipAmountPicker>();
+		builder.Services.AddSingleton<ITipFlowHandler, TipFlowHandler>();
 		builder.Services.AddSingleton<IAddToPlaylistHandler, AddToPlaylistHandler>();
 			// Initialize Plugin.MediaManager with the platform context
 			builder.ConfigureLifecycleEvents(events =>

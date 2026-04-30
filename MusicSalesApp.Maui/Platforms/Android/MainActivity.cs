@@ -34,6 +34,11 @@ namespace MusicSalesApp.Maui;
     Categories = [Intent.CategoryDefault, Intent.CategoryBrowsable],
     DataScheme = "streamtunes",
     DataHost = "share")]
+[IntentFilter(
+    [Intent.ActionView],
+    Categories = [Intent.CategoryDefault, Intent.CategoryBrowsable],
+    DataScheme = "streamtunes",
+    DataHost = "tip")]
 public class MainActivity : MauiAppCompatActivity
 {
     protected override void OnCreate(Bundle? savedInstanceState)

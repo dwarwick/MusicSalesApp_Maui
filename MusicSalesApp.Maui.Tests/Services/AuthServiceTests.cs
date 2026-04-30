@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
+using System.Reflection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Maui.Authentication;
 using Microsoft.Extensions.Logging;
@@ -239,6 +240,32 @@ public class AuthServiceTests
 
         Assert.That(success, Is.False);
         Assert.That(error, Does.Contain("Policies must be accepted."));
+    }
+
+    [Test]
+    public void IsValidatedUser_WhenLoggedInConfirmedAndUserRole_ReturnsTrue()
+    {
+        SetBackingField(nameof(AuthService.IsLoggedIn), true);
+        SetBackingField(nameof(AuthService.EmailConfirmed), true);
+        SetBackingField(nameof(AuthService.Roles), new List<string> { "User" });
+
+        Assert.That(_authService.IsValidatedUser, Is.True);
+    }
+
+    [Test]
+    public void IsValidatedUser_WhenUserRoleMissing_ReturnsFalse()
+    {
+        SetBackingField(nameof(AuthService.IsLoggedIn), true);
+        SetBackingField(nameof(AuthService.EmailConfirmed), true);
+        SetBackingField(nameof(AuthService.Roles), new List<string> { "NonValidatedUser" });
+
+        Assert.That(_authService.IsValidatedUser, Is.False);
+    }
+
+    private void SetBackingField(string propertyName, object value)
+    {
+        var field = typeof(AuthService).GetField($"<{propertyName}>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic);
+        field!.SetValue(_authService, value);
     }
 
     private void SetupMockSubscriptionStatusResponse(bool hasSubscription, string? billingSource, string? status = null, DateTime? endDate = null)

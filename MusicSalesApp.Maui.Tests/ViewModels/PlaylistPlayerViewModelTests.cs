@@ -626,6 +626,42 @@ public class PlaylistPlayerViewModelTests
     }
 
     [Test]
+    public async Task PlaylistIdParam_MapsCreatorIdentifiersForTipButtons()
+    {
+        _mockAuthService.SetupGet(a => a.HasActiveSubscription).Returns(true);
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+        _mockPlaylistService.Setup(p => p.GetPlaylistSongsAsync(42))
+            .ReturnsAsync(new PlaylistSongsDto
+            {
+                PlaylistId = 42,
+                PlaylistName = "My Mix",
+                IsSystemGenerated = false,
+                Songs =
+                [
+                    new PlaylistSongDto
+                    {
+                        Id = 5,
+                        SongMetadataId = 5,
+                        SongTitle = "Hit",
+                        ArtistName = "Star",
+                        Genre = "Pop",
+                        StreamUrl = "http://5.mp3",
+                        CreatorId = 55,
+                        CreatorUserId = 77
+                    }
+                ]
+            });
+
+        _viewModel.PlaylistIdParam = "42";
+        await Task.Delay(100);
+
+        Assert.That(_viewModel.Songs, Has.Count.EqualTo(1));
+        Assert.That(_viewModel.Songs[0].CreatorId, Is.EqualTo(55));
+        Assert.That(_viewModel.Songs[0].CreatorUserId, Is.EqualTo(77));
+    }
+
+    [Test]
     public async Task MoveTrackUp_ReordersAndPersists()
     {
         _mockAuthService.SetupGet(a => a.HasActiveSubscription).Returns(true);

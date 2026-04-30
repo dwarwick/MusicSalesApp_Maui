@@ -205,6 +205,13 @@
                         <views:AddToPlaylistButton SongId="{Binding CurrentSong.Id}"
                                                    SongTitle="{Binding CurrentSong.SongTitle}"
                                                    VerticalOptions="Center" />
+
+                        <!-- Tip Button -->
+                        <views:TipButton SongId="{Binding CurrentSong.Id}"
+                                         SongTitle="{Binding CurrentSong.SongTitle}"
+                                         CreatorId="{Binding CurrentSong.CreatorId}"
+                                         CreatorUserId="{Binding CurrentSong.CreatorUserId}"
+                                         VerticalOptions="Center" />
                     </HorizontalStackLayout>
                 </VerticalStackLayout>
 
@@ -260,7 +267,7 @@
                                         CommandParameter="{Binding .}" />
                                 </Border.GestureRecognizers>
 
-                                <Grid ColumnDefinitions="Auto,48,*,Auto,Auto,Auto"
+                                  <Grid ColumnDefinitions="Auto,48,*,Auto,Auto,Auto"
                                       ColumnSpacing="8">
 
                                     <!-- Reorder up/down (only for custom playlists + subscription) -->
@@ -324,8 +331,16 @@
                                            VerticalOptions="Center"
                                            Text="{Binding TrackLengthSeconds, Converter={StaticResource DurationConverter}}" />
 
+                                     <!-- Tip Button -->
+                                     <views:TipButton Grid.Column="4"
+                                                SongId="{Binding Id}"
+                                                SongTitle="{Binding SongTitle}"
+                                                CreatorId="{Binding CreatorId}"
+                                                CreatorUserId="{Binding CreatorUserId}"
+                                                VerticalOptions="Center" />
+
                                     <!-- Remove from playlist (custom playlists only) -->
-                                    <Button Grid.Column="4"
+                                     <Button Grid.Column="5"
                                             Text="✕"
                                             FontSize="14"
                                             HeightRequest="32"

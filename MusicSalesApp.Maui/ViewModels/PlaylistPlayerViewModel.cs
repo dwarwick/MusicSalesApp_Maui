@@ -329,6 +329,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         StreamUrl = ps.StreamUrl,
         TrackLengthSeconds = ps.TrackLengthSeconds,
         StreamCount = ps.StreamCount,
+        CreatorId = ps.CreatorId,
         CreatorUserId = ps.CreatorUserId,
     };
 

@@ -163,7 +163,7 @@ public class PlaylistServiceTests
     {
         var payload = new AvailableSongsResponse
         {
-            Songs = new List<PlaylistSongDto> { new() { Id = 1, SongMetadataId = 10, SongTitle = "A" } },
+            Songs = new List<PlaylistSongDto> { new() { Id = 1, SongMetadataId = 10, SongTitle = "A", CreatorId = 44, CreatorUserId = 77 } },
             RequiresSubscription = false
         };
         CreateMockHttpClient(CreateHandlerWithResponse(HttpStatusCode.OK, payload).Object);
@@ -171,6 +171,8 @@ public class PlaylistServiceTests
         var result = await CreateService().GetAvailableSongsAsync(5);
 
         Assert.That(result.Songs, Has.Count.EqualTo(1));
+        Assert.That(result.Songs[0].CreatorId, Is.EqualTo(44));
+        Assert.That(result.Songs[0].CreatorUserId, Is.EqualTo(77));
         Assert.That(result.RequiresSubscription, Is.False);
     }
 

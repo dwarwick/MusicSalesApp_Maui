@@ -191,6 +191,13 @@
                                                SongTitle="{Binding Song.SongTitle}"
                                                VerticalOptions="Center" />
 
+                    <!-- Tip Button -->
+                    <views:TipButton SongId="{Binding Song.Id}"
+                                     SongTitle="{Binding Song.SongTitle}"
+                                     CreatorId="{Binding Song.CreatorId}"
+                                     CreatorUserId="{Binding Song.CreatorUserId}"
+                                     VerticalOptions="Center" />
+
                     <!-- Report Button -->
                     <VerticalStackLayout VerticalOptions="Center"
                                          Spacing="2">
