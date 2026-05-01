@@ -97,6 +97,10 @@
                            TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}"
                            VerticalOptions="Center"
                            IsVisible="{Binding Song.Genre, Converter={toolkit:IsStringNotNullOrEmptyConverter}}" />
+                          <views:EqualizerPlayButton SongId="{Binding Song.Id}"
+                                         Command="{Binding PlaySongCommand}"
+                                         ButtonSize="40"
+                                         VerticalOptions="Center" />
                     <Label FontSize="13"
                            TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}"
                            VerticalOptions="Center">

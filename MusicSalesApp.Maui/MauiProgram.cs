@@ -150,6 +150,11 @@ public static class MauiProgram
 		builder.Services.AddSingleton<INavigationService, NavigationService>();
 		builder.Services.AddSingleton<IMediaManager>(CrossMediaManager.Current);
 		builder.Services.AddSingleton<IPlaybackService, PlaybackService>();
+	#if ANDROID
+		builder.Services.AddSingleton<IAudioVisualizerService, MusicSalesApp.Maui.Platforms.Android.AudioVisualizerService>();
+	#else
+		builder.Services.AddSingleton<IAudioVisualizerService, NoAudioVisualizerService>();
+	#endif
 		builder.Services.AddSingleton<IBrowserService, BrowserService>();
 		builder.Services.AddSingleton<IPlaylistService, PlaylistService>();
 		builder.Services.AddSingleton<ITipApiService, TipApiService>();
