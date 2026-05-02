@@ -38,14 +38,28 @@
                                      IsVisible="{Binding CurrentSong, Converter={toolkit:IsNotNullConverter}}">
 
                     <!-- Large Album Art -->
-                    <Border HorizontalOptions="Center"
-                            StrokeShape="RoundRectangle 12"
-                            StrokeThickness="0">
-                        <Image Source="{Binding CurrentSong.AlbumArtUrl}"
-                               Aspect="AspectFill"
-                               HeightRequest="280"
-                               WidthRequest="280" />
-                    </Border>
+                          <Grid HorizontalOptions="Center"
+                             HeightRequest="280"
+                             WidthRequest="280">
+                           <Border HorizontalOptions="Center"
+                                StrokeShape="RoundRectangle 12"
+                                StrokeThickness="0">
+                            <Image Source="{Binding CurrentSong.AlbumArtUrl}"
+                                Aspect="AspectFill"
+                                HeightRequest="280"
+                                WidthRequest="280" />
+                           </Border>
+                           <Image Source="ai_generated_badge.svg"
+                               HeightRequest="44"
+                               WidthRequest="44"
+                               Margin="0,0,0,10"
+                               Aspect="AspectFit"
+                               HorizontalOptions="End"
+                               VerticalOptions="End"
+                               TranslationX="20"
+                               InputTransparent="True"
+                               IsVisible="{Binding CurrentSong.IsAiGenerated}" />
+                          </Grid>
 
                     <!-- Song Title -->
                     <Label Text="{Binding CurrentSong.SongTitle}"
@@ -80,16 +94,15 @@
                                                       CommandParameter="{Binding CurrentSong.ArtistName}" />
                             </Label.GestureRecognizers>
                         </Label>
-                        <Button Text="Bio"
-                                FontSize="12"
-                                Padding="8,2"
-                                CornerRadius="12"
-                                HeightRequest="28"
-                                VerticalOptions="Center"
-                                BackgroundColor="#8e44ad"
-                                TextColor="White"
-                                Command="{Binding ViewBioCommand}"
-                                IsVisible="{Binding CurrentSong.ArtistName, Converter={toolkit:IsStringNotNullOrEmptyConverter}}" />
+                        <ImageButton Source="artist_bio_icon.svg"
+                                 HeightRequest="28"
+                                 WidthRequest="28"
+                                 Padding="4"
+                                 VerticalOptions="Center"
+                                 BackgroundColor="Transparent"
+                                 Command="{Binding ViewBioCommand}"
+                                 IsVisible="{Binding CurrentSong.ArtistName, Converter={toolkit:IsStringNotNullOrEmptyConverter}}"
+                                 SemanticProperties.Description="View artist bio" />
                     </HorizontalStackLayout>
 
                     <!-- Genre (tappable → genre playlist) · Stream Count · Duration -->

@@ -27,16 +27,30 @@
                 CommandParameter="{Binding .}" />
         </Border.GestureRecognizers>
         <VerticalStackLayout Spacing="8">
-            <Border HorizontalOptions="Center"
-                    StrokeShape="RoundRectangle 8"
-                    StrokeThickness="0"
-                    HeightRequest="150"
-                    WidthRequest="150">
-                <Image Source="{Binding AlbumArtUrl}"
-                       Aspect="AspectFill"
-                       HeightRequest="150"
-                       WidthRequest="150" />
-            </Border>
+            <Grid HorizontalOptions="Center"
+                  HeightRequest="150"
+                  WidthRequest="150">
+                <Border HorizontalOptions="Center"
+                        StrokeShape="RoundRectangle 8"
+                        StrokeThickness="0"
+                        HeightRequest="150"
+                        WidthRequest="150">
+                    <Image Source="{Binding AlbumArtUrl}"
+                           Aspect="AspectFill"
+                           HeightRequest="150"
+                           WidthRequest="150" />
+                </Border>
+                <Image Source="ai_generated_badge.svg"
+                                             HeightRequest="40"
+                                             WidthRequest="40"
+                                             Margin="0,0,8,8"
+                                             Opacity="0.3"
+                      Aspect="AspectFit"
+                       HorizontalOptions="End"
+                       VerticalOptions="End"
+                       InputTransparent="True"
+                       IsVisible="{Binding IsAiGenerated}" />
+            </Grid>
 
             <Label Text="{Binding SongTitle}"
                    FontSize="16"

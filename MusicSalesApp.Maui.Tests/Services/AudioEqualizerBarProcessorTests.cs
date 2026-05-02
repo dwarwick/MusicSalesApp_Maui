@@ -27,6 +27,24 @@ public class AudioEqualizerBarProcessorTests
     }
 
     [Test]
+    public void ProcessFft_ZeroSamplingRate_FallsBackToDefaultRate()
+    {
+        var processor = new AudioEqualizerBarProcessor();
+        var fft = CreateSingleFrequencyFft(700f);
+
+        var defaultLevels = processor.ProcessFft(fft);
+
+        processor.Reset();
+        var zeroRateLevels = processor.ProcessFft(fft, 0);
+
+        Assert.That(zeroRateLevels, Has.Length.EqualTo(defaultLevels.Length));
+        for (var index = 0; index < defaultLevels.Length; index++)
+        {
+            Assert.That(zeroRateLevels[index], Is.EqualTo(defaultLevels[index]).Within(0.0001f));
+        }
+    }
+
+    [Test]
     public void ProcessFft_RepeatedFrameRisesTowardTarget()
     {
         var processor = new AudioEqualizerBarProcessor();

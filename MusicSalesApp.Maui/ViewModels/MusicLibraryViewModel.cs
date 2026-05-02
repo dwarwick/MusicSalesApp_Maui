@@ -7,6 +7,10 @@ namespace MusicSalesApp.Maui.ViewModels;
 
 public partial class MusicLibraryViewModel : ObservableObject
 {
+    private const string AiFilterAll = "All";
+    private const string AiFilterAiOnly = "AiOnly";
+    private const string AiFilterNonAiOnly = "NonAiOnly";
+
     private readonly IMusicService _musicService;
     private readonly IAlertService _alertService;
     private readonly ISignalRService _signalRService;
@@ -16,6 +20,7 @@ public partial class MusicLibraryViewModel : ObservableObject
     private readonly IAppConfig _appConfig;
     private readonly IBillingService _billingService;
     private readonly Dictionary<int, (int likes, int dislikes)> _likeCounts = new();
+    private bool _subscriptionsAttached;
 
     // All songs (unfiltered source of truth)
     private readonly List<SongDto> _allSongs = [];
@@ -39,12 +44,34 @@ public partial class MusicLibraryViewModel : ObservableObject
         _appConfig = appConfig;
         _billingService = billingService;
 
-        // Subscribe to real-time updates
+        AttachSubscriptions();
+    }
+
+    public void Activate()
+    {
+        AttachSubscriptions();
+    }
+
+    public void Cleanup()
+    {
+        if (!_subscriptionsAttached)
+            return;
+
+        _signalRService.OnStreamCountUpdated -= HandleStreamCountUpdated;
+        _signalRService.OnLikeCountUpdated -= HandleLikeCountUpdated;
+        _playbackService.ShowSubscribeCtaRequested -= OnShowSubscribeCta;
+        _subscriptionsAttached = false;
+    }
+
+    private void AttachSubscriptions()
+    {
+        if (_subscriptionsAttached)
+            return;
+
         _signalRService.OnStreamCountUpdated += HandleStreamCountUpdated;
         _signalRService.OnLikeCountUpdated += HandleLikeCountUpdated;
-
-        // Wire subscribe CTA from playback service
         _playbackService.ShowSubscribeCtaRequested += OnShowSubscribeCta;
+        _subscriptionsAttached = true;
     }
 
     /// <summary>Expose the shared playback service so the page can bind NowPlayingView.</summary>
@@ -62,9 +89,13 @@ public partial class MusicLibraryViewModel : ObservableObject
 
     public HashSet<string> SelectedGenres { get; } = new(StringComparer.OrdinalIgnoreCase);
     public HashSet<string> SelectedArtists { get; } = new(StringComparer.OrdinalIgnoreCase);
+    private string _selectedAiFilter = AiFilterAll;
 
     public ObservableCollection<FilterItem> GenreFilterItems { get; } = [];
     public ObservableCollection<FilterItem> ArtistFilterItems { get; } = [];
+
+    [ObservableProperty]
+    public partial bool IsAiPanelOpen { get; set; }
 
     [ObservableProperty]
     public partial bool IsGenrePanelOpen { get; set; }
@@ -85,13 +116,36 @@ public partial class MusicLibraryViewModel : ObservableObject
     public partial string ArtistPillText { get; set; } = "Artist";
 
     [ObservableProperty]
+    public partial string AiPillText { get; set; } = "Music Type";
+
+    [ObservableProperty]
+    public partial bool HasActiveAiFilter { get; set; }
+
+    [ObservableProperty]
     public partial bool HasActiveGenreFilters { get; set; }
 
     [ObservableProperty]
     public partial bool HasActiveArtistFilters { get; set; }
 
+    public bool HasAnyActiveFilters => HasActiveAiFilter || HasActiveGenreFilters || HasActiveArtistFilters;
+
+    public bool IsAllAiFilterSelected => string.Equals(_selectedAiFilter, AiFilterAll, StringComparison.Ordinal);
+    public bool IsAiOnlyFilterSelected => string.Equals(_selectedAiFilter, AiFilterAiOnly, StringComparison.Ordinal);
+    public bool IsNonAiOnlyFilterSelected => string.Equals(_selectedAiFilter, AiFilterNonAiOnly, StringComparison.Ordinal);
+
     partial void OnGenreSearchTextChanged(string? value) => RefreshGenreFilterItems();
     partial void OnArtistSearchTextChanged(string? value) => RefreshArtistFilterItems();
+
+    [RelayCommand]
+    private void ToggleAiPanel()
+    {
+        IsAiPanelOpen = !IsAiPanelOpen;
+        if (IsAiPanelOpen)
+        {
+            IsGenrePanelOpen = false;
+            IsArtistPanelOpen = false;
+        }
+    }
 
     [RelayCommand]
     private void ToggleGenrePanel()
@@ -99,6 +153,7 @@ public partial class MusicLibraryViewModel : ObservableObject
         IsGenrePanelOpen = !IsGenrePanelOpen;
         if (IsGenrePanelOpen)
         {
+            IsAiPanelOpen = false;
             IsArtistPanelOpen = false;
             GenreSearchText = null;
             RefreshGenreFilterItems();
@@ -111,6 +166,7 @@ public partial class MusicLibraryViewModel : ObservableObject
         IsArtistPanelOpen = !IsArtistPanelOpen;
         if (IsArtistPanelOpen)
         {
+            IsAiPanelOpen = false;
             IsGenrePanelOpen = false;
             ArtistSearchText = null;
             RefreshArtistFilterItems();
@@ -143,12 +199,37 @@ public partial class MusicLibraryViewModel : ObservableObject
         ApplyFilters();
     }
 
+    [RelayCommand]
+    private void SelectAiFilter(string? filter)
+    {
+        _selectedAiFilter = filter switch
+        {
+            AiFilterAiOnly => AiFilterAiOnly,
+            AiFilterNonAiOnly => AiFilterNonAiOnly,
+            _ => AiFilterAll
+        };
+
+        IsAiPanelOpen = false;
+
+        OnPropertyChanged(nameof(IsAllAiFilterSelected));
+        OnPropertyChanged(nameof(IsAiOnlyFilterSelected));
+        OnPropertyChanged(nameof(IsNonAiOnlyFilterSelected));
+        UpdateAiPillText();
+
+        RefreshAvailableGenres();
+        RefreshAvailableArtists();
+        RefreshGenreFilterItems();
+        RefreshArtistFilterItems();
+        ApplyFilters();
+    }
+
     private void UpdateGenrePillText()
     {
         HasActiveGenreFilters = SelectedGenres.Count > 0;
         GenrePillText = SelectedGenres.Count > 0
             ? $"Genre ({SelectedGenres.Count})"
             : "Genre";
+        OnPropertyChanged(nameof(HasAnyActiveFilters));
     }
 
     private void UpdateArtistPillText()
@@ -157,6 +238,19 @@ public partial class MusicLibraryViewModel : ObservableObject
         ArtistPillText = SelectedArtists.Count > 0
             ? $"Artist ({SelectedArtists.Count})"
             : "Artist";
+        OnPropertyChanged(nameof(HasAnyActiveFilters));
+    }
+
+    private void UpdateAiPillText()
+    {
+        HasActiveAiFilter = _selectedAiFilter != AiFilterAll;
+        AiPillText = _selectedAiFilter switch
+        {
+            AiFilterAiOnly => "AI Music",
+            AiFilterNonAiOnly => "Non-AI Music",
+            _ => "Music Type"
+        };
+        OnPropertyChanged(nameof(HasAnyActiveFilters));
     }
 
     private void RefreshGenreFilterItems()
@@ -221,7 +315,7 @@ public partial class MusicLibraryViewModel : ObservableObject
 
     private IEnumerable<SongDto> CrossFilterSongsByArtist()
     {
-        IEnumerable<SongDto> songs = _allSongs;
+        IEnumerable<SongDto> songs = FilterSongsByAiSelection(_allSongs);
         if (SelectedArtists.Count > 0)
             songs = songs.Where(s => SelectedArtists.Contains(s.ArtistName));
         return songs;
@@ -229,7 +323,7 @@ public partial class MusicLibraryViewModel : ObservableObject
 
     private IEnumerable<SongDto> CrossFilterSongsByGenre()
     {
-        IEnumerable<SongDto> songs = _allSongs;
+        IEnumerable<SongDto> songs = FilterSongsByAiSelection(_allSongs);
         if (SelectedGenres.Count > 0)
             songs = songs.Where(s => SelectedGenres.Contains(s.Genre));
         return songs;
@@ -240,10 +334,16 @@ public partial class MusicLibraryViewModel : ObservableObject
     {
         SelectedGenres.Clear();
         SelectedArtists.Clear();
+        _selectedAiFilter = AiFilterAll;
+        OnPropertyChanged(nameof(IsAllAiFilterSelected));
+        OnPropertyChanged(nameof(IsAiOnlyFilterSelected));
+        OnPropertyChanged(nameof(IsNonAiOnlyFilterSelected));
         UpdateGenrePillText();
         UpdateArtistPillText();
+        UpdateAiPillText();
         GenreSearchText = null;
         ArtistSearchText = null;
+        IsAiPanelOpen = false;
         IsGenrePanelOpen = false;
         IsArtistPanelOpen = false;
         RefreshAvailableGenres();
@@ -258,7 +358,7 @@ public partial class MusicLibraryViewModel : ObservableObject
     /// </summary>
     internal void ApplyFilters()
     {
-        IEnumerable<SongDto> filtered = _allSongs;
+        IEnumerable<SongDto> filtered = FilterSongsByAiSelection(_allSongs);
 
         if (SelectedGenres.Count > 0)
         {
@@ -277,6 +377,16 @@ public partial class MusicLibraryViewModel : ObservableObject
         {
             Songs.Add(song);
         }
+    }
+
+    private IEnumerable<SongDto> FilterSongsByAiSelection(IEnumerable<SongDto> songs)
+    {
+        return _selectedAiFilter switch
+        {
+            AiFilterAiOnly => songs.Where(s => s.IsAiGenerated),
+            AiFilterNonAiOnly => songs.Where(s => !s.IsAiGenerated),
+            _ => songs
+        };
     }
 
     /// <summary>
@@ -516,6 +626,10 @@ public partial class MusicLibraryViewModel : ObservableObject
             // Reset filters when reloading
             SelectedGenres.Clear();
             SelectedArtists.Clear();
+            _selectedAiFilter = AiFilterAll;
+            OnPropertyChanged(nameof(IsAllAiFilterSelected));
+            OnPropertyChanged(nameof(IsAiOnlyFilterSelected));
+            OnPropertyChanged(nameof(IsNonAiOnlyFilterSelected));
             UpdateGenrePillText();
             UpdateArtistPillText();
             IsGenrePanelOpen = false;

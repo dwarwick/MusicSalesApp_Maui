@@ -168,9 +168,10 @@ public sealed class AudioVisualizerService : IAudioVisualizerService, IDisposabl
         }
     }
 
-    private void HandleFftData(byte[]? fft)
+    private void HandleFftData(byte[]? fft, int samplingRate)
     {
-        var samplingRate = _visualizer?.SamplingRate ?? 0;
+        // Delayed callbacks can still arrive after the Visualizer has been disabled.
+        // Use the sampling rate provided by the callback instead of touching released state.
         Levels = _barProcessor.ProcessFft(fft, samplingRate);
         SetVisualizationAvailable(Levels.Count > 0, clearLevels: false, notifyWhenUnchanged: true);
     }
@@ -226,7 +227,7 @@ public sealed class AudioVisualizerService : IAudioVisualizerService, IDisposabl
     {
         public void OnFftDataCapture(Visualizer? visualizer, byte[]? fft, int samplingRate)
         {
-            owner.HandleFftData(fft);
+            owner.HandleFftData(fft, samplingRate);
         }
 
         public void OnWaveFormDataCapture(Visualizer? visualizer, byte[]? waveform, int samplingRate)

@@ -11,9 +11,20 @@
 
     <Grid RowDefinitions="Auto,Auto,*,Auto">
         <!-- Filter Pill Bar -->
-        <HorizontalStackLayout Grid.Row="0"
-                               Spacing="8"
-                               Padding="8,8,8,4">
+        <VerticalStackLayout Grid.Row="0"
+                     Spacing="8"
+                     Padding="8,8,8,4">
+
+            <HorizontalStackLayout Spacing="8">
+                <Button Command="{Binding ToggleAiPanelCommand}"
+                        Text="{Binding AiPillText}"
+                        FontSize="13"
+                        FontAttributes="Bold"
+                        HeightRequest="36"
+                        Padding="14,0"
+                        CornerRadius="18"
+                        BackgroundColor="{Binding HasActiveAiFilter, Converter={StaticResource ActivePillBgConverter}}"
+                        TextColor="{Binding HasActiveAiFilter, Converter={StaticResource ActivePillTextConverter}}" />
 
             <!-- Genre Pill -->
             <Button Command="{Binding ToggleGenrePanelCommand}"
@@ -45,12 +56,74 @@
                     WidthRequest="36"
                     Padding="0"
                     CornerRadius="18"
-                    BackgroundColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray600}}"
-                    TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
+                    IsEnabled="{Binding HasAnyActiveFilters}"
+                    BackgroundColor="{Binding HasAnyActiveFilters, Converter={StaticResource ActivePillBgConverter}}"
+                    TextColor="{Binding HasAnyActiveFilters, Converter={StaticResource ActivePillTextConverter}}"
                     VerticalOptions="Center" />
-        </HorizontalStackLayout>
+            </HorizontalStackLayout>
+        </VerticalStackLayout>
 
         <!-- Expandable Filter Panel -->
+        <Border Grid.Row="1"
+                IsVisible="{Binding IsAiPanelOpen}"
+                StrokeShape="RoundRectangle 8"
+                Stroke="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray600}}"
+                StrokeThickness="1"
+                Margin="8,0,8,4"
+                Padding="8"
+                BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource CardBackgroundDark}}">
+            <VerticalStackLayout Spacing="2">
+                <Grid ColumnDefinitions="Auto,*" Padding="4,8" ColumnSpacing="8">
+                    <Grid.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding SelectAiFilterCommand}"
+                                              CommandParameter="All" />
+                    </Grid.GestureRecognizers>
+                    <CheckBox Grid.Column="0"
+                              IsChecked="{Binding IsAllAiFilterSelected, Mode=OneWay}"
+                              Color="{StaticResource Primary}"
+                              InputTransparent="True"
+                              VerticalOptions="Center" />
+                    <Label Grid.Column="1"
+                           Text="All Music"
+                           FontSize="14"
+                           TextColor="{AppThemeBinding Light=Black, Dark=White}"
+                           VerticalOptions="Center" />
+                </Grid>
+                <Grid ColumnDefinitions="Auto,*" Padding="4,8" ColumnSpacing="8">
+                    <Grid.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding SelectAiFilterCommand}"
+                                              CommandParameter="AiOnly" />
+                    </Grid.GestureRecognizers>
+                    <CheckBox Grid.Column="0"
+                              IsChecked="{Binding IsAiOnlyFilterSelected, Mode=OneWay}"
+                              Color="{StaticResource Primary}"
+                              InputTransparent="True"
+                              VerticalOptions="Center" />
+                    <Label Grid.Column="1"
+                           Text="AI Music"
+                           FontSize="14"
+                           TextColor="{AppThemeBinding Light=Black, Dark=White}"
+                           VerticalOptions="Center" />
+                </Grid>
+                <Grid ColumnDefinitions="Auto,*" Padding="4,8" ColumnSpacing="8">
+                    <Grid.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding SelectAiFilterCommand}"
+                                              CommandParameter="NonAiOnly" />
+                    </Grid.GestureRecognizers>
+                    <CheckBox Grid.Column="0"
+                              IsChecked="{Binding IsNonAiOnlyFilterSelected, Mode=OneWay}"
+                              Color="{StaticResource Primary}"
+                              InputTransparent="True"
+                              VerticalOptions="Center" />
+                    <Label Grid.Column="1"
+                           Text="Non-AI Music"
+                           FontSize="14"
+                           TextColor="{AppThemeBinding Light=Black, Dark=White}"
+                           VerticalOptions="Center" />
+                </Grid>
+            </VerticalStackLayout>
+        </Border>
+
         <Border Grid.Row="1"
                 IsVisible="{Binding IsGenrePanelOpen}"
                 StrokeShape="RoundRectangle 8"

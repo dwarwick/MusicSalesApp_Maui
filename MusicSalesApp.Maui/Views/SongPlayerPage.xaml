@@ -19,14 +19,28 @@
                                      Padding="20,24,20,16">
 
                 <!-- Large Album Art -->
-                <Border HorizontalOptions="Center"
+                  <Grid HorizontalOptions="Center"
+                     HeightRequest="300"
+                     WidthRequest="300">
+                      <Border HorizontalOptions="Center"
                         StrokeShape="RoundRectangle 12"
                         StrokeThickness="0">
-                    <Image Source="{Binding Song.AlbumArtUrl}"
+                       <Image Source="{Binding Song.AlbumArtUrl}"
                            Aspect="AspectFill"
                            HeightRequest="300"
                            WidthRequest="300" />
-                </Border>
+                      </Border>
+                      <Image Source="ai_generated_badge.svg"
+                          HeightRequest="44"
+                          WidthRequest="44"
+                          Margin="0,0,0,10"
+                          Aspect="AspectFit"
+                          HorizontalOptions="End"
+                          VerticalOptions="End"
+                          TranslationX="20"
+                          InputTransparent="True"
+                          IsVisible="{Binding Song.IsAiGenerated}" />
+                  </Grid>
 
                 <!-- Song Title -->
                 <Label Text="{Binding Song.SongTitle}"
@@ -61,16 +75,15 @@
                                                   CommandParameter="{Binding Song.ArtistName}" />
                         </Label.GestureRecognizers>
                     </Label>
-                    <Button Text="Bio"
-                            FontSize="12"
-                            Padding="8,2"
-                            CornerRadius="12"
-                            HeightRequest="28"
-                            VerticalOptions="Center"
-                            BackgroundColor="#8e44ad"
-                            TextColor="White"
-                            Command="{Binding ViewBioCommand}"
-                            IsVisible="{Binding Song.ArtistName, Converter={toolkit:IsStringNotNullOrEmptyConverter}}" />
+                        <ImageButton Source="artist_bio_icon.svg"
+                             HeightRequest="28"
+                             WidthRequest="28"
+                             Padding="4"
+                             VerticalOptions="Center"
+                             BackgroundColor="Transparent"
+                             Command="{Binding ViewBioCommand}"
+                             IsVisible="{Binding Song.ArtistName, Converter={toolkit:IsStringNotNullOrEmptyConverter}}"
+                             SemanticProperties.Description="View artist bio" />
                 </HorizontalStackLayout>
 
                 <!-- Genre · Stream Count · Duration -->

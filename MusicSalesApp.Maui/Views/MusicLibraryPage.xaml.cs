@@ -43,6 +43,8 @@ public partial class MusicLibraryPage : ContentPage
     {
         base.OnAppearing();
 
+        _viewModel.Activate();
+
         if (_viewModel.Songs.Count == 0)
         {
             await _viewModel.LoadSongsCommand.ExecuteAsync(null);
@@ -55,6 +57,7 @@ public partial class MusicLibraryPage : ContentPage
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
+        _viewModel.Cleanup();
         // Don't stop playback when navigating away — it keeps playing in background
     }
 }
@@ -99,19 +102,16 @@ public class DurationConverter : IValueConverter
 }
 
 /// <summary>
-/// Converts bool (isActive) to pill background color: green when active, gray when inactive.
+/// Converts bool (isActive) to pill background color using the StreamTunes green CTA treatment.
 /// </summary>
 public class ActivePillBgConverter : IValueConverter
 {
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         if (value is true)
-            return Color.FromArgb("#1DB954"); // Primary green
+            return Color.FromArgb("#1ED760");
 
-        // Use theme-appropriate gray
-        return Application.Current?.RequestedTheme == AppTheme.Dark
-            ? Color.FromArgb("#404040")   // Gray600
-            : Color.FromArgb("#C8C8C8");  // Gray200
+        return Color.FromArgb("#1DB954");
     }
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
@@ -121,18 +121,13 @@ public class ActivePillBgConverter : IValueConverter
 }
 
 /// <summary>
-/// Converts bool (isActive) to pill text color: white when active, gray when inactive.
+/// Converts bool (isActive) to pill text color using white for the green CTA pill treatment.
 /// </summary>
 public class ActivePillTextConverter : IValueConverter
 {
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
-        if (value is true)
-            return Colors.White;
-
-        return Application.Current?.RequestedTheme == AppTheme.Dark
-            ? Color.FromArgb("#ACACAC")  // Gray300
-            : Color.FromArgb("#404040"); // Gray600
+        return Colors.White;
     }
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)

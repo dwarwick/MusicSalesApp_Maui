@@ -119,6 +119,78 @@ public class MusicLibraryViewModelTests
     }
 
     [Test]
+    public async Task SelectAiFilter_AiOnly_FiltersSongs()
+    {
+        var songs = new List<SongDto>
+        {
+            new() { Id = 1, SongTitle = "AI Song", IsAiGenerated = true },
+            new() { Id = 2, SongTitle = "Human Song", IsAiGenerated = false },
+            new() { Id = 3, SongTitle = "Another AI Song", IsAiGenerated = true }
+        };
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
+
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        _viewModel.SelectAiFilterCommand.Execute("AiOnly");
+
+        Assert.That(_viewModel.Songs.Select(s => s.SongTitle), Is.EqualTo(new[] { "AI Song", "Another AI Song" }));
+        Assert.That(_viewModel.IsAiOnlyFilterSelected, Is.True);
+    }
+
+    [Test]
+    public async Task ClearFilters_ResetsAiFilterToAll()
+    {
+        var songs = new List<SongDto>
+        {
+            new() { Id = 1, SongTitle = "AI Song", IsAiGenerated = true },
+            new() { Id = 2, SongTitle = "Human Song", IsAiGenerated = false }
+        };
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
+
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+        _viewModel.SelectAiFilterCommand.Execute("AiOnly");
+
+        _viewModel.ClearFiltersCommand.Execute(null);
+
+        Assert.That(_viewModel.IsAllAiFilterSelected, Is.True);
+        Assert.That(_viewModel.Songs, Has.Count.EqualTo(2));
+    }
+
+    [Test]
+    public async Task SelectAiFilter_UpdatesAiPillTextAndActiveState()
+    {
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(new List<SongDto>
+        {
+            new() { Id = 1, SongTitle = "AI Song", IsAiGenerated = true },
+            new() { Id = 2, SongTitle = "Human Song", IsAiGenerated = false }
+        });
+
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        Assert.That(_viewModel.AiPillText, Is.EqualTo("Music Type"));
+        Assert.That(_viewModel.HasActiveAiFilter, Is.False);
+
+        _viewModel.SelectAiFilterCommand.Execute("AiOnly");
+
+        Assert.That(_viewModel.AiPillText, Is.EqualTo("AI Music"));
+        Assert.That(_viewModel.HasActiveAiFilter, Is.True);
+        Assert.That(_viewModel.HasAnyActiveFilters, Is.True);
+    }
+
+    [Test]
+    public void ToggleAiPanel_ClosesOtherPanels()
+    {
+        _viewModel.ToggleGenrePanelCommand.Execute(null);
+        Assert.That(_viewModel.IsGenrePanelOpen, Is.True);
+
+        _viewModel.ToggleAiPanelCommand.Execute(null);
+
+        Assert.That(_viewModel.IsAiPanelOpen, Is.True);
+        Assert.That(_viewModel.IsGenrePanelOpen, Is.False);
+        Assert.That(_viewModel.IsArtistPanelOpen, Is.False);
+    }
+
+    [Test]
     public async Task OnShowSubscribeCta_WhenServerVerificationFails_ShowsSpecificErrorMessage()
     {
         _mockAlertService.Setup(a => a.ShowConfirmAsync("Preview Limit", It.IsAny<string>(), "Subscribe Now", "Not Now"))
@@ -138,6 +210,31 @@ public class MusicLibraryViewModelTests
         _mockAlertService.Verify(a => a.DisplayAlertAsync("Subscribe",
             It.Is<string>(s => s.Contains("Configured Google Play service account key file was not found on the server.")),
             "OK"), Times.Once);
+    }
+
+    [Test]
+    public async Task Cleanup_UnsubscribesFromPlaybackSubscribeCta()
+    {
+        _viewModel.Cleanup();
+
+        _mockPlaybackService.Raise(p => p.ShowSubscribeCtaRequested += null);
+        await Task.Delay(50);
+
+        _mockAlertService.Verify(a => a.ShowConfirmAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Test]
+    public async Task Activate_ReattachesPlaybackSubscribeCta_AfterCleanup()
+    {
+        _viewModel.Cleanup();
+        _viewModel.Activate();
+        _mockAlertService.Setup(a => a.ShowConfirmAsync("Preview Limit", It.IsAny<string>(), "Subscribe Now", "Not Now"))
+            .ReturnsAsync(false);
+
+        _mockPlaybackService.Raise(p => p.ShowSubscribeCtaRequested += null);
+        await Task.Delay(50);
+
+        _mockAlertService.Verify(a => a.ShowConfirmAsync("Preview Limit", It.IsAny<string>(), "Subscribe Now", "Not Now"), Times.Once);
     }
 
     [Test]

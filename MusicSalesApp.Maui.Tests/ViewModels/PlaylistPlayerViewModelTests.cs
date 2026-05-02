@@ -189,6 +189,43 @@ public class PlaylistPlayerViewModelTests
         Assert.That(_viewModel.Songs, Has.Count.EqualTo(2));
     }
 
+    [Test]
+    public async Task PlaylistServiceLoad_PreservesAiGeneratedFlag()
+    {
+        SongDto? currentSong = null;
+        _mockPlaybackService.SetupGet(s => s.CurrentSong).Returns(() => currentSong);
+        _mockPlaybackService
+            .Setup(s => s.SetPlaylist(It.IsAny<List<SongDto>>(), 0))
+            .Callback<List<SongDto>, int>((songs, _) => currentSong = songs.FirstOrDefault());
+        _mockPlaylistService.Setup(s => s.GetPlaylistSongsAsync(7)).ReturnsAsync(new PlaylistSongsDto
+        {
+            PlaylistId = 7,
+            PlaylistName = "AI Mix",
+            IsSystemGenerated = false,
+            Songs =
+            [
+                new PlaylistSongDto
+                {
+                    SongMetadataId = 21,
+                    SongTitle = "AI Anthem",
+                    ArtistName = "Synth Artist",
+                    Genre = "Electronic",
+                    StreamUrl = "https://example.com/anthem.mp3",
+                    IsAiGenerated = true
+                }
+            ]
+        });
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+
+        _viewModel.PlaylistIdParam = "7";
+        await Task.Delay(100);
+
+        Assert.That(_viewModel.Songs, Has.Count.EqualTo(1));
+        Assert.That(_viewModel.Songs[0].IsAiGenerated, Is.True);
+        Assert.That(_viewModel.CurrentSong?.IsAiGenerated, Is.True);
+    }
+
     // --- Share URL ---
 
     [Test]
