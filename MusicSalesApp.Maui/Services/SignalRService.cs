@@ -12,8 +12,8 @@ public class SignalRService : ISignalRService
 {
     private readonly HubConnection _streamCountHub;
     private readonly HubConnection _likeCountHub;
+    private readonly SignalRConnectionStarter _connectionStarter = new();
     private readonly ILogger<SignalRService> _logger;
-    private bool _isStarted;
 
     // Must match SignalRMethodNames on the server
     private const string ReceiveStreamCountUpdate = "ReceiveStreamCountUpdate";
@@ -48,29 +48,20 @@ public class SignalRService : ISignalRService
         });
     }
 
-    public async Task StartAsync()
-    {
-        if (_isStarted) return;
-        _isStarted = true;
-
-        await StartHubAsync(_streamCountHub, "StreamCount");
-        await StartHubAsync(_likeCountHub, "LikeCount");
-    }
-
-    private async Task StartHubAsync(HubConnection hub, string name)
-    {
-        if (hub.State != HubConnectionState.Disconnected) return;
-
-        try
-        {
-            await hub.StartAsync();
-            _logger.LogInformation("SignalR: {Hub} hub connected", name);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "SignalR: {Hub} hub connection failed (non-fatal)", name);
-        }
-    }
+    public Task StartAsync() =>
+        _connectionStarter.StartAsync(
+            [
+                new SignalRStartTarget(
+                    "StreamCount",
+                    () => _streamCountHub.State == HubConnectionState.Disconnected,
+                    () => _streamCountHub.StartAsync()),
+                new SignalRStartTarget(
+                    "LikeCount",
+                    () => _likeCountHub.State == HubConnectionState.Disconnected,
+                    () => _likeCountHub.StartAsync())
+            ],
+            name => _logger.LogInformation("SignalR: {Hub} hub connected", name),
+            (name, ex) => _logger.LogWarning(ex, "SignalR: {Hub} hub connection failed (non-fatal)", name));
 
     public async ValueTask DisposeAsync()
     {

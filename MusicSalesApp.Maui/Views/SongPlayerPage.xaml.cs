@@ -35,6 +35,13 @@ public partial class SongPlayerPage : ContentPage
             "Press Play to queue this song.");
     }
 
+    protected override async void OnAppearing()
+    {
+        base.OnAppearing();
+        _viewModel.Activate();
+        await _viewModel.StartSignalRAsync();
+    }
+
     protected override void OnDisappearing()
     {
         base.OnDisappearing();

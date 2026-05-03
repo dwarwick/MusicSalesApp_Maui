@@ -22,7 +22,15 @@ public partial class HomePage : ContentPage
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        _viewModel.Activate();
+        await _viewModel.StartSignalRAsync();
         await _viewModel.LoadCommand.ExecuteAsync(null);
+    }
+
+    protected override void OnDisappearing()
+    {
+        base.OnDisappearing();
+        _viewModel.Cleanup();
     }
 
     protected override bool OnBackButtonPressed()

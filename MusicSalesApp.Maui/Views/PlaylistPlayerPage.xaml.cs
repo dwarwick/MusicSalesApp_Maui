@@ -31,6 +31,13 @@ public partial class PlaylistPlayerPage : ContentPage
             "Press Play to queue the tracks in this playlist.");
     }
 
+    protected override async void OnAppearing()
+    {
+        base.OnAppearing();
+        _viewModel.Activate();
+        await _viewModel.StartSignalRAsync();
+    }
+
     protected override void OnDisappearing()
     {
         base.OnDisappearing();

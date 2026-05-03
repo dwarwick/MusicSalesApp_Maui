@@ -585,6 +585,28 @@ public class PlaylistPlayerViewModelTests
         Assert.Pass();
     }
 
+    [Test]
+    public async Task StartSignalRAsync_StartsService()
+    {
+        await _viewModel.StartSignalRAsync();
+
+        _mockSignalRService.Verify(s => s.StartAsync(), Times.Once);
+    }
+
+    [Test]
+    public void Activate_ReattachesSignalR_AfterCleanup()
+    {
+        var song = new SongDto { Id = 1, SongTitle = "Test", StreamCount = 3 };
+        _viewModel.Songs.Add(song);
+
+        _viewModel.Cleanup();
+        _viewModel.Activate();
+
+        _mockSignalRService.Raise(s => s.OnStreamCountUpdated += null, 1, 9);
+
+        Assert.That(song.StreamCount, Is.EqualTo(9));
+    }
+
     // --- Like counts loaded ---
 
     [Test]

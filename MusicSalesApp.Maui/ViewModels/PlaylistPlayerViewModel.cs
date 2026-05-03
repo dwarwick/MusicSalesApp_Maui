@@ -26,6 +26,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     private int? _loadedPlaylistId;
     /// <summary>Maps a song's SongMetadataId to its UserPlaylist row id for reorder/remove.</summary>
     private readonly Dictionary<int, int> _userPlaylistIdBySongId = [];
+    private bool _subscriptionsAttached;
 
     public PlaylistPlayerViewModel(
         IMusicService musicService,
@@ -50,10 +51,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         _billingService = billingService;
         _playlistService = playlistService;
 
-        _signalRService.OnStreamCountUpdated += HandleStreamCountUpdated;
-        _signalRService.OnLikeCountUpdated += HandleLikeCountUpdated;
-        _playbackService.StateChanged += OnPlaybackStateChanged;
-        _playbackService.ShowSubscribeCtaRequested += OnShowSubscribeCta;
+        AttachSubscriptions();
 
         Songs.CollectionChanged += (_, _) =>
         {
@@ -62,6 +60,27 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     }
 
     public IPlaybackService PlaybackService => _playbackService;
+
+    public void Activate()
+    {
+        AttachSubscriptions();
+    }
+
+    public Task StartSignalRAsync() => _signalRService.StartAsync();
+
+    private void AttachSubscriptions()
+    {
+        if (_subscriptionsAttached)
+        {
+            return;
+        }
+
+        _signalRService.OnStreamCountUpdated += HandleStreamCountUpdated;
+        _signalRService.OnLikeCountUpdated += HandleLikeCountUpdated;
+        _playbackService.StateChanged += OnPlaybackStateChanged;
+        _playbackService.ShowSubscribeCtaRequested += OnShowSubscribeCta;
+        _subscriptionsAttached = true;
+    }
 
     public ObservableCollection<SongDto> Songs { get; } = [];
 
@@ -655,9 +674,15 @@ public partial class PlaylistPlayerViewModel : ObservableObject
 
     public void Cleanup()
     {
+        if (!_subscriptionsAttached)
+        {
+            return;
+        }
+
         _signalRService.OnStreamCountUpdated -= HandleStreamCountUpdated;
         _signalRService.OnLikeCountUpdated -= HandleLikeCountUpdated;
         _playbackService.StateChanged -= OnPlaybackStateChanged;
         _playbackService.ShowSubscribeCtaRequested -= OnShowSubscribeCta;
+        _subscriptionsAttached = false;
     }
 }

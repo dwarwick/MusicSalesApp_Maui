@@ -15,6 +15,7 @@ public class HomeViewModelTests
     private Mock<IAppConfig> _mockAppConfig;
     private Mock<IBillingService> _mockBillingService;
     private Mock<IMusicService> _mockMusicService;
+    private Mock<ISignalRService> _mockSignalRService;
     private Mock<IPlaybackService> _mockPlaybackService;
     private Mock<IMediaPlaybackOnboardingService> _mockMediaPlaybackOnboardingService;
     private Mock<IBrowserService> _mockBrowserService;
@@ -31,6 +32,7 @@ public class HomeViewModelTests
         _mockAppConfig = new Mock<IAppConfig>();
         _mockBillingService = new Mock<IBillingService>();
         _mockMusicService = new Mock<IMusicService>();
+        _mockSignalRService = new Mock<ISignalRService>();
         _mockPlaybackService = new Mock<IPlaybackService>();
         _mockMediaPlaybackOnboardingService = new Mock<IMediaPlaybackOnboardingService>();
         _mockBrowserService = new Mock<IBrowserService>();
@@ -61,6 +63,7 @@ public class HomeViewModelTests
             _mockAppConfig.Object,
             _mockBillingService.Object,
             _mockMusicService.Object,
+            _mockSignalRService.Object,
             _mockPlaybackService.Object,
             _mockMediaPlaybackOnboardingService.Object,
             _mockBrowserService.Object,
@@ -243,6 +246,51 @@ public class HomeViewModelTests
         await _viewModel.LoadCommand.ExecuteAsync(null);
 
         _mockPlaybackService.Verify(p => p.SetStreamQualifyingSeconds(45), Times.Once);
+    }
+
+    [Test]
+    public async Task StartSignalRAsync_StartsService()
+    {
+        await _viewModel.StartSignalRAsync();
+
+        _mockSignalRService.Verify(s => s.StartAsync(), Times.Once);
+    }
+
+    [Test]
+    public void SignalR_StreamCountUpdate_UpdatesFeaturedSong()
+    {
+        var song = new SongDto { Id = 42, SongTitle = "Featured", StreamCount = 5 };
+        _viewModel.FeaturedSongs = new ObservableCollection<SongDto> { song };
+
+        _mockSignalRService.Raise(s => s.OnStreamCountUpdated += null, 42, 11);
+
+        Assert.That(song.StreamCount, Is.EqualTo(11));
+    }
+
+    [Test]
+    public void SignalR_LikeCountUpdate_UpdatesFeaturedSong()
+    {
+        var song = new SongDto { Id = 42, SongTitle = "Featured", LikeCount = 3, DislikeCount = 1 };
+        _viewModel.FeaturedSongs = new ObservableCollection<SongDto> { song };
+
+        _mockSignalRService.Raise(s => s.OnLikeCountUpdated += null, 42, 9, 2);
+
+        Assert.That(song.LikeCount, Is.EqualTo(9));
+        Assert.That(song.DislikeCount, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void Activate_ReattachesSignalR_AfterCleanup()
+    {
+        var song = new SongDto { Id = 42, SongTitle = "Featured", StreamCount = 5 };
+        _viewModel.FeaturedSongs = new ObservableCollection<SongDto> { song };
+
+        _viewModel.Cleanup();
+        _viewModel.Activate();
+
+        _mockSignalRService.Raise(s => s.OnStreamCountUpdated += null, 42, 12);
+
+        Assert.That(song.StreamCount, Is.EqualTo(12));
     }
 
     [Test]

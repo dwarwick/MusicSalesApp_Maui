@@ -245,6 +245,40 @@ public class SongPlayerViewModelTests
         Assert.That(song.DislikeCount, Is.EqualTo(2));
     }
 
+    [Test]
+    public void SignalR_StreamCountUpdate_UpdatesSongDto()
+    {
+        var song = new SongDto { Id = 42, SongTitle = "Test", StreamCount = 5 };
+        _viewModel.Song = song;
+
+        _mockSignalRService.Raise(s => s.OnStreamCountUpdated += null, 42, 12);
+
+        Assert.That(song.StreamCount, Is.EqualTo(12));
+    }
+
+    [Test]
+    public async Task StartSignalRAsync_StartsService()
+    {
+        await _viewModel.StartSignalRAsync();
+
+        _mockSignalRService.Verify(s => s.StartAsync(), Times.Once);
+    }
+
+    [Test]
+    public void Activate_ReattachesSignalR_AfterCleanup()
+    {
+        var song = new SongDto { Id = 42, SongTitle = "Test", LikeCount = 5, DislikeCount = 2 };
+        _viewModel.Song = song;
+
+        _viewModel.Cleanup();
+        _viewModel.Activate();
+
+        _mockSignalRService.Raise(s => s.OnLikeCountUpdated += null, 42, 8, 4);
+
+        Assert.That(song.LikeCount, Is.EqualTo(8));
+        Assert.That(song.DislikeCount, Is.EqualTo(4));
+    }
+
     // --- Subscription status ---
 
     [Test]

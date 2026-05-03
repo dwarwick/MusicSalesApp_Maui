@@ -17,6 +17,7 @@ public partial class SongPlayerViewModel : ObservableObject
     private readonly ISignalRService _signalRService;
     private readonly IAppConfig _appConfig;
     private readonly IBillingService _billingService;
+    private bool _subscriptionsAttached;
 
     public SongPlayerViewModel(
         IMusicService musicService,
@@ -39,8 +40,27 @@ public partial class SongPlayerViewModel : ObservableObject
         _appConfig = appConfig;
         _billingService = billingService;
 
+        AttachSubscriptions();
+    }
+
+    public void Activate()
+    {
+        AttachSubscriptions();
+    }
+
+    public Task StartSignalRAsync() => _signalRService.StartAsync();
+
+    private void AttachSubscriptions()
+    {
+        if (_subscriptionsAttached)
+        {
+            return;
+        }
+
+        _signalRService.OnStreamCountUpdated += HandleStreamCountUpdated;
         _signalRService.OnLikeCountUpdated += HandleLikeCountUpdated;
         _playbackService.ShowSubscribeCtaRequested += OnShowSubscribeCta;
+        _subscriptionsAttached = true;
     }
 
     public IPlaybackService PlaybackService => _playbackService;
@@ -270,6 +290,14 @@ public partial class SongPlayerViewModel : ObservableObject
         return true;
     }
 
+    private void HandleStreamCountUpdated(int songMetadataId, int newCount)
+    {
+        if (Song != null && Song.Id == songMetadataId)
+        {
+            Song.StreamCount = newCount;
+        }
+    }
+
     private void HandleLikeCountUpdated(int songMetadataId, int likeCount, int dislikeCount)
     {
         if (Song != null && Song.Id == songMetadataId)
@@ -374,7 +402,14 @@ public partial class SongPlayerViewModel : ObservableObject
 
     public void Cleanup()
     {
+        if (!_subscriptionsAttached)
+        {
+            return;
+        }
+
+        _signalRService.OnStreamCountUpdated -= HandleStreamCountUpdated;
         _signalRService.OnLikeCountUpdated -= HandleLikeCountUpdated;
         _playbackService.ShowSubscribeCtaRequested -= OnShowSubscribeCta;
+        _subscriptionsAttached = false;
     }
 }

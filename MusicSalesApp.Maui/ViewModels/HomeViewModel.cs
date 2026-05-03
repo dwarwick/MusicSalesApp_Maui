@@ -14,10 +14,12 @@ public partial class HomeViewModel : ObservableObject
     private readonly IAppConfig _appConfig;
     private readonly IBillingService _billingService;
     private readonly IMusicService _musicService;
+    private readonly ISignalRService _signalRService;
     private readonly IPlaybackService _playbackService;
     private readonly IMediaPlaybackOnboardingService _mediaPlaybackOnboardingService;
     private readonly IBrowserService _browserService;
     private readonly IPlaylistService _playlistService;
+    private bool _signalRSubscriptionsAttached;
 
     [ObservableProperty]
     public partial bool IsLoading { get; set; } = true;
@@ -82,6 +84,7 @@ public partial class HomeViewModel : ObservableObject
         IAppConfig appConfig,
         IBillingService billingService,
         IMusicService musicService,
+        ISignalRService signalRService,
         IPlaybackService playbackService,
         IMediaPlaybackOnboardingService mediaPlaybackOnboardingService,
         IBrowserService browserService,
@@ -94,12 +97,45 @@ public partial class HomeViewModel : ObservableObject
         _appConfig = appConfig;
         _billingService = billingService;
         _musicService = musicService;
+        _signalRService = signalRService;
         _playbackService = playbackService;
         _mediaPlaybackOnboardingService = mediaPlaybackOnboardingService;
         _browserService = browserService;
         _playlistService = playlistService;
 
         _authService.AuthStateChanged += OnAuthStateChanged;
+        AttachSignalRSubscriptions();
+    }
+
+    public void Activate()
+    {
+        AttachSignalRSubscriptions();
+    }
+
+    public Task StartSignalRAsync() => _signalRService.StartAsync();
+
+    public void Cleanup()
+    {
+        if (!_signalRSubscriptionsAttached)
+        {
+            return;
+        }
+
+        _signalRService.OnStreamCountUpdated -= HandleStreamCountUpdated;
+        _signalRService.OnLikeCountUpdated -= HandleLikeCountUpdated;
+        _signalRSubscriptionsAttached = false;
+    }
+
+    private void AttachSignalRSubscriptions()
+    {
+        if (_signalRSubscriptionsAttached)
+        {
+            return;
+        }
+
+        _signalRService.OnStreamCountUpdated += HandleStreamCountUpdated;
+        _signalRService.OnLikeCountUpdated += HandleLikeCountUpdated;
+        _signalRSubscriptionsAttached = true;
     }
 
     [RelayCommand]
@@ -189,6 +225,25 @@ public partial class HomeViewModel : ObservableObject
             {
                 song.UserLikeStatus = status;
             }
+        }
+    }
+
+    private void HandleStreamCountUpdated(int songMetadataId, int newCount)
+    {
+        var song = FeaturedSongs.FirstOrDefault(item => item.Id == songMetadataId);
+        if (song != null)
+        {
+            song.StreamCount = newCount;
+        }
+    }
+
+    private void HandleLikeCountUpdated(int songMetadataId, int likeCount, int dislikeCount)
+    {
+        var song = FeaturedSongs.FirstOrDefault(item => item.Id == songMetadataId);
+        if (song != null)
+        {
+            song.LikeCount = likeCount;
+            song.DislikeCount = dislikeCount;
         }
     }
 
