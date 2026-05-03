@@ -9,4 +9,6 @@ public interface IAudioVisualizerService
     event Action? VisualizationChanged;
 
     Task EnsureInitializedAsync();
+
+    void Suspend();
 }

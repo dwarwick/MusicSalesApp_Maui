@@ -16,6 +16,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     private readonly IAuthService _authService;
     private readonly INavigationService _navigationService;
     private readonly IPlaybackService _playbackService;
+    private readonly IMediaPlaybackOnboardingService _mediaPlaybackOnboardingService;
     private readonly ISignalRService _signalRService;
     private readonly IAppConfig _appConfig;
     private readonly IBillingService _billingService;
@@ -32,6 +33,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         IAuthService authService,
         INavigationService navigationService,
         IPlaybackService playbackService,
+        IMediaPlaybackOnboardingService mediaPlaybackOnboardingService,
         ISignalRService signalRService,
         IAppConfig appConfig,
         IBillingService billingService,
@@ -42,6 +44,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         _authService = authService;
         _navigationService = navigationService;
         _playbackService = playbackService;
+        _mediaPlaybackOnboardingService = mediaPlaybackOnboardingService;
         _signalRService = signalRService;
         _appConfig = appConfig;
         _billingService = billingService;
@@ -312,6 +315,14 @@ public partial class PlaylistPlayerViewModel : ObservableObject
 
         HasActiveSubscription = _authService.HasActiveSubscription;
 
+        if (PlaybackQueueSelection.HasEquivalentActiveQueue(_playbackService, list))
+        {
+            CurrentSong = PlaybackQueueSelection.ResolveCurrentSong(_playbackService, list);
+            OnPropertyChanged(nameof(ShareUrl));
+            return;
+        }
+
+        await _mediaPlaybackOnboardingService.EnsureBackgroundPlaybackExplainedAsync();
         _playbackService.SetPlaylist(list, 0);
         CurrentSong = _playbackService.CurrentSong;
         OnPropertyChanged(nameof(ShareUrl));
@@ -415,12 +426,15 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     // --- Playback commands ---
 
     [RelayCommand]
-    private void PlayTrack(SongDto? song)
+    private async Task PlayTrackAsync(SongDto? song)
     {
         if (song == null) return;
         var index = Songs.IndexOf(song);
-        if (index >= 0)
-            _playbackService.PlayTrackAtIndex(index);
+        if (index < 0)
+            return;
+
+        await _mediaPlaybackOnboardingService.EnsureBackgroundPlaybackExplainedAsync();
+        _playbackService.PlayTrackAtIndex(index);
     }
 
     // --- Like/Dislike ---

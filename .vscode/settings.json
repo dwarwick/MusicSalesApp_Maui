@@ -1,3 +1,4 @@
 {
-  "dotnet.defaultSolution": "MusicSalesApp_Maui.slnx"
+  "dotnet.defaultSolution": "MusicSalesApp_Maui.slnx",
+  "dotnetAcquisitionExtension.cacheTimeToLiveMultiplier": 0
 }

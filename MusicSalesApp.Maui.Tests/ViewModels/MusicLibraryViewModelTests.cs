@@ -13,6 +13,7 @@ public class MusicLibraryViewModelTests
     private Mock<IAuthService> _mockAuthService;
     private Mock<INavigationService> _mockNavigationService;
     private Mock<IPlaybackService> _mockPlaybackService;
+    private Mock<IMediaPlaybackOnboardingService> _mockMediaPlaybackOnboardingService;
     private Mock<IAppConfig> _mockAppConfig;
     private Mock<IBillingService> _mockBillingService;
     private MusicLibraryViewModel _viewModel;
@@ -26,14 +27,16 @@ public class MusicLibraryViewModelTests
         _mockAuthService = new Mock<IAuthService>();
         _mockNavigationService = new Mock<INavigationService>();
         _mockPlaybackService = new Mock<IPlaybackService>();
+        _mockMediaPlaybackOnboardingService = new Mock<IMediaPlaybackOnboardingService>();
         _mockAppConfig = new Mock<IAppConfig>();
         _mockBillingService = new Mock<IBillingService>();
         _mockAppConfig.Setup(c => c.WebBaseUrl).Returns("https://streamtunes.net");
         _mockAppConfig.Setup(c => c.ApiBaseUrl).Returns("https://streamtunes.net");
+        _mockMediaPlaybackOnboardingService.Setup(s => s.EnsureBackgroundPlaybackExplainedAsync()).Returns(Task.CompletedTask);
         _viewModel = new MusicLibraryViewModel(
             _mockMusicService.Object, _mockAlertService.Object, _mockSignalRService.Object,
             _mockAuthService.Object, _mockNavigationService.Object,
-            _mockPlaybackService.Object, _mockAppConfig.Object, _mockBillingService.Object);
+            _mockPlaybackService.Object, _mockMediaPlaybackOnboardingService.Object, _mockAppConfig.Object, _mockBillingService.Object);
     }
 
     [Test]
@@ -238,17 +241,18 @@ public class MusicLibraryViewModelTests
     }
 
     [Test]
-    public void PlaySong_SetsPlaylistOnPlaybackService()
+    public async Task PlaySong_SetsPlaylistOnPlaybackService()
     {
         // Arrange
         var song = new SongDto { Id = 1, SongTitle = "Test", StreamUrl = "https://example.com/test.mp3" };
         _viewModel.Songs.Add(song);
 
         // Act
-        _viewModel.PlaySongCommand.Execute(song);
+        await _viewModel.PlaySongCommand.ExecuteAsync(song);
 
         // Assert — now uses SetPlaylist instead of PlaySong
         _mockPlaybackService.Verify(p => p.SetPlaylist(It.Is<List<SongDto>>(l => l.Count == 1 && l[0] == song), 0), Times.Once);
+        _mockMediaPlaybackOnboardingService.Verify(s => s.EnsureBackgroundPlaybackExplainedAsync(), Times.Once);
     }
 
     [Test]
@@ -959,7 +963,7 @@ public class MusicLibraryViewModelTests
     // --- Play as Playlist ---
 
     [Test]
-    public void PlaySong_SetsPlaylistWithFilteredSongs()
+    public async Task PlaySong_SetsPlaylistWithFilteredSongs()
     {
         var songs = new List<SongDto>
         {
@@ -974,9 +978,100 @@ public class MusicLibraryViewModelTests
 
         // After loading, all 3 songs are in Songs collection
         // Play the second song
-        _viewModel.PlaySongCommand.Execute(songs[1]);
+        await _viewModel.PlaySongCommand.ExecuteAsync(songs[1]);
 
         _mockPlaybackService.Verify(p =>
             p.SetPlaylist(It.Is<List<SongDto>>(l => l.Count == 3), 1), Times.Once);
+        _mockMediaPlaybackOnboardingService.Verify(s => s.EnsureBackgroundPlaybackExplainedAsync(), Times.Once);
+    }
+
+    [Test]
+    public async Task LoadSongsAsync_WithActiveDifferentPlaylist_SetsQueueToAllLibrarySongs()
+    {
+        var songs = new List<SongDto>
+        {
+            new() { Id = 1, SongTitle = "Song A", Genre = "Rock", ArtistName = "A" },
+            new() { Id = 2, SongTitle = "Song B", Genre = "Pop", ArtistName = "B" },
+            new() { Id = 3, SongTitle = "Song C", Genre = "Jazz", ArtistName = "C" }
+        };
+
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
+        _mockPlaybackService.SetupGet(p => p.HasPlaylist).Returns(true);
+        _mockPlaybackService.SetupGet(p => p.IsPlaying).Returns(true);
+        _mockPlaybackService.SetupGet(p => p.CurrentSong).Returns(songs[1]);
+        _mockPlaybackService.SetupGet(p => p.Playlist).Returns(new List<SongDto>
+        {
+            songs[1],
+            new() { Id = 99, SongTitle = "Playlist Only Song" }
+        });
+
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        _mockPlaybackService.Verify(p =>
+            p.SetPlaylist(
+                It.Is<List<SongDto>>(l => l.Select(song => song.Id).SequenceEqual(new[] { 1, 2, 3 })),
+                1),
+            Times.Once);
+    }
+
+    [Test]
+    public async Task Activate_WithFilteredLibrarySongs_SetsQueueToFilteredSongs()
+    {
+        var songs = new List<SongDto>
+        {
+            new() { Id = 1, SongTitle = "Song A", Genre = "Rock", ArtistName = "A" },
+            new() { Id = 2, SongTitle = "Song B", Genre = "Pop", ArtistName = "B" },
+            new() { Id = 3, SongTitle = "Song C", Genre = "Rock", ArtistName = "C" }
+        };
+
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+        _mockPlaybackService.Invocations.Clear();
+
+        _viewModel.ToggleGenreFilterCommand.Execute("Rock");
+
+        _mockPlaybackService.SetupGet(p => p.HasPlaylist).Returns(true);
+        _mockPlaybackService.SetupGet(p => p.IsPlaying).Returns(true);
+        _mockPlaybackService.SetupGet(p => p.CurrentSong).Returns(songs[2]);
+        _mockPlaybackService.SetupGet(p => p.Playlist).Returns(new List<SongDto>
+        {
+            songs[1],
+            songs[2]
+        });
+
+        _viewModel.Activate();
+
+        _mockPlaybackService.Verify(p =>
+            p.SetPlaylist(
+                It.Is<List<SongDto>>(l => l.Select(song => song.Id).SequenceEqual(new[] { 1, 3 })),
+                1),
+            Times.Once);
+    }
+
+    [Test]
+    public async Task Activate_WithEquivalentVisibleQueue_DoesNotResetPlaylist()
+    {
+        var songs = new List<SongDto>
+        {
+            new() { Id = 1, SongTitle = "Song A", Genre = "Rock", ArtistName = "A" },
+            new() { Id = 2, SongTitle = "Song B", Genre = "Pop", ArtistName = "B" }
+        };
+
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+        _mockPlaybackService.Invocations.Clear();
+
+        _mockPlaybackService.SetupGet(p => p.HasPlaylist).Returns(true);
+        _mockPlaybackService.SetupGet(p => p.IsPlaying).Returns(true);
+        _mockPlaybackService.SetupGet(p => p.CurrentSong).Returns(songs[0]);
+        _mockPlaybackService.SetupGet(p => p.Playlist).Returns(new List<SongDto>
+        {
+            new() { Id = 1, SongTitle = "Queue Song A" },
+            new() { Id = 2, SongTitle = "Queue Song B" }
+        });
+
+        _viewModel.Activate();
+
+        _mockPlaybackService.Verify(p => p.SetPlaylist(It.IsAny<List<SongDto>>(), It.IsAny<int>()), Times.Never);
     }
 }

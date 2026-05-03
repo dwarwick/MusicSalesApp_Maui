@@ -15,4 +15,8 @@ public sealed class NoAudioVisualizerService : IAudioVisualizerService
     }
 
     public Task EnsureInitializedAsync() => Task.CompletedTask;
+
+    public void Suspend()
+    {
+    }
 }

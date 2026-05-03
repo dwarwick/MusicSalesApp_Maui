@@ -12,6 +12,7 @@ public class PlaylistPlayerViewModelTests
     private Mock<IAuthService> _mockAuthService;
     private Mock<INavigationService> _mockNavigationService;
     private Mock<IPlaybackService> _mockPlaybackService;
+    private Mock<IMediaPlaybackOnboardingService> _mockMediaPlaybackOnboardingService;
     private Mock<ISignalRService> _mockSignalRService;
     private Mock<IAppConfig> _mockAppConfig;
     private Mock<IBillingService> _mockBillingService;
@@ -26,11 +27,13 @@ public class PlaylistPlayerViewModelTests
         _mockAuthService = new Mock<IAuthService>();
         _mockNavigationService = new Mock<INavigationService>();
         _mockPlaybackService = new Mock<IPlaybackService>();
+        _mockMediaPlaybackOnboardingService = new Mock<IMediaPlaybackOnboardingService>();
         _mockSignalRService = new Mock<ISignalRService>();
         _mockAppConfig = new Mock<IAppConfig>();
         _mockBillingService = new Mock<IBillingService>();
         _mockPlaylistService = new Mock<IPlaylistService>();
         _mockAppConfig.Setup(c => c.WebBaseUrl).Returns("https://streamtunes.net");
+        _mockMediaPlaybackOnboardingService.Setup(s => s.EnsureBackgroundPlaybackExplainedAsync()).Returns(Task.CompletedTask);
 
         _viewModel = CreateViewModel();
     }
@@ -38,7 +41,7 @@ public class PlaylistPlayerViewModelTests
     private PlaylistPlayerViewModel CreateViewModel() => new(
         _mockMusicService.Object, _mockAlertService.Object,
         _mockAuthService.Object, _mockNavigationService.Object,
-        _mockPlaybackService.Object, _mockSignalRService.Object,
+        _mockPlaybackService.Object, _mockMediaPlaybackOnboardingService.Object, _mockSignalRService.Object,
         _mockAppConfig.Object, _mockBillingService.Object,
         _mockPlaylistService.Object);
 
@@ -81,6 +84,47 @@ public class PlaylistPlayerViewModelTests
 
         _mockPlaybackService.Verify(p =>
             p.SetPlaylist(It.Is<List<SongDto>>(l => l.Count == 3), 0), Times.Once);
+    }
+
+    [Test]
+    public async Task GenreName_WhenOrderedQueueMatchesActivePlaylist_PreservesPlaybackState()
+    {
+        var songs = CreateTestSongs();
+        var activeQueue = songs.Where(s => s.Genre == "Rock").ToList();
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+        _mockPlaybackService.SetupGet(p => p.Playlist).Returns(activeQueue);
+        _mockPlaybackService.SetupGet(p => p.CurrentSong).Returns(activeQueue[1]);
+
+        _viewModel.GenreName = "Rock";
+        await Task.Delay(100);
+
+        _mockPlaybackService.Verify(p => p.SetPlaylist(It.IsAny<List<SongDto>>(), It.IsAny<int>()), Times.Never);
+        Assert.That(_viewModel.CurrentSong, Is.SameAs(_viewModel.Songs[1]));
+        Assert.That(_viewModel.CurrentSong?.Id, Is.EqualTo(2));
+    }
+
+    [Test]
+    public async Task GenreName_WhenOrderedQueueDiffers_ResetsPlaybackState()
+    {
+        var songs = CreateTestSongs();
+        var reorderedQueue = new List<SongDto>
+        {
+            songs[1],
+            songs[0],
+            songs[3]
+        };
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+        _mockPlaybackService.SetupGet(p => p.Playlist).Returns(reorderedQueue);
+
+        _viewModel.GenreName = "Rock";
+        await Task.Delay(100);
+
+        _mockPlaybackService.Verify(p =>
+            p.SetPlaylist(It.Is<List<SongDto>>(l => l.Select(song => song.Id).SequenceEqual(new[] { 1, 2, 4 })), 0), Times.Once);
     }
 
     [Test]

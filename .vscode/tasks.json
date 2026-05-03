@@ -48,6 +48,12 @@
       "group": "build"
     },
     {
+      "label": "maui-pull-latest-runtime-log",
+      "type": "shell",
+      "command": "pwsh -ExecutionPolicy Bypass -File ${workspaceFolder:MusicSalesApp_Maui}/.vscode/pull-latest-runtime-log.ps1",
+      "problemMatcher": []
+    },
+    {
       "label": "create-aab-for-upload",
       "type": "process",
       "command": "pwsh",

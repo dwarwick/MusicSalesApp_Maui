@@ -7,7 +7,10 @@ namespace MusicSalesApp.Maui.Platforms.Android;
 
 public sealed class AudioVisualizerService : IAudioVisualizerService, IDisposable
 {
+    private const int ReleaseDelayMilliseconds = 500;
+
     private readonly IPlaybackService _playbackService;
+    private readonly IMediaPlaybackOnboardingService _mediaPlaybackOnboardingService;
     private readonly AudioEqualizerBarProcessor _barProcessor = new();
     private readonly SemaphoreSlim _bindLock = new(1, 1);
 
@@ -16,10 +19,12 @@ public sealed class AudioVisualizerService : IAudioVisualizerService, IDisposabl
     private bool _permissionChecked;
     private bool _permissionGranted;
     private int _boundSessionId;
+    private int _captureGeneration;
 
-    public AudioVisualizerService(IPlaybackService playbackService)
+    public AudioVisualizerService(IPlaybackService playbackService, IMediaPlaybackOnboardingService mediaPlaybackOnboardingService)
     {
         _playbackService = playbackService;
+        _mediaPlaybackOnboardingService = mediaPlaybackOnboardingService;
         _playbackService.StateChanged += OnPlaybackStateChanged;
     }
 
@@ -77,6 +82,11 @@ public sealed class AudioVisualizerService : IAudioVisualizerService, IDisposabl
         _bindLock.Dispose();
     }
 
+    public void Suspend()
+    {
+        ReleaseVisualizer(clearLevels: true);
+    }
+
     private void OnPlaybackStateChanged(string propertyName)
     {
         if (propertyName != nameof(IPlaybackService.CurrentSong) && propertyName != nameof(IPlaybackService.IsPlaying))
@@ -105,14 +115,8 @@ public sealed class AudioVisualizerService : IAudioVisualizerService, IDisposabl
             return _permissionGranted;
         }
 
-        var status = await MainThread.InvokeOnMainThreadAsync(() => Permissions.CheckStatusAsync<Permissions.Microphone>());
-        if (status != PermissionStatus.Granted)
-        {
-            status = await MainThread.InvokeOnMainThreadAsync(() => Permissions.RequestAsync<Permissions.Microphone>());
-        }
-
         _permissionChecked = true;
-        _permissionGranted = status == PermissionStatus.Granted;
+        _permissionGranted = await _mediaPlaybackOnboardingService.EnsureMicrophonePermissionAsync();
 
         if (!_permissionGranted)
         {
@@ -145,7 +149,8 @@ public sealed class AudioVisualizerService : IAudioVisualizerService, IDisposabl
         try
         {
             _visualizer = new Visualizer(sessionId);
-            _captureListener = new DataCaptureListener(this);
+            var captureGeneration = Interlocked.Increment(ref _captureGeneration);
+            _captureListener = new DataCaptureListener(this, captureGeneration);
 
             var captureSizeRange = Visualizer.GetCaptureSizeRange();
             if (captureSizeRange == null || captureSizeRange.Length < 2)
@@ -168,8 +173,13 @@ public sealed class AudioVisualizerService : IAudioVisualizerService, IDisposabl
         }
     }
 
-    private void HandleFftData(byte[]? fft, int samplingRate)
+    private void HandleFftData(byte[]? fft, int samplingRate, int captureGeneration)
     {
+        if (captureGeneration != Volatile.Read(ref _captureGeneration) || _visualizer == null || _boundSessionId <= 0)
+        {
+            return;
+        }
+
         // Delayed callbacks can still arrive after the Visualizer has been disabled.
         // Use the sampling rate provided by the callback instead of touching released state.
         Levels = _barProcessor.ProcessFft(fft, samplingRate);
@@ -178,13 +188,17 @@ public sealed class AudioVisualizerService : IAudioVisualizerService, IDisposabl
 
     private void ReleaseVisualizer(bool clearLevels)
     {
+        var visualizer = _visualizer;
+
+        Interlocked.Increment(ref _captureGeneration);
+
         try
         {
-            if (_visualizer != null)
+            if (visualizer != null)
             {
-                _visualizer.SetEnabled(false);
-                _visualizer.SetDataCaptureListener(null, 0, false, false);
-                _visualizer.Release();
+                visualizer.SetDataCaptureListener(null, 0, false, false);
+                visualizer.SetEnabled(false);
+                _ = ReleaseVisualizerAsync(visualizer);
             }
         }
         catch
@@ -198,6 +212,22 @@ public sealed class AudioVisualizerService : IAudioVisualizerService, IDisposabl
         }
 
         SetVisualizationAvailable(false, clearLevels);
+    }
+
+    private static async Task ReleaseVisualizerAsync(Visualizer visualizer)
+    {
+        try
+        {
+            await Task.Delay(ReleaseDelayMilliseconds);
+            visualizer.Release();
+        }
+        catch
+        {
+        }
+        finally
+        {
+            visualizer.Dispose();
+        }
     }
 
     private void SetVisualizationAvailable(bool isAvailable, bool clearLevels, bool notifyWhenUnchanged = false)
@@ -222,12 +252,12 @@ public sealed class AudioVisualizerService : IAudioVisualizerService, IDisposabl
         return CrossMediaManager.Android?.Player?.AudioSessionId ?? 0;
     }
 
-    private sealed class DataCaptureListener(AudioVisualizerService owner)
+    private sealed class DataCaptureListener(AudioVisualizerService owner, int captureGeneration)
         : Java.Lang.Object, Visualizer.IOnDataCaptureListener
     {
         public void OnFftDataCapture(Visualizer? visualizer, byte[]? fft, int samplingRate)
         {
-            owner.HandleFftData(fft, samplingRate);
+            owner.HandleFftData(fft, samplingRate, captureGeneration);
         }
 
         public void OnWaveFormDataCapture(Visualizer? visualizer, byte[]? waveform, int samplingRate)

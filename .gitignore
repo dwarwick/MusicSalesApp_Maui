@@ -17,6 +17,12 @@ msbuild.log
 msbuild.err
 msbuild.wrn
 
+## Runtime diagnostic logs pulled from devices
+streamtunes-*.log
+streamtunes-logs/
+device-logs/
+pulled-logs/
+
 ## Visual Studio files
 .vs/
 *.suo

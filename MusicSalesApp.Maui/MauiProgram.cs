@@ -120,6 +120,11 @@ public static class MauiProgram
 					}
 				};
 			});
+
+				var audioDownloadClientBuilder = builder.Services.AddHttpClient(AudioCacheService.AudioDownloadClientName);
+		#if ANDROID
+				audioDownloadClientBuilder.ConfigurePrimaryHttpMessageHandler(() => new Xamarin.Android.Net.AndroidMessageHandler());
+		#endif
 #endif
 		}
 		else
@@ -141,18 +146,29 @@ public static class MauiProgram
 		builder.Services.AddSingleton<ITestingServerBannerService, TestingServerBannerService>();
 
 		// Register services
+		builder.Services.AddSingleton<IAppPreferenceStore, AppPreferenceStore>();
+		builder.Services.AddSingleton<IPermissionExplainerService, PermissionExplainerService>();
+		builder.Services.AddSingleton<IMicrophonePermissionService, MicrophonePermissionService>();
 		builder.Services.AddSingleton<IAuthService, AuthService>();
 		builder.Services.AddSingleton<IWebAuthenticatorService, WebAuthenticatorService>();
 		builder.Services.AddSingleton<IAppSettingsService, AppSettingsService>();
 		builder.Services.AddSingleton<IMusicService, MusicService>();
+		builder.Services.AddSingleton<IAudioCacheService, AudioCacheService>();
 		builder.Services.AddSingleton<IAlertService, AlertService>();
 		builder.Services.AddSingleton<ISignalRService, SignalRService>();
 		builder.Services.AddSingleton<INavigationService, NavigationService>();
 		builder.Services.AddSingleton<IMediaManager>(CrossMediaManager.Current);
+	#if ANDROID
+		builder.Services.AddSingleton<IPlaybackKeepAliveService, MusicSalesApp.Maui.Platforms.Android.PlaybackKeepAliveService>();
+	#else
+		builder.Services.AddSingleton<IPlaybackKeepAliveService, NoOpPlaybackKeepAliveService>();
+	#endif
 		builder.Services.AddSingleton<IPlaybackService, PlaybackService>();
 	#if ANDROID
+		builder.Services.AddSingleton<IMediaPlaybackOnboardingService, MediaPlaybackOnboardingService>();
 		builder.Services.AddSingleton<IAudioVisualizerService, MusicSalesApp.Maui.Platforms.Android.AudioVisualizerService>();
 	#else
+		builder.Services.AddSingleton<IMediaPlaybackOnboardingService, NoOpMediaPlaybackOnboardingService>();
 		builder.Services.AddSingleton<IAudioVisualizerService, NoAudioVisualizerService>();
 	#endif
 		builder.Services.AddSingleton<IBrowserService, BrowserService>();
@@ -165,8 +181,24 @@ public static class MauiProgram
 			builder.ConfigureLifecycleEvents(events =>
 			{
 #if ANDROID
-				events.AddAndroid(android => android.OnCreate((activity, _) =>
-					CrossMediaManager.Current.Init(activity)));
+				events.AddAndroid(android =>
+				{
+					android.OnCreate((activity, _) => CrossMediaManager.Current.Init(activity));
+					android.OnStop(activity =>
+					{
+						if (IPlatformApplication.Current?.Services.GetService(typeof(IAudioVisualizerService)) is IAudioVisualizerService audioVisualizerService)
+						{
+							audioVisualizerService.Suspend();
+						}
+					});
+					android.OnResume(activity =>
+					{
+						if (IPlatformApplication.Current?.Services.GetService(typeof(IAudioVisualizerService)) is IAudioVisualizerService audioVisualizerService)
+						{
+							_ = audioVisualizerService.EnsureInitializedAsync();
+						}
+					});
+				});
 #elif IOS
 				events.AddiOS(ios => ios.FinishedLaunching((app, _) =>
 				{
@@ -210,6 +242,8 @@ public static class MauiProgram
 		builder.Services.AddTransient<PlaylistPlayerPage>();
 		builder.Services.AddTransient<MyPlaylistsViewModel>();
 		builder.Services.AddTransient<MyPlaylistsPage>();
+
+		builder.Logging.AddProvider(new RollingFileLoggerProvider(RollingFileLoggerOptions.CreateDefault()));
 
 #if DEBUG
 		builder.Logging.AddDebug();

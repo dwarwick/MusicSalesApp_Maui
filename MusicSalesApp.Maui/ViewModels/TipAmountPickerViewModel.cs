@@ -8,19 +8,19 @@ public partial class TipAmountPickerViewModel : ObservableObject
     public static readonly IReadOnlyList<decimal> PresetAmounts = [1.00m, 5.00m, 10.00m];
 
     [ObservableProperty]
-    private string _title;
+    public partial string Title { get; set; }
 
     [ObservableProperty]
-    private string _subtitle;
+    public partial string Subtitle { get; set; }
 
     [ObservableProperty]
-    private bool _showCustomInput;
+    public partial bool ShowCustomInput { get; set; }
 
     [ObservableProperty]
-    private string _customAmountText = "1.00";
+    public partial string CustomAmountText { get; set; } = "1.00";
 
     [ObservableProperty]
-    private string _errorMessage = string.Empty;
+    public partial string ErrorMessage { get; set; } = string.Empty;
 
     public bool ShowCustomAmountButton => !ShowCustomInput;
     public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);

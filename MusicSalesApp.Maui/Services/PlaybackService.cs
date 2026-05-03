@@ -1,9 +1,11 @@
+using System.Collections;
 using MediaManager;
 using MediaManager.Library;
 using MediaManager.Media;
 using MediaManager.Playback;
 using MediaManager.Player;
 using MediaManager.Queue;
+using Microsoft.Extensions.Logging;
 using MusicSalesApp.Maui.ViewModels;
 using MmPositionChangedEventArgs = MediaManager.Playback.PositionChangedEventArgs;
 
@@ -17,9 +19,19 @@ namespace MusicSalesApp.Maui.Services;
 /// </summary>
 public class PlaybackService : IPlaybackService
 {
+    private static readonly TimeSpan DefaultPlaylistAdvanceFallbackDelay = TimeSpan.FromSeconds(1.5);
+    private static readonly TimeSpan MediaItemFinishedNearEndTolerance = TimeSpan.FromSeconds(2);
+    private const int QueueCacheResolutionConcurrency = 3;
+    private const int MaxLoggedPlaylistItems = 10;
+    private const int MaxLoggedNativeQueueItems = 5;
+
     private readonly IAuthService _authService;
     private readonly IMusicService _musicService;
     private readonly IMediaManager _mediaManager;
+    private readonly IAudioCacheService _audioCacheService;
+    private readonly IPlaybackKeepAliveService _playbackKeepAliveService;
+    private readonly ILogger<PlaybackService> _logger;
+    private readonly TimeSpan _playlistAdvanceFallbackDelay;
 
     // Stream tracking state
     private int _streamQualifyingSeconds = 30;
@@ -41,23 +53,40 @@ public class PlaybackService : IPlaybackService
 
     // Playlist state
     private List<SongDto>? _playlist;
+    private List<SongDto>? _playlistSourceOrder;
     private int _currentTrackIndex;
     private bool _isShuffleEnabled;
+    private int _playlistAdvanceGeneration;
+    private int _playbackRequestGeneration;
+    private long _playbackDiagnosticSequence;
+    private MediaPlayerState? _lastObservedMediaManagerState;
 
     // Map MediaItem URL -> SongDto for auto-advance detection via MediaItemChanged
     private readonly Dictionary<string, SongDto> _urlToSong = new();
 
-    public PlaybackService(IAuthService authService, IMusicService musicService, IMediaManager mediaManager)
+    public PlaybackService(
+        IAuthService authService,
+        IMusicService musicService,
+        IMediaManager mediaManager,
+        IAudioCacheService audioCacheService,
+        IPlaybackKeepAliveService playbackKeepAliveService,
+        ILogger<PlaybackService> logger,
+        TimeSpan? playlistAdvanceFallbackDelay = null)
     {
         _authService = authService;
         _musicService = musicService;
         _mediaManager = mediaManager;
+        _audioCacheService = audioCacheService;
+        _playbackKeepAliveService = playbackKeepAliveService;
+        _logger = logger;
+        _playlistAdvanceFallbackDelay = playlistAdvanceFallbackDelay ?? DefaultPlaylistAdvanceFallbackDelay;
         _nextCtaThreshold = 0;
 
         _mediaManager.StateChanged += OnMediaManagerStateChanged;
         _mediaManager.MediaItemChanged += OnMediaItemChanged;
         _mediaManager.PositionChanged += OnPositionChanged;
         _mediaManager.MediaItemFinished += OnMediaItemFinished;
+        _mediaManager.MediaItemFailed += OnMediaItemFailed;
     }
 
     // --- Observable state ---
@@ -73,7 +102,17 @@ public class PlaybackService : IPlaybackService
     public bool IsPlaying
     {
         get => _isPlaying;
-        private set { _isPlaying = value; RaiseStateChanged(nameof(IsPlaying)); }
+        private set
+        {
+            if (_isPlaying == value)
+            {
+                return;
+            }
+
+            _isPlaying = value;
+            _playbackKeepAliveService.SetPlaybackActive(value);
+            RaiseStateChanged(nameof(IsPlaying));
+        }
     }
 
     private double _playbackProgress;
@@ -132,11 +171,16 @@ public class PlaybackService : IPlaybackService
 
     public void PlaySong(SongDto song)
     {
+        CancelPendingPlaylistAdvance();
+        LogPlaybackSnapshot("PlaySong requested", song, null);
+
         if (CurrentSong?.Id == song.Id && IsPlaying)
         {
             // Tapping the same song that's playing — pause it
+            CancelPendingPlaybackRequest();
             IsPlaying = false;
-            _ = _mediaManager.Pause();
+            ObserveMediaCommand("MediaManager.Pause from PlaySong current-song toggle", _mediaManager.Pause(), song, null);
+            LogPlaybackSnapshot("PlaySong paused current song", song, null);
             return;
         }
 
@@ -152,34 +196,44 @@ public class PlaybackService : IPlaybackService
         if (isSameSong)
         {
             // Same song replay (e.g., after preview limit) — seek to start and resume
-            _ = _mediaManager.SeekTo(TimeSpan.Zero);
-            _ = _mediaManager.Play();
+            ObserveMediaCommand("MediaManager.SeekTo start for PlaySong same-song replay", _mediaManager.SeekTo(TimeSpan.Zero), song, null);
+            ObserveMediaCommand("MediaManager.Play for PlaySong same-song replay", _mediaManager.Play(), song, null);
         }
         else
         {
-            _urlToSong.Clear();
-            _urlToSong[song.StreamUrl ?? ""] = song;
-            _ = _mediaManager.Play(CreateMediaItem(song));
+            var requestGeneration = BeginPlaybackRequest();
+            _ = StartSingleSongPlaybackAsync(song, requestGeneration);
         }
+
+        LogPlaybackSnapshot("PlaySong started", song, null);
     }
 
     public void TogglePlayPause()
     {
         if (CurrentSong == null) return;
 
+        CancelPendingPlaylistAdvance();
+        LogPlaybackSnapshot("TogglePlayPause requested", CurrentSong, null);
+
         IsPlaying = !IsPlaying;
         if (IsPlaying)
-            _ = _mediaManager.Play();
+            ObserveMediaCommand("MediaManager.Play from TogglePlayPause", _mediaManager.Play(), CurrentSong, null);
         else
-            _ = _mediaManager.Pause();
+            ObserveMediaCommand("MediaManager.Pause from TogglePlayPause", _mediaManager.Pause(), CurrentSong, null);
+
+        LogPlaybackSnapshot("TogglePlayPause completed", CurrentSong, null);
     }
 
     public void Stop()
     {
+        CancelPendingPlaylistAdvance();
+        CancelPendingPlaybackRequest();
+        LogPlaybackSnapshot("Stop requested", CurrentSong, null);
         IsPlaying = false;
         ResetPlaybackState();
-        _ = _mediaManager.Pause();
-        _ = _mediaManager.SeekTo(TimeSpan.Zero);
+        ObserveMediaCommand("MediaManager.Pause from Stop", _mediaManager.Pause(), CurrentSong, null);
+        ObserveMediaCommand("MediaManager.SeekTo start from Stop", _mediaManager.SeekTo(TimeSpan.Zero), CurrentSong, null);
+        LogPlaybackSnapshot("Stop completed", CurrentSong, null);
     }
 
     public void ToggleRepeat()
@@ -227,20 +281,46 @@ public class PlaybackService : IPlaybackService
 
     internal void OnMediaEnded()
     {
+        LogPlaybackSnapshot("OnMediaEnded entered", CurrentSong, null);
+
         if (!HasPlaylist && IsRepeatEnabled && CurrentSong != null)
         {
             // Single-song repeat: restart
             ResetStreamTracking(CurrentSong.Id);
             PreviewLimitReached = false;
-            _ = _mediaManager.SeekTo(TimeSpan.Zero);
-            _ = _mediaManager.Play();
+            ObserveMediaCommand("MediaManager.SeekTo start for single-song repeat", _mediaManager.SeekTo(TimeSpan.Zero), CurrentSong, null);
+            ObserveMediaCommand("MediaManager.Play for single-song repeat", _mediaManager.Play(), CurrentSong, null);
+            LogPlaybackSnapshot("OnMediaEnded restarted single-song repeat", CurrentSong, null);
             return;
         }
 
         if (!HasPlaylist)
+        {
             IsPlaying = false;
-        // HasPlaylist: Plugin.MediaManager auto-advances through the queue.
-        // OnMediaItemChanged updates state when the next song starts.
+            LogPlaybackSnapshot("OnMediaEnded stopped non-playlist playback", CurrentSong, null);
+            return;
+        }
+
+        var finishedSongId = CurrentSong?.Id;
+        if (finishedSongId == null)
+        {
+            _logger.LogWarning("OnMediaEnded ignored because CurrentSong is null. {Snapshot}", CreatePlaybackSnapshot(null, null));
+            return;
+        }
+
+        var finishedTrackIndex = _currentTrackIndex;
+        var generation = _playlistAdvanceGeneration;
+
+        // Android background playback can occasionally stop at the end of a track
+        // without raising the follow-up MediaItemChanged event. Give the native queue
+        // a short grace period, then explicitly continue only if nothing advanced.
+        _logger.LogInformation(
+            "Scheduling playlist continuation fallback. FinishedSongId={FinishedSongId}; FinishedTrackIndex={FinishedTrackIndex}; Generation={Generation}; {Snapshot}",
+            finishedSongId.Value,
+            finishedTrackIndex,
+            generation,
+            CreatePlaybackSnapshot(CurrentSong, null));
+        _ = EnsurePlaylistContinuesAsync(finishedSongId.Value, finishedTrackIndex, generation);
     }
 
     // --- Playlist methods ---
@@ -249,8 +329,18 @@ public class PlaybackService : IPlaybackService
     {
         if (songs.Count == 0) return;
 
-        _playlist = new List<SongDto>(songs);
-        _currentTrackIndex = Math.Clamp(startIndex, 0, songs.Count - 1);
+        CancelPendingPlaylistAdvance();
+        _logger.LogInformation(
+            "SetPlaylist requested. SongCount={SongCount}; StartIndex={StartIndex}; SongIds={SongIds}",
+            songs.Count,
+            startIndex,
+            string.Join(",", songs.Select(song => song.Id)));
+
+        _playlistSourceOrder = new List<SongDto>(songs);
+        var selectedIndex = Math.Clamp(startIndex, 0, songs.Count - 1);
+        var selectedSong = _playlistSourceOrder[selectedIndex];
+        _playlist = BuildPlaybackPlaylist(_playlistSourceOrder, selectedSong.Id);
+        _currentTrackIndex = ResolveRequiredPlaylistIndex(_playlist, selectedSong.Id);
 
         RaiseStateChanged(nameof(HasPlaylist));
         RaiseStateChanged(nameof(Playlist));
@@ -263,14 +353,19 @@ public class PlaybackService : IPlaybackService
         IsPlaying = true;
 
         _mediaManager.RepeatMode = IsRepeatEnabled ? RepeatMode.All : RepeatMode.Off;
-        _mediaManager.ShuffleMode = _isShuffleEnabled ? ShuffleMode.All : ShuffleMode.Off;
+        _mediaManager.ShuffleMode = ShuffleMode.Off;
 
-        BuildAndStartQueue(startIndex);
+        var requestGeneration = BeginPlaybackRequest();
+        BuildAndStartQueue(_currentTrackIndex, requestGeneration);
+        LogPlaybackSnapshot("SetPlaylist completed", song, null);
     }
 
     public void ClearPlaylist()
     {
+        CancelPendingPlaylistAdvance();
+        CancelPendingPlaybackRequest();
         _playlist = null;
+        _playlistSourceOrder = null;
         _currentTrackIndex = 0;
 
         RaiseStateChanged(nameof(HasPlaylist));
@@ -281,14 +376,20 @@ public class PlaybackService : IPlaybackService
     public void PlayNext()
     {
         if (!HasPlaylist) return;
-        _ = _mediaManager.PlayNext();
+
+        CancelPendingPlaylistAdvance();
+        LogPlaybackSnapshot("PlayNext requested", CurrentSong, null);
+        ObserveMediaCommand("MediaManager.PlayNext", _mediaManager.PlayNext(), DescribeBooleanResult, CurrentSong, null);
         // State updated via OnMediaItemChanged when Plugin.MediaManager advances
     }
 
     public void PlayPrevious()
     {
         if (!HasPlaylist) return;
-        _ = _mediaManager.PlayPrevious();
+
+        CancelPendingPlaylistAdvance();
+        LogPlaybackSnapshot("PlayPrevious requested", CurrentSong, null);
+        ObserveMediaCommand("MediaManager.PlayPrevious", _mediaManager.PlayPrevious(), DescribeBooleanResult, CurrentSong, null);
         // State updated via OnMediaItemChanged when Plugin.MediaManager goes back
     }
 
@@ -296,6 +397,11 @@ public class PlaybackService : IPlaybackService
     {
         if (_playlist == null || index < 0 || index >= _playlist.Count)
             return;
+
+        CancelPendingPlaylistAdvance();
+        var requestGeneration = BeginPlaybackRequest();
+        var shouldForceQueueReload = ShouldForceQueueReloadForRequestedTrack(index);
+        _logger.LogInformation("PlayTrackAtIndex requested. Index={Index}; ForceQueueReload={ForceQueueReload}; {Snapshot}", index, shouldForceQueueReload, CreatePlaybackSnapshot(CurrentSong, null));
 
         _currentTrackIndex = index;
         RaiseStateChanged(nameof(CurrentTrackIndex));
@@ -305,13 +411,59 @@ public class PlaybackService : IPlaybackService
         PreviewLimitReached = false;
         CurrentSong = song;
         IsPlaying = true;
-        _ = _mediaManager.PlayQueueItem(index);
+
+        if (shouldForceQueueReload)
+        {
+            _logger.LogWarning(
+                "PlayTrackAtIndex forcing queue rebuild because the requested track is already the native current item and playback is not progressing. Index={Index}; {Snapshot}",
+                index,
+                CreatePlaybackSnapshot(song, null));
+            BuildAndStartQueue(index, requestGeneration);
+        }
+        else
+        {
+            ObserveMediaCommand($"MediaManager.PlayQueueItem({index})", _mediaManager.PlayQueueItem(index), DescribeBooleanResult, song, null);
+        }
+
+        LogPlaybackSnapshot("PlayTrackAtIndex completed", song, null);
     }
 
     public void ToggleShuffle()
     {
+        var currentSongId = CurrentSong?.Id;
+        var shouldRebuildPlaylist = _playlistSourceOrder != null && currentSongId.HasValue;
+        var wasPlaying = IsPlaying;
+
         IsShuffleEnabled = !_isShuffleEnabled;
-        _mediaManager.ShuffleMode = _isShuffleEnabled ? ShuffleMode.All : ShuffleMode.Off;
+
+        if (!shouldRebuildPlaylist)
+        {
+            _mediaManager.ShuffleMode = _isShuffleEnabled ? ShuffleMode.All : ShuffleMode.Off;
+            return;
+        }
+
+        _playlist = BuildPlaybackPlaylist(_playlistSourceOrder!, currentSongId!.Value);
+        _currentTrackIndex = ResolveRequiredPlaylistIndex(_playlist, currentSongId.Value);
+
+        RaiseStateChanged(nameof(Playlist));
+        RaiseStateChanged(nameof(CurrentTrackIndex));
+
+        if (CurrentSong?.Id != currentSongId.Value)
+        {
+            CurrentSong = _playlist[_currentTrackIndex];
+        }
+
+        _mediaManager.ShuffleMode = ShuffleMode.Off;
+
+        _logger.LogInformation(
+            "ToggleShuffle rebuilt active playlist. WasPlaying={WasPlaying}; CurrentSongId={CurrentSongId}; {Snapshot}",
+            wasPlaying,
+            currentSongId.Value,
+            CreatePlaybackSnapshot(CurrentSong, null));
+
+        CancelPendingPlaylistAdvance();
+        var requestGeneration = BeginPlaybackRequest();
+        BuildAndStartQueue(_currentTrackIndex, requestGeneration, pauseAfterQueueSelection: !wasPlaying);
     }
 
     public void SetStreamQualifyingSeconds(int seconds)
@@ -405,7 +557,7 @@ public class PlaybackService : IPlaybackService
         {
             IsPlaying = false;
             PreviewLimitReached = true;
-            _ = _mediaManager.Pause();
+            ObserveMediaCommand("MediaManager.Pause from CheckPreviewLimit", _mediaManager.Pause(), CurrentSong, null);
             _previewEndCount++;
 
             if (_previewEndCount >= _nextCtaThreshold)
@@ -420,6 +572,16 @@ public class PlaybackService : IPlaybackService
 
     private void OnMediaManagerStateChanged(object? sender, StateChangedEventArgs e)
     {
+        var previousObservedState = _lastObservedMediaManagerState;
+        var previousIsPlaying = IsPlaying;
+
+        _logger.LogInformation(
+            "MediaManager state change received. PreviousObservedState={PreviousObservedState}; NewState={State}; PreviousIsPlaying={PreviousIsPlaying}; {Snapshot}",
+            previousObservedState,
+            e.State,
+            previousIsPlaying,
+            CreatePlaybackSnapshot(CurrentSong, null));
+
         switch (e.State)
         {
             case MediaPlayerState.Playing:
@@ -433,33 +595,51 @@ public class PlaybackService : IPlaybackService
                 IsPlaying = false;
                 break;
         }
+
+        _lastObservedMediaManagerState = e.State;
+        _logger.LogInformation(
+            "MediaManager state change applied. PreviousObservedState={PreviousObservedState}; NewState={State}; PreviousIsPlaying={PreviousIsPlaying}; CurrentIsPlaying={CurrentIsPlaying}; {Snapshot}",
+            previousObservedState,
+            e.State,
+            previousIsPlaying,
+            IsPlaying,
+            CreatePlaybackSnapshot(CurrentSong, null));
     }
 
     private void OnMediaItemChanged(object? sender, MediaItemEventArgs e)
     {
+        _logger.LogInformation("MediaItemChanged received. MediaItem={MediaItem}; {Snapshot}", DescribeMediaItem(e.MediaItem), CreatePlaybackSnapshot(CurrentSong, e.MediaItem));
+
         if (e.MediaItem == null) return;
 
-        var url = e.MediaItem.MediaUri;
-        if (string.IsNullOrEmpty(url) || !_urlToSong.TryGetValue(url, out var song)) return;
+        if (!TryResolveSongFromMediaItem(e.MediaItem, out var song, out var playlistIndex))
+        {
+            _logger.LogWarning("MediaItemChanged could not resolve song. MediaItem={MediaItem}; {Snapshot}", DescribeMediaItem(e.MediaItem), CreatePlaybackSnapshot(CurrentSong, e.MediaItem));
+            return;
+        }
+
+        CancelPendingPlaylistAdvance();
 
         // Skip if we already set this song (e.g., from PlayTrackAtIndex or PlaySong)
-        if (song.Id == CurrentSong?.Id) return;
+        if (song.Id == CurrentSong?.Id)
+        {
+            _logger.LogInformation("MediaItemChanged resolved to current song; no app state update needed. ResolvedSongId={SongId}; PlaylistIndex={PlaylistIndex}; {Snapshot}", song.Id, playlistIndex, CreatePlaybackSnapshot(CurrentSong, e.MediaItem));
+            return;
+        }
 
         // Auto-advance from Plugin.MediaManager (song ended naturally or user tapped Next in notification)
-        if (_playlist != null)
+        if (playlistIndex.HasValue)
         {
-            var idx = _playlist.FindIndex(s => s.Id == song.Id);
-            if (idx >= 0)
-            {
-                _currentTrackIndex = idx;
-                RaiseStateChanged(nameof(CurrentTrackIndex));
-            }
+            _currentTrackIndex = playlistIndex.Value;
+            RaiseStateChanged(nameof(CurrentTrackIndex));
         }
 
         ResetStreamTracking(song.Id);
         PreviewLimitReached = false;
+        ResetPlaybackState();
         CurrentSong = song;
         IsPlaying = true;
+        _logger.LogInformation("MediaItemChanged updated app state. ResolvedSongId={SongId}; PlaylistIndex={PlaylistIndex}; {Snapshot}", song.Id, playlistIndex, CreatePlaybackSnapshot(CurrentSong, e.MediaItem));
     }
 
     private void OnPositionChanged(object? sender, MmPositionChangedEventArgs e)
@@ -468,39 +648,813 @@ public class PlaybackService : IPlaybackService
     }
 
     private void OnMediaItemFinished(object? sender, MediaItemEventArgs e)
-        => OnMediaEnded();
+    {
+        _logger.LogInformation("MediaItemFinished received. MediaUri={MediaUri}; {Snapshot}", SanitizeMediaUri(e.MediaItem?.MediaUri), CreatePlaybackSnapshot(CurrentSong, e.MediaItem));
+
+        if (ShouldIgnoreMediaItemFinished(e.MediaItem))
+        {
+            return;
+        }
+
+        OnMediaEnded();
+    }
+
+    private void OnMediaItemFailed(object? sender, MediaItemFailedEventArgs e)
+    {
+        var exception = e.Exeption;
+
+        _logger.LogError(
+            exception,
+            "MediaItemFailed received. MediaUri={MediaUri}; Message={Message}; ExceptionType={ExceptionType}; {Snapshot}",
+            SanitizeMediaUri(e.MediaItem?.MediaUri),
+            e.Message,
+            exception.GetType().FullName,
+            CreatePlaybackSnapshot(CurrentSong, e.MediaItem));
+    }
+
+    private async Task EnsurePlaylistContinuesAsync(int finishedSongId, int finishedTrackIndex, int generation)
+    {
+        await Task.Delay(_playlistAdvanceFallbackDelay).ConfigureAwait(false);
+
+        _logger.LogInformation(
+            "Playlist continuation fallback woke. FinishedSongId={FinishedSongId}; FinishedTrackIndex={FinishedTrackIndex}; Generation={Generation}; CurrentGeneration={CurrentGeneration}; {Snapshot}",
+            finishedSongId,
+            finishedTrackIndex,
+            generation,
+            _playlistAdvanceGeneration,
+            CreatePlaybackSnapshot(CurrentSong, null));
+
+        if (!HasPlaylist || _playlist == null)
+        {
+            _logger.LogInformation("Playlist continuation fallback skipped because playlist is no longer active. {Snapshot}", CreatePlaybackSnapshot(CurrentSong, null));
+            return;
+        }
+
+        if (CurrentSong?.Id != finishedSongId || _currentTrackIndex != finishedTrackIndex)
+        {
+            var shouldRecoverAdvancedTrack = ShouldRecoverAdvancedPlaylistTrack();
+            _logger.LogInformation(
+                "Playlist continuation fallback observed app state divergence. FinishedSongId={FinishedSongId}; FinishedTrackIndex={FinishedTrackIndex}; ShouldRecoverAdvancedTrack={ShouldRecoverAdvancedTrack}; {Snapshot}",
+                finishedSongId,
+                finishedTrackIndex,
+                shouldRecoverAdvancedTrack,
+                CreatePlaybackSnapshot(CurrentSong, null));
+
+            if (shouldRecoverAdvancedTrack)
+            {
+                _logger.LogWarning("Playlist continuation fallback retrying advanced track because native handoff is not playing. FinishedSongId={FinishedSongId}; FinishedTrackIndex={FinishedTrackIndex}; {Snapshot}", finishedSongId, finishedTrackIndex, CreatePlaybackSnapshot(CurrentSong, null));
+                PlayTrackAtIndex(_currentTrackIndex);
+                return;
+            }
+
+            _logger.LogInformation("Playlist continuation fallback skipped because app state already advanced. FinishedSongId={FinishedSongId}; FinishedTrackIndex={FinishedTrackIndex}; {Snapshot}", finishedSongId, finishedTrackIndex, CreatePlaybackSnapshot(CurrentSong, null));
+            return;
+        }
+
+        if (generation != _playlistAdvanceGeneration)
+        {
+            _logger.LogInformation("Playlist continuation fallback skipped because generation changed. ScheduledGeneration={ScheduledGeneration}; CurrentGeneration={CurrentGeneration}; {Snapshot}", generation, _playlistAdvanceGeneration, CreatePlaybackSnapshot(CurrentSong, null));
+            return;
+        }
+
+        var nativeCurrentIndex = TryResolveNativeQueueIndex();
+        if (nativeCurrentIndex.HasValue && nativeCurrentIndex.Value != finishedTrackIndex)
+        {
+            _logger.LogInformation("Playlist continuation fallback syncing to native queue index. NativeCurrentIndex={NativeCurrentIndex}; FinishedTrackIndex={FinishedTrackIndex}; {Snapshot}", nativeCurrentIndex.Value, finishedTrackIndex, CreatePlaybackSnapshot(CurrentSong, null));
+            PlayTrackAtIndex(nativeCurrentIndex.Value);
+            return;
+        }
+
+        if (_isShuffleEnabled && await _mediaManager.PlayNext().ConfigureAwait(false))
+        {
+            _logger.LogInformation("Playlist continuation fallback invoked MediaManager.PlayNext for shuffle. {Snapshot}", CreatePlaybackSnapshot(CurrentSong, null));
+            return;
+        }
+
+        var nextIndex = ResolveSequentialNextTrackIndex(finishedTrackIndex);
+        if (nextIndex == null)
+        {
+            if (!IsRepeatEnabled)
+            {
+                IsPlaying = false;
+                _logger.LogInformation("Playlist continuation fallback reached end of queue and stopped playback. {Snapshot}", CreatePlaybackSnapshot(CurrentSong, null));
+            }
+
+            return;
+        }
+
+        _logger.LogInformation("Playlist continuation fallback forcing next sequential track. NextIndex={NextIndex}; {Snapshot}", nextIndex.Value, CreatePlaybackSnapshot(CurrentSong, null));
+        PlayTrackAtIndex(nextIndex.Value);
+    }
 
     // --- Queue helpers ---
 
-    private void BuildAndStartQueue(int startIndex)
+    private int BeginPlaybackRequest()
     {
-        _urlToSong.Clear();
-        var items = _playlist!.Select(s =>
+        return Interlocked.Increment(ref _playbackRequestGeneration);
+    }
+
+    private void CancelPendingPlaybackRequest()
+    {
+        Interlocked.Increment(ref _playbackRequestGeneration);
+    }
+
+    private bool IsPlaybackRequestCurrent(int requestGeneration)
+    {
+        return Volatile.Read(ref _playbackRequestGeneration) == requestGeneration;
+    }
+
+    private void BuildAndStartQueue(int startIndex, int requestGeneration, bool pauseAfterQueueSelection = false)
+    {
+        _ = BuildAndStartQueueAsync(startIndex, requestGeneration, pauseAfterQueueSelection);
+    }
+
+    private async Task BuildAndStartQueueAsync(int startIndex, int requestGeneration, bool pauseAfterQueueSelection)
+    {
+        if (_playlist == null || startIndex < 0 || startIndex >= _playlist.Count)
         {
-            var item = CreateMediaItem(s);
-            _urlToSong[s.StreamUrl ?? ""] = s;
+            return;
+        }
+
+        var playlistSnapshot = _playlist;
+        var currentSong = playlistSnapshot[startIndex];
+        var playbackUris = await ResolveQueuePlaybackUrisAsync(playlistSnapshot).ConfigureAwait(false);
+
+        if (!IsPlaybackRequestCurrent(requestGeneration) ||
+            !ReferenceEquals(_playlist, playlistSnapshot) ||
+            _currentTrackIndex != startIndex ||
+            CurrentSong?.Id != currentSong.Id)
+        {
+            _logger.LogInformation(
+                "BuildAndStartQueue skipped because a newer playback request superseded it. StartIndex={StartIndex}; RequestGeneration={RequestGeneration}; CurrentGeneration={CurrentGeneration}; {Snapshot}",
+                startIndex,
+                requestGeneration,
+                Volatile.Read(ref _playbackRequestGeneration),
+                CreatePlaybackSnapshot(CurrentSong, null));
+            return;
+        }
+
+        _urlToSong.Clear();
+        var items = playlistSnapshot.Select((song, index) =>
+        {
+            var mediaUri = playbackUris[index];
+            var item = CreateMediaItem(song, mediaUri);
             return item;
         }).ToArray();
 
         var capturedStart = startIndex;
-        _ = _mediaManager.Play((IEnumerable<IMediaItem>)items)
-            .ContinueWith(t =>
+        _logger.LogInformation(
+            "BuildAndStartQueue calling MediaManager.Play. StartIndex={StartIndex}; QueueCount={QueueCount}; QueueItems={QueueItems}; {Snapshot}",
+            startIndex,
+            items.Length,
+            DescribeMediaItems(items),
+            CreatePlaybackSnapshot(CurrentSong, null));
+
+        var playQueueTask = _mediaManager.Play((IEnumerable<IMediaItem>)items);
+        ObserveMediaCommand("MediaManager.Play queue", playQueueTask, DescribeMediaItem, CurrentSong, null);
+
+        try
+        {
+            await playQueueTask.ConfigureAwait(false);
+        }
+        catch
+        {
+            return;
+        }
+
+        if (!IsPlaybackRequestCurrent(requestGeneration) || !ReferenceEquals(_playlist, playlistSnapshot))
+        {
+            return;
+        }
+
+        if (capturedStart > 0)
+        {
+            _logger.LogInformation("BuildAndStartQueue selecting captured start index after queue play. StartIndex={StartIndex}; {Snapshot}", capturedStart, CreatePlaybackSnapshot(CurrentSong, null));
+            var selectCapturedStartTask = _mediaManager.PlayQueueItem(capturedStart);
+            ObserveMediaCommand($"MediaManager.PlayQueueItem captured start {capturedStart}", selectCapturedStartTask, DescribeBooleanResult, CurrentSong, null);
+
+            try
             {
-                if (!t.IsFaulted && capturedStart > 0)
-                    return _mediaManager.PlayQueueItem(capturedStart);
-                return Task.CompletedTask;
-            })
-            .Unwrap();
+                await selectCapturedStartTask.ConfigureAwait(false);
+            }
+            catch
+            {
+                return;
+            }
+        }
+
+        if (!pauseAfterQueueSelection || !IsPlaybackRequestCurrent(requestGeneration) || !ReferenceEquals(_playlist, playlistSnapshot))
+        {
+            return;
+        }
+
+        var pauseTask = _mediaManager.Pause();
+        ObserveMediaCommand("MediaManager.Pause after queue rebuild", pauseTask, CurrentSong, null);
+
+        try
+        {
+            await pauseTask.ConfigureAwait(false);
+            IsPlaying = false;
+        }
+        catch
+        {
+            // ObserveMediaCommand logs the failure; keep the current playback state.
+        }
     }
 
-    private IMediaItem CreateMediaItem(SongDto song)
+    private async Task<string[]> ResolveQueuePlaybackUrisAsync(IReadOnlyList<SongDto> playlistSnapshot)
     {
-        return new MediaItem(song.StreamUrl ?? string.Empty)
+        var playbackUris = new string[playlistSnapshot.Count];
+        using var concurrencyGate = new SemaphoreSlim(QueueCacheResolutionConcurrency);
+
+        var resolveTasks = playlistSnapshot.Select((song, index) => ResolveQueuePlaybackUriAsync(song, index, playbackUris, concurrencyGate));
+        await Task.WhenAll(resolveTasks).ConfigureAwait(false);
+
+        return playbackUris;
+    }
+
+    private async Task ResolveQueuePlaybackUriAsync(
+        SongDto song,
+        int index,
+        string[] playbackUris,
+        SemaphoreSlim concurrencyGate)
+    {
+        await concurrencyGate.WaitAsync().ConfigureAwait(false);
+
+        try
         {
+            var playbackUri = await _audioCacheService.ResolvePlaybackUriAsync(song).ConfigureAwait(false);
+            playbackUris[index] = string.IsNullOrWhiteSpace(playbackUri)
+                ? song.StreamUrl ?? string.Empty
+                : playbackUri;
+        }
+        finally
+        {
+            concurrencyGate.Release();
+        }
+    }
+
+    private async Task StartSingleSongPlaybackAsync(SongDto song, int requestGeneration)
+    {
+        try
+        {
+            _urlToSong.Clear();
+            var mediaItem = await CreateMediaItemAsync(song).ConfigureAwait(false);
+
+            if (!IsPlaybackRequestCurrent(requestGeneration) || CurrentSong?.Id != song.Id)
+            {
+                _logger.LogInformation(
+                    "PlaySong async start skipped because a newer playback request superseded it. SongId={SongId}; RequestGeneration={RequestGeneration}; CurrentGeneration={CurrentGeneration}; {Snapshot}",
+                    song.Id,
+                    requestGeneration,
+                    Volatile.Read(ref _playbackRequestGeneration),
+                    CreatePlaybackSnapshot(CurrentSong, null));
+                return;
+            }
+
+            ObserveMediaCommand("MediaManager.Play single song", _mediaManager.Play(mediaItem), DescribeMediaItem, song, mediaItem);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to start playback for song {SongId}", song.Id);
+        }
+    }
+
+    private async Task<IMediaItem> CreateMediaItemAsync(SongDto song)
+    {
+        var playbackUri = await _audioCacheService.ResolvePlaybackUriAsync(song).ConfigureAwait(false);
+        return CreateMediaItem(song, playbackUri);
+    }
+
+    private IMediaItem CreateMediaItem(SongDto song, string? playbackUri = null)
+    {
+        var mediaUri = string.IsNullOrWhiteSpace(playbackUri)
+            ? song.StreamUrl ?? string.Empty
+            : playbackUri;
+
+        RegisterSongPlaybackUri(song, mediaUri);
+
+        return new MediaItem(mediaUri)
+        {
+            MediaLocation = IsLocalPlaybackUri(mediaUri) ? MediaLocation.FileSystem : MediaLocation.Remote,
             Title = song.SongTitle ?? string.Empty,
             Artist = song.ArtistName ?? string.Empty,
             AlbumImageUri = song.AlbumArtUrl ?? string.Empty,
         };
+    }
+
+    private static bool IsLocalPlaybackUri(string mediaUri)
+    {
+        return !string.IsNullOrWhiteSpace(mediaUri) &&
+            (Path.IsPathRooted(mediaUri) || mediaUri.StartsWith("file://", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void RegisterSongPlaybackUri(SongDto song, string playbackUri)
+    {
+        if (!string.IsNullOrWhiteSpace(song.StreamUrl))
+        {
+            _urlToSong[song.StreamUrl] = song;
+        }
+
+        if (!string.IsNullOrWhiteSpace(playbackUri))
+        {
+            _urlToSong[playbackUri] = song;
+        }
+    }
+
+    private List<SongDto> BuildPlaybackPlaylist(IReadOnlyList<SongDto> sourceSongs, int currentSongId)
+    {
+        if (!_isShuffleEnabled)
+        {
+            return new List<SongDto>(sourceSongs);
+        }
+
+        var shuffledSongs = sourceSongs.ToList();
+        var currentSongIndex = shuffledSongs.FindIndex(song => song.Id == currentSongId);
+        if (currentSongIndex < 0)
+        {
+            ShuffleSongs(shuffledSongs);
+            return shuffledSongs;
+        }
+
+        var currentSong = shuffledSongs[currentSongIndex];
+        shuffledSongs.RemoveAt(currentSongIndex);
+        ShuffleSongs(shuffledSongs);
+        shuffledSongs.Insert(0, currentSong);
+        return shuffledSongs;
+    }
+
+    private void ShuffleSongs(List<SongDto> songs)
+    {
+        for (var index = songs.Count - 1; index > 0; index--)
+        {
+            var swapIndex = _random.Next(index + 1);
+            (songs[index], songs[swapIndex]) = (songs[swapIndex], songs[index]);
+        }
+    }
+
+    private static int ResolveRequiredPlaylistIndex(IReadOnlyList<SongDto> playlist, int songId)
+    {
+        for (var index = 0; index < playlist.Count; index++)
+        {
+            if (playlist[index].Id == songId)
+            {
+                return index;
+            }
+        }
+
+        throw new InvalidOperationException($"Song {songId} was not found in the active playback playlist.");
+    }
+
+    private int? ResolveSequentialNextTrackIndex(int finishedTrackIndex)
+    {
+        if (_playlist == null || _playlist.Count == 0)
+            return null;
+
+        if (finishedTrackIndex < _playlist.Count - 1)
+            return finishedTrackIndex + 1;
+
+        return IsRepeatEnabled ? 0 : null;
+    }
+
+    private bool ShouldRecoverAdvancedPlaylistTrack()
+    {
+        var state = _mediaManager.State;
+        return state == MediaPlayerState.Failed ||
+               (state == MediaPlayerState.Buffering && !IsPlaying);
+    }
+
+    private bool ShouldForceQueueReloadForRequestedTrack(int requestedIndex)
+    {
+        if (_playlist == null || requestedIndex < 0 || requestedIndex >= _playlist.Count)
+        {
+            return false;
+        }
+
+        if (requestedIndex != _currentTrackIndex)
+        {
+            return false;
+        }
+
+        var nativeCurrentIndex = TryResolveNativeQueueIndex();
+        if (nativeCurrentIndex.HasValue && nativeCurrentIndex.Value != requestedIndex)
+        {
+            return false;
+        }
+
+        return ShouldRecoverAdvancedPlaylistTrack();
+    }
+
+    private bool ShouldIgnoreMediaItemFinished(IMediaItem? mediaItem)
+    {
+        if (CurrentSong == null)
+        {
+            return false;
+        }
+
+        if (mediaItem != null && TryResolveSongFromMediaItem(mediaItem, out var resolvedSong, out var playlistIndex))
+        {
+            if (resolvedSong.Id != CurrentSong.Id)
+            {
+                _logger.LogWarning(
+                    "MediaItemFinished ignored because event item does not match current song. FinishedSongId={FinishedSongId}; PlaylistIndex={PlaylistIndex}; {Snapshot}",
+                    resolvedSong.Id,
+                    playlistIndex,
+                    CreatePlaybackSnapshot(CurrentSong, mediaItem));
+                return true;
+            }
+        }
+
+        if (_playbackDuration > TimeSpan.Zero && _playbackPosition + MediaItemFinishedNearEndTolerance < _playbackDuration)
+        {
+            _logger.LogWarning(
+                "MediaItemFinished ignored because playback position is not near the track end. Position={Position}; Duration={Duration}; MediaState={MediaState}; {Snapshot}",
+                _playbackPosition,
+                _playbackDuration,
+                _mediaManager.State,
+                CreatePlaybackSnapshot(CurrentSong, mediaItem));
+            return true;
+        }
+
+        return false;
+    }
+
+    private void CancelPendingPlaylistAdvance()
+    {
+        _playlistAdvanceGeneration++;
+    }
+
+    private bool TryResolveSongFromMediaItem(IMediaItem mediaItem, out SongDto song, out int? playlistIndex)
+    {
+        if (!string.IsNullOrWhiteSpace(mediaItem.MediaUri) && _urlToSong.TryGetValue(mediaItem.MediaUri, out song!))
+        {
+            playlistIndex = ResolvePlaylistIndex(song.Id);
+            _logger.LogInformation(
+                "TryResolveSongFromMediaItem resolved from URL map. ResolvedSongId={ResolvedSongId}; PlaylistIndex={PlaylistIndex}; UrlMapCount={UrlMapCount}; MediaItem={MediaItem}; {Snapshot}",
+                song.Id,
+                playlistIndex,
+                _urlToSong.Count,
+                DescribeMediaItem(mediaItem),
+                CreatePlaybackSnapshot(CurrentSong, mediaItem));
+            return true;
+        }
+
+        if (_playlist != null)
+        {
+            var mediaItemPlaylistIndex = ResolvePlaylistIndex(mediaItem);
+            if (mediaItemPlaylistIndex.HasValue)
+            {
+                playlistIndex = mediaItemPlaylistIndex.Value;
+                song = _playlist[mediaItemPlaylistIndex.Value];
+                _logger.LogInformation(
+                    "TryResolveSongFromMediaItem resolved from playlist URI scan. ResolvedSongId={ResolvedSongId}; PlaylistIndex={PlaylistIndex}; MediaItem={MediaItem}; {Snapshot}",
+                    song.Id,
+                    playlistIndex,
+                    DescribeMediaItem(mediaItem),
+                    CreatePlaybackSnapshot(CurrentSong, mediaItem));
+                return true;
+            }
+
+            var nativeQueueIndex = TryResolveNativeQueueIndex();
+            if (nativeQueueIndex.HasValue)
+            {
+                playlistIndex = nativeQueueIndex.Value;
+                song = _playlist[nativeQueueIndex.Value];
+                _logger.LogInformation(
+                    "TryResolveSongFromMediaItem resolved from native queue index fallback. ResolvedSongId={ResolvedSongId}; PlaylistIndex={PlaylistIndex}; MediaItem={MediaItem}; {Snapshot}",
+                    song.Id,
+                    playlistIndex,
+                    DescribeMediaItem(mediaItem),
+                    CreatePlaybackSnapshot(CurrentSong, mediaItem));
+                return true;
+            }
+        }
+
+        song = null!;
+        playlistIndex = null;
+        return false;
+    }
+
+    private int? TryResolveNativeQueueIndex()
+    {
+        if (_playlist == null)
+            return null;
+
+        try
+        {
+            var queue = _mediaManager.Queue;
+            if (queue?.HasCurrent != true)
+            {
+                _logger.LogInformation("Native queue index unavailable because MediaManager.Queue.HasCurrent is false. {Snapshot}", CreatePlaybackSnapshot(CurrentSong, null));
+                return null;
+            }
+
+            var currentIndex = queue.CurrentIndex;
+            if (currentIndex >= 0 && currentIndex < _playlist.Count)
+            {
+                _logger.LogInformation("Native queue index resolved from CurrentIndex. CurrentIndex={CurrentIndex}; {Snapshot}", currentIndex, CreatePlaybackSnapshot(CurrentSong, queue.Current));
+                return currentIndex;
+            }
+
+            var resolvedIndex = ResolvePlaylistIndex(queue.Current);
+            _logger.LogInformation("Native queue index resolved from Current media item. CurrentIndex={CurrentIndex}; ResolvedIndex={ResolvedIndex}; {Snapshot}", currentIndex, resolvedIndex, CreatePlaybackSnapshot(CurrentSong, queue.Current));
+            return resolvedIndex;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Native queue index resolution failed. {Snapshot}", CreatePlaybackSnapshot(CurrentSong, null));
+            return null;
+        }
+    }
+
+    private int? ResolvePlaylistIndex(int songId)
+    {
+        if (_playlist == null)
+            return null;
+
+        var index = _playlist.FindIndex(song => song.Id == songId);
+        return index >= 0 ? index : null;
+    }
+
+    private int? ResolvePlaylistIndex(IMediaItem? mediaItem)
+    {
+        if (_playlist == null || mediaItem == null)
+            return null;
+
+        for (var index = 0; index < _playlist.Count; index++)
+        {
+            if (MediaUrisMatch(_playlist[index].StreamUrl, mediaItem.MediaUri))
+            {
+                return index;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool MediaUrisMatch(string? first, string? second)
+    {
+        if (string.IsNullOrWhiteSpace(first) || string.IsNullOrWhiteSpace(second))
+            return false;
+
+        if (string.Equals(first, second, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (!Uri.TryCreate(first, UriKind.Absolute, out var firstUri) ||
+            !Uri.TryCreate(second, UriKind.Absolute, out var secondUri))
+        {
+            return false;
+        }
+
+        return string.Equals(firstUri.Scheme, secondUri.Scheme, StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(firstUri.Host, secondUri.Host, StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(firstUri.AbsolutePath, secondUri.AbsolutePath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void LogPlaybackSnapshot(string message, SongDto? song, IMediaItem? mediaItem)
+    {
+        _logger.LogInformation("{Message}. {Snapshot}", message, CreatePlaybackSnapshot(song, mediaItem));
+    }
+
+    private string CreatePlaybackSnapshot(SongDto? song, IMediaItem? mediaItem)
+    {
+        var sequence = Interlocked.Increment(ref _playbackDiagnosticSequence);
+        var queueInfo = GetNativeQueueSnapshot(mediaItem);
+        return $"DiagSeq={sequence}; " +
+               $"AppSongId={song?.Id.ToString() ?? CurrentSong?.Id.ToString() ?? "null"}; " +
+               $"CurrentSongId={CurrentSong?.Id.ToString() ?? "null"}; " +
+               $"CurrentTrackIndex={_currentTrackIndex}; " +
+               $"HasPlaylist={HasPlaylist}; " +
+               $"PlaylistCount={_playlist?.Count ?? 0}; " +
+               $"IsShuffleEnabled={IsShuffleEnabled}; " +
+               $"IsRepeatEnabled={IsRepeatEnabled}; " +
+               $"IsPlaying={IsPlaying}; " +
+               $"MediaManagerState={_mediaManager.State}; " +
+               $"LastObservedMediaManagerState={_lastObservedMediaManagerState?.ToString() ?? "null"}; " +
+               $"Position={_playbackPosition:c}; " +
+               $"Duration={_playbackDuration:c}; " +
+               $"AdvanceGeneration={_playlistAdvanceGeneration}; " +
+               $"UrlMapCount={_urlToSong.Count}; " +
+               $"AppPlaylist={DescribePlaylistForLog()}; " +
+               queueInfo;
+    }
+
+    private string GetNativeQueueSnapshot(IMediaItem? mediaItem)
+    {
+        try
+        {
+            var queue = _mediaManager.Queue;
+            return $"NativeQueueType={queue?.GetType().FullName ?? "null"}; " +
+                   $"NativeHasCurrent={queue?.HasCurrent}; " +
+                   $"NativeCurrentIndex={queue?.CurrentIndex}; " +
+                   $"NativeCurrentItem={DescribeMediaItem(queue?.Current)}; " +
+                   $"NativeHasNext={DescribeNativeQueueProperty(queue, "HasNext")}; " +
+                   $"NativeNextItem={DescribeNativeQueueMediaItemProperty(queue, "Next")}; " +
+                   $"NativeHasPrevious={DescribeNativeQueueProperty(queue, "HasPrevious")}; " +
+                   $"NativePreviousItem={DescribeNativeQueueMediaItemProperty(queue, "Previous")}; " +
+                   $"NativeCount={DescribeNativeQueueProperty(queue, "Count")}; " +
+                   $"NativeQueueItems={DescribeNativeQueueItems(queue)}; " +
+                   $"EventMediaItem={DescribeMediaItem(mediaItem)}";
+        }
+        catch (Exception ex)
+        {
+            return $"NativeQueueSnapshotError={ex.GetType().Name}; EventMediaItem={DescribeMediaItem(mediaItem)}";
+        }
+    }
+
+    private void ObserveMediaCommand(string operation, Task task, SongDto? song, IMediaItem? mediaItem)
+    {
+        _ = task.ContinueWith(continuation =>
+        {
+            if (continuation.IsCanceled)
+            {
+                _logger.LogWarning("{Operation} canceled. {Snapshot}", operation, CreatePlaybackSnapshot(song, mediaItem));
+                return;
+            }
+
+            if (continuation.IsFaulted)
+            {
+                _logger.LogError(continuation.Exception, "{Operation} faulted. {Snapshot}", operation, CreatePlaybackSnapshot(song, mediaItem));
+                return;
+            }
+
+            _logger.LogInformation("{Operation} completed. {Snapshot}", operation, CreatePlaybackSnapshot(song, mediaItem));
+        }, TaskScheduler.Default);
+    }
+
+    private void ObserveMediaCommand<T>(string operation, Task<T> task, Func<T, string> describeResult, SongDto? song, IMediaItem? mediaItem)
+    {
+        _ = task.ContinueWith(continuation =>
+        {
+            if (continuation.IsCanceled)
+            {
+                _logger.LogWarning("{Operation} canceled. {Snapshot}", operation, CreatePlaybackSnapshot(song, mediaItem));
+                return;
+            }
+
+            if (continuation.IsFaulted)
+            {
+                _logger.LogError(continuation.Exception, "{Operation} faulted. {Snapshot}", operation, CreatePlaybackSnapshot(song, mediaItem));
+                return;
+            }
+
+            _logger.LogInformation(
+                "{Operation} completed. Result={Result}; {Snapshot}",
+                operation,
+                describeResult(continuation.Result),
+                CreatePlaybackSnapshot(song, mediaItem));
+        }, TaskScheduler.Default);
+    }
+
+    private string DescribePlaylistForLog()
+    {
+        if (_playlist == null || _playlist.Count == 0)
+        {
+            return "[]";
+        }
+
+        var entries = _playlist
+            .Take(MaxLoggedPlaylistItems)
+            .Select((playlistSong, index) => $"{index}{(index == _currentTrackIndex ? "*" : string.Empty)}:{playlistSong.Id}:{SanitizeLogText(playlistSong.SongTitle)}")
+            .ToList();
+
+        if (_playlist.Count > MaxLoggedPlaylistItems)
+        {
+            entries.Add($"...(+{_playlist.Count - MaxLoggedPlaylistItems} more)");
+        }
+
+        return $"[{string.Join("|", entries)}]";
+    }
+
+    private static string DescribeMediaItems(IEnumerable<IMediaItem> items)
+    {
+        return $"[{string.Join("|", items.Select((item, index) => $"{index}:{DescribeMediaItem(item)}"))}]";
+    }
+
+    private static string DescribeMediaItem(IMediaItem? mediaItem)
+    {
+        if (mediaItem == null)
+        {
+            return "null";
+        }
+
+        return $"Uri={SanitizeMediaUri(mediaItem.MediaUri)},Title={SanitizeLogText(mediaItem.Title)},Artist={SanitizeLogText(mediaItem.Artist)}";
+    }
+
+    private static string DescribeBooleanResult(bool result) => result ? "true" : "false";
+
+    private static string DescribeNativeQueueProperty(object? queue, string propertyName)
+    {
+        if (queue == null)
+        {
+            return "null";
+        }
+
+        try
+        {
+            var property = queue.GetType().GetProperty(propertyName);
+            if (property == null)
+            {
+                return "unavailable";
+            }
+
+            return SanitizeLogText(property.GetValue(queue)?.ToString());
+        }
+        catch (Exception ex)
+        {
+            return $"error:{ex.GetType().Name}";
+        }
+    }
+
+    private static string DescribeNativeQueueMediaItemProperty(object? queue, string propertyName)
+    {
+        if (queue == null)
+        {
+            return "null";
+        }
+
+        try
+        {
+            var property = queue.GetType().GetProperty(propertyName);
+            if (property == null)
+            {
+                return "unavailable";
+            }
+
+            return property.GetValue(queue) is IMediaItem mediaItem
+                ? DescribeMediaItem(mediaItem)
+                : SanitizeLogText(property.GetValue(queue)?.ToString());
+        }
+        catch (Exception ex)
+        {
+            return $"error:{ex.GetType().Name}";
+        }
+    }
+
+    private static string DescribeNativeQueueItems(object? queue)
+    {
+        if (queue is not IEnumerable enumerable)
+        {
+            return "unavailable";
+        }
+
+        try
+        {
+            var items = new List<string>();
+            var index = 0;
+            var truncated = false;
+
+            foreach (var entry in enumerable)
+            {
+                if (items.Count >= MaxLoggedNativeQueueItems)
+                {
+                    truncated = true;
+                    break;
+                }
+
+                items.Add(entry is IMediaItem mediaItem
+                    ? $"{index}:{DescribeMediaItem(mediaItem)}"
+                    : $"{index}:{SanitizeLogText(entry?.ToString())}");
+                index++;
+            }
+
+            if (items.Count == 0)
+            {
+                return "[]";
+            }
+
+            if (truncated)
+            {
+                items.Add("...");
+            }
+
+            return $"[{string.Join("|", items)}]";
+        }
+        catch (Exception ex)
+        {
+            return $"error:{ex.GetType().Name}";
+        }
+    }
+
+    private static string SanitizeMediaUri(string? mediaUri)
+    {
+        if (string.IsNullOrWhiteSpace(mediaUri))
+            return "null";
+
+        if (!Uri.TryCreate(mediaUri, UriKind.Absolute, out var uri))
+            return "non-absolute-uri";
+
+        return $"{uri.Scheme}://{uri.Host}{uri.AbsolutePath}";
+    }
+
+    private static string SanitizeLogText(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "null";
+        }
+
+        return value.Replace(";", ",", StringComparison.Ordinal).Replace("|", "/", StringComparison.Ordinal);
     }
 
     // --- Helpers ---

@@ -12,6 +12,7 @@ public class SongPlayerViewModelTests
     private Mock<IAuthService> _mockAuthService;
     private Mock<INavigationService> _mockNavigationService;
     private Mock<IPlaybackService> _mockPlaybackService;
+    private Mock<IMediaPlaybackOnboardingService> _mockMediaPlaybackOnboardingService;
     private Mock<ISignalRService> _mockSignalRService;
     private Mock<IAppConfig> _mockAppConfig;
     private Mock<IBillingService> _mockBillingService;
@@ -25,16 +26,18 @@ public class SongPlayerViewModelTests
         _mockAuthService = new Mock<IAuthService>();
         _mockNavigationService = new Mock<INavigationService>();
         _mockPlaybackService = new Mock<IPlaybackService>();
+        _mockMediaPlaybackOnboardingService = new Mock<IMediaPlaybackOnboardingService>();
         _mockSignalRService = new Mock<ISignalRService>();
         _mockAppConfig = new Mock<IAppConfig>();
         _mockBillingService = new Mock<IBillingService>();
         _mockAppConfig.Setup(c => c.WebBaseUrl).Returns("https://streamtunes.net");
         _mockAppConfig.Setup(c => c.ApiBaseUrl).Returns("https://streamtunes.net");
+        _mockMediaPlaybackOnboardingService.Setup(s => s.EnsureBackgroundPlaybackExplainedAsync()).Returns(Task.CompletedTask);
 
         _viewModel = new SongPlayerViewModel(
             _mockMusicService.Object, _mockAlertService.Object,
             _mockAuthService.Object, _mockNavigationService.Object,
-            _mockPlaybackService.Object, _mockSignalRService.Object,
+            _mockPlaybackService.Object, _mockMediaPlaybackOnboardingService.Object, _mockSignalRService.Object,
             _mockAppConfig.Object, _mockBillingService.Object);
     }
 
@@ -52,6 +55,19 @@ public class SongPlayerViewModelTests
     }
 
     [Test]
+    public void Song_WhenSetToCurrentlyPlayingSong_DoesNotRestartOrPausePlayback()
+    {
+        var song = new SongDto { Id = 1, SongTitle = "Test Song" };
+        _mockPlaybackService.SetupGet(p => p.CurrentSong).Returns(song);
+        _mockPlaybackService.SetupGet(p => p.IsPlaying).Returns(true);
+
+        _viewModel.Song = song;
+
+        _mockPlaybackService.Verify(p => p.PlaySong(It.IsAny<SongDto>()), Times.Never);
+        _mockMediaPlaybackOnboardingService.Verify(s => s.EnsureBackgroundPlaybackExplainedAsync(), Times.Never);
+    }
+
+    [Test]
     public void Song_WhenSet_UpdatesShareUrl()
     {
         var song = new SongDto { Id = 42, SongTitle = "My Song" };
@@ -64,15 +80,16 @@ public class SongPlayerViewModelTests
     // --- PlaySong command ---
 
     [Test]
-    public void PlaySong_DelegatesToPlaybackService()
+    public async Task PlaySong_DelegatesToPlaybackService()
     {
         var song = new SongDto { Id = 1, SongTitle = "Test" };
         _viewModel.Song = song;
 
-        _viewModel.PlaySongCommand.Execute(null);
+        await _viewModel.PlaySongCommand.ExecuteAsync(null);
 
         // Called twice: once from Song setter, once from command
         _mockPlaybackService.Verify(p => p.PlaySong(song), Times.Exactly(2));
+        _mockMediaPlaybackOnboardingService.Verify(s => s.EnsureBackgroundPlaybackExplainedAsync(), Times.Exactly(2));
     }
 
     [Test]

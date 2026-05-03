@@ -17,6 +17,7 @@ public partial class MusicLibraryViewModel : ObservableObject
     private readonly IAuthService _authService;
     private readonly INavigationService _navigationService;
     private readonly IPlaybackService _playbackService;
+    private readonly IMediaPlaybackOnboardingService _mediaPlaybackOnboardingService;
     private readonly IAppConfig _appConfig;
     private readonly IBillingService _billingService;
     private readonly Dictionary<int, (int likes, int dislikes)> _likeCounts = new();
@@ -32,6 +33,7 @@ public partial class MusicLibraryViewModel : ObservableObject
         IAuthService authService,
         INavigationService navigationService,
         IPlaybackService playbackService,
+        IMediaPlaybackOnboardingService mediaPlaybackOnboardingService,
         IAppConfig appConfig,
         IBillingService billingService)
     {
@@ -41,6 +43,7 @@ public partial class MusicLibraryViewModel : ObservableObject
         _authService = authService;
         _navigationService = navigationService;
         _playbackService = playbackService;
+        _mediaPlaybackOnboardingService = mediaPlaybackOnboardingService;
         _appConfig = appConfig;
         _billingService = billingService;
 
@@ -50,6 +53,7 @@ public partial class MusicLibraryViewModel : ObservableObject
     public void Activate()
     {
         AttachSubscriptions();
+        SynchronizeVisibleQueue();
     }
 
     public void Cleanup()
@@ -379,6 +383,23 @@ public partial class MusicLibraryViewModel : ObservableObject
         }
     }
 
+    private void SynchronizeVisibleQueue()
+    {
+        if (!_playbackService.HasPlaylist || !_playbackService.IsPlaying || Songs.Count == 0)
+        {
+            return;
+        }
+
+        var visibleSongs = Songs.ToList();
+        if (PlaybackQueueSelection.HasEquivalentActiveQueue(_playbackService, visibleSongs))
+        {
+            return;
+        }
+
+        var startIndex = PlaybackQueueSelection.ResolveCurrentSongIndex(_playbackService, visibleSongs);
+        _playbackService.SetPlaylist(visibleSongs, startIndex);
+    }
+
     private IEnumerable<SongDto> FilterSongsByAiSelection(IEnumerable<SongDto> songs)
     {
         return _selectedAiFilter switch
@@ -637,6 +658,7 @@ public partial class MusicLibraryViewModel : ObservableObject
             RefreshAvailableGenres();
             RefreshAvailableArtists();
             ApplyFilters();
+            SynchronizeVisibleQueue();
 
             // Load like counts and user like status in parallel
             await Task.WhenAll(
@@ -736,8 +758,13 @@ public partial class MusicLibraryViewModel : ObservableObject
     // --- Playback delegation ---
 
     [RelayCommand]
-    private void PlaySong(SongDto song)
+    private async Task PlaySongAsync(SongDto? song)
     {
+        if (song == null)
+            return;
+
+        await _mediaPlaybackOnboardingService.EnsureBackgroundPlaybackExplainedAsync();
+
         // Load the current filtered library as a playlist, starting at the tapped song
         var filteredSongs = Songs.ToList();
         var index = filteredSongs.IndexOf(song);

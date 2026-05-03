@@ -13,6 +13,7 @@ public partial class SongPlayerViewModel : ObservableObject
     private readonly IAuthService _authService;
     private readonly INavigationService _navigationService;
     private readonly IPlaybackService _playbackService;
+    private readonly IMediaPlaybackOnboardingService _mediaPlaybackOnboardingService;
     private readonly ISignalRService _signalRService;
     private readonly IAppConfig _appConfig;
     private readonly IBillingService _billingService;
@@ -23,6 +24,7 @@ public partial class SongPlayerViewModel : ObservableObject
         IAuthService authService,
         INavigationService navigationService,
         IPlaybackService playbackService,
+        IMediaPlaybackOnboardingService mediaPlaybackOnboardingService,
         ISignalRService signalRService,
         IAppConfig appConfig,
         IBillingService billingService)
@@ -32,6 +34,7 @@ public partial class SongPlayerViewModel : ObservableObject
         _authService = authService;
         _navigationService = navigationService;
         _playbackService = playbackService;
+        _mediaPlaybackOnboardingService = mediaPlaybackOnboardingService;
         _signalRService = signalRService;
         _appConfig = appConfig;
         _billingService = billingService;
@@ -122,6 +125,8 @@ public partial class SongPlayerViewModel : ObservableObject
     {
         HasActiveSubscription = _authService.HasActiveSubscription;
 
+        var isCurrentSong = _playbackService.CurrentSong?.Id == song.Id;
+
         // Load user like status if logged in
         if (_authService.IsLoggedIn)
         {
@@ -139,15 +144,26 @@ public partial class SongPlayerViewModel : ObservableObject
             }
         }
 
-        // Start playback
+        // Preserve current playback state when navigation lands on the active song.
+        if (isCurrentSong)
+        {
+            return;
+        }
+
+        await _mediaPlaybackOnboardingService.EnsureBackgroundPlaybackExplainedAsync();
+
+        // Start playback for a different song.
         _playbackService.PlaySong(song);
     }
 
     [RelayCommand]
-    private void PlaySong()
+    private async Task PlaySongAsync()
     {
-        if (Song != null)
-            _playbackService.PlaySong(Song);
+        if (Song == null)
+            return;
+
+        await _mediaPlaybackOnboardingService.EnsureBackgroundPlaybackExplainedAsync();
+        _playbackService.PlaySong(Song);
     }
 
     [RelayCommand]
