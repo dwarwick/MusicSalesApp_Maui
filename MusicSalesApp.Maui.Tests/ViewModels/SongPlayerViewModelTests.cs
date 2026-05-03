@@ -80,16 +80,31 @@ public class SongPlayerViewModelTests
     // --- PlaySong command ---
 
     [Test]
-    public async Task PlaySong_DelegatesToPlaybackService()
+    public async Task PlaySongCommand_SetsSingleSongPlaylist()
     {
         var song = new SongDto { Id = 1, SongTitle = "Test" };
         _viewModel.Song = song;
 
         await _viewModel.PlaySongCommand.ExecuteAsync(null);
 
-        // Called twice: once from Song setter, once from command
-        _mockPlaybackService.Verify(p => p.PlaySong(song), Times.Exactly(2));
+        _mockPlaybackService.Verify(p => p.SetPlaylist(
+            It.Is<List<SongDto>>(songs => songs.Count == 1 && songs[0].Id == 1),
+            0), Times.Once);
         _mockMediaPlaybackOnboardingService.Verify(s => s.EnsureBackgroundPlaybackExplainedAsync(), Times.Exactly(2));
+    }
+
+    [Test]
+    public async Task PlayDisplayedSongQueueAsync_QueuesDisplayedSong()
+    {
+        var song = new SongDto { Id = 9, SongTitle = "Queued Song" };
+        _viewModel.Song = song;
+
+        var started = await _viewModel.PlayDisplayedSongQueueAsync();
+
+        Assert.That(started, Is.True);
+        _mockPlaybackService.Verify(p => p.SetPlaylist(
+            It.Is<List<SongDto>>(songs => songs.Count == 1 && songs[0].Id == 9),
+            0), Times.Once);
     }
 
     [Test]
@@ -98,6 +113,7 @@ public class SongPlayerViewModelTests
         _viewModel.PlaySongCommand.Execute(null);
 
         _mockPlaybackService.Verify(p => p.PlaySong(It.IsAny<SongDto>()), Times.Never);
+        _mockPlaybackService.Verify(p => p.SetPlaylist(It.IsAny<List<SongDto>>(), It.IsAny<int>()), Times.Never);
     }
 
     // --- Like/Dislike ---

@@ -31,7 +31,11 @@ public partial class MusicLibraryPage : ContentPage
         InitializeComponent();
 
         // Initialize the reusable NowPlayingView with the playback service
-        NowPlayingBar.Initialize(playbackService, authService);
+        NowPlayingBar.Initialize(
+            playbackService,
+            authService,
+            _viewModel.PlayVisibleQueueFromStartAsync,
+            "Press Play to queue the songs currently visible in Music Library.");
 
         // Wire RefreshView command in code-behind to avoid MAUIG2045
         SongsRefreshView.Command = _viewModel.LoadSongsCommand;
@@ -59,6 +63,16 @@ public partial class MusicLibraryPage : ContentPage
         base.OnDisappearing();
         _viewModel.Cleanup();
         // Don't stop playback when navigating away — it keeps playing in background
+    }
+
+    protected override bool OnBackButtonPressed()
+    {
+        if (NowPlayingBar.CollapseDrawerIfExpanded())
+        {
+            return true;
+        }
+
+        return base.OnBackButtonPressed();
     }
 }
 

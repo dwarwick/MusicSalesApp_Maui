@@ -24,12 +24,26 @@ public partial class PlaylistPlayerPage : ContentPage
 
         InitializeComponent();
 
-        NowPlayingBar.Initialize(playbackService, authService);
+        NowPlayingBar.Initialize(
+            playbackService,
+            authService,
+            _viewModel.PlayVisibleQueueFromStartAsync,
+            "Press Play to queue the tracks in this playlist.");
     }
 
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
         _viewModel.Cleanup();
+    }
+
+    protected override bool OnBackButtonPressed()
+    {
+        if (NowPlayingBar.CollapseDrawerIfExpanded())
+        {
+            return true;
+        }
+
+        return base.OnBackButtonPressed();
     }
 }

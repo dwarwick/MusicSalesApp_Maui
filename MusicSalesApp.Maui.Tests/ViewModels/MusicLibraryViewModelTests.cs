@@ -256,6 +256,29 @@ public class MusicLibraryViewModelTests
     }
 
     [Test]
+    public async Task PlayVisibleQueueFromStartAsync_UsesCurrentFilteredSongs()
+    {
+        var songs = new List<SongDto>
+        {
+            new() { Id = 1, SongTitle = "Rock A", Genre = "Rock", ArtistName = "A" },
+            new() { Id = 2, SongTitle = "Pop B", Genre = "Pop", ArtistName = "B" },
+            new() { Id = 3, SongTitle = "Rock C", Genre = "Rock", ArtistName = "C" }
+        };
+
+        _mockMusicService.Setup(service => service.GetSongsAsync()).ReturnsAsync(songs);
+
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+        _viewModel.ToggleGenreFilterCommand.Execute("Rock");
+
+        var started = await _viewModel.PlayVisibleQueueFromStartAsync();
+
+        Assert.That(started, Is.True);
+        _mockPlaybackService.Verify(service => service.SetPlaylist(
+            It.Is<List<SongDto>>(playlist => playlist.Select(song => song.Id).SequenceEqual(new[] { 1, 3 })),
+            0), Times.Once);
+    }
+
+    [Test]
     public void TogglePlayPause_DelegatesToPlaybackService()
     {
         // Act

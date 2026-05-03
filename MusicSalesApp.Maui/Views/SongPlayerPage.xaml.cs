@@ -28,13 +28,27 @@ public partial class SongPlayerPage : ContentPage
 
         InitializeComponent();
 
-        NowPlayingBar.Initialize(playbackService, authService);
+        NowPlayingBar.Initialize(
+            playbackService,
+            authService,
+            _viewModel.PlayDisplayedSongQueueAsync,
+            "Press Play to queue this song.");
     }
 
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
         _viewModel.Cleanup();
+    }
+
+    protected override bool OnBackButtonPressed()
+    {
+        if (NowPlayingBar.CollapseDrawerIfExpanded())
+        {
+            return true;
+        }
+
+        return base.OnBackButtonPressed();
     }
 }
 

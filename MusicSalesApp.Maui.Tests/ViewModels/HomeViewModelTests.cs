@@ -16,6 +16,7 @@ public class HomeViewModelTests
     private Mock<IBillingService> _mockBillingService;
     private Mock<IMusicService> _mockMusicService;
     private Mock<IPlaybackService> _mockPlaybackService;
+    private Mock<IMediaPlaybackOnboardingService> _mockMediaPlaybackOnboardingService;
     private Mock<IBrowserService> _mockBrowserService;
     private Mock<IPlaylistService> _mockPlaylistService;
     private HomeViewModel _viewModel;
@@ -31,11 +32,13 @@ public class HomeViewModelTests
         _mockBillingService = new Mock<IBillingService>();
         _mockMusicService = new Mock<IMusicService>();
         _mockPlaybackService = new Mock<IPlaybackService>();
+        _mockMediaPlaybackOnboardingService = new Mock<IMediaPlaybackOnboardingService>();
         _mockBrowserService = new Mock<IBrowserService>();
         _mockPlaylistService = new Mock<IPlaylistService>();
 
         _mockAppSettingsService.Setup(s => s.GetSubscriptionPriceAsync()).ReturnsAsync("3.99");
         _mockAppConfig.Setup(c => c.WebBaseUrl).Returns("https://streamtunes.net");
+        _mockMediaPlaybackOnboardingService.Setup(s => s.EnsureBackgroundPlaybackExplainedAsync()).Returns(Task.CompletedTask);
         _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync([]);
         _mockMusicService.Setup(s => s.GetStreamQualifyingSecondsAsync()).ReturnsAsync(30);
         _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
@@ -58,7 +61,8 @@ public class HomeViewModelTests
             _mockAppConfig.Object,
             _mockBillingService.Object,
             _mockMusicService.Object,
-                _mockPlaybackService.Object,
+            _mockPlaybackService.Object,
+            _mockMediaPlaybackOnboardingService.Object,
             _mockBrowserService.Object,
             _mockPlaylistService.Object);
     }
@@ -325,17 +329,33 @@ public class HomeViewModelTests
     }
 
     [Test]
-    public void PlaySongCommand_SetsFeaturedPlaylistOnPlaybackService()
+    public async Task PlaySongCommand_SetsFeaturedPlaylistOnPlaybackService()
     {
         var firstSong = new SongDto { Id = 1, SongTitle = "First" };
         var secondSong = new SongDto { Id = 2, SongTitle = "Second" };
         _viewModel.FeaturedSongs = new ObservableCollection<SongDto> { firstSong, secondSong };
 
-        _viewModel.PlaySongCommand.Execute(secondSong);
+        await _viewModel.PlaySongCommand.ExecuteAsync(secondSong);
 
         _mockPlaybackService.Verify(p => p.SetPlaylist(
             It.Is<List<SongDto>>(songs => songs.Count == 2 && songs[0] == firstSong && songs[1] == secondSong),
             1), Times.Once);
+        _mockMediaPlaybackOnboardingService.Verify(service => service.EnsureBackgroundPlaybackExplainedAsync(), Times.Once);
+    }
+
+    [Test]
+    public async Task PlayFeaturedQueueFromStartAsync_QueuesFeaturedSongsFromBeginning()
+    {
+        var firstSong = new SongDto { Id = 1, SongTitle = "First" };
+        var secondSong = new SongDto { Id = 2, SongTitle = "Second" };
+        _viewModel.FeaturedSongs = new ObservableCollection<SongDto> { firstSong, secondSong };
+
+        var started = await _viewModel.PlayFeaturedQueueFromStartAsync();
+
+        Assert.That(started, Is.True);
+        _mockPlaybackService.Verify(p => p.SetPlaylist(
+            It.Is<List<SongDto>>(songs => songs.Select(song => song.Id).SequenceEqual(new[] { 1, 2 })),
+            0), Times.Once);
     }
 
     [Test]

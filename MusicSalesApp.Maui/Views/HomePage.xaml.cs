@@ -12,12 +12,26 @@ public partial class HomePage : ContentPage
         _viewModel = viewModel;
         InitializeComponent();
         BindingContext = viewModel;
-        NowPlayingBar.Initialize(playbackService, authService);
+        NowPlayingBar.Initialize(
+            playbackService,
+            authService,
+            _viewModel.PlayFeaturedQueueFromStartAsync,
+            "Press Play to queue the featured songs shown on Home.");
     }
 
     protected override async void OnAppearing()
     {
         base.OnAppearing();
         await _viewModel.LoadCommand.ExecuteAsync(null);
+    }
+
+    protected override bool OnBackButtonPressed()
+    {
+        if (NowPlayingBar.CollapseDrawerIfExpanded())
+        {
+            return true;
+        }
+
+        return base.OnBackButtonPressed();
     }
 }

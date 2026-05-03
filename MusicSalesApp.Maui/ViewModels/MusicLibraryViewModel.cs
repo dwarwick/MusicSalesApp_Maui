@@ -763,14 +763,18 @@ public partial class MusicLibraryViewModel : ObservableObject
         if (song == null)
             return;
 
-        await _mediaPlaybackOnboardingService.EnsureBackgroundPlaybackExplainedAsync();
-
-        // Load the current filtered library as a playlist, starting at the tapped song
-        var filteredSongs = Songs.ToList();
-        var index = filteredSongs.IndexOf(song);
-        if (index < 0) index = 0;
-        _playbackService.SetPlaylist(filteredSongs, index);
+        await PlayVisibleQueueAsync(song);
     }
+
+    public Task<bool> PlayVisibleQueueFromStartAsync() =>
+        PlayVisibleQueueAsync();
+
+    private Task<bool> PlayVisibleQueueAsync(SongDto? startSong = null) =>
+        PlaybackQueueBootstrapper.StartQueueAsync(
+            Songs,
+            _mediaPlaybackOnboardingService,
+            _playbackService,
+            startSong);
 
     [RelayCommand]
     private void TogglePlayPause() => _playbackService.TogglePlayPause();

@@ -297,7 +297,7 @@ public class PlaylistPlayerViewModelTests
     // --- PlayTrack command ---
 
     [Test]
-    public async Task PlayTrack_CallsPlayTrackAtIndex()
+    public async Task PlayTrack_SetsPlaylistFromVisibleSongs()
     {
         var songs = CreateTestSongs();
         _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
@@ -309,9 +309,11 @@ public class PlaylistPlayerViewModelTests
 
         // Play the second rock song (index 1 in filtered list)
         var secondSong = _viewModel.Songs[1];
-        _viewModel.PlayTrackCommand.Execute(secondSong);
+        await _viewModel.PlayTrackCommand.ExecuteAsync(secondSong);
 
-        _mockPlaybackService.Verify(p => p.PlayTrackAtIndex(1), Times.Once);
+        _mockPlaybackService.Verify(p => p.SetPlaylist(
+            It.Is<List<SongDto>>(playlist => playlist.Select(song => song.Id).SequenceEqual(new[] { 1, 2, 4 })),
+            1), Times.Once);
     }
 
     [Test]
@@ -320,7 +322,27 @@ public class PlaylistPlayerViewModelTests
         _viewModel.PlayTrackCommand.Execute(null);
 
         _mockPlaybackService.Verify(p =>
-            p.PlayTrackAtIndex(It.IsAny<int>()), Times.Never);
+            p.SetPlaylist(It.IsAny<List<SongDto>>(), It.IsAny<int>()), Times.Never);
+    }
+
+    [Test]
+    public async Task PlayVisibleQueueFromStartAsync_QueuesVisibleSongsFromBeginning()
+    {
+        var songs = CreateTestSongs();
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+
+        _viewModel.GenreName = "Rock";
+        await Task.Delay(100);
+        _mockPlaybackService.Invocations.Clear();
+
+        var started = await _viewModel.PlayVisibleQueueFromStartAsync();
+
+        Assert.That(started, Is.True);
+        _mockPlaybackService.Verify(p => p.SetPlaylist(
+            It.Is<List<SongDto>>(playlist => playlist.Select(song => song.Id).SequenceEqual(new[] { 1, 2, 4 })),
+            0), Times.Once);
     }
 
     // --- Like/Dislike ---

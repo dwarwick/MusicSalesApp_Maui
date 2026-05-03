@@ -159,11 +159,21 @@ public partial class SongPlayerViewModel : ObservableObject
     [RelayCommand]
     private async Task PlaySongAsync()
     {
-        if (Song == null)
-            return;
+        await PlayDisplayedSongQueueAsync();
+    }
 
-        await _mediaPlaybackOnboardingService.EnsureBackgroundPlaybackExplainedAsync();
-        _playbackService.PlaySong(Song);
+    public Task<bool> PlayDisplayedSongQueueAsync()
+    {
+        if (Song == null)
+        {
+            return Task.FromResult(false);
+        }
+
+        return PlaybackQueueBootstrapper.StartQueueAsync(
+            [Song],
+            _mediaPlaybackOnboardingService,
+            _playbackService,
+            Song);
     }
 
     [RelayCommand]

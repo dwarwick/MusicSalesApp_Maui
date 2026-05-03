@@ -15,6 +15,7 @@ public partial class HomeViewModel : ObservableObject
     private readonly IBillingService _billingService;
     private readonly IMusicService _musicService;
     private readonly IPlaybackService _playbackService;
+    private readonly IMediaPlaybackOnboardingService _mediaPlaybackOnboardingService;
     private readonly IBrowserService _browserService;
     private readonly IPlaylistService _playlistService;
 
@@ -82,6 +83,7 @@ public partial class HomeViewModel : ObservableObject
         IBillingService billingService,
         IMusicService musicService,
         IPlaybackService playbackService,
+        IMediaPlaybackOnboardingService mediaPlaybackOnboardingService,
         IBrowserService browserService,
         IPlaylistService playlistService)
     {
@@ -93,6 +95,7 @@ public partial class HomeViewModel : ObservableObject
         _billingService = billingService;
         _musicService = musicService;
         _playbackService = playbackService;
+        _mediaPlaybackOnboardingService = mediaPlaybackOnboardingService;
         _browserService = browserService;
         _playlistService = playlistService;
 
@@ -188,16 +191,25 @@ public partial class HomeViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void PlaySong(SongDto? song)
+    private async Task PlaySongAsync(SongDto? song)
     {
-        if (song == null || FeaturedSongs.Count == 0) return;
+        if (song == null)
+        {
+            return;
+        }
 
-        var featuredSongs = FeaturedSongs.ToList();
-        var index = featuredSongs.IndexOf(song);
-        if (index < 0) index = 0;
-
-        _playbackService.SetPlaylist(featuredSongs, index);
+        await PlayFeaturedQueueAsync(song);
     }
+
+    public Task<bool> PlayFeaturedQueueFromStartAsync() =>
+        PlayFeaturedQueueAsync();
+
+    private Task<bool> PlayFeaturedQueueAsync(SongDto? startSong = null) =>
+        PlaybackQueueBootstrapper.StartQueueAsync(
+            FeaturedSongs,
+            _mediaPlaybackOnboardingService,
+            _playbackService,
+            startSong);
 
     [RelayCommand]
     private Task OpenSongAsync(SongDto? song)

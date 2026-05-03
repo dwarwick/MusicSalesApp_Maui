@@ -429,13 +429,19 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     private async Task PlayTrackAsync(SongDto? song)
     {
         if (song == null) return;
-        var index = Songs.IndexOf(song);
-        if (index < 0)
-            return;
 
-        await _mediaPlaybackOnboardingService.EnsureBackgroundPlaybackExplainedAsync();
-        _playbackService.PlayTrackAtIndex(index);
+        await PlayVisibleQueueAsync(song);
     }
+
+    public Task<bool> PlayVisibleQueueFromStartAsync() =>
+        PlayVisibleQueueAsync();
+
+    private Task<bool> PlayVisibleQueueAsync(SongDto? startSong = null) =>
+        PlaybackQueueBootstrapper.StartQueueAsync(
+            Songs,
+            _mediaPlaybackOnboardingService,
+            _playbackService,
+            startSong);
 
     // --- Like/Dislike ---
 
