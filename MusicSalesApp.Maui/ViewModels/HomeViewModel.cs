@@ -147,6 +147,8 @@ public partial class HomeViewModel : ObservableObject
             .Where(song => song.DisplayOnHomePage)
             .ToList();
 
+        featuredSongs = SongDisplayOrderSorter.OrderForLibrary(featuredSongs);
+
         await Task.WhenAll(
             LoadLikeCountsAsync(featuredSongs),
             LoadUserLikeStatusAsync(featuredSongs));

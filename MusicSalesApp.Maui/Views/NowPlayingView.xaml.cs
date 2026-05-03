@@ -323,10 +323,6 @@ public partial class NowPlayingView : ContentView
 
     private void UpdateDrawerState()
     {
-        HandleHintLabel.Text = _drawerController.IsExpanded
-            ? "Pull down to hide"
-            : "Pull up for player";
-        HandleActionLabel.Text = _drawerController.IsExpanded ? "Hide" : "Open";
         ExpandedContent.InputTransparent = !_drawerController.IsExpanded;
     }
 

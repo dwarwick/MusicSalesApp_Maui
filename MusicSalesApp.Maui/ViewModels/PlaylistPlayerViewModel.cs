@@ -238,6 +238,8 @@ public partial class PlaylistPlayerViewModel : ObservableObject
             filtered = [];
         }
 
+        filtered = SongDisplayOrderSorter.OrderById(filtered);
+
         if (filtered.Count == 0)
         {
             ErrorMessage = !string.IsNullOrEmpty(GenreName)

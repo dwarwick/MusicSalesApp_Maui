@@ -55,8 +55,33 @@ public class MusicLibraryViewModelTests
 
         // Assert
         Assert.That(_viewModel.Songs, Has.Count.EqualTo(2));
-        Assert.That(_viewModel.Songs[0].SongTitle, Is.EqualTo("Song One"));
-        Assert.That(_viewModel.Songs[1].SongTitle, Is.EqualTo("Song Two"));
+        Assert.That(_viewModel.Songs.Select(song => song.SongTitle), Is.EqualTo(new[] { "Song Two", "Song One" }));
+    }
+
+    [Test]
+    public async Task LoadSongsAsync_OrdersSongsByDisplayOrderForLibrary()
+    {
+        // Arrange
+        var songs = new List<SongDto>
+        {
+            new() { Id = 10, SongTitle = "Ranked One", DisplayOrder = 1 },
+            new() { Id = 40, SongTitle = "Ranked Two", DisplayOrder = 2 },
+            new() { Id = 30, SongTitle = "Null Newest", DisplayOrder = null },
+            new() { Id = 20, SongTitle = "Null Older", DisplayOrder = null }
+        };
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
+
+        // Act
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        // Assert
+        Assert.That(_viewModel.Songs.Select(song => song.SongTitle), Is.EqualTo(new[]
+        {
+            "Null Newest",
+            "Null Older",
+            "Ranked One",
+            "Ranked Two"
+        }));
     }
 
     [Test]
@@ -136,7 +161,7 @@ public class MusicLibraryViewModelTests
 
         _viewModel.SelectAiFilterCommand.Execute("AiOnly");
 
-        Assert.That(_viewModel.Songs.Select(s => s.SongTitle), Is.EqualTo(new[] { "AI Song", "Another AI Song" }));
+        Assert.That(_viewModel.Songs.Select(s => s.SongTitle), Is.EqualTo(new[] { "Another AI Song", "AI Song" }));
         Assert.That(_viewModel.IsAiOnlyFilterSelected, Is.True);
     }
 
@@ -274,7 +299,7 @@ public class MusicLibraryViewModelTests
 
         Assert.That(started, Is.True);
         _mockPlaybackService.Verify(service => service.SetPlaylist(
-            It.Is<List<SongDto>>(playlist => playlist.Select(song => song.Id).SequenceEqual(new[] { 1, 3 })),
+            It.Is<List<SongDto>>(playlist => playlist.Select(song => song.Id).SequenceEqual(new[] { 3, 1 })),
             0), Times.Once);
     }
 
@@ -337,8 +362,8 @@ public class MusicLibraryViewModelTests
         Assert.That(_viewModel.GetLikeCount(1), Is.EqualTo(5));
         Assert.That(_viewModel.GetDislikeCount(1), Is.EqualTo(2));
         Assert.That(_viewModel.GetLikeCount(2), Is.EqualTo(10));
-        Assert.That(_viewModel.Songs[0].LikeCount, Is.EqualTo(5));
-        Assert.That(_viewModel.Songs[1].LikeCount, Is.EqualTo(10));
+        Assert.That(_viewModel.Songs.Single(song => song.Id == 1).LikeCount, Is.EqualTo(5));
+        Assert.That(_viewModel.Songs.Single(song => song.Id == 2).LikeCount, Is.EqualTo(10));
     }
 
     [Test]
@@ -1032,7 +1057,7 @@ public class MusicLibraryViewModelTests
 
         _mockPlaybackService.Verify(p =>
             p.SetPlaylist(
-                It.Is<List<SongDto>>(l => l.Select(song => song.Id).SequenceEqual(new[] { 1, 2, 3 })),
+                It.Is<List<SongDto>>(l => l.Select(song => song.Id).SequenceEqual(new[] { 3, 2, 1 })),
                 1),
             Times.Once);
     }
@@ -1066,8 +1091,8 @@ public class MusicLibraryViewModelTests
 
         _mockPlaybackService.Verify(p =>
             p.SetPlaylist(
-                It.Is<List<SongDto>>(l => l.Select(song => song.Id).SequenceEqual(new[] { 1, 3 })),
-                1),
+                It.Is<List<SongDto>>(l => l.Select(song => song.Id).SequenceEqual(new[] { 3, 1 })),
+                0),
             Times.Once);
     }
 
@@ -1089,8 +1114,8 @@ public class MusicLibraryViewModelTests
         _mockPlaybackService.SetupGet(p => p.CurrentSong).Returns(songs[0]);
         _mockPlaybackService.SetupGet(p => p.Playlist).Returns(new List<SongDto>
         {
-            new() { Id = 1, SongTitle = "Queue Song A" },
-            new() { Id = 2, SongTitle = "Queue Song B" }
+            new() { Id = 2, SongTitle = "Queue Song B" },
+            new() { Id = 1, SongTitle = "Queue Song A" }
         });
 
         _viewModel.Activate();

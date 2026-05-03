@@ -641,8 +641,10 @@ public partial class MusicLibraryViewModel : ObservableObject
                 Console.WriteLine($"[MusicLibrary] Song '{song.SongTitle}' → ShareUrl = '{song.ShareUrl}'");
             }
 
+            var orderedSongs = SongDisplayOrderSorter.OrderForLibrary(songs);
+
             _allSongs.Clear();
-            _allSongs.AddRange(songs);
+            _allSongs.AddRange(orderedSongs);
 
             // Reset filters when reloading
             SelectedGenres.Clear();
@@ -662,8 +664,8 @@ public partial class MusicLibraryViewModel : ObservableObject
 
             // Load like counts and user like status in parallel
             await Task.WhenAll(
-                LoadLikeCountsAsync(songs),
-                LoadUserLikeStatusAsync(songs));
+                LoadLikeCountsAsync(orderedSongs),
+                LoadUserLikeStatusAsync(orderedSongs));
         }
         catch (Exception ex)
         {

@@ -128,6 +128,27 @@ public class PlaylistPlayerViewModelTests
     }
 
     [Test]
+    public async Task GenreName_WhenApiOrderIsRandom_LoadsSongsInIdOrder()
+    {
+        var songs = new List<SongDto>
+        {
+            new() { Id = 4, SongTitle = "Rock Song 3", ArtistName = "Band A", Genre = "Rock", StreamUrl = "http://d.mp3" },
+            new() { Id = 1, SongTitle = "Rock Song 1", ArtistName = "Band A", Genre = "Rock", StreamUrl = "http://a.mp3" },
+            new() { Id = 3, SongTitle = "Pop Song", ArtistName = "Singer C", Genre = "Pop", StreamUrl = "http://c.mp3" },
+            new() { Id = 2, SongTitle = "Rock Song 2", ArtistName = "Band B", Genre = "Rock", StreamUrl = "http://b.mp3" }
+        };
+
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+
+        _viewModel.GenreName = "Rock";
+        await Task.Delay(100);
+
+        Assert.That(_viewModel.Songs.Select(song => song.Id), Is.EqualTo(new[] { 1, 2, 4 }));
+    }
+
+    [Test]
     public async Task GenreName_NoMatches_ShowsError()
     {
         _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(CreateTestSongs());

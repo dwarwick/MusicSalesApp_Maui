@@ -211,6 +211,31 @@ public class HomeViewModelTests
     }
 
     [Test]
+    public async Task LoadAsync_OrdersFeaturedSongsByDisplayOrder()
+    {
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
+
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(
+        [
+            new SongDto { Id = 10, SongTitle = "Ranked One", DisplayOnHomePage = true, DisplayOrder = 1 },
+            new SongDto { Id = 40, SongTitle = "Ranked Two", DisplayOnHomePage = true, DisplayOrder = 2 },
+            new SongDto { Id = 30, SongTitle = "Null Newest", DisplayOnHomePage = true, DisplayOrder = null },
+            new SongDto { Id = 20, SongTitle = "Null Older", DisplayOnHomePage = true, DisplayOrder = null }
+        ]);
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.That(_viewModel.FeaturedSongs.Select(song => song.SongTitle), Is.EqualTo(new[]
+        {
+            "Null Newest",
+            "Null Older",
+            "Ranked One",
+            "Ranked Two"
+        }));
+    }
+
+    [Test]
     public async Task LoadAsync_SetsPlaybackStreamQualifyingSeconds()
     {
         _mockMusicService.Setup(s => s.GetStreamQualifyingSecondsAsync()).ReturnsAsync(45);

@@ -9,11 +9,13 @@
             BackgroundColor="#3b5998"
             Padding="0"
             HeightRequest="32"
+            WidthRequest="32"
             VerticalOptions="Center">
         <Border.GestureRecognizers>
             <TapGestureRecognizer Tapped="OnFbShareClicked" />
         </Border.GestureRecognizers>
-        <HorizontalStackLayout Spacing="4" Padding="8,0" VerticalOptions="Center">
+        <Grid Padding="5,0"
+              VerticalOptions="Center">
             <!-- Facebook "f" logo area -->
             <Border StrokeShape="RoundRectangle 3"
                     Stroke="Transparent"
@@ -21,6 +23,7 @@
                     HeightRequest="22"
                     WidthRequest="22"
                     Padding="0"
+                    HorizontalOptions="Center"
                     VerticalOptions="Center">
                 <Label Text="f"
                        FontSize="16"
@@ -29,11 +32,6 @@
                        HorizontalOptions="Center"
                        VerticalOptions="Center" />
             </Border>
-            <Label Text="Share"
-                   FontSize="14"
-                   FontAttributes="Bold"
-                   TextColor="White"
-                   VerticalOptions="Center" />
-        </HorizontalStackLayout>
+        </Grid>
     </Border>
 </ContentView>
