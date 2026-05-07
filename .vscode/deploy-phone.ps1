@@ -1,12 +1,15 @@
 param(
-    [string]$ProjectDir = (Join-Path (Join-Path $PSScriptRoot '..') 'MusicSalesApp.Maui')
+    [string]$ProjectDir = (Join-Path (Join-Path $PSScriptRoot '..') 'MusicSalesApp.Maui'),
+    [ValidateSet('Debug', 'Release')]
+    [string]$Configuration = 'Debug',
+    [string]$AppSettingsEnvironment
 )
 
 $adb = Join-Path $env:LOCALAPPDATA "Android\Sdk\platform-tools\adb.exe"
 $csproj = Join-Path $ProjectDir 'MusicSalesApp.Maui.csproj'
 $packageName = 'net.streamtunes.musicsalesapp.maui'
-$binDir = Join-Path $ProjectDir 'bin' 'Debug' 'net10.0-android'
-$objDir = Join-Path $ProjectDir 'obj' 'Debug' 'net10.0-android'
+$binDir = Join-Path (Join-Path (Join-Path $ProjectDir 'bin') $Configuration) 'net10.0-android'
+$objDir = Join-Path (Join-Path (Join-Path $ProjectDir 'obj') $Configuration) 'net10.0-android'
 
 # --- Step 1: Clean build caches ---
 Write-Host '=== Cleaning build caches ===' -ForegroundColor Cyan
@@ -32,7 +35,25 @@ if ($LASTEXITCODE -eq 0) {
 
 # --- Step 3: Force rebuild and install ---
 Write-Host '=== Building and installing (clean) ===' -ForegroundColor Cyan
-dotnet build $csproj -f net10.0-android -c Debug -t:Install --no-incremental /p:EmbedAssembliesIntoApk=true
+$buildArgs = @(
+    'build'
+    $csproj
+    '-f'
+    'net10.0-android'
+    '-c'
+    $Configuration
+    '-t:Install'
+    '--no-incremental'
+    '/p:EmbedAssembliesIntoApk=true'
+)
+
+if (-not [string]::IsNullOrWhiteSpace($AppSettingsEnvironment)) {
+    $buildArgs += "/p:AppSettingsEnvironment=$AppSettingsEnvironment"
+    Write-Host "  Using appsettings environment: $AppSettingsEnvironment" -ForegroundColor Yellow
+}
+
+Write-Host "  Build configuration: $Configuration" -ForegroundColor Yellow
+& dotnet @buildArgs
 if ($LASTEXITCODE -ne 0) {
     Write-Host 'Build/install failed!' -ForegroundColor Red
     exit 1

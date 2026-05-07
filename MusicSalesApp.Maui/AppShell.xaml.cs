@@ -6,17 +6,20 @@ namespace MusicSalesApp.Maui;
 public partial class AppShell : Shell
 {
 	private readonly IAuthService _authService;
+	private readonly IAdminMessageCoordinator _adminMessageCoordinator;
 	private readonly IBrowserService _browserService;
 	private string _testingServerBannerUrl = string.Empty;
 
 	public AppShell(
 		IAuthService authService,
+		IAdminMessageCoordinator adminMessageCoordinator,
 		ITestingServerBannerService testingServerBannerService,
 		IBrowserService browserService)
 	{
 		InitializeComponent();
 
 		_authService = authService;
+		_adminMessageCoordinator = adminMessageCoordinator;
 		_browserService = browserService;
 		_authService.AuthStateChanged += OnAuthStateChanged;
 		InitializeTestingServerBanner(testingServerBannerService.GetBannerInfo());
@@ -76,6 +79,16 @@ public partial class AppShell : Shell
 		Shell.SetFlyoutItemIsVisible(AccountSettingsMenuItem, _authService.IsLoggedIn);
 		Shell.SetFlyoutItemIsVisible(LogoutMenuItem, _authService.IsLoggedIn);
 		Shell.SetFlyoutItemIsVisible(MyPlaylistsMenuItem, _authService.IsLoggedIn && _authService.EmailConfirmed);
+	}
+
+	protected override void OnNavigated(ShellNavigatedEventArgs args)
+	{
+		base.OnNavigated(args);
+
+		if (_authService.IsLoggedIn)
+		{
+			_ = _adminMessageCoordinator.ProcessPendingMessagesAsync();
+		}
 	}
 
 	private async void OnLoginClicked(object? sender, EventArgs e)

@@ -156,6 +156,8 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IAudioCacheService, AudioCacheService>();
 		builder.Services.AddSingleton<IAlertService, AlertService>();
 		builder.Services.AddSingleton<ISignalRService, SignalRService>();
+		builder.Services.AddSingleton<IAdminMessageApiService, AdminMessageApiService>();
+		builder.Services.AddSingleton<IAdminMessageCoordinator, AdminMessageCoordinator>();
 		builder.Services.AddSingleton<INavigationService, NavigationService>();
 		builder.Services.AddSingleton<IMediaManager>(CrossMediaManager.Current);
 	#if ANDROID

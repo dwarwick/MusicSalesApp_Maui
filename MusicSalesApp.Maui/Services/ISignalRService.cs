@@ -18,9 +18,19 @@ public interface ISignalRService : IAsyncDisposable
     event Action<int, int, int>? OnLikeCountUpdated;
 
     /// <summary>
+    /// Fired when the server tells the app to refresh its pending admin-message queue.
+    /// </summary>
+    event Action? OnAdminMessagesUpdated;
+
+    /// <summary>
     /// Starts all SignalR hub connections.
     /// </summary>
     Task StartAsync();
+
+    /// <summary>
+    /// Starts or stops the authenticated admin-message hub based on the current auth state.
+    /// </summary>
+    Task SyncAdminMessageConnectionAsync();
 
     /// <summary>
     /// Returns true if all hub connections are established.

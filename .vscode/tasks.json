@@ -48,6 +48,13 @@
       "group": "build"
     },
     {
+      "label": "maui-deploy-phone-prod",
+      "type": "shell",
+      "command": "pwsh -ExecutionPolicy Bypass -File ${workspaceFolder:MusicSalesApp_Maui}/.vscode/deploy-phone.ps1 -Configuration Release -AppSettingsEnvironment Production",
+      "problemMatcher": "$msCompile",
+      "group": "build"
+    },
+    {
       "label": "maui-pull-latest-runtime-log",
       "type": "shell",
       "command": "pwsh -ExecutionPolicy Bypass -File ${workspaceFolder:MusicSalesApp_Maui}/.vscode/pull-latest-runtime-log.ps1",

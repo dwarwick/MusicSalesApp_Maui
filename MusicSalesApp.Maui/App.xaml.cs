@@ -5,6 +5,7 @@ namespace MusicSalesApp.Maui;
 public partial class App : Application
 {
 	private readonly IAuthService _authService;
+	private readonly IAdminMessageCoordinator _adminMessageCoordinator;
 	private readonly IMusicService _musicService;
 	private readonly IBillingService _billingService;
 	private readonly ITestingServerBannerService _testingServerBannerService;
@@ -13,6 +14,7 @@ public partial class App : Application
 
 	public App(
 		IAuthService authService,
+		IAdminMessageCoordinator adminMessageCoordinator,
 		IMusicService musicService,
 		IBillingService billingService,
 		ITestingServerBannerService testingServerBannerService,
@@ -21,6 +23,7 @@ public partial class App : Application
 	{
 		InitializeComponent();
 		_authService = authService;
+		_adminMessageCoordinator = adminMessageCoordinator;
 		_musicService = musicService;
 		_billingService = billingService;
 		_testingServerBannerService = testingServerBannerService;
@@ -43,7 +46,7 @@ public partial class App : Application
 
 	protected override Window CreateWindow(IActivationState? activationState)
 	{
-		var window = new Window(new AppShell(_authService, _testingServerBannerService, _browserService));
+		var window = new Window(new AppShell(_authService, _adminMessageCoordinator, _testingServerBannerService, _browserService));
 
 		window.Created += async (_, _) =>
 		{
@@ -53,6 +56,8 @@ public partial class App : Application
 
 			// Restore saved session and silently verify any unsynced purchases
 			await _authService.TryRestoreSessionAsync();
+			await _adminMessageCoordinator.InitializeAsync();
+			await _adminMessageCoordinator.ProcessPendingMessagesAsync();
 		};
 
 		return window;
