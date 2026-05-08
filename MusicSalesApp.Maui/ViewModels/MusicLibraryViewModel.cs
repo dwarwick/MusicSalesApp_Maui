@@ -61,6 +61,7 @@ public partial class MusicLibraryViewModel : ObservableObject
         if (!_subscriptionsAttached)
             return;
 
+        _musicService.OnStreamCountRecorded -= HandleStreamCountUpdated;
         _signalRService.OnStreamCountUpdated -= HandleStreamCountUpdated;
         _signalRService.OnLikeCountUpdated -= HandleLikeCountUpdated;
         _playbackService.ShowSubscribeCtaRequested -= OnShowSubscribeCta;
@@ -72,6 +73,7 @@ public partial class MusicLibraryViewModel : ObservableObject
         if (_subscriptionsAttached)
             return;
 
+        _musicService.OnStreamCountRecorded += HandleStreamCountUpdated;
         _signalRService.OnStreamCountUpdated += HandleStreamCountUpdated;
         _signalRService.OnLikeCountUpdated += HandleLikeCountUpdated;
         _playbackService.ShowSubscribeCtaRequested += OnShowSubscribeCta;

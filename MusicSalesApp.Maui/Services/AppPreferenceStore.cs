@@ -9,4 +9,13 @@ public sealed class AppPreferenceStore : IAppPreferenceStore
 
     public void SetBool(string key, bool value)
         => Preferences.Default.Set(key, value);
+
+    public string? GetString(string key)
+        => Preferences.Default.Get<string?>(key, null);
+
+    public void SetString(string key, string value)
+        => Preferences.Default.Set(key, value);
+
+    public void Remove(string key)
+        => Preferences.Default.Remove(key);
 }

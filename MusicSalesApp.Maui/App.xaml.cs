@@ -11,6 +11,7 @@ public partial class App : Application
 	private readonly ITestingServerBannerService _testingServerBannerService;
 	private readonly IBrowserService _browserService;
 	private readonly ITipFlowHandler _tipFlowHandler;
+	private readonly ISignalRConnectionManager _signalRConnectionManager;
 
 	public App(
 		IAuthService authService,
@@ -19,7 +20,8 @@ public partial class App : Application
 		IBillingService billingService,
 		ITestingServerBannerService testingServerBannerService,
 		IBrowserService browserService,
-		ITipFlowHandler tipFlowHandler)
+		ITipFlowHandler tipFlowHandler,
+		ISignalRConnectionManager signalRConnectionManager)
 	{
 		InitializeComponent();
 		_authService = authService;
@@ -29,6 +31,7 @@ public partial class App : Application
 		_testingServerBannerService = testingServerBannerService;
 		_browserService = browserService;
 		_tipFlowHandler = tipFlowHandler;
+		_signalRConnectionManager = signalRConnectionManager;
 
 		// Sync the Android system theme to MAUI at startup.
 		// Application.Current is now set (we're in the constructor), so this is safe.
@@ -53,6 +56,8 @@ public partial class App : Application
 			// Connect to Google Play Billing early (non-blocking)
 			try { await _billingService.InitializeAsync(); }
 			catch { /* logged inside service */ }
+
+			await _signalRConnectionManager.InitializeAsync();
 
 			// Restore saved session and silently verify any unsynced purchases
 			await _authService.TryRestoreSessionAsync();

@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Threading.Tasks;
+using Microsoft.Maui.Networking;
 using Moq;
 using Moq.Protected;
 using MusicSalesApp.Maui.Services;
@@ -12,9 +14,12 @@ namespace MusicSalesApp.Maui.Tests.Services;
 [TestFixture]
 public class MusicServiceTests
 {
+    private const string PendingStreamRecordsPreferenceKey = "pending_stream_records_v1";
     private Mock<IHttpClientFactory> _mockFactory;
     private Mock<IAppSettingsService> _mockAppSettingsService;
     private Mock<ILogger<MusicService>> _mockLogger;
+    private InMemoryPreferenceStore _preferenceStore;
+    private TestConnectivity _connectivity;
 
     [SetUp]
     public void Setup()
@@ -22,6 +27,8 @@ public class MusicServiceTests
         _mockFactory = new Mock<IHttpClientFactory>();
         _mockAppSettingsService = new Mock<IAppSettingsService>();
         _mockLogger = new Mock<ILogger<MusicService>>();
+        _preferenceStore = new InMemoryPreferenceStore();
+        _connectivity = new TestConnectivity();
     }
 
     private HttpClient CreateMockHttpClient(HttpMessageHandler handler)
@@ -47,7 +54,13 @@ public class MusicServiceTests
         return handler;
     }
 
-    private MusicService CreateService() => new(_mockFactory.Object, _mockAppSettingsService.Object, _mockLogger.Object);
+    private MusicService CreateService(TimeSpan? pendingStreamRetryInterval = null) => new(
+        _mockFactory.Object,
+        _mockAppSettingsService.Object,
+        _preferenceStore,
+        _connectivity,
+        _mockLogger.Object,
+        pendingStreamRetryInterval);
 
     [Test]
     public async Task GetSongsAsync_ReturnsSongsFromApi()
@@ -156,18 +169,27 @@ public class MusicServiceTests
     {
         // Arrange
         var handler = new Mock<HttpMessageHandler>();
+        var recordedCounts = new List<(int songId, int newCount)>();
         handler.Protected()
             .Setup<Task<HttpResponseMessage>>("SendAsync",
                 ItExpr.Is<HttpRequestMessage>(r =>
                     r.Method == HttpMethod.Post &&
                     r.RequestUri!.PathAndQuery.Contains("api/music/stream/42")),
                 ItExpr.IsAny<CancellationToken>())
-            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK));
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new { songMetadataId = 42, streamCount = 99 })
+            });
         CreateMockHttpClient(handler.Object);
         var service = CreateService();
+        service.OnStreamCountRecorded += (songId, newCount) => recordedCounts.Add((songId, newCount));
 
-        // Act & Assert — no exception
-        await service.RecordStreamAsync(42);
+        // Act
+        var streamCount = await service.RecordStreamAsync(42);
+
+        // Assert
+        Assert.That(streamCount, Is.EqualTo(99));
+        Assert.That(recordedCounts, Is.EqualTo(new[] { (42, 99) }));
 
         handler.Protected().Verify("SendAsync", Times.Once(),
             ItExpr.Is<HttpRequestMessage>(r =>
@@ -186,6 +208,179 @@ public class MusicServiceTests
 
         // Act & Assert — should not throw
         Assert.DoesNotThrowAsync(() => service.RecordStreamAsync(1));
+    }
+
+    [Test]
+    public async Task RecordStreamAsync_WhenInternetIsUnavailable_QueuesPendingStreamAfterRequestFailure()
+    {
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ThrowsAsync(new HttpRequestException("Connection failure"));
+        CreateMockHttpClient(handler.Object);
+        _connectivity.NetworkAccess = NetworkAccess.None;
+        var service = CreateService();
+
+        var streamCount = await service.RecordStreamAsync(42);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(streamCount, Is.Null);
+            Assert.That(_preferenceStore.GetString(PendingStreamRecordsPreferenceKey), Does.Contain("42"));
+        });
+
+        handler.Protected().Verify(
+            "SendAsync",
+            Times.Once(),
+            ItExpr.IsAny<HttpRequestMessage>(),
+            ItExpr.IsAny<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RecordStreamAsync_WhenDnsLookupFails_QueuesPendingStream()
+    {
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ThrowsAsync(new HttpRequestException(
+                "Connection failure",
+                new InvalidOperationException("Unable to resolve host \"davidtest.dev\"")));
+        CreateMockHttpClient(handler.Object);
+        var service = CreateService();
+
+        var streamCount = await service.RecordStreamAsync(42);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(streamCount, Is.Null);
+            Assert.That(_preferenceStore.GetString(PendingStreamRecordsPreferenceKey), Does.Contain("42"));
+        });
+    }
+
+    [Test]
+    public async Task FlushPendingStreamRecordsAsync_ReplaysQueuedStreamsAndClearsQueue()
+    {
+        var handler = new Mock<HttpMessageHandler>();
+        var recordedCounts = new List<(int songId, int newCount)>();
+        var requestCount = 0;
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.Is<HttpRequestMessage>(request =>
+                    request.Method == HttpMethod.Post
+                    && request.RequestUri != null
+                    && request.RequestUri.PathAndQuery.Contains("api/music/stream/42")),
+                ItExpr.IsAny<CancellationToken>())
+            .Returns<HttpRequestMessage, CancellationToken>((_, _) =>
+            {
+                requestCount++;
+                if (requestCount == 1)
+                {
+                    return Task.FromException<HttpResponseMessage>(new HttpRequestException("Connection failure"));
+                }
+
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new { songMetadataId = 42, streamCount = 99 })
+                });
+            });
+        CreateMockHttpClient(handler.Object);
+        var service = CreateService();
+        service.OnStreamCountRecorded += (songId, newCount) => recordedCounts.Add((songId, newCount));
+
+        _connectivity.NetworkAccess = NetworkAccess.None;
+        await service.RecordStreamAsync(42);
+
+        await service.FlushPendingStreamRecordsAsync();
+
+        Assert.That(_preferenceStore.GetString(PendingStreamRecordsPreferenceKey), Is.Null);
+        Assert.That(recordedCounts, Is.EqualTo(new[] { (42, 99) }));
+        handler.Protected().Verify(
+            "SendAsync",
+            Times.Exactly(2),
+            ItExpr.Is<HttpRequestMessage>(request =>
+                request.Method == HttpMethod.Post
+                && request.RequestUri != null
+                && request.RequestUri.PathAndQuery.Contains("api/music/stream/42")),
+            ItExpr.IsAny<CancellationToken>());
+    }
+
+    [Test]
+    public async Task PendingStreamRetryLoop_RetriesQueuedStreamsWithoutLifecycleTriggers()
+    {
+        var recordedCounts = new List<(int songId, int newCount)>();
+        var secondAttemptObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var requestCount = 0;
+
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .Returns<HttpRequestMessage, CancellationToken>((_, _) =>
+            {
+                requestCount++;
+                if (requestCount == 1)
+                {
+                    return Task.FromException<HttpResponseMessage>(new HttpRequestException("Connection failure"));
+                }
+
+                secondAttemptObserved.TrySetResult();
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new { songMetadataId = 42, streamCount = 99 })
+                });
+            });
+
+        CreateMockHttpClient(handler.Object);
+        _connectivity.NetworkAccess = NetworkAccess.None;
+        var service = CreateService(TimeSpan.FromMilliseconds(25));
+        service.OnStreamCountRecorded += (songId, newCount) => recordedCounts.Add((songId, newCount));
+
+        await service.RecordStreamAsync(42);
+
+        _connectivity.NetworkAccess = NetworkAccess.Internet;
+        await Task.WhenAny(secondAttemptObserved.Task, Task.Delay(TimeSpan.FromSeconds(2)));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(secondAttemptObserved.Task.IsCompleted, Is.True);
+            Assert.That(_preferenceStore.GetString(PendingStreamRecordsPreferenceKey), Is.Null);
+            Assert.That(recordedCounts, Is.EqualTo(new[] { (42, 99) }));
+        });
+    }
+
+    [Test]
+    public async Task RecordStreamAsync_WhenPendingQueueExceedsLimit_TrimsOldestEntriesAtConfiguredCap()
+    {
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ThrowsAsync(new HttpRequestException("Connection failure"));
+
+        CreateMockHttpClient(handler.Object);
+        _connectivity.NetworkAccess = NetworkAccess.None;
+        var service = CreateService(TimeSpan.FromHours(1));
+
+        for (var songId = 1; songId <= 1001; songId++)
+        {
+            await service.RecordStreamAsync(songId);
+        }
+
+        using var document = JsonDocument.Parse(_preferenceStore.GetString(PendingStreamRecordsPreferenceKey)!);
+        var pendingRecords = document.RootElement.EnumerateArray().ToList();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(pendingRecords, Has.Count.EqualTo(1000));
+            Assert.That(pendingRecords.First().GetProperty("songMetadataId").GetInt32(), Is.EqualTo(2));
+            Assert.That(pendingRecords.Last().GetProperty("songMetadataId").GetInt32(), Is.EqualTo(1001));
+        });
     }
 
     // --- GetBulkLikeCountsAsync tests ---
@@ -565,4 +760,36 @@ public class MusicServiceTests
 
         Assert.That(result, Is.False);
     }
+}
+
+sealed class InMemoryPreferenceStore : IAppPreferenceStore
+{
+    private readonly Dictionary<string, string> _values = [];
+
+    public bool GetBool(string key, bool defaultValue = false)
+        => bool.TryParse(GetString(key), out var value) ? value : defaultValue;
+
+    public void SetBool(string key, bool value)
+        => SetString(key, value.ToString());
+
+    public string? GetString(string key)
+        => _values.TryGetValue(key, out var value) ? value : null;
+
+    public void SetString(string key, string value)
+        => _values[key] = value;
+
+    public void Remove(string key)
+        => _values.Remove(key);
+}
+
+sealed class TestConnectivity : IConnectivity
+{
+    public event EventHandler<ConnectivityChangedEventArgs>? ConnectivityChanged;
+
+    public NetworkAccess NetworkAccess { get; set; } = NetworkAccess.Internet;
+
+    public IEnumerable<ConnectionProfile> ConnectionProfiles { get; set; } = [];
+
+    public void RaiseConnectivityChanged()
+        => ConnectivityChanged?.Invoke(this, new ConnectivityChangedEventArgs(NetworkAccess, ConnectionProfiles));
 }

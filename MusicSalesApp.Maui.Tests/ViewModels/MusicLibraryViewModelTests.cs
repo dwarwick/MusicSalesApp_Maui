@@ -436,6 +436,17 @@ public class MusicLibraryViewModelTests
     }
 
     [Test]
+    public void MusicService_StreamCountRecorded_UpdatesSongDto()
+    {
+        var song = new SongDto { Id = 42, SongTitle = "Test", StreamCount = 10 };
+        _viewModel.Songs.Add(song);
+
+        _mockMusicService.Raise(s => s.OnStreamCountRecorded += null, 42, 15);
+
+        Assert.That(song.StreamCount, Is.EqualTo(15));
+    }
+
+    [Test]
     public void SignalR_LikeCountUpdate_UpdatesSongDto()
     {
         // Arrange

@@ -4,11 +4,15 @@ namespace MusicSalesApp.Maui.Services;
 
 public interface IMusicService
 {
+    event Action<int, int>? OnStreamCountRecorded;
+
     string? LastSongsError { get; }
     Task<List<SongDto>> GetSongsAsync();
     Task<SongDto?> GetSongByTitleAsync(string title);
     Task<int> GetStreamQualifyingSecondsAsync();
-    Task RecordStreamAsync(int songMetadataId);
+    Task<int?> RecordStreamAsync(int songMetadataId);
+    Task FlushPendingStreamRecordsAsync();
+    Task ClearPendingStreamRecordsAsync();
     Task<List<LikeCountDto>> GetBulkLikeCountsAsync(IEnumerable<int> songIds);
     Task<Dictionary<int, bool?>> GetBulkUserLikeStatusAsync(IEnumerable<int> songIds);
     Task<LikeToggleResult?> ToggleLikeAsync(int songMetadataId);

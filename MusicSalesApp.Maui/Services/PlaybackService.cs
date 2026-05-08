@@ -21,6 +21,13 @@ public class PlaybackService : IPlaybackService
 {
     private static readonly TimeSpan DefaultPlaylistAdvanceFallbackDelay = TimeSpan.FromSeconds(1.5);
     private static readonly TimeSpan MediaItemFinishedNearEndTolerance = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan DefaultTransientStopConfirmationDelay = TimeSpan.FromSeconds(2);
+#if ANDROID
+    private static readonly TimeSpan DefaultPositionSamplerInterval = TimeSpan.FromSeconds(1);
+#else
+    private static readonly TimeSpan DefaultPositionSamplerInterval = TimeSpan.Zero;
+#endif
+    private static readonly TimeSpan DefaultPositionEventStaleThreshold = TimeSpan.FromSeconds(2);
     private const int QueueCacheResolutionConcurrency = 3;
     private const int MaxLoggedPlaylistItems = 10;
     private const int MaxLoggedNativeQueueItems = 5;
@@ -32,12 +39,20 @@ public class PlaybackService : IPlaybackService
     private readonly IPlaybackKeepAliveService _playbackKeepAliveService;
     private readonly ILogger<PlaybackService> _logger;
     private readonly TimeSpan _playlistAdvanceFallbackDelay;
+    private readonly TimeSpan _positionSamplerInterval;
+    private readonly TimeSpan _positionEventStaleThreshold;
+    private readonly TimeSpan _transientStopConfirmationDelay;
+    private readonly object _positionSync = new();
+    private CancellationTokenSource? _positionSamplerCancellation;
+    private CancellationTokenSource? _terminalStateConfirmationCancellation;
+    private long _lastPositionChangedUtcTicks;
 
     // Stream tracking state
     private int _streamQualifyingSeconds = 30;
     private int _streamTrackingSongId;
     private double _continuousPlaybackSeconds;
     private bool _streamRecordedForCurrentSong;
+    private bool _skipNextStreamPositionSample;
 
     // Playback position state
     private TimeSpan _playbackPosition;
@@ -71,7 +86,10 @@ public class PlaybackService : IPlaybackService
         IAudioCacheService audioCacheService,
         IPlaybackKeepAliveService playbackKeepAliveService,
         ILogger<PlaybackService> logger,
-        TimeSpan? playlistAdvanceFallbackDelay = null)
+        TimeSpan? playlistAdvanceFallbackDelay = null,
+        TimeSpan? positionSamplerInterval = null,
+        TimeSpan? positionEventStaleThreshold = null,
+        TimeSpan? transientStopConfirmationDelay = null)
     {
         _authService = authService;
         _musicService = musicService;
@@ -80,8 +98,12 @@ public class PlaybackService : IPlaybackService
         _playbackKeepAliveService = playbackKeepAliveService;
         _logger = logger;
         _playlistAdvanceFallbackDelay = playlistAdvanceFallbackDelay ?? DefaultPlaylistAdvanceFallbackDelay;
+        _positionSamplerInterval = positionSamplerInterval ?? DefaultPositionSamplerInterval;
+        _positionEventStaleThreshold = positionEventStaleThreshold ?? DefaultPositionEventStaleThreshold;
+        _transientStopConfirmationDelay = transientStopConfirmationDelay ?? DefaultTransientStopConfirmationDelay;
         _nextCtaThreshold = 0;
 
+        _musicService.OnStreamCountRecorded += ApplyRecordedStreamCount;
         _mediaManager.StateChanged += OnMediaManagerStateChanged;
         _mediaManager.MediaItemChanged += OnMediaItemChanged;
         _mediaManager.PositionChanged += OnPositionChanged;
@@ -109,8 +131,10 @@ public class PlaybackService : IPlaybackService
                 return;
             }
 
+            CancelPendingTerminalPlaybackStateConfirmation();
             _isPlaying = value;
             _playbackKeepAliveService.SetPlaybackActive(value);
+            UpdatePositionSampling(value);
             RaiseStateChanged(nameof(IsPlaying));
         }
     }
@@ -238,34 +262,42 @@ public class PlaybackService : IPlaybackService
 
     public void ToggleRepeat()
     {
+        if (CurrentSong == null)
+        {
+            return;
+        }
+
         IsRepeatEnabled = !IsRepeatEnabled;
         _mediaManager.RepeatMode = IsRepeatEnabled ? RepeatMode.All : RepeatMode.Off;
     }
 
     internal void UpdatePosition(TimeSpan position, TimeSpan duration)
     {
-        var previousPosition = _playbackPosition;
-        _playbackPosition = position;
-        _playbackDuration = duration;
-
-        // Clamp position at preview limit for non-subscribers.
-        // Check PreviewLimitReached too — after CheckPreviewLimit sets IsPlaying=false,
-        // ShouldEnforcePreviewLimit() returns false but we still need to clamp.
-        var effectivePosition = position;
-        if ((ShouldEnforcePreviewLimit() || PreviewLimitReached) && position.TotalSeconds >= PreviewLimitSeconds)
+        lock (_positionSync)
         {
-            effectivePosition = TimeSpan.FromSeconds(PreviewLimitSeconds);
+            var previousPosition = _playbackPosition;
+            _playbackPosition = position;
+            _playbackDuration = duration;
+
+            // Clamp position at preview limit for non-subscribers.
+            // Check PreviewLimitReached too — after CheckPreviewLimit sets IsPlaying=false,
+            // ShouldEnforcePreviewLimit() returns false but we still need to clamp.
+            var effectivePosition = position;
+            if ((ShouldEnforcePreviewLimit() || PreviewLimitReached) && position.TotalSeconds >= PreviewLimitSeconds)
+            {
+                effectivePosition = TimeSpan.FromSeconds(PreviewLimitSeconds);
+            }
+
+            PlaybackProgress = duration.TotalSeconds > 0
+                ? effectivePosition.TotalSeconds / duration.TotalSeconds
+                : 0;
+
+            FormattedPosition = FormatDuration(effectivePosition.TotalSeconds);
+            FormattedDuration = FormatDuration(duration.TotalSeconds);
+
+            TrackStreamPlayback(position, previousPosition);
+            CheckPreviewLimit(position);
         }
-
-        PlaybackProgress = duration.TotalSeconds > 0
-            ? effectivePosition.TotalSeconds / duration.TotalSeconds
-            : 0;
-
-        FormattedPosition = FormatDuration(effectivePosition.TotalSeconds);
-        FormattedDuration = FormatDuration(duration.TotalSeconds);
-
-        TrackStreamPlayback(position, previousPosition);
-        CheckPreviewLimit(position);
     }
 
     public TimeSpan GetSeekPosition(double progress)
@@ -276,6 +308,7 @@ public class PlaybackService : IPlaybackService
     public void Seek(double progress)
     {
         var position = GetSeekPosition(progress);
+        MarkExplicitSeek();
         _ = _mediaManager.SeekTo(position);
     }
 
@@ -430,6 +463,11 @@ public class PlaybackService : IPlaybackService
 
     public void ToggleShuffle()
     {
+        if (!HasPlaylist || CurrentSong == null)
+        {
+            return;
+        }
+
         var currentSongId = CurrentSong?.Id;
         var shouldRebuildPlaylist = _playlistSourceOrder != null && currentSongId.HasValue;
         var wasPlaying = IsPlaying;
@@ -471,6 +509,16 @@ public class PlaybackService : IPlaybackService
         _streamQualifyingSeconds = seconds;
     }
 
+    private int GetCurrentStreamQualifyingSeconds()
+    {
+        if (CurrentSong?.StreamQualifyingSeconds > 0)
+        {
+            return CurrentSong.StreamQualifyingSeconds;
+        }
+
+        return _streamQualifyingSeconds;
+    }
+
     public void HandleSubscriptionActivated()
     {
         if (!_authService.HasActiveSubscription)
@@ -500,9 +548,27 @@ public class PlaybackService : IPlaybackService
 
     private void ResetStreamTracking(int songId)
     {
-        _streamTrackingSongId = songId;
-        _continuousPlaybackSeconds = 0;
-        _streamRecordedForCurrentSong = false;
+        lock (_positionSync)
+        {
+            _streamTrackingSongId = songId;
+            _continuousPlaybackSeconds = 0;
+            _streamRecordedForCurrentSong = false;
+            _skipNextStreamPositionSample = false;
+        }
+    }
+
+    private void MarkExplicitSeek()
+    {
+        lock (_positionSync)
+        {
+            if (_streamRecordedForCurrentSong)
+            {
+                return;
+            }
+
+            _continuousPlaybackSeconds = 0;
+            _skipNextStreamPositionSample = true;
+        }
     }
 
     private void TrackStreamPlayback(TimeSpan position, TimeSpan previousPosition)
@@ -522,16 +588,262 @@ public class PlaybackService : IPlaybackService
             ResetStreamTracking(CurrentSong.Id);
         }
 
+        if (_skipNextStreamPositionSample)
+        {
+            _skipNextStreamPositionSample = false;
+            return;
+        }
+
         var elapsed = position.TotalSeconds - previousPosition.TotalSeconds;
-        if (elapsed > 0 && elapsed < 2.0)
+        if (elapsed < 0)
+        {
+            MarkExplicitSeek();
+            _skipNextStreamPositionSample = false;
+            return;
+        }
+
+        if (elapsed > 0)
         {
             _continuousPlaybackSeconds += elapsed;
         }
 
-        if (_continuousPlaybackSeconds >= _streamQualifyingSeconds)
+        if (_continuousPlaybackSeconds >= GetCurrentStreamQualifyingSeconds())
         {
             _streamRecordedForCurrentSong = true;
-            _ = _musicService.RecordStreamAsync(CurrentSong.Id);
+            _ = RecordQualifiedStreamAsync(CurrentSong.Id);
+        }
+    }
+
+    private async Task RecordQualifiedStreamAsync(int songMetadataId)
+    {
+        var newCount = await _musicService.RecordStreamAsync(songMetadataId).ConfigureAwait(false);
+        if (!newCount.HasValue)
+        {
+            return;
+        }
+
+        ApplyRecordedStreamCount(songMetadataId, newCount.Value);
+    }
+
+    private void ApplyRecordedStreamCount(int songMetadataId, int newCount)
+    {
+        if (CurrentSong?.Id == songMetadataId)
+        {
+            CurrentSong.StreamCount = newCount;
+        }
+
+        ApplyRecordedStreamCount(_playlist, songMetadataId, newCount);
+
+        if (!ReferenceEquals(_playlistSourceOrder, _playlist))
+        {
+            ApplyRecordedStreamCount(_playlistSourceOrder, songMetadataId, newCount);
+        }
+    }
+
+    private static void ApplyRecordedStreamCount(IEnumerable<SongDto>? songs, int songMetadataId, int newCount)
+    {
+        if (songs == null)
+        {
+            return;
+        }
+
+        foreach (var song in songs)
+        {
+            if (song.Id == songMetadataId)
+            {
+                song.StreamCount = newCount;
+            }
+        }
+    }
+
+    private void UpdatePositionSampling(bool isPlaying)
+    {
+        if (isPlaying)
+        {
+            MarkPositionChangedObserved();
+            EnsurePositionSamplerRunning();
+            return;
+        }
+
+        StopPositionSampler();
+    }
+
+    private void EnsurePositionSamplerRunning()
+    {
+        if (_positionSamplerInterval <= TimeSpan.Zero)
+        {
+            return;
+        }
+
+        var existing = Volatile.Read(ref _positionSamplerCancellation);
+        if (existing != null && !existing.IsCancellationRequested)
+        {
+            return;
+        }
+
+        var cancellationSource = new CancellationTokenSource();
+        var previous = Interlocked.CompareExchange(ref _positionSamplerCancellation, cancellationSource, null);
+        if (previous != null)
+        {
+            cancellationSource.Dispose();
+            return;
+        }
+
+        _ = RunPositionSamplerAsync(cancellationSource);
+    }
+
+    private void StopPositionSampler()
+    {
+        var cancellationSource = Interlocked.Exchange(ref _positionSamplerCancellation, null);
+        cancellationSource?.Cancel();
+    }
+
+    private async Task RunPositionSamplerAsync(CancellationTokenSource cancellationSource)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(_positionSamplerInterval);
+            while (await timer.WaitForNextTickAsync(cancellationSource.Token).ConfigureAwait(false))
+            {
+                if (!ShouldUseFallbackPositionSampling())
+                {
+                    continue;
+                }
+
+                UpdatePosition(_mediaManager.Position, _mediaManager.Duration);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationSource.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fallback playback position sampler failed.");
+        }
+        finally
+        {
+            Interlocked.CompareExchange(ref _positionSamplerCancellation, null, cancellationSource);
+            cancellationSource.Dispose();
+        }
+    }
+
+    private bool ShouldUseFallbackPositionSampling()
+    {
+        if (!IsPlaying || CurrentSong == null)
+        {
+            return false;
+        }
+
+        var lastObservedTicks = Volatile.Read(ref _lastPositionChangedUtcTicks);
+        if (lastObservedTicks <= 0)
+        {
+            return true;
+        }
+
+        return TimeSpan.FromTicks(Math.Max(0, DateTime.UtcNow.Ticks - lastObservedTicks)) >= _positionEventStaleThreshold;
+    }
+
+    private void MarkPositionChangedObserved()
+    {
+        Interlocked.Exchange(ref _lastPositionChangedUtcTicks, DateTime.UtcNow.Ticks);
+    }
+
+    private void ScheduleTerminalPlaybackStateConfirmation(MediaPlayerState state)
+    {
+        if (_transientStopConfirmationDelay <= TimeSpan.Zero || CurrentSong == null)
+        {
+            if (IsPlaying)
+            {
+                IsPlaying = false;
+            }
+
+            return;
+        }
+
+        CancelPendingTerminalPlaybackStateConfirmation();
+
+        var cancellationSource = new CancellationTokenSource();
+        var previous = Interlocked.CompareExchange(ref _terminalStateConfirmationCancellation, cancellationSource, null);
+        if (previous != null)
+        {
+            cancellationSource.Dispose();
+            return;
+        }
+
+        var currentSongId = CurrentSong.Id;
+        var observedPosition = _mediaManager.Position;
+        _logger.LogInformation(
+            "Deferring MediaManager terminal state. State={State}; SongId={SongId}; ObservedPosition={ObservedPosition}; DelayMs={DelayMs}; {Snapshot}",
+            state,
+            currentSongId,
+            observedPosition,
+            _transientStopConfirmationDelay.TotalMilliseconds,
+            CreatePlaybackSnapshot(CurrentSong, null));
+
+        _ = ConfirmTerminalPlaybackStateAsync(state, currentSongId, observedPosition, cancellationSource);
+    }
+
+    private void CancelPendingTerminalPlaybackStateConfirmation()
+    {
+        var cancellationSource = Interlocked.Exchange(ref _terminalStateConfirmationCancellation, null);
+        cancellationSource?.Cancel();
+    }
+
+    private async Task ConfirmTerminalPlaybackStateAsync(
+        MediaPlayerState expectedState,
+        int songId,
+        TimeSpan observedPosition,
+        CancellationTokenSource cancellationSource)
+    {
+        try
+        {
+            await Task.Delay(_transientStopConfirmationDelay, cancellationSource.Token).ConfigureAwait(false);
+
+            if (CurrentSong?.Id != songId)
+            {
+                return;
+            }
+
+            var currentState = _mediaManager.State;
+            if (currentState != MediaPlayerState.Paused && currentState != MediaPlayerState.Stopped)
+            {
+                return;
+            }
+
+            var currentPosition = _mediaManager.Position;
+            if (currentPosition > observedPosition)
+            {
+                _logger.LogInformation(
+                    "Ignoring transient MediaManager terminal state because playback position advanced. ExpectedState={ExpectedState}; CurrentState={CurrentState}; SongId={SongId}; ObservedPosition={ObservedPosition}; CurrentPosition={CurrentPosition}; {Snapshot}",
+                    expectedState,
+                    currentState,
+                    songId,
+                    observedPosition,
+                    currentPosition,
+                    CreatePlaybackSnapshot(CurrentSong, null));
+                return;
+            }
+
+            if (IsPlaying)
+            {
+                _logger.LogInformation(
+                    "Confirmed MediaManager terminal state. ExpectedState={ExpectedState}; CurrentState={CurrentState}; SongId={SongId}; ObservedPosition={ObservedPosition}; CurrentPosition={CurrentPosition}; {Snapshot}",
+                    expectedState,
+                    currentState,
+                    songId,
+                    observedPosition,
+                    currentPosition,
+                    CreatePlaybackSnapshot(CurrentSong, null));
+                IsPlaying = false;
+            }
+        }
+        catch (OperationCanceledException) when (cancellationSource.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            Interlocked.CompareExchange(ref _terminalStateConfirmationCancellation, null, cancellationSource);
+            cancellationSource.Dispose();
         }
     }
 
@@ -585,13 +897,25 @@ public class PlaybackService : IPlaybackService
         switch (e.State)
         {
             case MediaPlayerState.Playing:
+                CancelPendingTerminalPlaybackStateConfirmation();
                 if (!IsPlaying) IsPlaying = true;
+                break;
+            case MediaPlayerState.Buffering:
+                CancelPendingTerminalPlaybackStateConfirmation();
                 break;
             case MediaPlayerState.Paused:
             case MediaPlayerState.Stopped:
-                if (IsPlaying) IsPlaying = false;
+                if (IsPlaying && CurrentSong != null)
+                {
+                    ScheduleTerminalPlaybackStateConfirmation(e.State);
+                }
+                else if (IsPlaying)
+                {
+                    IsPlaying = false;
+                }
                 break;
             case MediaPlayerState.Failed:
+                CancelPendingTerminalPlaybackStateConfirmation();
                 IsPlaying = false;
                 break;
         }
@@ -644,6 +968,7 @@ public class PlaybackService : IPlaybackService
 
     private void OnPositionChanged(object? sender, MmPositionChangedEventArgs e)
     {
+        MarkPositionChangedObserved();
         UpdatePosition(e.Position, _mediaManager.Duration);
     }
 
@@ -1461,13 +1786,19 @@ public class PlaybackService : IPlaybackService
 
     private void ResetPlaybackState()
     {
-        _playbackProgress = 0;
-        _formattedPosition = "0:00";
-        _formattedDuration = "0:00";
-        _playbackPosition = TimeSpan.Zero;
-        _playbackDuration = TimeSpan.Zero;
-        _continuousPlaybackSeconds = 0;
-        _streamRecordedForCurrentSong = false;
+        lock (_positionSync)
+        {
+            _playbackProgress = 0;
+            _formattedPosition = "0:00";
+            _formattedDuration = "0:00";
+            _playbackPosition = TimeSpan.Zero;
+            _playbackDuration = TimeSpan.Zero;
+            _continuousPlaybackSeconds = 0;
+            _streamRecordedForCurrentSong = false;
+            _skipNextStreamPositionSample = false;
+        }
+
+        Interlocked.Exchange(ref _lastPositionChangedUtcTicks, 0);
         PreviewLimitReached = false;
 
         RaiseStateChanged(nameof(PlaybackProgress));

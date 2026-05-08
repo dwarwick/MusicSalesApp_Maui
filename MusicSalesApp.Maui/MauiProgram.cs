@@ -4,6 +4,7 @@ using MediaManager;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Maui.LifecycleEvents;
+using Microsoft.Maui.Networking;
 using MusicSalesApp.Maui.Services;
 using MusicSalesApp.Maui.ViewModels;
 using MusicSalesApp.Maui.Views;
@@ -146,6 +147,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<ITestingServerBannerService, TestingServerBannerService>();
 
 		// Register services
+		builder.Services.AddSingleton<IConnectivity>(Connectivity.Current);
 		builder.Services.AddSingleton<IAppPreferenceStore, AppPreferenceStore>();
 		builder.Services.AddSingleton<IPermissionExplainerService, PermissionExplainerService>();
 		builder.Services.AddSingleton<IMicrophonePermissionService, MicrophonePermissionService>();
@@ -156,6 +158,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IAudioCacheService, AudioCacheService>();
 		builder.Services.AddSingleton<IAlertService, AlertService>();
 		builder.Services.AddSingleton<ISignalRService, SignalRService>();
+		builder.Services.AddSingleton<ISignalRConnectionManager, SignalRConnectionManager>();
 		builder.Services.AddSingleton<IAdminMessageApiService, AdminMessageApiService>();
 		builder.Services.AddSingleton<IAdminMessageCoordinator, AdminMessageCoordinator>();
 		builder.Services.AddSingleton<INavigationService, NavigationService>();
@@ -198,6 +201,16 @@ public static class MauiProgram
 						if (IPlatformApplication.Current?.Services.GetService(typeof(IAudioVisualizerService)) is IAudioVisualizerService audioVisualizerService)
 						{
 							_ = audioVisualizerService.EnsureInitializedAsync();
+						}
+
+						if (IPlatformApplication.Current?.Services.GetService(typeof(IMusicService)) is IMusicService musicService)
+						{
+							_ = musicService.FlushPendingStreamRecordsAsync();
+						}
+
+						if (IPlatformApplication.Current?.Services.GetService(typeof(ISignalRConnectionManager)) is ISignalRConnectionManager signalRConnectionManager)
+						{
+							_ = signalRConnectionManager.HandleAppResumeAsync();
 						}
 					});
 				});

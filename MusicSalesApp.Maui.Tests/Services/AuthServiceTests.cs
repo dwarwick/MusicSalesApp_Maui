@@ -138,6 +138,20 @@ public class AuthServiceTests
     }
 
     [Test]
+    public async Task LogoutAsync_ClearsPendingStreamRecords()
+    {
+        try
+        {
+            await _authService.LogoutAsync();
+        }
+        catch (Exception ex) when (ex.GetType().Name == "NotImplementedInReferenceAssemblyException")
+        {
+        }
+
+        _mockMusicService.Verify(m => m.ClearPendingStreamRecordsAsync(), Times.Once);
+    }
+
+    [Test]
     public async Task LoginAsync_ReturnsRawResponseBody_WhenErrorBodyIsPlainText()
     {
         var messageHandler = new Mock<HttpMessageHandler>();

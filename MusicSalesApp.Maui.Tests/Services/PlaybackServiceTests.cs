@@ -47,9 +47,11 @@ public class PlaybackServiceTests
         _mockMediaManager.Setup(m => m.SeekTo(It.IsAny<TimeSpan>())).Returns(Task.CompletedTask);
         _mockMediaManager.SetupProperty(m => m.RepeatMode);
         _mockMediaManager.SetupProperty(m => m.ShuffleMode);
+        _mockMediaManager.Setup(m => m.Position).Returns(TimeSpan.Zero);
         _mockMediaManager.Setup(m => m.Duration).Returns(TimeSpan.Zero);
         _mockMediaManager.Setup(m => m.State).Returns(() => _mediaManagerState);
         _mockMediaManager.Setup(m => m.Queue).Returns(_mockMediaQueue.Object);
+        _mockMusicService.Setup(s => s.RecordStreamAsync(It.IsAny<int>())).ReturnsAsync((int?)null);
         _mockAudioCacheService
             .Setup(s => s.ResolvePlaybackUriAsync(It.IsAny<SongDto>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((SongDto song, CancellationToken _) => song.StreamUrl);
@@ -58,7 +60,11 @@ public class PlaybackServiceTests
         _service = CreateService();
     }
 
-    private PlaybackService CreateService(TimeSpan? playlistAdvanceFallbackDelay = null)
+    private PlaybackService CreateService(
+        TimeSpan? playlistAdvanceFallbackDelay = null,
+        TimeSpan? positionSamplerInterval = null,
+        TimeSpan? positionEventStaleThreshold = null,
+        TimeSpan? transientStopConfirmationDelay = null)
     {
         return new PlaybackService(
             _mockAuthService.Object,
@@ -67,7 +73,10 @@ public class PlaybackServiceTests
             _mockAudioCacheService.Object,
             _mockPlaybackKeepAliveService.Object,
             NullLogger<PlaybackService>.Instance,
-            playlistAdvanceFallbackDelay);
+            playlistAdvanceFallbackDelay,
+            positionSamplerInterval,
+            positionEventStaleThreshold,
+            transientStopConfirmationDelay);
     }
 
     [Test]
@@ -284,6 +293,9 @@ public class PlaybackServiceTests
     [Test]
     public void ToggleRepeat_TogglesIsRepeatEnabled()
     {
+        var song = new SongDto { Id = 1, SongTitle = "Test", StreamUrl = "https://test.com/song.mp3" };
+        _service.PlaySong(song);
+
         Assert.That(_service.IsRepeatEnabled, Is.False);
 
         _service.ToggleRepeat();
@@ -291,6 +303,15 @@ public class PlaybackServiceTests
 
         _service.ToggleRepeat();
         Assert.That(_service.IsRepeatEnabled, Is.False);
+    }
+
+    [Test]
+    public void ToggleRepeat_WithoutCurrentSong_DoesNothing()
+    {
+        _service.ToggleRepeat();
+
+        Assert.That(_service.IsRepeatEnabled, Is.False);
+        Assert.That(_mockMediaManager.Object.RepeatMode, Is.EqualTo(RepeatMode.Off));
     }
 
     // --- UpdatePosition ---
@@ -466,14 +487,241 @@ public class PlaybackServiceTests
     [Test]
     public void StreamTracking_IgnoresSeeks()
     {
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(true);
         _service.SetStreamQualifyingSeconds(10);
         var song = new SongDto { Id = 10, SongTitle = "Test", StreamUrl = "https://test.com/song.mp3" };
         _service.PlaySong(song);
 
+        _service.UpdatePosition(TimeSpan.Zero, TimeSpan.FromSeconds(180));
         _service.UpdatePosition(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(180));
+        _service.Seek(50d / 180d);
         _service.UpdatePosition(TimeSpan.FromSeconds(50), TimeSpan.FromSeconds(180));
 
         _mockMusicService.Verify(s => s.RecordStreamAsync(It.IsAny<int>()), Times.Never);
+    }
+
+    [Test]
+    public void StreamTracking_SeekBeforeThreshold_RequiresFreshContinuousPlaybackWindow()
+    {
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(true);
+        _service.SetStreamQualifyingSeconds(10);
+        var song = new SongDto { Id = 10, SongTitle = "Test", StreamUrl = "https://test.com/song.mp3" };
+        _service.PlaySong(song);
+
+        _service.UpdatePosition(TimeSpan.Zero, TimeSpan.FromSeconds(180));
+        for (int i = 1; i <= 5; i++)
+        {
+            _service.UpdatePosition(TimeSpan.FromSeconds(i), TimeSpan.FromSeconds(180));
+        }
+
+        _service.Seek(0.5);
+
+        _service.UpdatePosition(TimeSpan.FromSeconds(90), TimeSpan.FromSeconds(180));
+        for (int i = 91; i <= 99; i++)
+        {
+            _service.UpdatePosition(TimeSpan.FromSeconds(i), TimeSpan.FromSeconds(180));
+        }
+
+        _mockMusicService.Verify(s => s.RecordStreamAsync(It.IsAny<int>()), Times.Never);
+
+        _service.UpdatePosition(TimeSpan.FromSeconds(100), TimeSpan.FromSeconds(180));
+
+        _mockMediaManager.Verify(m => m.SeekTo(TimeSpan.FromSeconds(90)), Times.Once);
+        _mockMusicService.Verify(s => s.RecordStreamAsync(10), Times.Once);
+    }
+
+    [Test]
+    public void StreamTracking_SparsePositionUpdates_StillCountsContinuousPlayback()
+    {
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(true);
+        _service.SetStreamQualifyingSeconds(15);
+        var song = new SongDto { Id = 10, SongTitle = "Test", StreamUrl = "https://test.com/song.mp3" };
+        _service.PlaySong(song);
+
+        _service.UpdatePosition(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(180));
+        _service.UpdatePosition(TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(180));
+
+        _mockMusicService.Verify(s => s.RecordStreamAsync(It.IsAny<int>()), Times.Never);
+
+        _service.UpdatePosition(TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(180));
+
+        _mockMusicService.Verify(s => s.RecordStreamAsync(10), Times.Once);
+    }
+
+    [Test]
+    public void StreamTracking_UsesSongSpecificQualifyingSeconds_WhenPresent()
+    {
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(true);
+        _service.SetStreamQualifyingSeconds(30);
+        var song = new SongDto
+        {
+            Id = 10,
+            SongTitle = "Test",
+            StreamUrl = "https://test.com/song.mp3",
+            StreamQualifyingSeconds = 5
+        };
+
+        _service.PlaySong(song);
+
+        for (int i = 1; i <= 5; i++)
+        {
+            _service.UpdatePosition(TimeSpan.FromSeconds(i), TimeSpan.FromSeconds(180));
+        }
+
+        _mockMusicService.Verify(s => s.RecordStreamAsync(10), Times.Once);
+    }
+
+    [Test]
+    public async Task StreamTracking_FallbackPositionSampler_RecordsStreamAndUpdatesLocalCount_WhenPositionEventsStop()
+    {
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(true);
+
+        var currentPosition = TimeSpan.Zero;
+        _mockMediaManager.Setup(m => m.Position).Returns(() => currentPosition);
+        _mockMediaManager.Setup(m => m.Duration).Returns(TimeSpan.FromSeconds(180));
+        _mockMusicService.Setup(s => s.RecordStreamAsync(10)).ReturnsAsync(14);
+
+        var service = CreateService(
+            positionSamplerInterval: TimeSpan.FromMilliseconds(10),
+            positionEventStaleThreshold: TimeSpan.FromMilliseconds(25));
+
+        service.SetStreamQualifyingSeconds(1);
+        var song = new SongDto
+        {
+            Id = 10,
+            SongTitle = "Background Test",
+            StreamUrl = "https://test.com/song.mp3",
+            StreamCount = 13
+        };
+
+        service.PlaySong(song);
+
+        await Task.Delay(40);
+        currentPosition = TimeSpan.FromSeconds(1.1);
+
+        await Task.Delay(150);
+
+        _mockMusicService.Verify(s => s.RecordStreamAsync(10), Times.Once);
+        Assert.That(song.StreamCount, Is.EqualTo(14));
+
+        service.Stop();
+    }
+
+    [Test]
+    public async Task MediaManagerStopped_WhilePlaybackPositionAdvances_KeepsPlaybackActiveAndRecordsStream()
+    {
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(true);
+
+        var currentPosition = TimeSpan.Zero;
+        _mockMediaManager.Setup(m => m.Position).Returns(() => currentPosition);
+        _mockMediaManager.Setup(m => m.Duration).Returns(TimeSpan.FromSeconds(180));
+        _mockMusicService.Setup(s => s.RecordStreamAsync(10)).ReturnsAsync(14);
+
+        var service = CreateService(
+            positionSamplerInterval: TimeSpan.FromMilliseconds(10),
+            positionEventStaleThreshold: TimeSpan.FromMilliseconds(25),
+            transientStopConfirmationDelay: TimeSpan.FromMilliseconds(60));
+
+        service.SetStreamQualifyingSeconds(1);
+        var song = new SongDto
+        {
+            Id = 10,
+            SongTitle = "Background Test",
+            StreamUrl = "https://test.com/song.mp3",
+            StreamCount = 13
+        };
+
+        service.PlaySong(song);
+
+        _mockMediaManager.Raise(m => m.StateChanged += null, new StateChangedEventArgs(MediaPlayerState.Stopped));
+
+        await Task.Delay(40);
+        currentPosition = TimeSpan.FromSeconds(1.1);
+
+        await Task.Delay(150);
+
+        Assert.That(service.IsPlaying, Is.True);
+        _mockPlaybackKeepAliveService.Verify(s => s.SetPlaybackActive(false), Times.Never);
+        _mockMusicService.Verify(s => s.RecordStreamAsync(10), Times.Once);
+        Assert.That(song.StreamCount, Is.EqualTo(14));
+
+        service.Stop();
+    }
+
+    [Test]
+    public async Task MediaManagerStopped_WithoutProgress_StopsPlaybackAfterConfirmationDelay()
+    {
+        var service = CreateService(transientStopConfirmationDelay: TimeSpan.FromMilliseconds(40));
+        var song = new SongDto { Id = 10, SongTitle = "Stopped Test", StreamUrl = "https://test.com/song.mp3" };
+
+        service.PlaySong(song);
+
+        _mockMediaManager.Raise(m => m.StateChanged += null, new StateChangedEventArgs(MediaPlayerState.Stopped));
+
+        await Task.Delay(120);
+
+        Assert.That(service.IsPlaying, Is.False);
+        _mockPlaybackKeepAliveService.Verify(s => s.SetPlaybackActive(false), Times.Once);
+    }
+
+    [Test]
+    public void StreamTracking_PlayNext_StartsFreshTimerForNextSong()
+    {
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(true);
+        _service.SetStreamQualifyingSeconds(10);
+        var songs = CreateTestPlaylist(2);
+
+        _service.SetPlaylist(songs, 0);
+        for (int i = 1; i <= 5; i++)
+        {
+            _service.UpdatePosition(TimeSpan.FromSeconds(i), TimeSpan.FromSeconds(180));
+        }
+
+        _service.PlayNext();
+        var item = new MediaItem(songs[1].StreamUrl!);
+        _mockMediaManager.Raise(m => m.MediaItemChanged += null, new MediaItemEventArgs(item));
+
+        for (int i = 1; i <= 9; i++)
+        {
+            _service.UpdatePosition(TimeSpan.FromSeconds(i), TimeSpan.FromSeconds(180));
+        }
+
+        _mockMusicService.Verify(s => s.RecordStreamAsync(It.IsAny<int>()), Times.Never);
+
+        _service.UpdatePosition(TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(180));
+
+        _mockMusicService.Verify(s => s.RecordStreamAsync(songs[0].Id), Times.Never);
+        _mockMusicService.Verify(s => s.RecordStreamAsync(songs[1].Id), Times.Once);
+    }
+
+    [Test]
+    public void StreamTracking_PlayPrevious_StartsFreshTimerForPreviousSong()
+    {
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(true);
+        _service.SetStreamQualifyingSeconds(10);
+        var songs = CreateTestPlaylist(2);
+
+        _service.SetPlaylist(songs, 1);
+        for (int i = 1; i <= 5; i++)
+        {
+            _service.UpdatePosition(TimeSpan.FromSeconds(i), TimeSpan.FromSeconds(180));
+        }
+
+        _service.PlayPrevious();
+        var item = new MediaItem(songs[0].StreamUrl!) { Title = songs[0].SongTitle };
+        _mockMediaManager.Raise(m => m.MediaItemChanged += null, new MediaItemEventArgs(item));
+
+        for (int i = 1; i <= 9; i++)
+        {
+            _service.UpdatePosition(TimeSpan.FromSeconds(i), TimeSpan.FromSeconds(180));
+        }
+
+        _mockMusicService.Verify(s => s.RecordStreamAsync(It.IsAny<int>()), Times.Never);
+
+        _service.UpdatePosition(TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(180));
+
+        _mockMusicService.Verify(s => s.RecordStreamAsync(songs[1].Id), Times.Never);
+        _mockMusicService.Verify(s => s.RecordStreamAsync(songs[0].Id), Times.Once);
     }
 
     [Test]
@@ -895,13 +1143,37 @@ public class PlaybackServiceTests
     // --- ToggleShuffle ---
 
     [Test]
-    public void ToggleShuffle_SetsMediaManagerShuffleMode()
+    public void ToggleShuffle_WithPlaylist_TogglesShuffleState()
     {
-        _service.ToggleShuffle();
-        Assert.That(_service.IsShuffleEnabled, Is.True);
-        Assert.That(_mockMediaManager.Object.ShuffleMode, Is.EqualTo(ShuffleMode.All));
+        var songs = CreateTestPlaylist(3);
+        _service.SetPlaylist(songs, 0);
 
         _service.ToggleShuffle();
+        Assert.That(_service.IsShuffleEnabled, Is.True);
+        Assert.That(_mockMediaManager.Object.ShuffleMode, Is.EqualTo(ShuffleMode.Off));
+
+        _service.ToggleShuffle();
+        Assert.That(_service.IsShuffleEnabled, Is.False);
+        Assert.That(_mockMediaManager.Object.ShuffleMode, Is.EqualTo(ShuffleMode.Off));
+    }
+
+    [Test]
+    public void ToggleShuffle_WithoutPlaylist_DoesNothing()
+    {
+        _service.ToggleShuffle();
+
+        Assert.That(_service.IsShuffleEnabled, Is.False);
+        Assert.That(_mockMediaManager.Object.ShuffleMode, Is.EqualTo(ShuffleMode.Off));
+    }
+
+    [Test]
+    public void ToggleShuffle_WithSingleSongPlayback_DoesNothing()
+    {
+        var song = new SongDto { Id = 1, SongTitle = "Single", StreamUrl = "https://test.com/song.mp3" };
+        _service.PlaySong(song);
+
+        _service.ToggleShuffle();
+
         Assert.That(_service.IsShuffleEnabled, Is.False);
         Assert.That(_mockMediaManager.Object.ShuffleMode, Is.EqualTo(ShuffleMode.Off));
     }
@@ -1240,8 +1512,8 @@ public class PlaybackServiceTests
                 return Task.FromResult(true);
             });
 
-        service.ToggleShuffle();
         service.SetPlaylist(songs, 0);
+        service.ToggleShuffle();
 
         service.OnMediaEnded();
 
@@ -1277,8 +1549,8 @@ public class PlaybackServiceTests
     {
         var service = CreateService(TimeSpan.FromMilliseconds(10));
         var songs = CreateTestPlaylist(2);
-        service.ToggleRepeat();
         service.SetPlaylist(songs, 1);
+        service.ToggleRepeat();
 
         service.OnMediaEnded();
 

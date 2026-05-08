@@ -50,6 +50,7 @@ public class PlaylistSongDto
     public string? PersonaImageUrl { get; set; }
     public string? PersonaBio { get; set; }
     public string StreamUrl { get; set; } = string.Empty;
+    public int StreamQualifyingSeconds { get; set; }
     public double? TrackLengthSeconds { get; set; }
     public int StreamCount { get; set; }
     public bool IsAiGenerated { get; set; }

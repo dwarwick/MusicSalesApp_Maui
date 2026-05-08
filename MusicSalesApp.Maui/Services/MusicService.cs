@@ -1,6 +1,8 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Microsoft.Maui.Networking;
 using MusicSalesApp.Maui.ViewModels;
 
 namespace MusicSalesApp.Maui.Services;
@@ -8,17 +10,45 @@ namespace MusicSalesApp.Maui.Services;
 public class MusicService : IMusicService
 {
     private const string SongsRequestPath = "api/music/songs";
+    private const string PendingStreamRecordsPreferenceKey = "pending_stream_records_v1";
+    private const int MaxPendingStreamRecords = 1000;
+    private static readonly TimeSpan DefaultPendingStreamRetryInterval = TimeSpan.FromSeconds(15);
+    private static readonly JsonSerializerOptions PendingStreamRecordsSerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IAppSettingsService _appSettingsService;
+    private readonly IAppPreferenceStore _appPreferenceStore;
+    private readonly IConnectivity _connectivity;
     private readonly ILogger<MusicService> _logger;
+    private readonly SemaphoreSlim _pendingStreamFlushLock = new(1, 1);
+    private readonly TimeSpan _pendingStreamRetryInterval;
+    private readonly object _pendingStreamRetryLoopLock = new();
+    private Task? _pendingStreamRetryLoopTask;
+
+    public event Action<int, int>? OnStreamCountRecorded;
 
     public string? LastSongsError { get; private set; }
 
-    public MusicService(IHttpClientFactory httpClientFactory, IAppSettingsService appSettingsService, ILogger<MusicService> logger)
+    public MusicService(
+        IHttpClientFactory httpClientFactory,
+        IAppSettingsService appSettingsService,
+        IAppPreferenceStore appPreferenceStore,
+        IConnectivity connectivity,
+        ILogger<MusicService> logger,
+        TimeSpan? pendingStreamRetryInterval = null)
     {
         _httpClientFactory = httpClientFactory;
         _appSettingsService = appSettingsService;
+        _appPreferenceStore = appPreferenceStore;
+        _connectivity = connectivity;
         _logger = logger;
+        _pendingStreamRetryInterval = pendingStreamRetryInterval ?? DefaultPendingStreamRetryInterval;
+
+        _connectivity.ConnectivityChanged += OnConnectivityChanged;
+
+        if (HasPendingStreamRecords())
+        {
+            EnsurePendingStreamRetryLoopStarted();
+        }
     }
 
     public async Task<List<SongDto>> GetSongsAsync()
@@ -88,17 +118,78 @@ public class MusicService : IMusicService
         return _appSettingsService.GetStreamQualifyingSecondsAsync();
     }
 
-    public async Task RecordStreamAsync(int songMetadataId)
+    public async Task<int?> RecordStreamAsync(int songMetadataId)
     {
-        var client = _httpClientFactory.CreateClient("MusicSalesApi");
+        var attempt = await SendStreamRecordAsync(songMetadataId).ConfigureAwait(false);
+        if (attempt.StreamCount.HasValue)
+        {
+            TriggerPendingStreamFlush("a stream was recorded successfully");
+            return attempt.StreamCount;
+        }
+
+        if (attempt.ShouldQueueForRetry)
+        {
+            await QueuePendingStreamRecordAsync(songMetadataId).ConfigureAwait(false);
+            EnsurePendingStreamRetryLoopStarted();
+
+            _logger.LogInformation(
+                _connectivity.NetworkAccess == NetworkAccess.Internet
+                    ? "Queued stream record for song {SongMetadataId} after a transient request failure"
+                    : "Queued stream record for song {SongMetadataId} because connectivity currently reports no internet access",
+                songMetadataId);
+        }
+
+        return null;
+    }
+
+    public async Task FlushPendingStreamRecordsAsync()
+    {
+        await _pendingStreamFlushLock.WaitAsync().ConfigureAwait(false);
         try
         {
-            await client.PostAsync($"api/music/stream/{songMetadataId}", null);
+            var pendingStreamRecords = LoadPendingStreamRecords();
+            for (var index = 0; index < pendingStreamRecords.Count; index++)
+            {
+                var pendingStreamRecord = pendingStreamRecords[index];
+                var attempt = await SendStreamRecordAsync(pendingStreamRecord.SongMetadataId).ConfigureAwait(false);
+
+                if (attempt.StreamCount.HasValue)
+                {
+                    pendingStreamRecords.RemoveAt(index);
+                    index--;
+                    SavePendingStreamRecords(pendingStreamRecords);
+                    continue;
+                }
+
+                if (attempt.ShouldDropPendingRecord)
+                {
+                    _logger.LogWarning(
+                        "Dropping pending stream record for song {SongMetadataId} after a non-retryable response",
+                        pendingStreamRecord.SongMetadataId);
+                    pendingStreamRecords.RemoveAt(index);
+                    index--;
+                    SavePendingStreamRecords(pendingStreamRecords);
+                    continue;
+                }
+
+                break;
+            }
+
+            if (pendingStreamRecords.Count > 0)
+            {
+                EnsurePendingStreamRetryLoopStarted();
+            }
         }
-        catch (Exception ex)
+        finally
         {
-            _logger.LogError(ex, "Failed to record stream for song {SongMetadataId}", songMetadataId);
+            _pendingStreamFlushLock.Release();
         }
+    }
+
+    public Task ClearPendingStreamRecordsAsync()
+    {
+        _appPreferenceStore.Remove(PendingStreamRecordsPreferenceKey);
+        return Task.CompletedTask;
     }
 
     public async Task<List<LikeCountDto>> GetBulkLikeCountsAsync(IEnumerable<int> songIds)
@@ -179,7 +270,195 @@ public class MusicService : IMusicService
         }
     }
 
+    private void OnConnectivityChanged(object? sender, ConnectivityChangedEventArgs e)
+    {
+        if (e.NetworkAccess == NetworkAccess.Internet)
+        {
+            TriggerPendingStreamFlush("connectivity was restored");
+        }
+    }
+
+    private void TriggerPendingStreamFlush(string reason)
+    {
+        if (!HasPendingStreamRecords())
+        {
+            return;
+        }
+
+        _logger.LogInformation("Triggering pending stream flush because {Reason}", reason);
+        _ = FlushPendingStreamRecordsAsync();
+    }
+
+    private void EnsurePendingStreamRetryLoopStarted()
+    {
+        lock (_pendingStreamRetryLoopLock)
+        {
+            if (_pendingStreamRetryLoopTask is { IsCompleted: false })
+            {
+                return;
+            }
+
+            _pendingStreamRetryLoopTask = RunPendingStreamRetryLoopAsync();
+        }
+    }
+
+    private async Task RunPendingStreamRetryLoopAsync()
+    {
+        try
+        {
+            while (HasPendingStreamRecords())
+            {
+                await Task.Delay(_pendingStreamRetryInterval).ConfigureAwait(false);
+
+                if (!HasPendingStreamRecords())
+                {
+                    break;
+                }
+
+                _logger.LogInformation(
+                    "Retrying pending stream records after waiting {RetryIntervalSeconds} seconds",
+                    _pendingStreamRetryInterval.TotalSeconds);
+
+                await FlushPendingStreamRecordsAsync().ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Pending stream retry loop failed unexpectedly");
+        }
+    }
+
+    private async Task<StreamRecordAttemptResult> SendStreamRecordAsync(int songMetadataId)
+    {
+        var client = _httpClientFactory.CreateClient("MusicSalesApi");
+        try
+        {
+            var response = await client.PostAsync($"api/music/stream/{songMetadataId}", null).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("RecordStream returned {StatusCode} for song {SongMetadataId}", response.StatusCode, songMetadataId);
+                return new StreamRecordAttemptResult(null, false, ShouldDropPendingRecord(response.StatusCode));
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<StreamRecordResponse>().ConfigureAwait(false);
+            if (result?.StreamCount is int streamCount)
+            {
+                OnStreamCountRecorded?.Invoke(songMetadataId, streamCount);
+            }
+
+            return new StreamRecordAttemptResult(result?.StreamCount, false, false);
+        }
+        catch (HttpRequestException ex) when (ShouldQueueStreamRecordRetry(ex))
+        {
+            _logger.LogWarning(ex, "Transient failure recording stream for song {SongMetadataId}; queuing for retry", songMetadataId);
+            return new StreamRecordAttemptResult(null, true, false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to record stream for song {SongMetadataId}", songMetadataId);
+            return new StreamRecordAttemptResult(null, false, false);
+        }
+    }
+
+    private async Task QueuePendingStreamRecordAsync(int songMetadataId)
+    {
+        await _pendingStreamFlushLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var pendingStreamRecords = LoadPendingStreamRecords();
+            pendingStreamRecords.Add(new PendingStreamRecord(songMetadataId, DateTime.UtcNow));
+            if (pendingStreamRecords.Count > MaxPendingStreamRecords)
+            {
+                var overflowCount = pendingStreamRecords.Count - MaxPendingStreamRecords;
+                pendingStreamRecords.RemoveRange(0, overflowCount);
+                _logger.LogWarning(
+                    "Trimmed {OverflowCount} old pending stream records to enforce the queue size limit",
+                    overflowCount);
+            }
+
+            SavePendingStreamRecords(pendingStreamRecords);
+        }
+        finally
+        {
+            _pendingStreamFlushLock.Release();
+        }
+    }
+
+    private bool HasPendingStreamRecords()
+        => LoadPendingStreamRecords().Count > 0;
+
+    private List<PendingStreamRecord> LoadPendingStreamRecords()
+    {
+        var serializedPendingStreamRecords = _appPreferenceStore.GetString(PendingStreamRecordsPreferenceKey);
+        if (string.IsNullOrWhiteSpace(serializedPendingStreamRecords))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<PendingStreamRecord>>(
+                       serializedPendingStreamRecords,
+                       PendingStreamRecordsSerializerOptions)
+                   ?? [];
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Failed to deserialize pending stream records. Clearing the saved queue.");
+            _appPreferenceStore.Remove(PendingStreamRecordsPreferenceKey);
+            return [];
+        }
+    }
+
+    private void SavePendingStreamRecords(List<PendingStreamRecord> pendingStreamRecords)
+    {
+        if (pendingStreamRecords.Count == 0)
+        {
+            _appPreferenceStore.Remove(PendingStreamRecordsPreferenceKey);
+            return;
+        }
+
+        _appPreferenceStore.SetString(
+            PendingStreamRecordsPreferenceKey,
+            JsonSerializer.Serialize(pendingStreamRecords, PendingStreamRecordsSerializerOptions));
+    }
+
+    private bool ShouldQueueStreamRecordRetry(HttpRequestException exception)
+    {
+        if (_connectivity.NetworkAccess != NetworkAccess.Internet)
+        {
+            return true;
+        }
+
+        return ExceptionChainContains(exception, "UnknownHostException")
+            || ExceptionChainContains(exception, "Unable to resolve host")
+            || ExceptionChainContains(exception, "SocketException")
+            || ExceptionChainContains(exception, "ConnectException")
+            || ExceptionChainContains(exception, "Network is unreachable")
+            || ExceptionChainContains(exception, "No route to host");
+    }
+
+    private static bool ExceptionChainContains(Exception exception, string value)
+    {
+        for (var current = exception; current != null; current = current.InnerException!)
+        {
+            if ((current.Message?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (current.GetType().Name.Contains(value, StringComparison.OrdinalIgnoreCase))
+                || (current.GetType().FullName?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool ShouldDropPendingRecord(HttpStatusCode statusCode)
+        => statusCode == HttpStatusCode.BadRequest || statusCode == HttpStatusCode.NotFound;
+
     private sealed record UserLikeStatusDto(int SongMetadataId, bool? UserLikeStatus);
+    private sealed record PendingStreamRecord(int SongMetadataId, DateTime RecordedUtc);
+    private sealed record StreamRecordAttemptResult(int? StreamCount, bool ShouldQueueForRetry, bool ShouldDropPendingRecord);
 
     public async Task<(bool Success, string ErrorMessage)> VerifyGooglePlayPurchaseAsync(string purchaseToken, string? orderId)
     {
@@ -244,6 +523,8 @@ public class MusicService : IMusicService
     }
 
     private sealed record CancelResponse(bool Success, DateTime? EndDate);
+
+    private sealed record StreamRecordResponse(int SongMetadataId, int StreamCount);
 
     public async Task<bool> ReportSongAsync(int songMetadataId, string reason)
     {

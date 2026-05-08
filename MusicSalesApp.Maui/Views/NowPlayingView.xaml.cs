@@ -16,6 +16,7 @@ public partial class NowPlayingView : ContentView
     private static readonly Microsoft.Maui.Controls.Shapes.Geometry? PauseIconGeometry = CreateGeometry(PauseIconPathData);
 
     private readonly NowPlayingDrawerController _drawerController = new();
+    private readonly NowPlayingEmptyStateActionRunner _emptyStateActionRunner = new();
     private IPlaybackService? _playbackService;
     private IAuthService? _authService;
     private Func<Task<bool>>? _playFromEmptyStateAsync;
@@ -114,15 +115,15 @@ public partial class NowPlayingView : ContentView
     private void OnStopClicked(object? sender, TappedEventArgs e) =>
         _playbackService?.Stop();
 
-    private void OnRepeatClicked(object? sender, TappedEventArgs e)
+    private async void OnRepeatClicked(object? sender, TappedEventArgs e)
     {
-        _playbackService?.ToggleRepeat();
+        await _emptyStateActionRunner.ToggleRepeatAsync(_playbackService, _playFromEmptyStateAsync);
         UpdateRepeatVisual();
     }
 
-    private void OnShuffleClicked(object? sender, TappedEventArgs e)
+    private async void OnShuffleClicked(object? sender, TappedEventArgs e)
     {
-        _playbackService?.ToggleShuffle();
+        await _emptyStateActionRunner.ToggleShuffleAsync(_playbackService, _playFromEmptyStateAsync);
         UpdateShuffleVisual();
     }
 

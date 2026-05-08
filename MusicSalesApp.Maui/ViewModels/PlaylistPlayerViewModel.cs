@@ -75,6 +75,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
             return;
         }
 
+        _musicService.OnStreamCountRecorded += HandleStreamCountUpdated;
         _signalRService.OnStreamCountUpdated += HandleStreamCountUpdated;
         _signalRService.OnLikeCountUpdated += HandleLikeCountUpdated;
         _playbackService.StateChanged += OnPlaybackStateChanged;
@@ -359,6 +360,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         PersonaImageUrl = ps.PersonaImageUrl,
         PersonaBio = ps.PersonaBio,
         StreamUrl = ps.StreamUrl,
+        StreamQualifyingSeconds = ps.StreamQualifyingSeconds,
         TrackLengthSeconds = ps.TrackLengthSeconds,
         StreamCount = ps.StreamCount,
         IsAiGenerated = ps.IsAiGenerated,
@@ -679,6 +681,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
             return;
         }
 
+        _musicService.OnStreamCountRecorded -= HandleStreamCountUpdated;
         _signalRService.OnStreamCountUpdated -= HandleStreamCountUpdated;
         _signalRService.OnLikeCountUpdated -= HandleLikeCountUpdated;
         _playbackService.StateChanged -= OnPlaybackStateChanged;

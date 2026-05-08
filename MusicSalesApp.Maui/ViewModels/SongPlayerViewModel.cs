@@ -57,6 +57,7 @@ public partial class SongPlayerViewModel : ObservableObject
             return;
         }
 
+        _musicService.OnStreamCountRecorded += HandleStreamCountUpdated;
         _signalRService.OnStreamCountUpdated += HandleStreamCountUpdated;
         _signalRService.OnLikeCountUpdated += HandleLikeCountUpdated;
         _playbackService.ShowSubscribeCtaRequested += OnShowSubscribeCta;
@@ -407,6 +408,7 @@ public partial class SongPlayerViewModel : ObservableObject
             return;
         }
 
+        _musicService.OnStreamCountRecorded -= HandleStreamCountUpdated;
         _signalRService.OnStreamCountUpdated -= HandleStreamCountUpdated;
         _signalRService.OnLikeCountUpdated -= HandleLikeCountUpdated;
         _playbackService.ShowSubscribeCtaRequested -= OnShowSubscribeCta;

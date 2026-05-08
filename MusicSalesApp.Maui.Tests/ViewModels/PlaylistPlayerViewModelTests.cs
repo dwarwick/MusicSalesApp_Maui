@@ -291,6 +291,43 @@ public class PlaylistPlayerViewModelTests
         Assert.That(_viewModel.CurrentSong?.IsAiGenerated, Is.True);
     }
 
+    [Test]
+    public async Task PlaylistServiceLoad_PreservesStreamQualifyingSeconds()
+    {
+        SongDto? currentSong = null;
+        _mockPlaybackService.SetupGet(s => s.CurrentSong).Returns(() => currentSong);
+        _mockPlaybackService
+            .Setup(s => s.SetPlaylist(It.IsAny<List<SongDto>>(), 0))
+            .Callback<List<SongDto>, int>((songs, _) => currentSong = songs.FirstOrDefault());
+        _mockPlaylistService.Setup(s => s.GetPlaylistSongsAsync(7)).ReturnsAsync(new PlaylistSongsDto
+        {
+            PlaylistId = 7,
+            PlaylistName = "Threshold Mix",
+            IsSystemGenerated = false,
+            Songs =
+            [
+                new PlaylistSongDto
+                {
+                    SongMetadataId = 21,
+                    SongTitle = "Threshold Song",
+                    ArtistName = "Synth Artist",
+                    Genre = "Electronic",
+                    StreamUrl = "https://example.com/anthem.mp3",
+                    StreamQualifyingSeconds = 65
+                }
+            ]
+        });
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+
+        _viewModel.PlaylistIdParam = "7";
+        await Task.Delay(100);
+
+        Assert.That(_viewModel.Songs, Has.Count.EqualTo(1));
+        Assert.That(_viewModel.Songs[0].StreamQualifyingSeconds, Is.EqualTo(65));
+        Assert.That(_viewModel.CurrentSong?.StreamQualifyingSeconds, Is.EqualTo(65));
+    }
+
     // --- Share URL ---
 
     [Test]
@@ -509,6 +546,22 @@ public class PlaylistPlayerViewModelTests
 
         // Raise the SignalR event
         _mockSignalRService.Raise(s => s.OnStreamCountUpdated += null, 1, 999);
+
+        Assert.That(_viewModel.Songs.First(s => s.Id == 1).StreamCount, Is.EqualTo(999));
+    }
+
+    [Test]
+    public async Task MusicService_StreamCountRecorded_UpdatesSong()
+    {
+        var songs = CreateTestSongs();
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+
+        _viewModel.GenreName = "Rock";
+        await Task.Delay(100);
+
+        _mockMusicService.Raise(s => s.OnStreamCountRecorded += null, 1, 999);
 
         Assert.That(_viewModel.Songs.First(s => s.Id == 1).StreamCount, Is.EqualTo(999));
     }

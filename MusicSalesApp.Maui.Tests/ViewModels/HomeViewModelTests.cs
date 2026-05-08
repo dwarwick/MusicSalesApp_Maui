@@ -294,6 +294,17 @@ public class HomeViewModelTests
     }
 
     [Test]
+    public void MusicService_StreamCountRecorded_UpdatesFeaturedSong()
+    {
+        var song = new SongDto { Id = 42, SongTitle = "Featured", StreamCount = 5 };
+        _viewModel.FeaturedSongs = new ObservableCollection<SongDto> { song };
+
+        _mockMusicService.Raise(s => s.OnStreamCountRecorded += null, 42, 12);
+
+        Assert.That(song.StreamCount, Is.EqualTo(12));
+    }
+
+    [Test]
     public async Task LoadAsync_RefreshesAuthState()
     {
         _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);

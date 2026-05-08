@@ -257,6 +257,17 @@ public class SongPlayerViewModelTests
     }
 
     [Test]
+    public void MusicService_StreamCountRecorded_UpdatesSongDto()
+    {
+        var song = new SongDto { Id = 42, SongTitle = "Test", StreamCount = 5 };
+        _viewModel.Song = song;
+
+        _mockMusicService.Raise(s => s.OnStreamCountRecorded += null, 42, 12);
+
+        Assert.That(song.StreamCount, Is.EqualTo(12));
+    }
+
+    [Test]
     public async Task StartSignalRAsync_StartsService()
     {
         await _viewModel.StartSignalRAsync();

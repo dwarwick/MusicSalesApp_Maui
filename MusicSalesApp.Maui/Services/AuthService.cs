@@ -328,12 +328,12 @@ public class AuthService : IAuthService
 
     public async Task LogoutAsync()
     {
+        await _musicService.ClearPendingStreamRecordsAsync();
         SecureStorage.Default.Remove(TokenStorageKey);
         SecureStorage.Default.Remove(UserIdStorageKey);
         SecureStorage.Default.Remove(EmailStorageKey);
         SecureStorage.Default.Remove(EmailConfirmedStorageKey);
         ClearState();
-        await Task.CompletedTask;
         AuthStateChanged?.Invoke();
     }
 
@@ -380,6 +380,7 @@ public class AuthService : IAuthService
             if (!HasActiveSubscription)
                 await TryRestoreBillingAsync();
 
+            await _musicService.FlushPendingStreamRecordsAsync();
             AuthStateChanged?.Invoke();
         }
         catch (Exception ex)
@@ -453,6 +454,7 @@ public class AuthService : IAuthService
         if (!HasActiveSubscription)
             await TryRestoreBillingAsync();
 
+        await _musicService.FlushPendingStreamRecordsAsync();
         AuthStateChanged?.Invoke();
     }
 

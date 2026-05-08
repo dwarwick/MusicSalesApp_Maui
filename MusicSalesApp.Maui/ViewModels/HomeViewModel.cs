@@ -121,6 +121,7 @@ public partial class HomeViewModel : ObservableObject
             return;
         }
 
+        _musicService.OnStreamCountRecorded -= HandleStreamCountUpdated;
         _signalRService.OnStreamCountUpdated -= HandleStreamCountUpdated;
         _signalRService.OnLikeCountUpdated -= HandleLikeCountUpdated;
         _signalRSubscriptionsAttached = false;
@@ -133,6 +134,7 @@ public partial class HomeViewModel : ObservableObject
             return;
         }
 
+        _musicService.OnStreamCountRecorded += HandleStreamCountUpdated;
         _signalRService.OnStreamCountUpdated += HandleStreamCountUpdated;
         _signalRService.OnLikeCountUpdated += HandleLikeCountUpdated;
         _signalRSubscriptionsAttached = true;
