@@ -32,4 +32,10 @@ internal static class AppSettingsEnvironmentResolver
 	{
 		return $"MusicSalesApp.Maui.appsettings.{environmentName}.json";
 	}
+
+	internal static bool HasResource(IEnumerable<string> resourceNames, string environmentName)
+	{
+		var resourceName = GetResourceName(environmentName);
+		return resourceNames.Contains(resourceName, StringComparer.Ordinal);
+	}
 }

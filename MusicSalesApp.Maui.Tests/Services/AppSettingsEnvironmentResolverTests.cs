@@ -36,4 +36,29 @@ public class AppSettingsEnvironmentResolverTests
 
 		Assert.That(result, Is.EqualTo("MusicSalesApp.Maui.appsettings.Test.json"));
 	}
+
+	[Test]
+	public void HasResource_ReturnsTrue_WhenEnvironmentResourceExists()
+	{
+		var result = AppSettingsEnvironmentResolver.HasResource(
+			[
+				"MusicSalesApp.Maui.appsettings.json",
+				"MusicSalesApp.Maui.appsettings.Development.json"
+			],
+			"Development");
+
+		Assert.That(result, Is.True);
+	}
+
+	[Test]
+	public void HasResource_ReturnsFalse_WhenEnvironmentResourceDoesNotExist()
+	{
+		var result = AppSettingsEnvironmentResolver.HasResource(
+			[
+				"MusicSalesApp.Maui.appsettings.json"
+			],
+			"Development");
+
+		Assert.That(result, Is.False);
+	}
 }

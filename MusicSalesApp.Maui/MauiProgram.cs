@@ -42,13 +42,14 @@ public static class MauiProgram
 		isReleaseBuild = true;
 #endif
 		var settingsEnvironment = AppSettingsEnvironmentResolver.GetEnvironmentName(assembly, isReleaseBuild);
-		var envStream = assembly.GetManifestResourceStream(AppSettingsEnvironmentResolver.GetResourceName(settingsEnvironment));
-		if (envStream is null)
+		if (AppSettingsEnvironmentResolver.HasResource(assembly.GetManifestResourceNames(), settingsEnvironment))
 		{
-			throw new InvalidOperationException($"Embedded appsettings resource not found for environment '{settingsEnvironment}'.");
+			using var envStream = assembly.GetManifestResourceStream(AppSettingsEnvironmentResolver.GetResourceName(settingsEnvironment));
+			if (envStream is not null)
+			{
+				builder.Configuration.AddJsonStream(envStream);
+			}
 		}
-
-		builder.Configuration.AddJsonStream(envStream);
 		Console.WriteLine($"[MauiProgram] App settings environment: {settingsEnvironment}");
 
 		// When UseLocalHost is false, override settings with the DavidTest section
@@ -73,8 +74,10 @@ public static class MauiProgram
 			}
 		}
 
-		// Register HttpClientFactory with the API base URL
-		var apiBaseUrl = builder.Configuration["ApiBaseUrl"] ?? "https://localhost:7173";
+		var appConfig = new AppConfig(builder.Configuration);
+
+		// Register HttpClientFactory with the resolved API base URL
+		var apiBaseUrl = appConfig.ApiBaseUrl;
 #if ANDROID && DEBUG
 		// Android can't reach the host's "localhost" directly.
 		// Emulator: 10.0.2.2 routes to the host PC.
@@ -143,7 +146,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IConfiguration>(builder.Configuration);
 
 		// Register centralized app config (resolves UseLocalHost / DavidTest / Production URLs once)
-		builder.Services.AddSingleton<IAppConfig, AppConfig>();
+		builder.Services.AddSingleton<IAppConfig>(appConfig);
 		builder.Services.AddSingleton<ITestingServerBannerService, TestingServerBannerService>();
 
 		// Register services

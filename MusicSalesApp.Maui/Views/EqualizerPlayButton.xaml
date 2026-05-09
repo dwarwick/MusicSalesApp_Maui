@@ -5,18 +5,7 @@
              x:Class="MusicSalesApp.Maui.Views.EqualizerPlayButton">
 
     <Grid x:Name="HitTarget">
-        <Border x:Name="ButtonBorder"
-                StrokeThickness="0"
-                BackgroundColor="{StaticResource Primary}">
-            <Label x:Name="IconLabel"
-                   Text="&#x25B6;"
-                   TextColor="Black"
-                   HorizontalTextAlignment="Center"
-                   VerticalTextAlignment="Center" />
-        </Border>
-
         <skia:SKCanvasView x:Name="VisualizerCanvas"
-                           IsVisible="False"
                            InputTransparent="True"
                            PaintSurface="OnPaintSurface" />
     </Grid>

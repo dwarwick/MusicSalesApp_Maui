@@ -1,5 +1,4 @@
 using System.Windows.Input;
-using Microsoft.Maui.Controls.Shapes;
 using MusicSalesApp.Maui.Services;
 using SkiaSharp;
 using SkiaSharp.Views.Maui;
@@ -8,8 +7,7 @@ namespace MusicSalesApp.Maui.Views;
 
 public partial class EqualizerPlayButton : ContentView
 {
-    private const string PlayGlyph = "\u25B6";
-    private const string PauseGlyph = "\u23F8";
+    private const double FallbackAnimationStep = 0.35d;
 
     public static readonly BindableProperty SongIdProperty =
         BindableProperty.Create(nameof(SongId), typeof(int), typeof(EqualizerPlayButton), 0, propertyChanged: OnVisualPropertyChanged);
@@ -31,6 +29,8 @@ public partial class EqualizerPlayButton : ContentView
 
     private IPlaybackService? _playbackService;
     private IAudioVisualizerService? _audioVisualizerService;
+    private IDispatcherTimer? _fallbackAnimationTimer;
+    private double _fallbackAnimationPhase;
 
     public EqualizerPlayButton()
     {
@@ -133,6 +133,8 @@ public partial class EqualizerPlayButton : ContentView
 
     private void DetachServices()
     {
+        StopFallbackAnimation();
+
         if (_playbackService != null)
         {
             _playbackService.StateChanged -= OnPlaybackStateChanged;
@@ -181,12 +183,9 @@ public partial class EqualizerPlayButton : ContentView
         HeightRequest = ButtonSize;
         HitTarget.WidthRequest = ButtonSize;
         HitTarget.HeightRequest = ButtonSize;
-        ButtonBorder.WidthRequest = ButtonSize;
-        ButtonBorder.HeightRequest = ButtonSize;
         VisualizerCanvas.WidthRequest = ButtonSize;
         VisualizerCanvas.HeightRequest = ButtonSize;
-        ButtonBorder.StrokeShape = new RoundRectangle { CornerRadius = new CornerRadius(ButtonSize / 2d) };
-        IconLabel.FontSize = Math.Max(18d, ButtonSize * 0.45d);
+        VisualizerCanvas.InvalidateSurface();
     }
 
     private void UpdateVisualState()
@@ -200,20 +199,60 @@ public partial class EqualizerPlayButton : ContentView
             _ = _audioVisualizerService.EnsureInitializedAsync();
         }
 
-        var showVisualizer = isCurrentSongPlaying
-            && _audioVisualizerService?.IsVisualizationAvailable == true
-            && _audioVisualizerService.Levels.Count > 0;
-
-        ButtonBorder.BackgroundColor = AccentColor;
-        IconLabel.TextColor = IconColor;
-        IconLabel.Text = isCurrentSongPlaying ? PauseGlyph : PlayGlyph;
-        ButtonBorder.IsVisible = !showVisualizer;
-        VisualizerCanvas.IsVisible = showVisualizer;
-
-        if (showVisualizer)
+        var hasLiveLevels = PlaybackIndicatorStateResolver.HasLiveLevels(_audioVisualizerService?.Levels);
+        if (isCurrentSongPlaying && !hasLiveLevels)
         {
-            VisualizerCanvas.InvalidateSurface();
+            EnsureFallbackAnimation();
         }
+        else
+        {
+            StopFallbackAnimation();
+        }
+
+        VisualizerCanvas.InvalidateSurface();
+    }
+
+    private void EnsureFallbackAnimation()
+    {
+        if (_fallbackAnimationTimer != null)
+        {
+            if (!_fallbackAnimationTimer.IsRunning)
+            {
+                _fallbackAnimationTimer.Start();
+            }
+
+            return;
+        }
+
+        var dispatcher = Dispatcher ?? Application.Current?.Dispatcher;
+        if (dispatcher == null)
+        {
+            return;
+        }
+
+        _fallbackAnimationTimer = dispatcher.CreateTimer();
+        _fallbackAnimationTimer.Interval = TimeSpan.FromMilliseconds(120);
+        _fallbackAnimationTimer.Tick += OnFallbackAnimationTick;
+        _fallbackAnimationTimer.Start();
+    }
+
+    private void StopFallbackAnimation()
+    {
+        if (_fallbackAnimationTimer == null)
+        {
+            return;
+        }
+
+        _fallbackAnimationTimer.Stop();
+        _fallbackAnimationTimer.Tick -= OnFallbackAnimationTick;
+        _fallbackAnimationTimer = null;
+        _fallbackAnimationPhase = 0d;
+    }
+
+    private void OnFallbackAnimationTick(object? sender, EventArgs e)
+    {
+        _fallbackAnimationPhase += FallbackAnimationStep;
+        VisualizerCanvas.InvalidateSurface();
     }
 
     private void OnPaintSurface(object? sender, SKPaintSurfaceEventArgs e)
@@ -221,32 +260,80 @@ public partial class EqualizerPlayButton : ContentView
         var canvas = e.Surface.Canvas;
         canvas.Clear();
 
-        var levels = _audioVisualizerService?.Levels;
-        if (levels == null || levels.Count == 0)
+        var info = e.Info;
+        var bounds = new SKRect(0, 0, info.Width, info.Height);
+        var diameter = Math.Min(info.Width, info.Height);
+        var radius = diameter / 2f;
+        var center = new SKPoint(info.Width / 2f, info.Height / 2f);
+
+        using var backgroundPaint = new SKPaint
         {
+            Color = ToSkColor(AccentColor),
+            IsAntialias = true,
+            Style = SKPaintStyle.Fill
+        };
+
+        canvas.DrawCircle(center, radius, backgroundPaint);
+
+        var isCurrentSongPlaying = _playbackService?.IsPlaying == true
+            && _playbackService.CurrentSong?.Id == SongId
+            && SongId > 0;
+
+        var visualState = PlaybackIndicatorStateResolver.Resolve(isCurrentSongPlaying);
+        if (visualState == PlaybackIndicatorVisualState.PlayIcon)
+        {
+            DrawPlayIcon(canvas, bounds);
             return;
         }
 
-        var info = e.Info;
+        DrawEqualizer(canvas, bounds, PlaybackIndicatorStateResolver.ResolveLevels(_audioVisualizerService?.Levels, _fallbackAnimationPhase));
+    }
+
+    private void DrawPlayIcon(SKCanvas canvas, SKRect bounds)
+    {
+        var width = bounds.Width;
+        var height = bounds.Height;
+        var triangleWidth = width * 0.28f;
+        var triangleHeight = height * 0.32f;
+        var centerX = bounds.MidX + (width * 0.04f);
+        var centerY = bounds.MidY;
+
+        using var iconPaint = new SKPaint
+        {
+            Color = ToSkColor(IconColor),
+            IsAntialias = true,
+            Style = SKPaintStyle.Fill
+        };
+
+        using var path = new SKPath();
+        path.MoveTo(centerX - (triangleWidth / 2f), centerY - (triangleHeight / 2f));
+        path.LineTo(centerX - (triangleWidth / 2f), centerY + (triangleHeight / 2f));
+        path.LineTo(centerX + (triangleWidth / 2f), centerY);
+        path.Close();
+        canvas.DrawPath(path, iconPaint);
+    }
+
+    private void DrawEqualizer(SKCanvas canvas, SKRect bounds, IReadOnlyList<float> levels)
+    {
         var barCount = levels.Count;
-        var spacing = Math.Max(0.5f, info.Width * 0.02f);
-        var availableWidth = info.Width - ((barCount - 1) * spacing);
+        var spacing = Math.Max(0.5f, bounds.Width * 0.02f);
+        var availableWidth = bounds.Width * 0.46f - ((barCount - 1) * spacing);
         var barWidth = availableWidth / barCount;
         if (barWidth < 1f)
         {
             barWidth = 1f;
-            spacing = Math.Max(0f, (info.Width - (barCount * barWidth)) / Math.Max(1, barCount - 1));
+            spacing = Math.Max(0f, ((bounds.Width * 0.46f) - (barCount * barWidth)) / Math.Max(1, barCount - 1));
         }
 
         var totalWidth = (barCount * barWidth) + ((barCount - 1) * spacing);
-        var left = (info.Width - totalWidth) / 2f;
-        var bottom = info.Height * 0.86f;
-        var minHeight = info.Height * 0.2f;
-        var maxHeight = info.Height * 0.72f;
+        var left = bounds.MidX - (totalWidth / 2f);
+        var bottom = bounds.Height * 0.72f;
+        var minHeight = bounds.Height * 0.16f;
+        var maxHeight = bounds.Height * 0.42f;
 
         using var paint = new SKPaint
         {
-            Color = ToSkColor(AccentColor),
+            Color = ToSkColor(IconColor),
             IsAntialias = true,
             Style = SKPaintStyle.Fill
         };

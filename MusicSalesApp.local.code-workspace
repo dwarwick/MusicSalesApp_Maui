@@ -1,0 +1,32 @@
+{
+  "folders": [
+    {
+      "name": "MusicSalesApp_Maui",
+      "path": "."
+    },
+    {
+      "name": "MusicSalesApp",
+      "path": "../MusicSalesApp"
+    }
+  ],
+  "settings": {
+    "dotnet.defaultSolution": "MusicSalesApp_Maui.slnx",
+    "dotnetAcquisitionExtension.cacheTimeToLiveMultiplier": 0,
+    "dotnetAcquisitionExtension.existingDotnetPath": "/usr/local/share/dotnet/dotnet",
+    "dotnetAcquisitionExtension.sharedExistingDotnetPath": "/usr/local/share/dotnet/dotnet",
+    "omnisharp.dotnetPath": "/usr/local/share/dotnet",
+    "terminal.integrated.cwd": "${workspaceFolder:MusicSalesApp_Maui}",
+    "chat.tools.terminal.autoApprove": {
+      "/^command -v dotnet \\|\\| true && echo '---' && dotnet --list-sdks 2>/dev/null \\|\\| true && echo '---' && ls -1 /usr/local/share/dotnet/sdk 2>/dev/null \\| tail -n 5 \\|\\| true && echo '---' && ls -1 /opt/homebrew/share/dotnet/sdk 2>/dev/null \\| tail -n 5 \\|\\| true$/": {
+        "approve": true,
+        "matchCommandLine": true
+      }
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "ms-dotnettools.csdevkit",
+      "ms-dotnettools.csharp"
+    ]
+  }
+}
