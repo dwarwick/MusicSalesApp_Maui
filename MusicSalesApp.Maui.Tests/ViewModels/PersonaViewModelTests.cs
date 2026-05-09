@@ -1,4 +1,5 @@
 using MusicSalesApp.Maui.ViewModels;
+using Microsoft.Maui.Controls;
 
 namespace MusicSalesApp.Maui.Tests.ViewModels;
 
@@ -41,6 +42,24 @@ public class PersonaViewModelTests
     }
 
     [Test]
+    public void PersonaImageSource_WhenAbsoluteUrlSet_ReturnsUriImageSource()
+    {
+        var vm = new PersonaViewModel { PersonaImageUrl = "https://img.test/pic.jpg" };
+
+        Assert.That(vm.PersonaImageSource, Is.TypeOf<UriImageSource>());
+        Assert.That(((UriImageSource)vm.PersonaImageSource!).Uri.AbsoluteUri, Is.EqualTo("https://img.test/pic.jpg"));
+    }
+
+    [Test]
+    public void PersonaImageSource_WhenImageUrlWhitespace_ReturnsNull()
+    {
+        var vm = new PersonaViewModel { PersonaImageUrl = "   " };
+
+        Assert.That(vm.PersonaImageSource, Is.Null);
+        Assert.That(vm.HasImage, Is.False);
+    }
+
+    [Test]
     public void HasImage_FalseWhenImageUrlNull()
     {
         var vm = new PersonaViewModel { PersonaImageUrl = null };
@@ -52,6 +71,15 @@ public class PersonaViewModelTests
     {
         var vm = new PersonaViewModel { PersonaImageUrl = "" };
         Assert.That(vm.HasImage, Is.False);
+    }
+
+    [Test]
+    public void PersonaImageSource_WhenRelativePathSet_ReturnsFileImageSource()
+    {
+        var vm = new PersonaViewModel { PersonaImageUrl = "artist-placeholder.png" };
+
+        Assert.That(vm.PersonaImageSource, Is.TypeOf<FileImageSource>());
+        Assert.That(((FileImageSource)vm.PersonaImageSource!).File, Is.EqualTo("artist-placeholder.png"));
     }
 
     [Test]
@@ -135,6 +163,22 @@ public class PersonaViewModelTests
         };
 
         vm.PersonaBio = "New bio";
+
+        Assert.That(raised, Is.True);
+    }
+
+    [Test]
+    public void PersonaImageSource_PropertyChanged_RaisedWhenImageUrlChanges()
+    {
+        var vm = new PersonaViewModel();
+        var raised = false;
+        vm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(PersonaViewModel.PersonaImageSource))
+                raised = true;
+        };
+
+        vm.PersonaImageUrl = "https://img.test/pic.jpg";
 
         Assert.That(raised, Is.True);
     }

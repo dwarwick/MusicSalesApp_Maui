@@ -157,6 +157,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IAlertService, AlertService>();
 		builder.Services.AddSingleton<ISignalRService, SignalRService>();
 		builder.Services.AddSingleton<ISignalRConnectionManager, SignalRConnectionManager>();
+		builder.Services.AddSingleton<IAppActivationCoordinator, AppActivationCoordinator>();
 		builder.Services.AddSingleton<IAdminMessageApiService, AdminMessageApiService>();
 		builder.Services.AddSingleton<IAdminMessageCoordinator, AdminMessageCoordinator>();
 		builder.Services.AddSingleton<INavigationService, NavigationService>();
@@ -201,23 +202,29 @@ public static class MauiProgram
 							_ = audioVisualizerService.EnsureInitializedAsync();
 						}
 
-						if (IPlatformApplication.Current?.Services.GetService(typeof(IMusicService)) is IMusicService musicService)
+						if (IPlatformApplication.Current?.Services.GetService(typeof(IAppActivationCoordinator)) is IAppActivationCoordinator appActivationCoordinator)
 						{
-							_ = musicService.FlushPendingStreamRecordsAsync();
-						}
-
-						if (IPlatformApplication.Current?.Services.GetService(typeof(ISignalRConnectionManager)) is ISignalRConnectionManager signalRConnectionManager)
-						{
-							_ = signalRConnectionManager.HandleAppResumeAsync();
+							_ = appActivationCoordinator.HandleActivationAsync();
 						}
 					});
 				});
 #elif IOS
-				events.AddiOS(ios => ios.FinishedLaunching((app, _) =>
+				events.AddiOS(ios =>
 				{
-					CrossMediaManager.Current.Init();
-					return true;
-				}));
+					ios.FinishedLaunching((app, _) =>
+					{
+						CrossMediaManager.Current.Init();
+						return true;
+					});
+
+					ios.OnActivated(app =>
+					{
+						if (IPlatformApplication.Current?.Services.GetService(typeof(IAppActivationCoordinator)) is IAppActivationCoordinator appActivationCoordinator)
+						{
+							_ = appActivationCoordinator.HandleActivationAsync();
+						}
+					});
+				});
 #endif
 			});
 		// Register platform-specific services
