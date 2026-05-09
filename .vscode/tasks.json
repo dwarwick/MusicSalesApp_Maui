@@ -263,74 +263,32 @@
     },
     {
       "label": "maui-run-ios-simulator",
-      "type": "process",
-      "command": "dotnet",
-      "args": [
-        "build",
-        "${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj",
-        "-t:Run",
-        "-f",
-        "net10.0-ios",
-        "-c",
-        "Debug",
-        "-p:_DeviceName=:v2:udid=${input:mauiIosSimulatorUdid}"
-      ],
+      "type": "shell",
+      "command": "dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Debug && dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -t:Run -f net10.0-ios -c Debug -p:_DeviceName=:v2:udid=${input:mauiIosSimulatorUdid}",
       "dependsOn": "maui-boot-ios-simulator",
       "problemMatcher": "$msCompile",
       "group": "build"
     },
     {
       "label": "maui-run-ios-simulator-test",
-      "type": "process",
-      "command": "dotnet",
-      "args": [
-        "build",
-        "${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj",
-        "-t:Run",
-        "-f",
-        "net10.0-ios",
-        "-c",
-        "Debug",
-        "-p:AppSettingsEnvironment=Test",
-        "-p:_DeviceName=:v2:udid=${input:mauiIosSimulatorUdid}"
-      ],
+      "type": "shell",
+      "command": "dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Test && dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -t:Run -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Test -p:_DeviceName=:v2:udid=${input:mauiIosSimulatorUdid}",
       "dependsOn": "maui-boot-ios-simulator",
       "problemMatcher": "$msCompile",
       "group": "build"
     },
     {
       "label": "maui-run-ios-iphone-17-pro",
-      "type": "process",
-      "command": "dotnet",
-      "args": [
-        "build",
-        "${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj",
-        "-t:Run",
-        "-f",
-        "net10.0-ios",
-        "-c",
-        "Debug",
-        "-p:_DeviceName=:v2:udid=2668A94C-8C13-4240-B20E-5D6624B34830"
-      ],
+      "type": "shell",
+      "command": "dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Debug && dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -t:Run -f net10.0-ios -c Debug -p:_DeviceName=:v2:udid=2668A94C-8C13-4240-B20E-5D6624B34830",
       "dependsOn": "maui-boot-ios-iphone-17-pro",
       "problemMatcher": "$msCompile",
       "group": "build"
     },
     {
       "label": "maui-run-ios-iphone-17-pro-test",
-      "type": "process",
-      "command": "dotnet",
-      "args": [
-        "build",
-        "${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj",
-        "-t:Run",
-        "-f",
-        "net10.0-ios",
-        "-c",
-        "Debug",
-        "-p:AppSettingsEnvironment=Test",
-        "-p:_DeviceName=:v2:udid=2668A94C-8C13-4240-B20E-5D6624B34830"
-      ],
+      "type": "shell",
+      "command": "dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Test && dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -t:Run -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Test -p:_DeviceName=:v2:udid=2668A94C-8C13-4240-B20E-5D6624B34830",
       "dependsOn": "maui-boot-ios-iphone-17-pro",
       "problemMatcher": "$msCompile",
       "group": "build"
