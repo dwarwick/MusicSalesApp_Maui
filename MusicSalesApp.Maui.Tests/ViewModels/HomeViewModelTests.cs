@@ -132,19 +132,17 @@ public class HomeViewModelTests
     }
 
     [Test]
-    public void ShowBrowseMusic_TrueWhenAuthenticatedWithSubscription()
+    public void ShowBrowseMusic_TrueWhenLoggedOut()
     {
-        _viewModel.IsAuthenticated = true;
-        _viewModel.HasActiveSubscription = true;
         Assert.That(_viewModel.ShowBrowseMusic, Is.True);
     }
 
     [Test]
-    public void ShowBrowseMusic_FalseWhenNoSubscription()
+    public void ShowBrowseMusic_TrueWhenAuthenticatedWithoutSubscription()
     {
         _viewModel.IsAuthenticated = true;
         _viewModel.HasActiveSubscription = false;
-        Assert.That(_viewModel.ShowBrowseMusic, Is.False);
+        Assert.That(_viewModel.ShowBrowseMusic, Is.True);
     }
 
     [Test]

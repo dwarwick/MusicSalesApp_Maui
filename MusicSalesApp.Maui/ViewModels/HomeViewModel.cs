@@ -29,13 +29,11 @@ public partial class HomeViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowLoginRegister))]
     [NotifyPropertyChangedFor(nameof(ShowValidateEmail))]
     [NotifyPropertyChangedFor(nameof(ShowSubscribeNow))]
-    [NotifyPropertyChangedFor(nameof(ShowBrowseMusic))]
     public partial bool IsAuthenticated { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowSubscriptionContent))]
     [NotifyPropertyChangedFor(nameof(ShowSubscribeNow))]
-    [NotifyPropertyChangedFor(nameof(ShowBrowseMusic))]
     public partial bool HasActiveSubscription { get; set; }
 
     [ObservableProperty]
@@ -55,7 +53,7 @@ public partial class HomeViewModel : ObservableObject
     public bool ShowLoginRegister => !IsAuthenticated;
     public bool ShowValidateEmail => IsAuthenticated && !IsEmailVerified;
     public bool ShowSubscribeNow => IsAuthenticated && IsEmailVerified && !HasActiveSubscription;
-    public bool ShowBrowseMusic => IsAuthenticated && HasActiveSubscription;
+    public bool ShowBrowseMusic => true;
     public bool ShowFeaturedMusic => FeaturedSongs.Count > 0;
 
     public string SubscribeButtonText => $"Subscribe Now — ${SubscriptionPrice}/mo";
