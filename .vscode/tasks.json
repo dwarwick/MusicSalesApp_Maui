@@ -244,6 +244,15 @@
       "problemMatcher": []
     },
     {
+      "label": "maui-list-ios-devices",
+      "type": "shell",
+      "command": "zsh -lc \"xcrun xctrace list devices | sed -n '/== Devices ==/,/== Simulators ==/p' | grep -E 'iPhone|iPad|iPod' || echo 'No physical iOS devices detected. Connect and unlock the device, trust this Mac, and open Xcode once.'\"",
+      "options": {
+        "cwd": "${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui"
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "maui-boot-ios-simulator",
       "type": "shell",
       "command": "xcrun simctl boot ${input:mauiIosSimulatorUdid} >/dev/null 2>&1 || true\nopen -a Simulator",
@@ -274,6 +283,39 @@
       "type": "shell",
       "command": "dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Test && dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -t:Run -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Test -p:_DeviceName=:v2:udid=${input:mauiIosSimulatorUdid}",
       "dependsOn": "maui-boot-ios-simulator",
+      "problemMatcher": "$msCompile",
+      "group": "build"
+    },
+    {
+      "label": "maui-run-ios-device",
+      "type": "process",
+      "command": "zsh",
+      "args": [
+        "${workspaceFolder:MusicSalesApp_Maui}/.vscode/run-ios-device-macos.sh",
+        "Development"
+      ],
+      "problemMatcher": "$msCompile",
+      "group": "build"
+    },
+    {
+      "label": "maui-run-ios-device-test",
+      "type": "process",
+      "command": "zsh",
+      "args": [
+        "${workspaceFolder:MusicSalesApp_Maui}/.vscode/run-ios-device-macos.sh",
+        "Test"
+      ],
+      "problemMatcher": "$msCompile",
+      "group": "build"
+    },
+    {
+      "label": "maui-run-ios-device-production",
+      "type": "process",
+      "command": "zsh",
+      "args": [
+        "${workspaceFolder:MusicSalesApp_Maui}/.vscode/run-ios-device-macos.sh",
+        "Production"
+      ],
       "problemMatcher": "$msCompile",
       "group": "build"
     },
