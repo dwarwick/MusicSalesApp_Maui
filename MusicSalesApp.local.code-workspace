@@ -20,7 +20,8 @@
       "/^command -v dotnet \\|\\| true && echo '---' && dotnet --list-sdks 2>/dev/null \\|\\| true && echo '---' && ls -1 /usr/local/share/dotnet/sdk 2>/dev/null \\| tail -n 5 \\|\\| true && echo '---' && ls -1 /opt/homebrew/share/dotnet/sdk 2>/dev/null \\| tail -n 5 \\|\\| true$/": {
         "approve": true,
         "matchCommandLine": true
-      }
+      },
+      "git -C /Users/davidwarwick/src/MusicSalesApp_Maui": true
     }
   },
   "extensions": {
