@@ -488,7 +488,12 @@ public class MusicService : IMusicService
         var client = _httpClientFactory.CreateClient("MusicSalesApi");
         try
         {
-            var payload = new { PurchaseToken = request.PurchaseToken, OrderId = request.OrderId ?? "" };
+            var payload = new
+            {
+                PurchaseToken = request.PurchaseToken,
+                OrderId = request.OrderId ?? string.Empty,
+                TimeZoneId = GetLocalTimeZoneId()
+            };
             var response = await client.PostAsJsonAsync("api/subscription/google-play/verify", payload);
 
             if (response.IsSuccessStatusCode)
@@ -521,7 +526,8 @@ public class MusicService : IMusicService
             var payload = new
             {
                 TransactionId = request.TransactionId,
-                AppAccountToken = request.AppAccountToken ?? string.Empty
+                AppAccountToken = request.AppAccountToken ?? string.Empty,
+                TimeZoneId = GetLocalTimeZoneId()
             };
             var response = await client.PostAsJsonAsync("api/subscription/app-store/verify", payload);
 
@@ -539,6 +545,18 @@ public class MusicService : IMusicService
         {
             _logger.LogError(ex, "Failed to verify Apple App Store purchase with server");
             return (false, $"Unable to connect to server: {ex.Message}");
+        }
+    }
+
+    private static string GetLocalTimeZoneId()
+    {
+        try
+        {
+            return TimeZoneInfo.Local.Id;
+        }
+        catch
+        {
+            return "UTC";
         }
     }
 

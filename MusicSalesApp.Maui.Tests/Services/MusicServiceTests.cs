@@ -651,6 +651,70 @@ public class MusicServiceTests
     }
 
     [Test]
+    public async Task VerifySubscriptionPurchaseAsync_IncludesTimeZoneId_ForAppleRequests()
+    {
+        string? requestBody = null;
+
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.Is<HttpRequestMessage>(r =>
+                    r.Method == HttpMethod.Post &&
+                    r.RequestUri!.PathAndQuery.Contains("api/subscription/app-store/verify")),
+                ItExpr.IsAny<CancellationToken>())
+            .Returns<HttpRequestMessage, CancellationToken>(async (request, _) =>
+            {
+                requestBody = await request.Content!.ReadAsStringAsync();
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new { success = true, subscriptionId = 1, status = "Active" })
+                };
+            });
+        CreateMockHttpClient(handler.Object);
+        var service = CreateService();
+
+        var result = await service.VerifySubscriptionPurchaseAsync(
+            BillingPurchaseVerificationRequest.ForApple("tx-123", "orig-123", "streamtunes_monthly_sub", "account-token"));
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(requestBody, Is.Not.Null);
+        using var document = JsonDocument.Parse(requestBody!);
+        Assert.That(document.RootElement.GetProperty("TimeZoneId").GetString(), Is.EqualTo(TimeZoneInfo.Local.Id));
+    }
+
+    [Test]
+    public async Task VerifySubscriptionPurchaseAsync_IncludesTimeZoneId_ForGooglePlayRequests()
+    {
+        string? requestBody = null;
+
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.Is<HttpRequestMessage>(r =>
+                    r.Method == HttpMethod.Post &&
+                    r.RequestUri!.PathAndQuery.Contains("api/subscription/google-play/verify")),
+                ItExpr.IsAny<CancellationToken>())
+            .Returns<HttpRequestMessage, CancellationToken>(async (request, _) =>
+            {
+                requestBody = await request.Content!.ReadAsStringAsync();
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new { success = true, subscriptionId = 1, status = "Active" })
+                };
+            });
+        CreateMockHttpClient(handler.Object);
+        var service = CreateService();
+
+        var result = await service.VerifySubscriptionPurchaseAsync(
+            BillingPurchaseVerificationRequest.ForGooglePlay("token-123", "order-456"));
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(requestBody, Is.Not.Null);
+        using var document = JsonDocument.Parse(requestBody!);
+        Assert.That(document.RootElement.GetProperty("TimeZoneId").GetString(), Is.EqualTo(TimeZoneInfo.Local.Id));
+    }
+
+    [Test]
     public async Task VerifySubscriptionPurchaseAsync_ReturnsAppleServerErrorMessage_OnServerError()
     {
         var handler = CreateHandlerWithResponse(HttpStatusCode.BadRequest,
