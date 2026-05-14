@@ -460,12 +460,35 @@ public class MusicService : IMusicService
     private sealed record PendingStreamRecord(int SongMetadataId, DateTime RecordedUtc);
     private sealed record StreamRecordAttemptResult(int? StreamCount, bool ShouldQueueForRetry, bool ShouldDropPendingRecord);
 
-    public async Task<(bool Success, string ErrorMessage)> VerifyGooglePlayPurchaseAsync(string purchaseToken, string? orderId)
+    public Task<(bool Success, string ErrorMessage)> VerifyGooglePlayPurchaseAsync(string purchaseToken, string? orderId)
+        => VerifySubscriptionPurchaseAsync(BillingPurchaseVerificationRequest.ForGooglePlay(purchaseToken, orderId));
+
+    public Task<(bool Success, string ErrorMessage)> VerifySubscriptionPurchaseAsync(BillingPurchaseVerificationRequest request)
     {
+        if (string.IsNullOrWhiteSpace(request.Provider))
+        {
+            return Task.FromResult((false, "Billing provider is required."));
+        }
+
+        return request.Provider switch
+        {
+            BillingProviders.GooglePlay => VerifyGooglePlayPurchaseInternalAsync(request),
+            BillingProviders.Apple => VerifyApplePurchaseInternalAsync(request),
+            _ => Task.FromResult((false, $"Unsupported billing provider '{request.Provider}'."))
+        };
+    }
+
+    private async Task<(bool Success, string ErrorMessage)> VerifyGooglePlayPurchaseInternalAsync(BillingPurchaseVerificationRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.PurchaseToken))
+        {
+            return (false, "Purchase token is required.");
+        }
+
         var client = _httpClientFactory.CreateClient("MusicSalesApi");
         try
         {
-            var payload = new { PurchaseToken = purchaseToken, OrderId = orderId ?? "" };
+            var payload = new { PurchaseToken = request.PurchaseToken, OrderId = request.OrderId ?? "" };
             var response = await client.PostAsJsonAsync("api/subscription/google-play/verify", payload);
 
             if (response.IsSuccessStatusCode)
@@ -481,6 +504,40 @@ public class MusicService : IMusicService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to verify Google Play purchase with server");
+            return (false, $"Unable to connect to server: {ex.Message}");
+        }
+    }
+
+    private async Task<(bool Success, string ErrorMessage)> VerifyApplePurchaseInternalAsync(BillingPurchaseVerificationRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.TransactionId))
+        {
+            return (false, "Transaction ID is required.");
+        }
+
+        var client = _httpClientFactory.CreateClient("MusicSalesApi");
+        try
+        {
+            var payload = new
+            {
+                TransactionId = request.TransactionId,
+                AppAccountToken = request.AppAccountToken ?? string.Empty
+            };
+            var response = await client.PostAsJsonAsync("api/subscription/app-store/verify", payload);
+
+            if (response.IsSuccessStatusCode)
+            {
+                return (true, string.Empty);
+            }
+
+            var errorMessage = await ApiErrorMessageFormatter.ReadDisplayMessageAsync(response);
+            _logger.LogWarning("Apple App Store purchase verification failed: {StatusCode} {ErrorMessage}",
+                response.StatusCode, errorMessage);
+            return (false, errorMessage);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to verify Apple App Store purchase with server");
             return (false, $"Unable to connect to server: {ex.Message}");
         }
     }

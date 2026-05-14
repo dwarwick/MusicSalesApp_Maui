@@ -602,6 +602,69 @@ public class MusicServiceTests
         Assert.That(result.ErrorMessage, Does.Contain("Unable to connect to server"));
     }
 
+    [Test]
+    public async Task VerifySubscriptionPurchaseAsync_RoutesGooglePlayRequestToServer()
+    {
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.Is<HttpRequestMessage>(r =>
+                    r.Method == HttpMethod.Post &&
+                    r.RequestUri!.PathAndQuery.Contains("api/subscription/google-play/verify")),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new { success = true, subscriptionId = 1, status = "Active" })
+            });
+        CreateMockHttpClient(handler.Object);
+        var service = CreateService();
+
+        var result = await service.VerifySubscriptionPurchaseAsync(
+            BillingPurchaseVerificationRequest.ForGooglePlay("token-123", "order-456"));
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.ErrorMessage, Is.Empty);
+    }
+
+    [Test]
+    public async Task VerifySubscriptionPurchaseAsync_ReturnsNotImplemented_ForAppleRequests()
+    {
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.Is<HttpRequestMessage>(r =>
+                    r.Method == HttpMethod.Post &&
+                    r.RequestUri!.PathAndQuery.Contains("api/subscription/app-store/verify")),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new { success = true, subscriptionId = 1, status = "Active" })
+            });
+        CreateMockHttpClient(handler.Object);
+        var service = CreateService();
+
+        var result = await service.VerifySubscriptionPurchaseAsync(
+            BillingPurchaseVerificationRequest.ForApple("tx-123", "orig-123", "streamtunes_monthly_sub", "account-token"));
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.ErrorMessage, Is.Empty);
+    }
+
+    [Test]
+    public async Task VerifySubscriptionPurchaseAsync_ReturnsAppleServerErrorMessage_OnServerError()
+    {
+        var handler = CreateHandlerWithResponse(HttpStatusCode.BadRequest,
+            new { error = "Apple App Store private key is not configured on the server." });
+        CreateMockHttpClient(handler.Object);
+        var service = CreateService();
+
+        var result = await service.VerifySubscriptionPurchaseAsync(
+            BillingPurchaseVerificationRequest.ForApple("tx-123", "orig-123", "streamtunes_monthly_sub", "account-token"));
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.ErrorMessage, Does.Contain("Apple App Store private key is not configured on the server."));
+    }
+
     // --- Cancel Subscription ---
 
     [Test]

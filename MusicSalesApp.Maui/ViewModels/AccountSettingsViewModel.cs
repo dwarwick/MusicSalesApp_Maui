@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.Configuration;
 using MusicSalesApp.Maui.Services;
 
 namespace MusicSalesApp.Maui.ViewModels;
@@ -9,8 +10,12 @@ public partial class AccountSettingsViewModel : ObservableObject
     private readonly IAuthService _authService;
     private readonly IAlertService _alertService;
     private readonly INavigationService _navigationService;
+    private readonly IBrowserService _browserService;
+    private readonly IConfiguration _configuration;
     private readonly IMusicService _musicService;
     private readonly IBillingService _billingService;
+
+    private const string DefaultAppleSubscriptionManagementUrl = "https://account.apple.com/account/manage/section/subscriptions";
 
     [ObservableProperty]
     public partial string UserEmail { get; set; } = string.Empty;
@@ -19,6 +24,7 @@ public partial class AccountSettingsViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowCancelSubscription))]
     [NotifyPropertyChangedFor(nameof(CanCreateSubscription))]
     [NotifyPropertyChangedFor(nameof(CanDeleteAccount))]
+    [NotifyPropertyChangedFor(nameof(IsNonRenewingSubscription))]
     [NotifyPropertyChangedFor(nameof(SubscriptionStatusText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionStatusMessage))]
     [NotifyPropertyChangedFor(nameof(ShowSubscriptionEndDate))]
@@ -30,6 +36,7 @@ public partial class AccountSettingsViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowCancelSubscription))]
     [NotifyPropertyChangedFor(nameof(CanCreateSubscription))]
     [NotifyPropertyChangedFor(nameof(CanDeleteAccount))]
+    [NotifyPropertyChangedFor(nameof(IsNonRenewingSubscription))]
     [NotifyPropertyChangedFor(nameof(SubscriptionStatusText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionStatusMessage))]
     [NotifyPropertyChangedFor(nameof(ShowSubscriptionEndDate))]
@@ -43,8 +50,11 @@ public partial class AccountSettingsViewModel : ObservableObject
     public partial string SubscriptionBillingSource { get; set; } = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowCancelSubscription))]
+    [NotifyPropertyChangedFor(nameof(IsNonRenewingSubscription))]
     [NotifyPropertyChangedFor(nameof(SubscriptionStatusText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionStatusMessage))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionEndDateText))]
     public partial string SubscriptionStatus { get; set; } = string.Empty;
 
     [ObservableProperty]
@@ -71,41 +81,83 @@ public partial class AccountSettingsViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowCreatorDeletionBlockedMessage))]
     public partial bool IsActiveCreator { get; set; }
 
-    public bool ShowCancelSubscription => HasActiveSubscription && !SubscriptionEndDate.HasValue;
-    public bool CanCreateSubscription => !ShowCancelSubscription;
-    public bool CanDeleteAccount => !ShowCancelSubscription && !IsActiveCreator;
+    public bool IsNonRenewingSubscription =>
+        HasActiveSubscription &&
+        SubscriptionEndDate.HasValue &&
+        string.Equals(SubscriptionStatus, "CANCELLED", StringComparison.OrdinalIgnoreCase);
+    public bool ShowCancelSubscription => HasActiveSubscription && !IsNonRenewingSubscription;
+    public bool CanCreateSubscription => !HasActiveSubscription;
+    public bool CanDeleteAccount => !HasActiveSubscription && !IsActiveCreator;
     public bool CanConfirmDelete => string.Equals(ConfirmationText?.Trim(), "DELETE", StringComparison.OrdinalIgnoreCase);
     public bool ShowSubscriptionEndDate => SubscriptionEndDate.HasValue && HasActiveSubscription;
     public bool ShowBillingSource => !string.IsNullOrWhiteSpace(SubscriptionBillingSource);
     public bool ShowCreatorDeletionBlockedMessage => IsActiveCreator;
-    public string SubscriptionStatusText => ShowCancelSubscription
-        ? "Active"
-        : SubscriptionEndDate.HasValue
-            ? (HasActiveSubscription ? "Cancelled" : "Expired")
-            : "No Active Subscription";
-    public string SubscriptionStatusMessage => ShowCancelSubscription
-        ? "You have an active subscription. If you cancel, you will still have access until the end of your current billing period."
-        : SubscriptionEndDate.HasValue && HasActiveSubscription
-            ? $"Your subscription has been cancelled. You still have full access until {SubscriptionEndDate.Value.ToLocalTime():MMMM dd, yyyy h:mm tt}."
+    public string SubscriptionStatusText => IsNonRenewingSubscription
+        ? "Renews Off"
+        : HasActiveSubscription
+            ? "Active"
+            : SubscriptionEndDate.HasValue
+                ? "Expired"
+                : "No Active Subscription";
+    public string SubscriptionStatusMessage => IsNonRenewingSubscription
+        ? $"Your subscription has been canceled. It will not automatically renew. You will continue to enjoy subscription benefits until {SubscriptionEndDate!.Value.ToLocalTime():MMMM dd, yyyy h:mm tt}."
+        : HasActiveSubscription
+            ? SubscriptionEndDate.HasValue
+                ? $"Your subscription is active and will automatically renew unless canceled. Your current billing period ends on {SubscriptionEndDate.Value.ToLocalTime():MMMM dd, yyyy h:mm tt}."
+                : "You have an active subscription that will automatically renew unless canceled. If you cancel, you will still have access until the end of your current billing period."
             : SubscriptionEndDate.HasValue
                 ? $"Your previous subscription ended on {SubscriptionEndDate.Value.ToLocalTime():MMMM dd, yyyy h:mm tt}."
                 : "You do not currently have an active subscription.";
     public string SubscriptionEndDateText => SubscriptionEndDate.HasValue
-        ? $"Access Until: {SubscriptionEndDate.Value.ToLocalTime():MMMM dd, yyyy h:mm tt}"
+        ? IsNonRenewingSubscription
+            ? $"Access Until: {SubscriptionEndDate.Value.ToLocalTime():MMMM dd, yyyy h:mm tt}"
+            : HasActiveSubscription
+                ? $"Current Billing Period Ends: {SubscriptionEndDate.Value.ToLocalTime():MMMM dd, yyyy h:mm tt}"
+                : $"Ended On: {SubscriptionEndDate.Value.ToLocalTime():MMMM dd, yyyy h:mm tt}"
         : string.Empty;
     public string BillingSourceText => $"Billed via: {SubscriptionBillingSource}";
     public string SubscribeButtonText => SubscriptionEndDate.HasValue ? "Create New Subscription" : "Subscribe Now";
+
+    private bool ShouldUseExternalSubscriptionManagement =>
+        string.Equals(SubscriptionBillingSource, BillingProviders.Apple, StringComparison.Ordinal) ||
+        string.Equals(SubscriptionBillingSource, BillingProviders.GooglePlay, StringComparison.Ordinal);
+
+    private string GetExternalSubscriptionManagementUrl()
+        => string.Equals(SubscriptionBillingSource, BillingProviders.Apple, StringComparison.Ordinal)
+            ? _configuration["AppleAppStore:SubscriptionManagementUrl"] ?? DefaultAppleSubscriptionManagementUrl
+            : "https://play.google.com/store/account/subscriptions";
+
+    private string GetExternalSubscriptionManagementActionText()
+        => string.Equals(SubscriptionBillingSource, BillingProviders.Apple, StringComparison.Ordinal)
+            ? IsAppleSandboxManagementUrl()
+                ? "Open Apple Sandbox Help"
+                : "Open Apple Subscription Page"
+            : "Open Google Play";
+
+    private string GetExternalSubscriptionManagementMessage()
+        => string.Equals(SubscriptionBillingSource, BillingProviders.Apple, StringComparison.Ordinal)
+            ? IsAppleSandboxManagementUrl()
+                ? "Sandbox Apple subscriptions are managed on the test device in Settings > Developer > Sandbox Account > Manage. Open Apple's sandbox instructions now?"
+                : "Apple subscriptions must be managed with Apple. Open Apple's subscription management page now?"
+            : "Google Play subscriptions should be managed in Google Play subscription settings. Open Google Play now?";
+
+    private bool IsAppleSandboxManagementUrl()
+        => GetExternalSubscriptionManagementUrl().Contains("developer.apple.com", StringComparison.OrdinalIgnoreCase);
 
     public AccountSettingsViewModel(
         IAuthService authService,
         IAlertService alertService,
         INavigationService navigationService,
+        IBrowserService browserService,
+        IConfiguration configuration,
         IMusicService musicService,
         IBillingService billingService)
     {
         _authService = authService;
         _alertService = alertService;
         _navigationService = navigationService;
+        _browserService = browserService;
+        _configuration = configuration;
         _musicService = musicService;
         _billingService = billingService;
 
@@ -129,6 +181,23 @@ public partial class AccountSettingsViewModel : ObservableObject
     [RelayCommand]
     private async Task CancelSubscriptionAsync()
     {
+        if (ShouldUseExternalSubscriptionManagement)
+        {
+            var manageConfirmed = await _alertService.ShowConfirmAsync(
+                "Manage Subscription",
+                GetExternalSubscriptionManagementMessage(),
+                GetExternalSubscriptionManagementActionText(),
+                "Not Now");
+
+            if (!manageConfirmed)
+            {
+                return;
+            }
+
+            await _browserService.OpenAsync(GetExternalSubscriptionManagementUrl());
+            return;
+        }
+
         var confirmed = await _alertService.ShowConfirmAsync(
             "Cancel Subscription",
             "Are you sure you want to cancel your subscription? You will still have access until the end of your current billing period. " +
@@ -183,7 +252,7 @@ public partial class AccountSettingsViewModel : ObservableObject
                 return;
             }
 
-            var verificationResult = await _musicService.VerifyGooglePlayPurchaseAsync(result.PurchaseToken!, result.OrderId);
+            var verificationResult = await _musicService.VerifySubscriptionPurchaseAsync(result.ToVerificationRequest());
             if (!verificationResult.Success)
             {
                 var errorMessage = string.IsNullOrWhiteSpace(verificationResult.ErrorMessage)

@@ -181,8 +181,7 @@
       "osx": {
         "command": "zsh",
         "args": [
-          "-lc",
-          "echo 'maui-pull-latest-runtime-log is only configured for Windows/PowerShell in this workspace.' >&2; exit 1"
+          "${workspaceFolder:MusicSalesApp_Maui}/.vscode/pull-latest-runtime-log-macos.sh"
         ]
       },
       "problemMatcher": []
@@ -231,6 +230,24 @@
       "command": "open 'macappstore://itunes.apple.com/app/id497799835'",
       "options": {
         "cwd": "${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "maui-open-storekit-folder",
+      "type": "shell",
+      "command": "mkdir -p ${workspaceFolder:MusicSalesApp_Maui}/StoreKit && open ${workspaceFolder:MusicSalesApp_Maui}/StoreKit",
+      "options": {
+        "cwd": "${workspaceFolder:MusicSalesApp_Maui}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "maui-open-storekit-folder-in-xcode",
+      "type": "shell",
+      "command": "mkdir -p ${workspaceFolder:MusicSalesApp_Maui}/StoreKit && open -a Xcode ${workspaceFolder:MusicSalesApp_Maui}/StoreKit",
+      "options": {
+        "cwd": "${workspaceFolder:MusicSalesApp_Maui}"
       },
       "problemMatcher": []
     },
@@ -287,6 +304,14 @@
       "group": "build"
     },
     {
+      "label": "maui-run-ios-simulator-production",
+      "type": "shell",
+      "command": "dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Production && dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -t:Run -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Production -p:_DeviceName=:v2:udid=${input:mauiIosSimulatorUdid}",
+      "dependsOn": "maui-boot-ios-simulator",
+      "problemMatcher": "$msCompile",
+      "group": "build"
+    },
+    {
       "label": "maui-run-ios-device",
       "type": "process",
       "command": "zsh",
@@ -336,12 +361,61 @@
       "group": "build"
     },
     {
+      "label": "maui-run-ios-iphone-17-pro-production",
+      "type": "shell",
+      "command": "dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Production && dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -t:Run -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Production -p:_DeviceName=:v2:udid=2668A94C-8C13-4240-B20E-5D6624B34830",
+      "dependsOn": "maui-boot-ios-iphone-17-pro",
+      "problemMatcher": "$msCompile",
+      "group": "build"
+    },
+    {
       "label": "maui-run-ios-iphone-17-pro-test-dark",
       "type": "shell",
       "command": "xcrun simctl ui 2668A94C-8C13-4240-B20E-5D6624B34830 appearance dark && dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Test && dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -t:Run -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Test -p:_DeviceName=:v2:udid=2668A94C-8C13-4240-B20E-5D6624B34830",
       "dependsOn": "maui-boot-ios-iphone-17-pro",
       "problemMatcher": "$msCompile",
       "group": "build"
+    },
+    {
+      "label": "maui-publish-ios-appstore-ipa",
+      "type": "shell",
+      "command": "dotnet publish ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Release -p:RuntimeIdentifier=ios-arm64 -p:AppSettingsEnvironment=Production -p:ArchiveOnBuild=true -p:BuildIpa=true -p:CodesignKey='Apple Distribution: David Warwick (K7ZGP97YV6)' -p:CodesignProvision='StreamTunes App Store' -p:CodesignTeamId=K7ZGP97YV6",
+      "options": {
+        "cwd": "${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui"
+      },
+      "problemMatcher": "$msCompile",
+      "group": "build"
+    },
+    {
+      "label": "maui-publish-ios-appstore-ipa-test",
+      "type": "shell",
+      "command": "dotnet publish ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Release -p:RuntimeIdentifier=ios-arm64 -p:AppSettingsEnvironment=Test -p:ArchiveOnBuild=true -p:BuildIpa=true -p:CodesignKey='Apple Distribution: David Warwick (K7ZGP97YV6)' -p:CodesignProvision='StreamTunes App Store' -p:CodesignTeamId=K7ZGP97YV6",
+      "options": {
+        "cwd": "${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui"
+      },
+      "problemMatcher": "$msCompile",
+      "group": "build"
+    },
+    {
+      "label": "maui-open-ios-archive-output",
+      "type": "shell",
+      "command": "open ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/bin/Release/net10.0-ios/ios-arm64/publish",
+      "options": {
+        "cwd": "${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "maui-pull-ios-device-logs",
+      "type": "process",
+      "command": "zsh",
+      "args": [
+        "${workspaceFolder:MusicSalesApp_Maui}/.vscode/pull-ios-device-sysdiagnose-macos.sh"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder:MusicSalesApp_Maui}"
+      },
+      "problemMatcher": []
     },
     {
       "label": "maui-build-maccatalyst",

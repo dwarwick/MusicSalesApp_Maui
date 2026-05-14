@@ -493,14 +493,14 @@
                         <Label Text="No contracts, no commitments. Your subscription renews monthly and you can cancel whenever you want."
                                FontSize="14" HorizontalTextAlignment="Center"
                                TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
-                        <Label Text="Manage subscription in Google Play ›"
+                        <Label Text="{Binding ManageSubscriptionText}"
                                FontSize="13"
                                FontAttributes="Bold"
                                HorizontalTextAlignment="Center"
                                TextColor="{StaticResource Primary}"
                                TextDecorations="Underline">
                             <Label.GestureRecognizers>
-                                <TapGestureRecognizer Command="{Binding OpenGooglePlaySubscriptionsCommand}" />
+                                <TapGestureRecognizer Command="{Binding OpenSubscriptionManagementCommand}" />
                             </Label.GestureRecognizers>
                         </Label>
                     </VerticalStackLayout>

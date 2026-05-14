@@ -230,6 +230,8 @@ public static class MauiProgram
 		// Register platform-specific services
 #if ANDROID
 		builder.Services.AddSingleton<IBillingService, MusicSalesApp.Maui.Platforms.Android.GooglePlayBillingService>();
+#elif IOS
+		builder.Services.AddSingleton<IBillingService, MusicSalesApp.Maui.Platforms.iOS.AppStoreBillingService>();
 #else
 		// Non-Android platforms: register a no-op billing service
 		builder.Services.AddSingleton<IBillingService, NoBillingService>();

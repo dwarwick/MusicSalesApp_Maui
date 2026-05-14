@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Moq;
 using MusicSalesApp.Maui.Services;
 using MusicSalesApp.Maui.ViewModels;
@@ -19,6 +20,7 @@ public class HomeViewModelTests
     private Mock<IPlaybackService> _mockPlaybackService;
     private Mock<IMediaPlaybackOnboardingService> _mockMediaPlaybackOnboardingService;
     private Mock<IBrowserService> _mockBrowserService;
+    private Mock<IConfiguration> _mockConfiguration;
     private Mock<IPlaylistService> _mockPlaylistService;
     private HomeViewModel _viewModel;
 
@@ -36,7 +38,11 @@ public class HomeViewModelTests
         _mockPlaybackService = new Mock<IPlaybackService>();
         _mockMediaPlaybackOnboardingService = new Mock<IMediaPlaybackOnboardingService>();
         _mockBrowserService = new Mock<IBrowserService>();
+        _mockConfiguration = new Mock<IConfiguration>();
         _mockPlaylistService = new Mock<IPlaylistService>();
+
+        _mockConfiguration.Setup(c => c["AppleAppStore:SubscriptionManagementUrl"])
+            .Returns("https://developer.apple.com/documentation/storekit/testing-disabling-auto-renew");
 
         _mockAppSettingsService.Setup(s => s.GetSubscriptionPriceAsync()).ReturnsAsync("3.99");
         _mockAppConfig.Setup(c => c.WebBaseUrl).Returns("https://streamtunes.net");
@@ -67,6 +73,7 @@ public class HomeViewModelTests
             _mockPlaybackService.Object,
             _mockMediaPlaybackOnboardingService.Object,
             _mockBrowserService.Object,
+            _mockConfiguration.Object,
             _mockPlaylistService.Object);
     }
 
@@ -354,12 +361,18 @@ public class HomeViewModelTests
     {
         _mockBillingService.Setup(b => b.PurchaseSubscriptionAsync())
             .ReturnsAsync(BillingPurchaseResult.Succeeded("test-token", "order-123"));
-        _mockMusicService.Setup(m => m.VerifyGooglePlayPurchaseAsync("test-token", "order-123"))
+        _mockMusicService.Setup(m => m.VerifySubscriptionPurchaseAsync(It.Is<BillingPurchaseVerificationRequest>(r =>
+                r.Provider == BillingProviders.GooglePlay &&
+                r.PurchaseToken == "test-token" &&
+                r.OrderId == "order-123")))
             .ReturnsAsync((true, string.Empty));
 
         await _viewModel.SubscribeCommand.ExecuteAsync(null);
 
-        _mockMusicService.Verify(m => m.VerifyGooglePlayPurchaseAsync("test-token", "order-123"), Times.Once);
+        _mockMusicService.Verify(m => m.VerifySubscriptionPurchaseAsync(It.Is<BillingPurchaseVerificationRequest>(r =>
+            r.Provider == BillingProviders.GooglePlay &&
+            r.PurchaseToken == "test-token" &&
+            r.OrderId == "order-123")), Times.Once);
         _mockAuthService.Verify(a => a.RefreshUserStatusAsync(), Times.Once);
         _mockAlertService.Verify(a => a.DisplayAlertAsync("Success", It.IsAny<string>(), "OK"), Times.Once);
     }
@@ -373,7 +386,7 @@ public class HomeViewModelTests
         await _viewModel.SubscribeCommand.ExecuteAsync(null);
 
         _mockAlertService.Verify(a => a.DisplayAlertAsync("Subscribe", "Connection error", "OK"), Times.Once);
-        _mockMusicService.Verify(m => m.VerifyGooglePlayPurchaseAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        _mockMusicService.Verify(m => m.VerifySubscriptionPurchaseAsync(It.IsAny<BillingPurchaseVerificationRequest>()), Times.Never);
     }
 
     [Test]
@@ -392,7 +405,10 @@ public class HomeViewModelTests
     {
         _mockBillingService.Setup(b => b.PurchaseSubscriptionAsync())
             .ReturnsAsync(BillingPurchaseResult.Succeeded("test-token", "order-123"));
-        _mockMusicService.Setup(m => m.VerifyGooglePlayPurchaseAsync("test-token", "order-123"))
+        _mockMusicService.Setup(m => m.VerifySubscriptionPurchaseAsync(It.Is<BillingPurchaseVerificationRequest>(r =>
+                r.Provider == BillingProviders.GooglePlay &&
+                r.PurchaseToken == "test-token" &&
+                r.OrderId == "order-123")))
             .ReturnsAsync((false, "Configured Google Play service account key file was not found on the server."));
 
         await _viewModel.SubscribeCommand.ExecuteAsync(null);
@@ -483,11 +499,31 @@ public class HomeViewModelTests
     }
 
     [Test]
-    public async Task OpenGooglePlaySubscriptions_OpensBrowserToSubscriptionsUrl()
+    public async Task OpenSubscriptionManagement_UsesGooglePlayUrlByDefault()
     {
-        await _viewModel.OpenGooglePlaySubscriptionsCommand.ExecuteAsync(null);
+        await _viewModel.OpenSubscriptionManagementCommand.ExecuteAsync(null);
 
         _mockBrowserService.Verify(b => b.OpenAsync("https://play.google.com/store/account/subscriptions"), Times.Once);
+    }
+
+    [Test]
+    public async Task OpenSubscriptionManagement_UsesAppleUrlForAppleBillingSource()
+    {
+        _mockAuthService.SetupGet(a => a.BillingSource).Returns(BillingProviders.Apple);
+
+        await _viewModel.OpenSubscriptionManagementCommand.ExecuteAsync(null);
+
+        _mockBrowserService.Verify(b => b.OpenAsync("https://developer.apple.com/documentation/storekit/testing-disabling-auto-renew"), Times.Once);
+    }
+
+    [Test]
+    public void ManageSubscriptionText_UsesGenericAppleLabel()
+    {
+        _mockAuthService.SetupGet(a => a.BillingSource).Returns(BillingProviders.Apple);
+
+        var viewModel = CreateViewModel();
+
+        Assert.That(viewModel.ManageSubscriptionText, Is.EqualTo("Manage subscription with Apple ›"));
     }
 
     [Test]

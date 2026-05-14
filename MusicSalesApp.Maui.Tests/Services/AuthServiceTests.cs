@@ -51,7 +51,7 @@ public class AuthServiceTests
 
         await _authService.TryRestoreBillingAsync();
 
-        _mockMusicService.Verify(m => m.VerifyGooglePlayPurchaseAsync(It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
+        _mockMusicService.Verify(m => m.VerifySubscriptionPurchaseAsync(It.IsAny<BillingPurchaseVerificationRequest>()), Times.Never);
     }
 
     [Test]
@@ -62,7 +62,7 @@ public class AuthServiceTests
 
         await _authService.TryRestoreBillingAsync();
 
-        _mockMusicService.Verify(m => m.VerifyGooglePlayPurchaseAsync(It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
+        _mockMusicService.Verify(m => m.VerifySubscriptionPurchaseAsync(It.IsAny<BillingPurchaseVerificationRequest>()), Times.Never);
     }
 
     [Test]
@@ -73,7 +73,10 @@ public class AuthServiceTests
 
         _mockBillingService.Setup(b => b.RestorePurchaseAsync())
             .ReturnsAsync(BillingPurchaseResult.Succeeded(purchaseToken, orderId));
-        _mockMusicService.Setup(m => m.VerifyGooglePlayPurchaseAsync(purchaseToken, orderId))
+        _mockMusicService.Setup(m => m.VerifySubscriptionPurchaseAsync(It.Is<BillingPurchaseVerificationRequest>(r =>
+                r.Provider == BillingProviders.GooglePlay &&
+                r.PurchaseToken == purchaseToken &&
+                r.OrderId == orderId)))
             .ReturnsAsync((true, string.Empty));
 
         // Mock HttpClient for RefreshUserStatusAsync
@@ -81,7 +84,10 @@ public class AuthServiceTests
 
         await _authService.TryRestoreBillingAsync();
 
-        _mockMusicService.Verify(m => m.VerifyGooglePlayPurchaseAsync(purchaseToken, orderId), Times.Once);
+        _mockMusicService.Verify(m => m.VerifySubscriptionPurchaseAsync(It.Is<BillingPurchaseVerificationRequest>(r =>
+            r.Provider == BillingProviders.GooglePlay &&
+            r.PurchaseToken == purchaseToken &&
+            r.OrderId == orderId)), Times.Once);
     }
 
     [Test]
@@ -89,7 +95,10 @@ public class AuthServiceTests
     {
         _mockBillingService.Setup(b => b.RestorePurchaseAsync())
             .ReturnsAsync(BillingPurchaseResult.Succeeded("token", "order"));
-        _mockMusicService.Setup(m => m.VerifyGooglePlayPurchaseAsync("token", "order"))
+        _mockMusicService.Setup(m => m.VerifySubscriptionPurchaseAsync(It.Is<BillingPurchaseVerificationRequest>(r =>
+                r.Provider == BillingProviders.GooglePlay &&
+                r.PurchaseToken == "token" &&
+                r.OrderId == "order")))
             .ReturnsAsync((true, string.Empty));
 
         var endDate = DateTime.UtcNow.AddDays(10);
@@ -107,7 +116,10 @@ public class AuthServiceTests
     {
         _mockBillingService.Setup(b => b.RestorePurchaseAsync())
             .ReturnsAsync(BillingPurchaseResult.Succeeded("token", "order"));
-        _mockMusicService.Setup(m => m.VerifyGooglePlayPurchaseAsync("token", "order"))
+        _mockMusicService.Setup(m => m.VerifySubscriptionPurchaseAsync(It.Is<BillingPurchaseVerificationRequest>(r =>
+                r.Provider == BillingProviders.GooglePlay &&
+                r.PurchaseToken == "token" &&
+                r.OrderId == "order")))
             .ReturnsAsync((false, "Google Play verification failed on the server."));
 
         await _authService.TryRestoreBillingAsync();
@@ -131,7 +143,7 @@ public class AuthServiceTests
     {
         _mockBillingService.Setup(b => b.RestorePurchaseAsync())
             .ReturnsAsync(BillingPurchaseResult.Succeeded("token", "order"));
-        _mockMusicService.Setup(m => m.VerifyGooglePlayPurchaseAsync(It.IsAny<string>(), It.IsAny<string?>()))
+        _mockMusicService.Setup(m => m.VerifySubscriptionPurchaseAsync(It.IsAny<BillingPurchaseVerificationRequest>()))
             .ThrowsAsync(new HttpRequestException("Network error"));
 
         Assert.DoesNotThrowAsync(() => _authService.TryRestoreBillingAsync());

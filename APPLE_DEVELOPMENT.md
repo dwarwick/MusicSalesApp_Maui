@@ -89,6 +89,8 @@ The repo now includes these tasks in `.vscode/tasks.json`:
 
 - `maui-check-apple-prereqs`
 - `maui-open-xcode-app-store`
+- `maui-open-storekit-folder`
+- `maui-open-storekit-folder-in-xcode`
 - `maui-list-ios-simulators`
 - `maui-list-ios-devices`
 - `maui-boot-ios-simulator`
@@ -117,6 +119,41 @@ The run task boots the simulator and then launches the MAUI app with:
 ```bash
 dotnet build -t:Run -f net10.0-ios -c Debug -p:_DeviceName=:v2:udid=<SIMULATOR_UDID>
 ```
+
+### StoreKit Simulator Workflow
+
+The iOS simulator is useful for UI work, but this repo's normal MAUI run command is still:
+
+```bash
+dotnet build -t:Run -f net10.0-ios -c Debug -p:_DeviceName=:v2:udid=<SIMULATOR_UDID>
+```
+
+That CLI path does not activate an Xcode scheme, so it does not automatically attach a `.storekit` configuration file the way a native Xcode app target would.
+
+Use the repo's `StoreKit/` folder to keep simulator testing assets in one place:
+
+1. Run `maui-open-storekit-folder-in-xcode`.
+2. In Xcode, create a new `StoreKit Configuration File`.
+3. If you want the file to mirror App Store Connect, select `Sync this file with an app in App Store Connect`.
+4. Choose the `Streamtunes` app and save the file as `StoreKit/StreamTunes.storekit`.
+5. Reopen the file in Xcode and click `Sync` whenever you change subscription metadata in App Store Connect.
+
+What this gives you:
+
+- A repo-local place to store the StoreKit config used for simulator experiments.
+- A synced record of the subscription product IDs and metadata you expect the app to use.
+
+What it does not give you on this MAUI CLI workflow:
+
+- It does not make `dotnet build -t:Run` automatically use the `.storekit` file.
+- It does not replace real sandbox purchases on a physical iPhone or TestFlight build.
+- It does not produce receipts that the live backend App Store verification flow should trust.
+
+Practical guidance:
+
+- Use the simulator for paywall UI and other non-purchase flows.
+- Keep the `.storekit` file in `StoreKit/` so the expected product setup is versioned with the repo.
+- Use a real iPhone later for end-to-end App Store sandbox verification.
 
 ### Mac Catalyst Workflow
 
@@ -233,6 +270,51 @@ Check these first:
 - An `Apple Development` certificate exists in your login keychain.
 
 If the build still fails on signing, resolve the team or provisioning issue locally first before adding any project-level signing properties.
+
+## App Store Build Workflow
+
+To submit to App Store Connect, you need a Release iOS archive/IPA, not just a Debug device build.
+
+Local prerequisites on this Mac:
+
+- A paid Apple Developer membership for the team that owns the app.
+- An `Apple Distribution` certificate in Keychain.
+- An App Store provisioning profile for the bundle identifier `net.streamtunes.musicsalesapp.maui`.
+- Xcode signed in with the same team.
+
+This workspace now includes a VS Code task:
+
+- `maui-publish-ios-appstore-ipa`
+
+That task runs:
+
+```bash
+dotnet publish MusicSalesApp.Maui/MusicSalesApp.Maui.csproj \
+  -f net10.0-ios \
+  -c Release \
+  -p:RuntimeIdentifier=ios-arm64 \
+  -p:AppSettingsEnvironment=Production \
+  -p:ArchiveOnBuild=true \
+  -p:BuildIpa=true \
+  -p:CodesignKey="<Apple Distribution identity>" \
+  -p:CodesignProvision="<App Store provisioning profile name>" \
+  -p:CodesignTeamId=<TEAM_ID>
+```
+
+The generated IPA and app bundle output will be under:
+
+```text
+MusicSalesApp.Maui/bin/Release/net10.0-ios/ios-arm64/publish/
+```
+
+Use the helper task `maui-open-ios-archive-output` to open that folder in Finder.
+
+After the IPA is generated, upload it using one of these Apple-supported paths:
+
+1. Transporter app on macOS.
+2. Xcode Organizer if you prefer Apple’s GUI flow.
+
+If this Mac only shows `Apple Development` identities in `security find-identity -v -p codesigning`, App Store packaging will fail until you add the `Apple Distribution` certificate and matching App Store provisioning profile.
 
 ## Troubleshooting
 

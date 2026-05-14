@@ -20,7 +20,7 @@
 		<Nullable>enable</Nullable>
 		<!-- NU1608: AndroidX.Biometric brings older transitive AndroidX deps that conflict with .NET 10 MAUI versions (benign).
 		     MAUIG2045: MAUI XAML SourceGen can't see CommunityToolkit.Mvvm [RelayCommand] generated properties (falls back to reflection). -->
-		<NoWarn>$(NoWarn);NU1608;MAUIG2045</NoWarn>
+		<NoWarn>$(NoWarn);NU1608;MAUIG2045;CA1422</NoWarn>
 		<AppSettingsEnvironment Condition="'$(AppSettingsEnvironment)' == '' and '$(Configuration)' == 'Debug'">Development</AppSettingsEnvironment>
 		<AppSettingsEnvironment Condition="'$(AppSettingsEnvironment)' == '' and '$(Configuration)' == 'Release'">Production</AppSettingsEnvironment>
 
@@ -93,6 +93,10 @@
 		<EmbeddedResource Include="appsettings.Development.json" Condition="Exists('appsettings.Development.json')" />
 		<EmbeddedResource Include="appsettings.Test.json" Condition="Exists('appsettings.Test.json')" />
 		<EmbeddedResource Include="appsettings.Production.json" Condition="Exists('appsettings.Production.json')" />
+	</ItemGroup>
+
+	<ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">
+		<PartialAppManifest Include="Platforms\iOS\ExportCompliance.plist" />
 	</ItemGroup>
 
 	<ItemGroup>
