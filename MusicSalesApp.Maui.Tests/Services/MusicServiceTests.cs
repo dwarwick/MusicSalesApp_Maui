@@ -679,7 +679,7 @@ public class MusicServiceTests
         Assert.That(result.Success, Is.True);
         Assert.That(requestBody, Is.Not.Null);
         using var document = JsonDocument.Parse(requestBody!);
-        Assert.That(document.RootElement.GetProperty("TimeZoneId").GetString(), Is.EqualTo(TimeZoneInfo.Local.Id));
+        Assert.That(document.RootElement.GetProperty("timeZoneId").GetString(), Is.EqualTo(TimeZoneInfo.Local.Id));
     }
 
     [Test]
@@ -711,7 +711,7 @@ public class MusicServiceTests
         Assert.That(result.Success, Is.True);
         Assert.That(requestBody, Is.Not.Null);
         using var document = JsonDocument.Parse(requestBody!);
-        Assert.That(document.RootElement.GetProperty("TimeZoneId").GetString(), Is.EqualTo(TimeZoneInfo.Local.Id));
+        Assert.That(document.RootElement.GetProperty("timeZoneId").GetString(), Is.EqualTo(TimeZoneInfo.Local.Id));
     }
 
     [Test]
