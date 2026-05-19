@@ -39,8 +39,8 @@
 		<ApplicationId>net.streamtunes.musicsalesapp.maui</ApplicationId>
 
 		<!-- Versions -->
-		<ApplicationDisplayVersion>1.0.45</ApplicationDisplayVersion>
-		<ApplicationVersion>46</ApplicationVersion>
+		<ApplicationDisplayVersion>1.0.46</ApplicationDisplayVersion>
+		<ApplicationVersion>49</ApplicationVersion>
 
 		<!-- To develop, package, and publish an app to the Microsoft Store, see: https://aka.ms/MauiTemplateUnpackaged -->
 		<WindowsPackageType>None</WindowsPackageType>
@@ -67,6 +67,30 @@
 	<PropertyGroup Condition="'$(Configuration)' == 'Release' and '$(TargetFramework)' == 'net10.0-android'">
 		<DebugSymbols>true</DebugSymbols>
 		<DebugType>portable</DebugType>
+	</PropertyGroup>
+
+	<!-- iOS Release: workaround for App Store launch crash on iPad (iPadOS 26).
+	     The original symptom (build 1.0.45/48) was abort() in the Mono runtime
+	     before any managed frame appeared on device. With UseInterpreter=true the
+	     same crash reproduces on the iOS simulator with a managed stack trace:
+	       Unhandled managed exception: Failed to lookup the required marshalling
+	       information. Selector: respondsToSelector: Type: AppDelegate
+	         at Registrar.DynamicRegistrar.GetMethodDescriptionAndObject(...)
+	     i.e. the *dynamic* registrar can't find the marshalling info for the
+	     AppDelegate. The dynamic registrar is forced whenever UseInterpreter=true.
+	     The fix is to keep the static registrar (which bakes the marshalling info
+	     in at build time) and use LLVM-AOT, per dotnet/maui#24805:
+	     - MtouchRegistrar=static: bake AppDelegate marshalling info in at build time.
+	     - UseInterpreter=false: keep AOT so the static registrar is honored.
+	     - MtouchUseLlvm=true: use LLVM-AOT (more reliable on iPadOS 26 than the
+	       default Mono AOT, which produced the original crash).
+	     - MtouchLink=SdkOnly: trim only BCL/SDK assemblies, preserve user
+	       assemblies so reflection-only types (e.g. via DI) are not stripped. -->
+	<PropertyGroup Condition="'$(Configuration)' == 'Release' and '$(TargetFramework)' == 'net10.0-ios'">
+		<MtouchRegistrar>static</MtouchRegistrar>
+		<UseInterpreter>false</UseInterpreter>
+		<MtouchUseLlvm>true</MtouchUseLlvm>
+		<MtouchLink>SdkOnly</MtouchLink>
 	</PropertyGroup>
 
 	<ItemGroup>
