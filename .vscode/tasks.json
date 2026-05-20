@@ -397,6 +397,28 @@
       "group": "build"
     },
     {
+      "label": "maui-publish-and-upload-testflight-test",
+      "detail": "One-time setup: xcrun altool --store-password-in-keychain-item --item AC_TESTFLIGHT -u david.warwick1969@gmail.com -p <app-specific-password>",
+      "type": "shell",
+      "command": "perl -i -pe 's{<ApplicationVersion>(\\d+)</ApplicationVersion>}{\"<ApplicationVersion>\".($1+1).\"</ApplicationVersion>\"}e' ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj && grep -E '<ApplicationDisplayVersion>|<ApplicationVersion>' ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj && dotnet publish ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Release -p:RuntimeIdentifier=ios-arm64 -p:AppSettingsEnvironment=Test -p:ArchiveOnBuild=true -p:BuildIpa=true -p:CodesignKey='Apple Distribution: David Warwick (K7ZGP97YV6)' -p:CodesignProvision='StreamTunes App Store' -p:CodesignTeamId=K7ZGP97YV6 && xcrun altool --upload-app -f ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/bin/Release/net10.0-ios/ios-arm64/publish/MusicSalesApp.Maui.ipa -t ios -u david.warwick1969@gmail.com -p '@keychain:AC_TESTFLIGHT'",
+      "options": {
+        "cwd": "${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui"
+      },
+      "problemMatcher": "$msCompile",
+      "group": "build"
+    },
+    {
+      "label": "maui-publish-and-upload-testflight-production",
+      "detail": "One-time setup: xcrun altool --store-password-in-keychain-item --item AC_TESTFLIGHT -u david.warwick1969@gmail.com -p <app-specific-password>",
+      "type": "shell",
+      "command": "perl -i -pe 's{<ApplicationVersion>(\\d+)</ApplicationVersion>}{\"<ApplicationVersion>\".($1+1).\"</ApplicationVersion>\"}e' ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj && grep -E '<ApplicationDisplayVersion>|<ApplicationVersion>' ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj && dotnet publish ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Release -p:RuntimeIdentifier=ios-arm64 -p:AppSettingsEnvironment=Production -p:ArchiveOnBuild=true -p:BuildIpa=true -p:CodesignKey='Apple Distribution: David Warwick (K7ZGP97YV6)' -p:CodesignProvision='StreamTunes App Store' -p:CodesignTeamId=K7ZGP97YV6 && xcrun altool --upload-app -f ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/bin/Release/net10.0-ios/ios-arm64/publish/MusicSalesApp.Maui.ipa -t ios -u david.warwick1969@gmail.com -p '@keychain:AC_TESTFLIGHT'",
+      "options": {
+        "cwd": "${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui"
+      },
+      "problemMatcher": "$msCompile",
+      "group": "build"
+    },
+    {
       "label": "maui-open-ios-archive-output",
       "type": "shell",
       "command": "open ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/bin/Release/net10.0-ios/ios-arm64/publish",
