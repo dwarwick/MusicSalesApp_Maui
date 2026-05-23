@@ -6,6 +6,7 @@
              x:Class="MusicSalesApp.Maui.Views.RegisterPage"
              x:DataType="vm:RegisterViewModel"
              Title="Register"
+             HideSoftInputOnTapped="True"
              BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
 
     <ScrollView>
@@ -48,6 +49,7 @@
                        Placeholder="Password"
                        Text="{Binding Password}"
                        IsPassword="True"
+                      Unfocused="OnPasswordEntryUnfocused"
                        ReturnType="Next"
                        BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource CardBackgroundDark}}"
                        TextColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}"
@@ -64,6 +66,7 @@
                        Placeholder="Confirm Password"
                        Text="{Binding ConfirmPassword}"
                        IsPassword="True"
+                      Unfocused="OnConfirmPasswordEntryUnfocused"
                        ReturnType="Done"
                        BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource CardBackgroundDark}}"
                        TextColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}"

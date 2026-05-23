@@ -378,6 +378,31 @@ public class PlaylistPlayerViewModelTests
     }
 
     [Test]
+    public async Task PlayTrack_WhenSongMatchesCurrentPlayback_TogglesPlayPause()
+    {
+        var songs = CreateTestSongs();
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+        _mockPlaybackService.SetupGet(p => p.PreviewLimitReached).Returns(false);
+
+        _viewModel.GenreName = "Rock";
+        await Task.Delay(100);
+
+    _mockPlaybackService.Invocations.Clear();
+    _mockMediaPlaybackOnboardingService.Invocations.Clear();
+
+        var currentSong = _viewModel.Songs[1];
+        _mockPlaybackService.SetupGet(p => p.CurrentSong).Returns(currentSong);
+
+        await _viewModel.PlayTrackCommand.ExecuteAsync(currentSong);
+
+        _mockPlaybackService.Verify(p => p.TogglePlayPause(), Times.Once);
+        _mockPlaybackService.Verify(p => p.SetPlaylist(It.IsAny<List<SongDto>>(), It.IsAny<int>()), Times.Never);
+        _mockMediaPlaybackOnboardingService.Verify(s => s.EnsureBackgroundPlaybackExplainedAsync(), Times.Never);
+    }
+
+    [Test]
     public void PlayTrack_NullSong_DoesNotCallService()
     {
         _viewModel.PlayTrackCommand.Execute(null);

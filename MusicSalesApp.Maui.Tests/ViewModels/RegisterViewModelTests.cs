@@ -8,6 +8,7 @@ namespace MusicSalesApp.Maui.Tests.ViewModels;
 public class RegisterViewModelTests
 {
     private Mock<IAuthService> _mockAuthService;
+    private Mock<IBrowserService> _mockBrowserService;
     private Mock<INavigationService> _mockNavigationService;
     private Mock<IAppConfig> _mockAppConfig;
     private RegisterViewModel _viewModel;
@@ -16,11 +17,13 @@ public class RegisterViewModelTests
     public void Setup()
     {
         _mockAuthService = new Mock<IAuthService>();
+        _mockBrowserService = new Mock<IBrowserService>();
         _mockNavigationService = new Mock<INavigationService>();
         _mockAppConfig = new Mock<IAppConfig>();
         _mockAppConfig.Setup(c => c.WebBaseUrl).Returns("https://streamtunes.net");
         _viewModel = new RegisterViewModel(
             _mockAuthService.Object,
+            _mockBrowserService.Object,
             _mockNavigationService.Object,
             _mockAppConfig.Object);
     }
@@ -56,6 +59,20 @@ public class RegisterViewModelTests
         await _viewModel.RegisterCommand.ExecuteAsync(null);
 
         Assert.That(_viewModel.ErrorMessage, Does.Contain("password"));
+    }
+
+    [Test]
+    public async Task RegisterAsync_InvalidEmail_SetsErrorMessageWithoutCallingService()
+    {
+        AcceptAllTerms();
+        _viewModel.Email = "not-an-email";
+        _viewModel.Password = "Passw0rd!";
+        _viewModel.ConfirmPassword = "Passw0rd!";
+
+        await _viewModel.RegisterCommand.ExecuteAsync(null);
+
+        Assert.That(_viewModel.ErrorMessage, Does.Contain("valid email address"));
+        _mockAuthService.Verify(a => a.RegisterAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
     }
 
     [Test]
@@ -195,33 +212,38 @@ public class RegisterViewModelTests
             (bool)d["CodeAlreadySent"] == true)), Times.Once);
     }
 
-    // --- Open policy commands navigate in-app ---
+    // --- Open policy commands open externally ---
 
     [Test]
-    public async Task OpenTermsOfUseCommand_NavigatesToPolicyPage()
+    public async Task OpenTermsOfUseCommand_OpensExternalPolicyPage()
     {
         await _viewModel.OpenTermsOfUseCommand.ExecuteAsync(null);
 
-        _mockNavigationService.Verify(n => n.GoToAsync("policy", It.Is<Dictionary<string, object>>(d =>
-            (string)d["title"] == "Terms of Use" && (string)d["path"] == "/terms-of-use")), Times.Once);
+        _mockBrowserService.Verify(b => b.OpenExternalAsync("https://streamtunes.net/terms-of-use"), Times.Once);
     }
 
     [Test]
-    public async Task OpenPrivacyPolicyCommand_NavigatesToPolicyPage()
+    public async Task OpenPrivacyPolicyCommand_OpensExternalPolicyPage()
     {
         await _viewModel.OpenPrivacyPolicyCommand.ExecuteAsync(null);
 
-        _mockNavigationService.Verify(n => n.GoToAsync("policy", It.Is<Dictionary<string, object>>(d =>
-            (string)d["title"] == "Privacy Policy" && (string)d["path"] == "/privacy-policy")), Times.Once);
+        _mockBrowserService.Verify(b => b.OpenExternalAsync("https://streamtunes.net/privacy-policy"), Times.Once);
     }
 
     [Test]
-    public async Task OpenRefundPolicyCommand_NavigatesToPolicyPage()
+    public async Task OpenRefundPolicyCommand_OpensExternalPolicyPage()
     {
         await _viewModel.OpenRefundPolicyCommand.ExecuteAsync(null);
 
-        _mockNavigationService.Verify(n => n.GoToAsync("policy", It.Is<Dictionary<string, object>>(d =>
-            (string)d["title"] == "User Refund Policy" && (string)d["path"] == "/user-refund-policy")), Times.Once);
+        _mockBrowserService.Verify(b => b.OpenExternalAsync("https://streamtunes.net/user-refund-policy"), Times.Once);
+    }
+
+    [Test]
+    public async Task GoToLoginCommand_NavigatesToLoginPage()
+    {
+        await _viewModel.GoToLoginCommand.ExecuteAsync(null);
+
+        _mockNavigationService.Verify(n => n.GoToAsync("login"), Times.Once);
     }
 
     [Test]

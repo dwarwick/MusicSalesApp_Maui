@@ -2,7 +2,10 @@
 using Android.Content;
 using Android.Content.PM;
 using Android.Content.Res;
+using Android.Graphics;
 using Android.OS;
+using Android.Views;
+using Android.Views.InputMethods;
 using MediaManager;
 
 namespace MusicSalesApp.Maui;
@@ -41,6 +44,27 @@ namespace MusicSalesApp.Maui;
     DataHost = "tip")]
 public class MainActivity : MauiAppCompatActivity
 {
+    public override bool DispatchTouchEvent(MotionEvent? ev)
+    {
+        if (ev?.Action == MotionEventActions.Down && CurrentFocus is Android.Widget.EditText editText)
+        {
+            var bounds = new Android.Graphics.Rect();
+            editText.GetGlobalVisibleRect(bounds);
+
+            if (!bounds.Contains((int)ev.RawX, (int)ev.RawY))
+            {
+                editText.ClearFocus();
+
+                if (GetSystemService(InputMethodService) is InputMethodManager inputMethodManager)
+                {
+                    inputMethodManager.HideSoftInputFromWindow(editText.WindowToken, HideSoftInputFlags.None);
+                }
+            }
+        }
+
+        return base.DispatchTouchEvent(ev);
+    }
+
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);

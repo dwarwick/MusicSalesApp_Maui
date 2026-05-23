@@ -7,7 +7,31 @@
              x:Class="MusicSalesApp.Maui.Views.MusicLibraryPage"
              x:DataType="vm:MusicLibraryViewModel"
              Title="Music Library"
+             HideSoftInputOnTapped="True"
              BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
+
+    <ContentPage.Resources>
+        <Style x:Key="FilterSearchContainerStyle" TargetType="Border">
+            <Setter Property="StrokeShape" Value="RoundRectangle 10" />
+            <Setter Property="Stroke" Value="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray600}}" />
+            <Setter Property="StrokeThickness" Value="1" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="HeightRequest" Value="40" />
+            <Setter Property="BackgroundColor" Value="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource CardBackgroundDark}}" />
+        </Style>
+
+        <Style x:Key="FilterSearchEntryStyle" TargetType="Entry">
+            <Setter Property="BackgroundColor" Value="Transparent" />
+            <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}" />
+            <Setter Property="PlaceholderColor" Value="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray400}}" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="ClearButtonVisibility" Value="WhileEditing" />
+            <Setter Property="ReturnType" Value="Done" />
+            <Setter Property="MinimumHeightRequest" Value="0" />
+            <Setter Property="HeightRequest" Value="36" />
+            <Setter Property="VerticalOptions" Value="Center" />
+        </Style>
+    </ContentPage.Resources>
 
     <Grid RowDefinitions="Auto,Auto,*,Auto">
         <!-- Filter Pill Bar -->
@@ -17,6 +41,7 @@
 
             <HorizontalStackLayout Spacing="8">
                 <Button Command="{Binding ToggleAiPanelCommand}"
+                        Clicked="OnFilterChromeClicked"
                         Text="{Binding AiPillText}"
                         FontSize="13"
                         FontAttributes="Bold"
@@ -28,6 +53,7 @@
 
             <!-- Genre Pill -->
             <Button Command="{Binding ToggleGenrePanelCommand}"
+                    Clicked="OnFilterChromeClicked"
                     Text="{Binding GenrePillText}"
                     FontSize="13"
                     FontAttributes="Bold"
@@ -39,6 +65,7 @@
 
             <!-- Artist Pill -->
             <Button Command="{Binding ToggleArtistPanelCommand}"
+                    Clicked="OnFilterChromeClicked"
                     Text="{Binding ArtistPillText}"
                     FontSize="13"
                     FontAttributes="Bold"
@@ -50,13 +77,14 @@
 
             <!-- Clear Filters Button -->
             <Button Command="{Binding ClearFiltersCommand}"
+                    Clicked="OnFilterChromeClicked"
                     Text="✕"
                     FontSize="14"
                     HeightRequest="36"
                     WidthRequest="36"
                     Padding="0"
                     CornerRadius="18"
-                    IsEnabled="{Binding HasAnyActiveFilters}"
+                    IsVisible="{Binding HasAnyActiveFilters}"
                     BackgroundColor="{Binding HasAnyActiveFilters, Converter={StaticResource ActivePillBgConverter}}"
                     TextColor="{Binding HasAnyActiveFilters, Converter={StaticResource ActivePillTextConverter}}"
                     VerticalOptions="Center" />
@@ -76,6 +104,7 @@
                 <Grid ColumnDefinitions="Auto,*" Padding="4,8" ColumnSpacing="8">
                     <Grid.GestureRecognizers>
                         <TapGestureRecognizer Command="{Binding SelectAiFilterCommand}"
+                                              Tapped="OnFilterOptionTapped"
                                               CommandParameter="All" />
                     </Grid.GestureRecognizers>
                     <CheckBox Grid.Column="0"
@@ -92,6 +121,7 @@
                 <Grid ColumnDefinitions="Auto,*" Padding="4,8" ColumnSpacing="8">
                     <Grid.GestureRecognizers>
                         <TapGestureRecognizer Command="{Binding SelectAiFilterCommand}"
+                                              Tapped="OnFilterOptionTapped"
                                               CommandParameter="AiOnly" />
                     </Grid.GestureRecognizers>
                     <CheckBox Grid.Column="0"
@@ -108,6 +138,7 @@
                 <Grid ColumnDefinitions="Auto,*" Padding="4,8" ColumnSpacing="8">
                     <Grid.GestureRecognizers>
                         <TapGestureRecognizer Command="{Binding SelectAiFilterCommand}"
+                                              Tapped="OnFilterOptionTapped"
                                               CommandParameter="NonAiOnly" />
                     </Grid.GestureRecognizers>
                     <CheckBox Grid.Column="0"
@@ -134,12 +165,13 @@
                 BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource CardBackgroundDark}}"
                 MaximumHeightRequest="260">
             <VerticalStackLayout Spacing="4">
-                <SearchBar Placeholder="Search genres..."
-                           Text="{Binding GenreSearchText}"
-                           FontSize="13"
-                           HeightRequest="36"
-                           BackgroundColor="Transparent"
-                           CancelButtonColor="{StaticResource Primary}" />
+                <Border Style="{StaticResource FilterSearchContainerStyle}">
+                    <Entry x:Name="GenreSearchEntry"
+                           Style="{StaticResource FilterSearchEntryStyle}"
+                           Placeholder="Search genres..."
+                           Unfocused="OnFilterSearchEntryUnfocused"
+                           Text="{Binding GenreSearchText}" />
+                </Border>
                 <CollectionView ItemsSource="{Binding GenreFilterItems}"
                                 SelectionMode="None"
                                 MaximumHeightRequest="200">
@@ -148,6 +180,7 @@
                             <Grid ColumnDefinitions="Auto,*,Auto" Padding="4,6" ColumnSpacing="8">
                                 <Grid.GestureRecognizers>
                                     <TapGestureRecognizer
+                                        Tapped="OnFilterOptionTapped"
                                         Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MusicLibraryViewModel}}, Path=ToggleGenreFilterCommand}"
                                         CommandParameter="{Binding Name}" />
                                 </Grid.GestureRecognizers>
@@ -183,12 +216,13 @@
                 BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource CardBackgroundDark}}"
                 MaximumHeightRequest="260">
             <VerticalStackLayout Spacing="4">
-                <SearchBar Placeholder="Search artists..."
-                           Text="{Binding ArtistSearchText}"
-                           FontSize="13"
-                           HeightRequest="36"
-                           BackgroundColor="Transparent"
-                           CancelButtonColor="{StaticResource Primary}" />
+                <Border Style="{StaticResource FilterSearchContainerStyle}">
+                    <Entry x:Name="ArtistSearchEntry"
+                           Style="{StaticResource FilterSearchEntryStyle}"
+                           Placeholder="Search artists..."
+                           Unfocused="OnFilterSearchEntryUnfocused"
+                           Text="{Binding ArtistSearchText}" />
+                </Border>
                 <CollectionView ItemsSource="{Binding ArtistFilterItems}"
                                 SelectionMode="None"
                                 MaximumHeightRequest="200">
@@ -197,6 +231,7 @@
                             <Grid ColumnDefinitions="Auto,*,Auto" Padding="4,6" ColumnSpacing="8">
                                 <Grid.GestureRecognizers>
                                     <TapGestureRecognizer
+                                        Tapped="OnFilterOptionTapped"
                                         Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MusicLibraryViewModel}}, Path=ToggleArtistFilterCommand}"
                                         CommandParameter="{Binding Name}" />
                                 </Grid.GestureRecognizers>

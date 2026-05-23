@@ -164,6 +164,54 @@ public class PlaybackServiceTests
     }
 
     [Test]
+    public void PlaySong_UsesAlbumArtForMediaItemImage()
+    {
+        IMediaItem? capturedMediaItem = null;
+        _mockMediaManager
+            .Setup(m => m.Play(It.IsAny<IMediaItem>()))
+            .Callback<IMediaItem>(mediaItem => capturedMediaItem = mediaItem)
+            .ReturnsAsync(Mock.Of<IMediaItem>());
+
+        var song = new SongDto
+        {
+            Id = 1,
+            SongTitle = "Test",
+            StreamUrl = "https://test.com/song1.mp3",
+            AlbumArtUrl = "https://test.com/art.jpg",
+            PersonaImageUrl = "https://test.com/persona.jpg"
+        };
+
+        _service.PlaySong(song);
+
+        Assert.That(capturedMediaItem?.AlbumImageUri, Is.EqualTo("https://test.com/art.jpg"));
+        Assert.That(capturedMediaItem?.ImageUri, Is.EqualTo("https://test.com/art.jpg"));
+    }
+
+    [Test]
+    public void PlaySong_FallsBackToPersonaImageWhenAlbumArtUriIsInvalid()
+    {
+        IMediaItem? capturedMediaItem = null;
+        _mockMediaManager
+            .Setup(m => m.Play(It.IsAny<IMediaItem>()))
+            .Callback<IMediaItem>(mediaItem => capturedMediaItem = mediaItem)
+            .ReturnsAsync(Mock.Of<IMediaItem>());
+
+        var song = new SongDto
+        {
+            Id = 1,
+            SongTitle = "Test",
+            StreamUrl = "https://test.com/song1.mp3",
+            AlbumArtUrl = "/relative-art.jpg",
+            PersonaImageUrl = "https://test.com/persona.jpg"
+        };
+
+        _service.PlaySong(song);
+
+        Assert.That(capturedMediaItem?.AlbumImageUri, Is.EqualTo("https://test.com/persona.jpg"));
+        Assert.That(capturedMediaItem?.ImageUri, Is.EqualTo("https://test.com/persona.jpg"));
+    }
+
+    [Test]
     public void PlaySong_ActivatesPlaybackKeepAlive()
     {
         var song = new SongDto { Id = 1, SongTitle = "Test", StreamUrl = "https://test.com/song1.mp3" };

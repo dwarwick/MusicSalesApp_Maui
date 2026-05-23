@@ -453,6 +453,13 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     {
         if (song == null) return;
 
+        if (!_playbackService.PreviewLimitReached
+            && PlaybackIndicatorStateResolver.ShouldToggleCurrentSong(song.Id, _playbackService.CurrentSong))
+        {
+            _playbackService.TogglePlayPause();
+            return;
+        }
+
         await PlayVisibleQueueAsync(song);
     }
 

@@ -341,7 +341,7 @@
                         </Label>
 
                         <!-- Auto-renewal disclosure -->
-                        <Label Text="Subscription automatically renews monthly. Cancel anytime from your Google Play subscription settings."
+                           <Label Text="{Binding SubscriptionAutoRenewalText}"
                                FontSize="12"
                                HorizontalTextAlignment="Center"
                                TextColor="{AppThemeBinding Light=#888888, Dark=#999999}" />
@@ -506,6 +506,43 @@
                     </VerticalStackLayout>
                 </Border>
 
+            </VerticalStackLayout>
+
+            <!-- ========== ARTIST UPLOAD HERO ========== -->
+            <VerticalStackLayout Padding="20,0,20,32"
+                                 IsVisible="{Binding ShowArtistUploadHero}">
+                <Border StrokeShape="RoundRectangle 16"
+                        Stroke="{StaticResource Primary}"
+                        StrokeThickness="1"
+                        BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource CardBackgroundDark}}"
+                        Padding="20">
+                    <Border.Shadow>
+                        <Shadow Brush="{AppThemeBinding Light=#00000014, Dark=#00000066}"
+                                Offset="0,4"
+                                Radius="16" />
+                    </Border.Shadow>
+                    <VerticalStackLayout Spacing="10">
+                        <Label Text="Artists, bring your sound to StreamTunes"
+                               FontSize="19"
+                               FontAttributes="Bold"
+                               TextColor="{AppThemeBinding Light={StaticResource Gray950}, Dark={StaticResource White}}" />
+                        <Label Text="Upload your music and make it available for listeners to stream on our platform."
+                               FontSize="14"
+                               LineBreakMode="WordWrap"
+                               TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray200}}" />
+                        <Label Text="Upload your music ›"
+                               FontSize="14"
+                               FontAttributes="Bold"
+                               HorizontalOptions="Start"
+                               TextColor="{StaticResource Primary}"
+                               TextDecorations="Underline"
+                               SemanticProperties.Hint="Opens the artist upload page in your browser">
+                            <Label.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding OpenArtistUploadCommand}" />
+                            </Label.GestureRecognizers>
+                        </Label>
+                    </VerticalStackLayout>
+                </Border>
             </VerticalStackLayout>
 
             </VerticalStackLayout>

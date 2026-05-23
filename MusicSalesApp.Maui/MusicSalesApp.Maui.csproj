@@ -40,7 +40,7 @@
 
 		<!-- Versions -->
 		<ApplicationDisplayVersion>1.0.46</ApplicationDisplayVersion>
-		<ApplicationVersion>52</ApplicationVersion>
+		<ApplicationVersion>56</ApplicationVersion>
 
 		<!-- To develop, package, and publish an app to the Microsoft Store, see: https://aka.ms/MauiTemplateUnpackaged -->
 		<WindowsPackageType>None</WindowsPackageType>

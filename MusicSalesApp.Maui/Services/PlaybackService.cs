@@ -8,6 +8,10 @@ using MediaManager.Queue;
 using Microsoft.Extensions.Logging;
 using MusicSalesApp.Maui.ViewModels;
 using MmPositionChangedEventArgs = MediaManager.Playback.PositionChangedEventArgs;
+#if IOS
+using Foundation;
+using UIKit;
+#endif
 
 namespace MusicSalesApp.Maui.Services;
 
@@ -1118,7 +1122,6 @@ public class PlaybackService : IPlaybackService
                 CreatePlaybackSnapshot(CurrentSong, null));
             return;
         }
-
         _urlToSong.Clear();
         var items = playlistSnapshot.Select((song, index) =>
         {
@@ -1256,17 +1259,109 @@ public class PlaybackService : IPlaybackService
         var mediaUri = string.IsNullOrWhiteSpace(playbackUri)
             ? song.StreamUrl ?? string.Empty
             : playbackUri;
+        var artworkUri = ResolveAlbumImageUri(song);
 
         RegisterSongPlaybackUri(song, mediaUri);
 
-        return new MediaItem(mediaUri)
+        var mediaItem = new MediaItem(mediaUri)
         {
             MediaLocation = IsLocalPlaybackUri(mediaUri) ? MediaLocation.FileSystem : MediaLocation.Remote,
             Title = song.SongTitle ?? string.Empty,
             Artist = song.ArtistName ?? string.Empty,
-            AlbumImageUri = song.AlbumArtUrl ?? string.Empty,
+            ImageUri = artworkUri,
+            AlbumImageUri = artworkUri,
         };
+
+        ApplyPlatformArtwork(mediaItem, artworkUri);
+
+        return mediaItem;
     }
+
+    private static string ResolveAlbumImageUri(SongDto song)
+    {
+        if (TryResolveMediaImageUri(song.AlbumArtUrl, out var albumImageUri))
+        {
+            return albumImageUri;
+        }
+
+        if (TryResolveMediaImageUri(song.PersonaImageUrl, out var personaImageUri))
+        {
+            return personaImageUri;
+        }
+
+        return string.Empty;
+    }
+
+    private static bool TryResolveMediaImageUri(string? candidate, out string resolvedUri)
+    {
+        resolvedUri = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            return false;
+        }
+
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        if (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+        {
+            resolvedUri = uri.ToString();
+            return true;
+        }
+
+        if (uri.Scheme != Uri.UriSchemeFile || !candidate.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        resolvedUri = uri.ToString();
+        return true;
+    }
+
+    private void ApplyPlatformArtwork(MediaItem mediaItem, string artworkUri)
+    {
+#if IOS
+        if (TryLoadIosArtwork(artworkUri, out var artworkImage))
+        {
+            mediaItem.DisplayImage = artworkImage;
+            mediaItem.Image = artworkImage;
+            mediaItem.AlbumImage = artworkImage;
+        }
+#endif
+    }
+
+#if IOS
+    private bool TryLoadIosArtwork(string artworkUri, out UIImage? artworkImage)
+    {
+        artworkImage = null;
+
+        if (string.IsNullOrWhiteSpace(artworkUri))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var artworkUrl = new NSUrl(artworkUri);
+            using var artworkData = NSData.FromUrl(artworkUrl);
+            if (artworkData == null || artworkData.Length == 0)
+            {
+                return false;
+            }
+
+            artworkImage = UIImage.LoadFromData(artworkData);
+            return artworkImage != null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to materialize iOS now playing artwork from {ArtworkUri}", artworkUri);
+            return false;
+        }
+    }
+#endif
 
     private static bool IsLocalPlaybackUri(string mediaUri)
     {
