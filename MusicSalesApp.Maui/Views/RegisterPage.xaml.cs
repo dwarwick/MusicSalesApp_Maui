@@ -14,10 +14,16 @@ public partial class RegisterPage : ContentPage, IQueryAttributable
     }
 
     private void OnTogglePasswordVisibility(object? sender, EventArgs e)
-        => PasswordEntry.IsPassword = !PasswordEntry.IsPassword;
+    {
+        PasswordEntry.IsPassword = !PasswordEntry.IsPassword;
+        PasswordEntry.Focus();
+    }
 
     private void OnToggleConfirmPasswordVisibility(object? sender, EventArgs e)
-        => ConfirmPasswordEntry.IsPassword = !ConfirmPasswordEntry.IsPassword;
+    {
+        ConfirmPasswordEntry.IsPassword = !ConfirmPasswordEntry.IsPassword;
+        ConfirmPasswordEntry.Focus();
+    }
 
     private void OnPasswordEntryUnfocused(object? sender, FocusEventArgs e)
         => PasswordEntry.IsPassword = true;

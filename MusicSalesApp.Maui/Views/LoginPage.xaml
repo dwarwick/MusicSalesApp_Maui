@@ -6,6 +6,7 @@
              x:Class="MusicSalesApp.Maui.Views.LoginPage"
              x:DataType="vm:LoginViewModel"
              Title="Login"
+             HideSoftInputOnTapped="True"
              BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
 
     <ScrollView>

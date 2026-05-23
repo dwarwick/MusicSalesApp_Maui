@@ -206,6 +206,12 @@ public class MusicLibraryViewModelTests
     }
 
     [Test]
+    public void HasAnyActiveFilters_IsFalseByDefault()
+    {
+        Assert.That(_viewModel.HasAnyActiveFilters, Is.False);
+    }
+
+    [Test]
     public void ToggleAiPanel_ClosesOtherPanels()
     {
         _viewModel.ToggleGenrePanelCommand.Execute(null);
@@ -597,6 +603,7 @@ public class MusicLibraryViewModelTests
         Assert.That(_viewModel.Songs, Has.Count.EqualTo(5));
         Assert.That(_viewModel.SelectedGenres, Is.Empty);
         Assert.That(_viewModel.SelectedArtists, Is.Empty);
+        Assert.That(_viewModel.HasAnyActiveFilters, Is.False);
     }
 
     [Test]

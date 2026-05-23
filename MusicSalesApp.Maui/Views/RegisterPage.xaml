@@ -6,6 +6,7 @@
              x:Class="MusicSalesApp.Maui.Views.RegisterPage"
              x:DataType="vm:RegisterViewModel"
              Title="Register"
+             HideSoftInputOnTapped="True"
              BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
 
     <ScrollView>

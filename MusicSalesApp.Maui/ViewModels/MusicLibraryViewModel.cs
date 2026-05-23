@@ -47,6 +47,10 @@ public partial class MusicLibraryViewModel : ObservableObject
         _appConfig = appConfig;
         _billingService = billingService;
 
+        UpdateAiPillText();
+        UpdateGenrePillText();
+        UpdateArtistPillText();
+
         AttachSubscriptions();
     }
 
@@ -133,7 +137,8 @@ public partial class MusicLibraryViewModel : ObservableObject
     [ObservableProperty]
     public partial bool HasActiveArtistFilters { get; set; }
 
-    public bool HasAnyActiveFilters => HasActiveAiFilter || HasActiveGenreFilters || HasActiveArtistFilters;
+    [ObservableProperty]
+    public partial bool HasAnyActiveFilters { get; set; }
 
     public bool IsAllAiFilterSelected => string.Equals(_selectedAiFilter, AiFilterAll, StringComparison.Ordinal);
     public bool IsAiOnlyFilterSelected => string.Equals(_selectedAiFilter, AiFilterAiOnly, StringComparison.Ordinal);
@@ -235,7 +240,7 @@ public partial class MusicLibraryViewModel : ObservableObject
         GenrePillText = SelectedGenres.Count > 0
             ? $"Genre ({SelectedGenres.Count})"
             : "Genre";
-        OnPropertyChanged(nameof(HasAnyActiveFilters));
+        UpdateHasAnyActiveFilters();
     }
 
     private void UpdateArtistPillText()
@@ -244,7 +249,7 @@ public partial class MusicLibraryViewModel : ObservableObject
         ArtistPillText = SelectedArtists.Count > 0
             ? $"Artist ({SelectedArtists.Count})"
             : "Artist";
-        OnPropertyChanged(nameof(HasAnyActiveFilters));
+        UpdateHasAnyActiveFilters();
     }
 
     private void UpdateAiPillText()
@@ -256,7 +261,12 @@ public partial class MusicLibraryViewModel : ObservableObject
             AiFilterNonAiOnly => "Non-AI Music",
             _ => "Music Type"
         };
-        OnPropertyChanged(nameof(HasAnyActiveFilters));
+        UpdateHasAnyActiveFilters();
+    }
+
+    private void UpdateHasAnyActiveFilters()
+    {
+        HasAnyActiveFilters = HasActiveAiFilter || HasActiveGenreFilters || HasActiveArtistFilters;
     }
 
     private void RefreshGenreFilterItems()
