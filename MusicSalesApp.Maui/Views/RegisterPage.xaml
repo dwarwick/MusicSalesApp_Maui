@@ -153,7 +153,7 @@
                     HeightRequest="48" />
 
 
-            <ImageButton Source="google_logo.svg"
+            <ImageButton Source="google_logo.png"
                          Command="{Binding RegisterWithGoogleCommand}"
                          IsEnabled="{Binding IsBusy, Converter={toolkit:InvertedBoolConverter}}"
                          BackgroundColor="White"

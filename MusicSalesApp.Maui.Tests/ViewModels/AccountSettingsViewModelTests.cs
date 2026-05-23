@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Moq;
 using MusicSalesApp.Maui.Services;
 using MusicSalesApp.Maui.ViewModels;
@@ -10,6 +11,8 @@ public class AccountSettingsViewModelTests
     private Mock<IAuthService> _mockAuthService;
     private Mock<IAlertService> _mockAlertService;
     private Mock<INavigationService> _mockNavigationService;
+    private Mock<IBrowserService> _mockBrowserService;
+    private Mock<IConfiguration> _mockConfiguration;
     private Mock<IMusicService> _mockMusicService;
     private Mock<IBillingService> _mockBillingService;
     private AccountSettingsViewModel _viewModel;
@@ -20,8 +23,13 @@ public class AccountSettingsViewModelTests
         _mockAuthService = new Mock<IAuthService>();
         _mockAlertService = new Mock<IAlertService>();
         _mockNavigationService = new Mock<INavigationService>();
+        _mockBrowserService = new Mock<IBrowserService>();
+        _mockConfiguration = new Mock<IConfiguration>();
         _mockMusicService = new Mock<IMusicService>();
         _mockBillingService = new Mock<IBillingService>();
+
+        _mockConfiguration.Setup(c => c["AppleAppStore:SubscriptionManagementUrl"])
+            .Returns("https://developer.apple.com/documentation/storekit/testing-disabling-auto-renew");
 
         _mockAuthService.Setup(a => a.Email).Returns("test@example.com");
         _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
@@ -38,6 +46,8 @@ public class AccountSettingsViewModelTests
             _mockAuthService.Object,
             _mockAlertService.Object,
             _mockNavigationService.Object,
+            _mockBrowserService.Object,
+            _mockConfiguration.Object,
             _mockMusicService.Object,
             _mockBillingService.Object);
     }
@@ -64,6 +74,16 @@ public class AccountSettingsViewModelTests
     {
         _viewModel.HasActiveSubscription = true;
         _viewModel.SubscriptionEndDate = null;
+        Assert.That(_viewModel.ShowCancelSubscription, Is.True);
+    }
+
+    [Test]
+    public void ShowCancelSubscription_TrueWhenActiveSubscriptionHasBillingPeriodEnd()
+    {
+        _viewModel.HasActiveSubscription = true;
+        _viewModel.SubscriptionStatus = "ACTIVE";
+        _viewModel.SubscriptionEndDate = DateTime.UtcNow.AddDays(30);
+
         Assert.That(_viewModel.ShowCancelSubscription, Is.True);
     }
 
@@ -127,7 +147,7 @@ public class AccountSettingsViewModelTests
     }
 
     [Test]
-    public async Task LoadCommand_CancelledSubscriptionWithRemainingAccess_HidesCancelButtonAndAllowsNewSubscription()
+    public async Task LoadCommand_CancelledSubscriptionWithRemainingAccess_HidesCancelButtonAndBlocksNewSubscription()
     {
         _mockMusicService.Setup(m => m.GetSubscriptionStatusAsync())
             .ReturnsAsync(new SubscriptionStatusDto
@@ -144,9 +164,62 @@ public class AccountSettingsViewModelTests
         {
             Assert.That(_viewModel.HasActiveSubscription, Is.True);
             Assert.That(_viewModel.ShowCancelSubscription, Is.False);
-            Assert.That(_viewModel.CanCreateSubscription, Is.True);
-            Assert.That(_viewModel.CanDeleteAccount, Is.True);
-            Assert.That(_viewModel.SubscriptionStatusText, Is.EqualTo("Cancelled"));
+            Assert.That(_viewModel.CanCreateSubscription, Is.False);
+            Assert.That(_viewModel.CanDeleteAccount, Is.False);
+            Assert.That(_viewModel.SubscriptionStatusText, Is.EqualTo("Renews Off"));
+            Assert.That(_viewModel.SubscriptionStatusMessage, Does.Contain("has been canceled"));
+            Assert.That(_viewModel.SubscriptionStatusMessage, Does.Contain("will not automatically renew"));
+            Assert.That(_viewModel.SubscriptionEndDateText, Does.StartWith("Access Until:"));
+        });
+    }
+
+    [Test]
+    public void SubscriptionStatusChange_RaisesShowCancelSubscriptionNotification()
+    {
+        var changedProperties = new List<string>();
+        _viewModel.PropertyChanged += (_, args) =>
+        {
+            if (!string.IsNullOrWhiteSpace(args.PropertyName))
+            {
+                changedProperties.Add(args.PropertyName);
+            }
+        };
+
+        _viewModel.HasActiveSubscription = true;
+        _viewModel.SubscriptionEndDate = DateTime.UtcNow.AddDays(5);
+
+        changedProperties.Clear();
+        _viewModel.SubscriptionStatus = "CANCELLED";
+
+        Assert.That(changedProperties, Does.Contain(nameof(AccountSettingsViewModel.ShowCancelSubscription)));
+        Assert.That(_viewModel.ShowCancelSubscription, Is.False);
+    }
+
+    [Test]
+    public async Task LoadCommand_ActiveSubscriptionWithPeriodEnd_ShowsActiveRecurringState()
+    {
+        _mockMusicService.Setup(m => m.GetSubscriptionStatusAsync())
+            .ReturnsAsync(new SubscriptionStatusDto
+            {
+                HasSubscription = true,
+                Status = "ACTIVE",
+                EndDate = DateTime.UtcNow.AddMinutes(5),
+                NextBillingDate = DateTime.UtcNow.AddMinutes(5),
+                BillingSource = BillingProviders.Apple
+            });
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.HasActiveSubscription, Is.True);
+            Assert.That(_viewModel.ShowCancelSubscription, Is.True);
+            Assert.That(_viewModel.SubscriptionStatusText, Is.EqualTo("Active"));
+            Assert.That(_viewModel.SubscriptionStatusMessage, Does.Contain("will automatically renew unless canceled"));
+            Assert.That(_viewModel.SubscriptionStatusMessage, Does.Contain("current billing period ends on"));
+            Assert.That(_viewModel.SubscriptionEndDateText, Does.StartWith("Current Billing Period Ends:"));
+            Assert.That(_viewModel.CanCreateSubscription, Is.False);
+            Assert.That(_viewModel.CanDeleteAccount, Is.False);
         });
     }
 
@@ -218,6 +291,7 @@ public class AccountSettingsViewModelTests
     [Test]
     public async Task CancelSubscriptionCommand_Success_RefreshesAuthAndShowsAlert()
     {
+        _viewModel.SubscriptionBillingSource = "PayPal";
         _mockAlertService.Setup(a => a.ShowConfirmAsync(
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
             .ReturnsAsync(true);
@@ -241,6 +315,7 @@ public class AccountSettingsViewModelTests
     [Test]
     public async Task CancelSubscriptionCommand_Failure_ShowsError()
     {
+        _viewModel.SubscriptionBillingSource = "PayPal";
         _mockAlertService.Setup(a => a.ShowConfirmAsync(
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
             .ReturnsAsync(true);
@@ -251,6 +326,23 @@ public class AccountSettingsViewModelTests
 
         _mockAlertService.Verify(a => a.DisplayAlertAsync("Error", It.Is<string>(s => s.Contains("Failed to cancel")), "OK"), Times.Once);
         _mockAuthService.Verify(a => a.RefreshUserStatusAsync(), Times.Never);
+    }
+
+    [Test]
+    public async Task CancelSubscriptionCommand_Apple_OpensAppleSubscriptionsInsteadOfCallingApi()
+    {
+        _viewModel.SubscriptionBillingSource = BillingProviders.Apple;
+        _mockAlertService.Setup(a => a.ShowConfirmAsync(
+                "Manage Subscription",
+                It.Is<string>(message => message.Contains("Sandbox Apple subscriptions are managed on the test device")),
+                "Open Apple Sandbox Help",
+                "Not Now"))
+            .ReturnsAsync(true);
+
+        await _viewModel.CancelSubscriptionCommand.ExecuteAsync(null);
+
+        _mockBrowserService.Verify(b => b.OpenAsync("https://developer.apple.com/documentation/storekit/testing-disabling-auto-renew"), Times.Once);
+        _mockMusicService.Verify(m => m.CancelSubscriptionAsync(), Times.Never);
     }
 
     // --- Delete Account Prompt Tests ---
@@ -288,7 +380,10 @@ public class AccountSettingsViewModelTests
     {
         _mockBillingService.Setup(b => b.PurchaseSubscriptionAsync())
             .ReturnsAsync(BillingPurchaseResult.Succeeded("test-token", "order-123"));
-        _mockMusicService.Setup(m => m.VerifyGooglePlayPurchaseAsync("test-token", "order-123"))
+        _mockMusicService.Setup(m => m.VerifySubscriptionPurchaseAsync(It.Is<BillingPurchaseVerificationRequest>(r =>
+                r.Provider == BillingProviders.GooglePlay &&
+                r.PurchaseToken == "test-token" &&
+                r.OrderId == "order-123")))
             .ReturnsAsync((true, string.Empty));
         _mockMusicService.Setup(m => m.GetSubscriptionStatusAsync())
             .ReturnsAsync(new SubscriptionStatusDto { HasSubscription = true, BillingSource = "GooglePlay" });

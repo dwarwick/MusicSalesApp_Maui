@@ -15,6 +15,8 @@ namespace MusicSalesApp.Maui.Services;
 /// </summary>
 public class AppConfig : IAppConfig
 {
+    private const string ProductionFallbackUrl = "https://streamtunes.net";
+
     public string ApiBaseUrl { get; }
     public string WebBaseUrl { get; }
 
@@ -27,14 +29,17 @@ public class AppConfig : IAppConfig
         if (useLocalHost == false)
         {
             // Explicitly set to false → use DavidTest section
-            resolvedUrl = configuration["DavidTest:ApiBaseUrl"]
-                ?? configuration["ApiBaseUrl"]
-                ?? "https://streamtunes.net";
+            resolvedUrl = FirstNonEmpty(
+                configuration["DavidTest:ApiBaseUrl"],
+                configuration["ApiBaseUrl"],
+                ProductionFallbackUrl);
         }
         else
         {
             // true or missing (Production) → use top-level ApiBaseUrl
-            resolvedUrl = configuration["ApiBaseUrl"] ?? "https://streamtunes.net";
+            resolvedUrl = FirstNonEmpty(
+                configuration["ApiBaseUrl"],
+                ProductionFallbackUrl);
         }
 
         ApiBaseUrl = resolvedUrl.TrimEnd('/');
@@ -42,5 +47,18 @@ public class AppConfig : IAppConfig
 
         System.Diagnostics.Debug.WriteLine($"[AppConfig] UseLocalHost={useLocalHost}, ApiBaseUrl={ApiBaseUrl}, WebBaseUrl={WebBaseUrl}");
         Console.WriteLine($"[AppConfig] UseLocalHost={useLocalHost}, ApiBaseUrl={ApiBaseUrl}, WebBaseUrl={WebBaseUrl}");
+    }
+
+    internal static string FirstNonEmpty(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return string.Empty;
     }
 }

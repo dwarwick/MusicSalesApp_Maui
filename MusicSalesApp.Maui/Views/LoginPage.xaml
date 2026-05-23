@@ -75,7 +75,7 @@
             </Grid>
 
 
-                <ImageButton Source="google_logo.svg"
+                <ImageButton Source="google_logo.png"
                              Command="{Binding GoogleLoginCommand}"
                              IsEnabled="{Binding IsBusy, Converter={toolkit:InvertedBoolConverter}}"
                              BackgroundColor="White"

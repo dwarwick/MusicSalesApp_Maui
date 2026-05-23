@@ -19,18 +19,22 @@
                    TextColor="{AppThemeBinding Light=Black, Dark=White}"
                    HorizontalTextAlignment="Center" />
 
-            <!-- Persona Image (actual) -->
-            <Border HorizontalOptions="Center"
-                    StrokeShape="RoundRectangle 60"
-                    StrokeThickness="0"
-                    HeightRequest="120"
-                    WidthRequest="120"
-                    IsVisible="{Binding HasImage}">
-                <Image Source="{Binding PersonaImageUrl}"
-                       Aspect="AspectFill"
-                       HeightRequest="120"
-                       WidthRequest="120" />
-            </Border>
+                     <!-- Persona Image (actual) -->
+                     <Grid HorizontalOptions="Center"
+                              HeightRequest="120"
+                              WidthRequest="120"
+                              IsVisible="{Binding HasImage}">
+                            <Image Source="{Binding PersonaImageSource}"
+                                      Aspect="AspectFill"
+                                      HeightRequest="120"
+                                      WidthRequest="120">
+                                   <Image.Clip>
+                                          <EllipseGeometry Center="60,60"
+                                                                       RadiusX="60"
+                                                                       RadiusY="60" />
+                                   </Image.Clip>
+                            </Image>
+                     </Grid>
 
             <!-- Placeholder Image (when no persona image) -->
             <Border HorizontalOptions="Center"

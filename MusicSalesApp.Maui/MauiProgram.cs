@@ -25,12 +25,7 @@ public static class MauiProgram
 		builder
 			.UseMauiApp<App>()
 			.UseMauiCommunityToolkit()
-			.UseSkiaSharp()
-			.ConfigureFonts(fonts =>
-			{
-				fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
-				fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
-			});
+			.UseSkiaSharp();
 
 		// Load configuration from embedded appsettings JSON files
 		var assembly = Assembly.GetExecutingAssembly();
@@ -42,13 +37,14 @@ public static class MauiProgram
 		isReleaseBuild = true;
 #endif
 		var settingsEnvironment = AppSettingsEnvironmentResolver.GetEnvironmentName(assembly, isReleaseBuild);
-		var envStream = assembly.GetManifestResourceStream(AppSettingsEnvironmentResolver.GetResourceName(settingsEnvironment));
-		if (envStream is null)
+		if (AppSettingsEnvironmentResolver.HasResource(assembly.GetManifestResourceNames(), settingsEnvironment))
 		{
-			throw new InvalidOperationException($"Embedded appsettings resource not found for environment '{settingsEnvironment}'.");
+			using var envStream = assembly.GetManifestResourceStream(AppSettingsEnvironmentResolver.GetResourceName(settingsEnvironment));
+			if (envStream is not null)
+			{
+				builder.Configuration.AddJsonStream(envStream);
+			}
 		}
-
-		builder.Configuration.AddJsonStream(envStream);
 		Console.WriteLine($"[MauiProgram] App settings environment: {settingsEnvironment}");
 
 		// When UseLocalHost is false, override settings with the DavidTest section
@@ -73,8 +69,10 @@ public static class MauiProgram
 			}
 		}
 
-		// Register HttpClientFactory with the API base URL
-		var apiBaseUrl = builder.Configuration["ApiBaseUrl"] ?? "https://localhost:7173";
+		var appConfig = new AppConfig(builder.Configuration);
+
+		// Register HttpClientFactory with the resolved API base URL
+		var apiBaseUrl = appConfig.ApiBaseUrl;
 #if ANDROID && DEBUG
 		// Android can't reach the host's "localhost" directly.
 		// Emulator: 10.0.2.2 routes to the host PC.
@@ -143,7 +141,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IConfiguration>(builder.Configuration);
 
 		// Register centralized app config (resolves UseLocalHost / DavidTest / Production URLs once)
-		builder.Services.AddSingleton<IAppConfig, AppConfig>();
+		builder.Services.AddSingleton<IAppConfig>(appConfig);
 		builder.Services.AddSingleton<ITestingServerBannerService, TestingServerBannerService>();
 
 		// Register services
@@ -159,6 +157,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IAlertService, AlertService>();
 		builder.Services.AddSingleton<ISignalRService, SignalRService>();
 		builder.Services.AddSingleton<ISignalRConnectionManager, SignalRConnectionManager>();
+		builder.Services.AddSingleton<IAppActivationCoordinator, AppActivationCoordinator>();
 		builder.Services.AddSingleton<IAdminMessageApiService, AdminMessageApiService>();
 		builder.Services.AddSingleton<IAdminMessageCoordinator, AdminMessageCoordinator>();
 		builder.Services.AddSingleton<INavigationService, NavigationService>();
@@ -203,28 +202,36 @@ public static class MauiProgram
 							_ = audioVisualizerService.EnsureInitializedAsync();
 						}
 
-						if (IPlatformApplication.Current?.Services.GetService(typeof(IMusicService)) is IMusicService musicService)
+						if (IPlatformApplication.Current?.Services.GetService(typeof(IAppActivationCoordinator)) is IAppActivationCoordinator appActivationCoordinator)
 						{
-							_ = musicService.FlushPendingStreamRecordsAsync();
-						}
-
-						if (IPlatformApplication.Current?.Services.GetService(typeof(ISignalRConnectionManager)) is ISignalRConnectionManager signalRConnectionManager)
-						{
-							_ = signalRConnectionManager.HandleAppResumeAsync();
+							_ = appActivationCoordinator.HandleActivationAsync();
 						}
 					});
 				});
 #elif IOS
-				events.AddiOS(ios => ios.FinishedLaunching((app, _) =>
+				events.AddiOS(ios =>
 				{
-					CrossMediaManager.Current.Init();
-					return true;
-				}));
+					ios.FinishedLaunching((app, _) =>
+					{
+						CrossMediaManager.Current.Init();
+						return true;
+					});
+
+					ios.OnActivated(app =>
+					{
+						if (IPlatformApplication.Current?.Services.GetService(typeof(IAppActivationCoordinator)) is IAppActivationCoordinator appActivationCoordinator)
+						{
+							_ = appActivationCoordinator.HandleActivationAsync();
+						}
+					});
+				});
 #endif
 			});
 		// Register platform-specific services
 #if ANDROID
 		builder.Services.AddSingleton<IBillingService, MusicSalesApp.Maui.Platforms.Android.GooglePlayBillingService>();
+#elif IOS
+		builder.Services.AddSingleton<IBillingService, MusicSalesApp.Maui.Platforms.iOS.AppStoreBillingService>();
 #else
 		// Non-Android platforms: register a no-op billing service
 		builder.Services.AddSingleton<IBillingService, NoBillingService>();

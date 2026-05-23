@@ -655,7 +655,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
                 return;
             }
 
-            var verificationResult = await _musicService.VerifyGooglePlayPurchaseAsync(result.PurchaseToken!, result.OrderId);
+            var verificationResult = await _musicService.VerifySubscriptionPurchaseAsync(result.ToVerificationRequest());
 
             if (verificationResult.Success)
             {

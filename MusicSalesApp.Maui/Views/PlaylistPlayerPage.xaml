@@ -49,7 +49,7 @@
                                 HeightRequest="280"
                                 WidthRequest="280" />
                            </Border>
-                           <Image Source="ai_generated_badge.svg"
+                           <Image Source="ai_generated_badge.png"
                                HeightRequest="44"
                                WidthRequest="44"
                                Margin="0,0,0,10"
@@ -94,7 +94,7 @@
                                                       CommandParameter="{Binding CurrentSong.ArtistName}" />
                             </Label.GestureRecognizers>
                         </Label>
-                        <ImageButton Source="artist_bio_icon.svg"
+                        <ImageButton Source="artist_bio_icon.png"
                                  HeightRequest="28"
                                  WidthRequest="28"
                                  Padding="4"

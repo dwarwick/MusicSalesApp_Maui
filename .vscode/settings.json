@@ -1,4 +1,7 @@
 {
   "dotnet.defaultSolution": "MusicSalesApp_Maui.slnx",
-  "dotnetAcquisitionExtension.cacheTimeToLiveMultiplier": 0
+  "dotnetAcquisitionExtension.cacheTimeToLiveMultiplier": 0,
+  "dotnetAcquisitionExtension.existingDotnetPath": "/usr/local/share/dotnet/dotnet",
+  "dotnetAcquisitionExtension.sharedExistingDotnetPath": "/usr/local/share/dotnet/dotnet",
+  "omnisharp.dotnetPath": "/usr/local/share/dotnet"
 }

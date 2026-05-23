@@ -1,0 +1,4 @@
+root = true
+
+[MusicSalesApp.Maui/Platforms/iOS/AppStoreBillingService.cs]
+dotnet_diagnostic.CA1422.severity = none

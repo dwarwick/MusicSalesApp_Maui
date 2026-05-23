@@ -197,7 +197,10 @@ public class PlaylistPlayerViewModelTests
                 .ReturnsAsync(true);
             _mockBillingService.Setup(b => b.PurchaseSubscriptionAsync())
                 .ReturnsAsync(BillingPurchaseResult.Succeeded("test-token", "order-123"));
-            _mockMusicService.Setup(s => s.VerifyGooglePlayPurchaseAsync("test-token", "order-123"))
+            _mockMusicService.Setup(s => s.VerifySubscriptionPurchaseAsync(It.Is<BillingPurchaseVerificationRequest>(r =>
+                    r.Provider == BillingProviders.GooglePlay &&
+                    r.PurchaseToken == "test-token" &&
+                    r.OrderId == "order-123")))
                 .ReturnsAsync((false, "Configured Google Play service account key file was not found on the server."));
 
             var method = typeof(PlaylistPlayerViewModel).GetMethod(

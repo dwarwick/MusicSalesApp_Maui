@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.Configuration;
 using MusicSalesApp.Maui.Services;
 
 namespace MusicSalesApp.Maui.ViewModels;
@@ -18,8 +19,11 @@ public partial class HomeViewModel : ObservableObject
     private readonly IPlaybackService _playbackService;
     private readonly IMediaPlaybackOnboardingService _mediaPlaybackOnboardingService;
     private readonly IBrowserService _browserService;
+    private readonly IConfiguration _configuration;
     private readonly IPlaylistService _playlistService;
     private bool _signalRSubscriptionsAttached;
+
+    private const string DefaultAppleSubscriptionManagementUrl = "https://account.apple.com/account/manage/section/subscriptions";
 
     [ObservableProperty]
     public partial bool IsLoading { get; set; } = true;
@@ -29,13 +33,11 @@ public partial class HomeViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowLoginRegister))]
     [NotifyPropertyChangedFor(nameof(ShowValidateEmail))]
     [NotifyPropertyChangedFor(nameof(ShowSubscribeNow))]
-    [NotifyPropertyChangedFor(nameof(ShowBrowseMusic))]
     public partial bool IsAuthenticated { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowSubscriptionContent))]
     [NotifyPropertyChangedFor(nameof(ShowSubscribeNow))]
-    [NotifyPropertyChangedFor(nameof(ShowBrowseMusic))]
     public partial bool HasActiveSubscription { get; set; }
 
     [ObservableProperty]
@@ -55,10 +57,13 @@ public partial class HomeViewModel : ObservableObject
     public bool ShowLoginRegister => !IsAuthenticated;
     public bool ShowValidateEmail => IsAuthenticated && !IsEmailVerified;
     public bool ShowSubscribeNow => IsAuthenticated && IsEmailVerified && !HasActiveSubscription;
-    public bool ShowBrowseMusic => IsAuthenticated && HasActiveSubscription;
+    public bool ShowBrowseMusic => true;
     public bool ShowFeaturedMusic => FeaturedSongs.Count > 0;
 
     public string SubscribeButtonText => $"Subscribe Now — ${SubscriptionPrice}/mo";
+    public string ManageSubscriptionText => ShouldUseAppleSubscriptionManagement
+        ? "Manage subscription with Apple ›"
+        : "Manage subscription in Google Play ›";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowPlaylists))]
@@ -88,6 +93,7 @@ public partial class HomeViewModel : ObservableObject
         IPlaybackService playbackService,
         IMediaPlaybackOnboardingService mediaPlaybackOnboardingService,
         IBrowserService browserService,
+        IConfiguration configuration,
         IPlaylistService playlistService)
     {
         _authService = authService;
@@ -101,6 +107,7 @@ public partial class HomeViewModel : ObservableObject
         _playbackService = playbackService;
         _mediaPlaybackOnboardingService = mediaPlaybackOnboardingService;
         _browserService = browserService;
+        _configuration = configuration;
         _playlistService = playlistService;
 
         _authService.AuthStateChanged += OnAuthStateChanged;
@@ -469,7 +476,7 @@ public partial class HomeViewModel : ObservableObject
                 return;
             }
 
-            var verificationResult = await _musicService.VerifyGooglePlayPurchaseAsync(result.PurchaseToken!, result.OrderId);
+            var verificationResult = await _musicService.VerifySubscriptionPurchaseAsync(result.ToVerificationRequest());
 
             if (verificationResult.Success)
             {
@@ -495,10 +502,8 @@ public partial class HomeViewModel : ObservableObject
     private Task NavigateToMusicLibraryAsync() => _navigationService.GoToAsync("//MusicLibrary");
 
     [RelayCommand]
-    private async Task OpenGooglePlaySubscriptionsAsync()
-    {
-        await _browserService.OpenAsync("https://play.google.com/store/account/subscriptions");
-    }
+    private Task OpenSubscriptionManagementAsync()
+        => _browserService.OpenAsync(GetSubscriptionManagementUrl());
 
     private void RefreshAuthState()
     {
@@ -506,7 +511,17 @@ public partial class HomeViewModel : ObservableObject
         HasActiveSubscription = _authService.HasActiveSubscription;
         IsEmailVerified = _authService.EmailConfirmed;
         OnPropertyChanged(nameof(ShowPlaylists));
+        OnPropertyChanged(nameof(ManageSubscriptionText));
     }
+
+    private bool ShouldUseAppleSubscriptionManagement
+        => string.Equals(_authService.BillingSource, BillingProviders.Apple, StringComparison.Ordinal) ||
+           DeviceInfo.Platform == DevicePlatform.iOS;
+
+    private string GetSubscriptionManagementUrl()
+        => ShouldUseAppleSubscriptionManagement
+            ? _configuration["AppleAppStore:SubscriptionManagementUrl"] ?? DefaultAppleSubscriptionManagementUrl
+            : "https://play.google.com/store/account/subscriptions";
 
     private void OnAuthStateChanged()
     {

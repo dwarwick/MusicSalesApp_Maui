@@ -19,7 +19,13 @@ public interface IMusicService
     Task<LikeToggleResult?> ToggleDislikeAsync(int songMetadataId);
 
     /// <summary>
+    /// Sends a provider-aware purchase payload to the server for verification and subscription recording.
+    /// </summary>
+    Task<(bool Success, string ErrorMessage)> VerifySubscriptionPurchaseAsync(BillingPurchaseVerificationRequest request);
+
+    /// <summary>
     /// Sends a Google Play purchase token to the server for verification and subscription recording.
+    /// Compatibility wrapper while call sites migrate to VerifySubscriptionPurchaseAsync.
     /// </summary>
     Task<(bool Success, string ErrorMessage)> VerifyGooglePlayPurchaseAsync(string purchaseToken, string? orderId);
 

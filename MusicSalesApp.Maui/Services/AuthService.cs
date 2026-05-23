@@ -18,7 +18,6 @@ public class AuthService : IAuthService
     private readonly IMusicService _musicService;
 
     private const string TokenStorageKey = "auth_token";
-    private const string UserIdStorageKey = "auth_user_id";
     private const string EmailStorageKey = "auth_email";
     private const string EmailConfirmedStorageKey = "auth_email_confirmed";
     private const string BioEmailKey = "bio_email";
@@ -330,7 +329,7 @@ public class AuthService : IAuthService
     {
         await _musicService.ClearPendingStreamRecordsAsync();
         SecureStorage.Default.Remove(TokenStorageKey);
-        SecureStorage.Default.Remove(UserIdStorageKey);
+        SecureStorage.Default.Remove(AuthStorageKeys.UserId);
         SecureStorage.Default.Remove(EmailStorageKey);
         SecureStorage.Default.Remove(EmailConfirmedStorageKey);
         ClearState();
@@ -446,7 +445,7 @@ public class AuthService : IAuthService
         IsLoggedIn = true;
 
         await SecureStorage.Default.SetAsync(TokenStorageKey, data.Token);
-        await SecureStorage.Default.SetAsync(UserIdStorageKey, data.UserId.ToString());
+        await SecureStorage.Default.SetAsync(AuthStorageKeys.UserId, data.UserId.ToString());
         await SecureStorage.Default.SetAsync(EmailStorageKey, data.Email);
         await SecureStorage.Default.SetAsync(EmailConfirmedStorageKey, data.EmailConfirmed.ToString());
 
@@ -479,7 +478,6 @@ public class AuthService : IAuthService
         try
         {
             var client = _httpClientFactory.CreateClient("MusicSalesApi");
-            // Add auth header manually for this one-off call
             if (!string.IsNullOrEmpty(Token))
                 client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Token);
 
@@ -507,21 +505,23 @@ public class AuthService : IAuthService
             if (result is not { Success: true })
                 return;
 
-            var verificationResult = await _musicService.VerifyGooglePlayPurchaseAsync(result.PurchaseToken!, result.OrderId);
+            var verificationResult = await _musicService.VerifySubscriptionPurchaseAsync(result.ToVerificationRequest());
             if (verificationResult.Success)
             {
                 await RefreshUserStatusAsync();
-                _logger.LogInformation("Successfully restored Google Play subscription");
+                _logger.LogInformation("Successfully restored subscription purchase for provider {Provider}", result.Provider);
             }
             else
             {
-                _logger.LogWarning("Restored Google Play purchase but server verification failed: {ErrorMessage}",
+                _logger.LogWarning(
+                    "Restored subscription purchase for provider {Provider} but server verification failed: {ErrorMessage}",
+                    result.Provider,
                     verificationResult.ErrorMessage);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Could not restore Google Play purchases");
+            _logger.LogDebug(ex, "Could not restore subscription purchases");
         }
     }
 

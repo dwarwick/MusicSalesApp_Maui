@@ -20,7 +20,7 @@
 		<Nullable>enable</Nullable>
 		<!-- NU1608: AndroidX.Biometric brings older transitive AndroidX deps that conflict with .NET 10 MAUI versions (benign).
 		     MAUIG2045: MAUI XAML SourceGen can't see CommunityToolkit.Mvvm [RelayCommand] generated properties (falls back to reflection). -->
-		<NoWarn>$(NoWarn);NU1608;MAUIG2045</NoWarn>
+		<NoWarn>$(NoWarn);NU1608;MAUIG2045;CA1422</NoWarn>
 		<AppSettingsEnvironment Condition="'$(AppSettingsEnvironment)' == '' and '$(Configuration)' == 'Debug'">Development</AppSettingsEnvironment>
 		<AppSettingsEnvironment Condition="'$(AppSettingsEnvironment)' == '' and '$(Configuration)' == 'Release'">Production</AppSettingsEnvironment>
 
@@ -40,7 +40,7 @@
 
 		<!-- Versions -->
 		<ApplicationDisplayVersion>1.0.46</ApplicationDisplayVersion>
-		<ApplicationVersion>47</ApplicationVersion>
+		<ApplicationVersion>52</ApplicationVersion>
 
 		<!-- To develop, package, and publish an app to the Microsoft Store, see: https://aka.ms/MauiTemplateUnpackaged -->
 		<WindowsPackageType>None</WindowsPackageType>
@@ -69,6 +69,30 @@
 		<DebugType>portable</DebugType>
 	</PropertyGroup>
 
+	<!-- iOS Release: workaround for App Store launch crash on iPad (iPadOS 26).
+	     The original symptom (build 1.0.45/48) was abort() in the Mono runtime
+	     before any managed frame appeared on device. With UseInterpreter=true the
+	     same crash reproduces on the iOS simulator with a managed stack trace:
+	       Unhandled managed exception: Failed to lookup the required marshalling
+	       information. Selector: respondsToSelector: Type: AppDelegate
+	         at Registrar.DynamicRegistrar.GetMethodDescriptionAndObject(...)
+	     i.e. the *dynamic* registrar can't find the marshalling info for the
+	     AppDelegate. The dynamic registrar is forced whenever UseInterpreter=true.
+	     The fix is to keep the static registrar (which bakes the marshalling info
+	     in at build time) and use LLVM-AOT, per dotnet/maui#24805:
+	     - MtouchRegistrar=static: bake AppDelegate marshalling info in at build time.
+	     - UseInterpreter=false: keep AOT so the static registrar is honored.
+	     - MtouchUseLlvm=true: use LLVM-AOT (more reliable on iPadOS 26 than the
+	       default Mono AOT, which produced the original crash).
+	     - MtouchLink=SdkOnly: trim only BCL/SDK assemblies, preserve user
+	       assemblies so reflection-only types (e.g. via DI) are not stripped. -->
+	<PropertyGroup Condition="'$(Configuration)' == 'Release' and '$(TargetFramework)' == 'net10.0-ios'">
+		<MtouchRegistrar>static</MtouchRegistrar>
+		<UseInterpreter>false</UseInterpreter>
+		<MtouchUseLlvm>true</MtouchUseLlvm>
+		<MtouchLink>SdkOnly</MtouchLink>
+	</PropertyGroup>
+
 	<ItemGroup>
 		<!-- App Icon -->
 		<MauiIcon Include="Resources\AppIcon\appicon.png" Color="#FFFFFF" />
@@ -80,7 +104,8 @@
 		<MauiImage Include="Resources\Images\*" />
 		
 		<!-- Custom Fonts -->
-		<MauiFont Include="Resources\Fonts\*" />
+		<MauiFont Include="Resources\Fonts\OpenSans-Regular.ttf" Alias="OpenSansRegular" />
+		<MauiFont Include="Resources\Fonts\OpenSans-Semibold.ttf" Alias="OpenSansSemibold" />
 
 		<!-- Raw Assets (also remove the "Resources\Raw" prefix) -->
 		<MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
@@ -92,6 +117,10 @@
 		<EmbeddedResource Include="appsettings.Development.json" Condition="Exists('appsettings.Development.json')" />
 		<EmbeddedResource Include="appsettings.Test.json" Condition="Exists('appsettings.Test.json')" />
 		<EmbeddedResource Include="appsettings.Production.json" Condition="Exists('appsettings.Production.json')" />
+	</ItemGroup>
+
+	<ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">
+		<PartialAppManifest Include="Platforms\iOS\ExportCompliance.plist" />
 	</ItemGroup>
 
 	<ItemGroup>
