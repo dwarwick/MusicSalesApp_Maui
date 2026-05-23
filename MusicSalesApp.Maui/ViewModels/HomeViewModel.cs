@@ -33,6 +33,7 @@ public partial class HomeViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowLoginRegister))]
     [NotifyPropertyChangedFor(nameof(ShowValidateEmail))]
     [NotifyPropertyChangedFor(nameof(ShowSubscribeNow))]
+    [NotifyPropertyChangedFor(nameof(ShowArtistUploadHero))]
     public partial bool IsAuthenticated { get; set; }
 
     [ObservableProperty]
@@ -44,6 +45,10 @@ public partial class HomeViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowValidateEmail))]
     [NotifyPropertyChangedFor(nameof(ShowSubscribeNow))]
     public partial bool IsEmailVerified { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowArtistUploadHero))]
+    public partial bool IsCreator { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SubscribeButtonText))]
@@ -59,6 +64,7 @@ public partial class HomeViewModel : ObservableObject
     public bool ShowSubscribeNow => IsAuthenticated && IsEmailVerified && !HasActiveSubscription;
     public bool ShowBrowseMusic => true;
     public bool ShowFeaturedMusic => FeaturedSongs.Count > 0;
+    public bool ShowArtistUploadHero => !(IsAuthenticated && IsCreator);
 
     public string SubscribeButtonText => $"Subscribe Now — ${SubscriptionPrice}/mo";
     public string ManageSubscriptionText => ShouldUseAppleSubscriptionManagement
@@ -515,11 +521,16 @@ public partial class HomeViewModel : ObservableObject
     private Task OpenSubscriptionManagementAsync()
         => _browserService.OpenExternalAsync(GetSubscriptionManagementUrl());
 
+    [RelayCommand]
+    private Task OpenArtistUploadAsync()
+        => _browserService.OpenExternalAsync(_appConfig.ApiBaseUrl);
+
     private void RefreshAuthState()
     {
         IsAuthenticated = _authService.IsLoggedIn;
         HasActiveSubscription = _authService.HasActiveSubscription;
         IsEmailVerified = _authService.EmailConfirmed;
+        IsCreator = _authService.IsCreator;
         OnPropertyChanged(nameof(ShowPlaylists));
         OnPropertyChanged(nameof(ManageSubscriptionText));
         OnPropertyChanged(nameof(SubscriptionAutoRenewalText));

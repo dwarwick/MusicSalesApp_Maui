@@ -45,6 +45,7 @@ public class HomeViewModelTests
             .Returns("https://developer.apple.com/documentation/storekit/testing-disabling-auto-renew");
 
         _mockAppSettingsService.Setup(s => s.GetSubscriptionPriceAsync()).ReturnsAsync("3.99");
+        _mockAppConfig.Setup(c => c.ApiBaseUrl).Returns("https://streamtunes.net");
         _mockAppConfig.Setup(c => c.WebBaseUrl).Returns("https://streamtunes.net");
         _mockMediaPlaybackOnboardingService.Setup(s => s.EnsureBackgroundPlaybackExplainedAsync()).Returns(Task.CompletedTask);
         _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync([]);
@@ -85,6 +86,8 @@ public class HomeViewModelTests
             Assert.That(_viewModel.IsAuthenticated, Is.False);
             Assert.That(_viewModel.HasActiveSubscription, Is.False);
             Assert.That(_viewModel.IsEmailVerified, Is.False);
+            Assert.That(_viewModel.IsCreator, Is.False);
+            Assert.That(_viewModel.ShowArtistUploadHero, Is.True);
             Assert.That(_viewModel.SubscriptionPrice, Is.EqualTo("3.99"));
             Assert.That(_viewModel.IsLoading, Is.True);
         });
@@ -136,6 +139,33 @@ public class HomeViewModelTests
         _viewModel.IsEmailVerified = true;
         _viewModel.HasActiveSubscription = true;
         Assert.That(_viewModel.ShowSubscribeNow, Is.False);
+    }
+
+    [Test]
+    public void ShowArtistUploadHero_TrueWhenNotAuthenticated()
+    {
+        _viewModel.IsAuthenticated = false;
+        _viewModel.IsCreator = false;
+
+        Assert.That(_viewModel.ShowArtistUploadHero, Is.True);
+    }
+
+    [Test]
+    public void ShowArtistUploadHero_TrueWhenAuthenticatedNonCreator()
+    {
+        _viewModel.IsAuthenticated = true;
+        _viewModel.IsCreator = false;
+
+        Assert.That(_viewModel.ShowArtistUploadHero, Is.True);
+    }
+
+    [Test]
+    public void ShowArtistUploadHero_FalseWhenAuthenticatedCreator()
+    {
+        _viewModel.IsAuthenticated = true;
+        _viewModel.IsCreator = true;
+
+        Assert.That(_viewModel.ShowArtistUploadHero, Is.False);
     }
 
     [Test]
@@ -315,6 +345,7 @@ public class HomeViewModelTests
         _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
         _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(true);
         _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
+        _mockAuthService.Setup(a => a.IsCreator).Returns(true);
 
         await _viewModel.LoadCommand.ExecuteAsync(null);
 
@@ -323,6 +354,8 @@ public class HomeViewModelTests
             Assert.That(_viewModel.IsAuthenticated, Is.True);
             Assert.That(_viewModel.HasActiveSubscription, Is.True);
             Assert.That(_viewModel.IsEmailVerified, Is.True);
+            Assert.That(_viewModel.IsCreator, Is.True);
+            Assert.That(_viewModel.ShowArtistUploadHero, Is.False);
         });
     }
 
@@ -529,6 +562,16 @@ public class HomeViewModelTests
         await _viewModel.OpenSubscriptionManagementCommand.ExecuteAsync(null);
 
         _mockBrowserService.Verify(b => b.OpenExternalAsync("https://developer.apple.com/documentation/storekit/testing-disabling-auto-renew"), Times.Once);
+    }
+
+    [Test]
+    public async Task OpenArtistUpload_UsesConfiguredApiBaseUrl()
+    {
+        _mockAppConfig.Setup(c => c.ApiBaseUrl).Returns("https://artists.streamtunes.net");
+
+        await _viewModel.OpenArtistUploadCommand.ExecuteAsync(null);
+
+        _mockBrowserService.Verify(b => b.OpenExternalAsync("https://artists.streamtunes.net"), Times.Once);
     }
 
     [Test]
