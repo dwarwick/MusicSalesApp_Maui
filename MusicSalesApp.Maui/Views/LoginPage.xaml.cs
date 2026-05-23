@@ -12,4 +12,7 @@ public partial class LoginPage : ContentPage
 
     private void OnTogglePasswordVisibility(object? sender, EventArgs e)
         => PasswordEntry.IsPassword = !PasswordEntry.IsPassword;
+
+    private void OnPasswordEntryUnfocused(object? sender, FocusEventArgs e)
+        => PasswordEntry.IsPassword = true;
 }

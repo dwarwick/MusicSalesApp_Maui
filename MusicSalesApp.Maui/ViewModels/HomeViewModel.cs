@@ -64,6 +64,9 @@ public partial class HomeViewModel : ObservableObject
     public string ManageSubscriptionText => ShouldUseAppleSubscriptionManagement
         ? "Manage subscription with Apple ›"
         : "Manage subscription in Google Play ›";
+    public string SubscriptionAutoRenewalText => ShouldUseAppleSubscriptionManagement
+        ? "Subscription automatically renews monthly. Cancel anytime from your Apple Account subscription settings."
+        : "Subscription automatically renews monthly. Cancel anytime from your Google Play subscription settings.";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowPlaylists))]
@@ -261,6 +264,13 @@ public partial class HomeViewModel : ObservableObject
     {
         if (song == null)
         {
+            return;
+        }
+
+        if (!_playbackService.PreviewLimitReached
+            && PlaybackIndicatorStateResolver.ShouldToggleCurrentSong(song.Id, _playbackService.CurrentSong))
+        {
+            _playbackService.TogglePlayPause();
             return;
         }
 
@@ -503,7 +513,7 @@ public partial class HomeViewModel : ObservableObject
 
     [RelayCommand]
     private Task OpenSubscriptionManagementAsync()
-        => _browserService.OpenAsync(GetSubscriptionManagementUrl());
+        => _browserService.OpenExternalAsync(GetSubscriptionManagementUrl());
 
     private void RefreshAuthState()
     {
@@ -512,6 +522,7 @@ public partial class HomeViewModel : ObservableObject
         IsEmailVerified = _authService.EmailConfirmed;
         OnPropertyChanged(nameof(ShowPlaylists));
         OnPropertyChanged(nameof(ManageSubscriptionText));
+        OnPropertyChanged(nameof(SubscriptionAutoRenewalText));
     }
 
     private bool ShouldUseAppleSubscriptionManagement

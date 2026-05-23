@@ -41,6 +41,7 @@
                        Placeholder="Password"
                        Text="{Binding Password}"
                        IsPassword="True"
+                      Unfocused="OnPasswordEntryUnfocused"
                        ReturnType="Done"
                        BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource CardBackgroundDark}}"
                        TextColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}"

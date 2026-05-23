@@ -284,6 +284,21 @@ public class MusicLibraryViewModelTests
     }
 
     [Test]
+    public async Task PlaySong_WhenSongMatchesCurrentPlayback_TogglesPlayPause()
+    {
+        var song = new SongDto { Id = 1, SongTitle = "Test", StreamUrl = "https://example.com/test.mp3" };
+        _viewModel.Songs.Add(song);
+        _mockPlaybackService.SetupGet(p => p.CurrentSong).Returns(song);
+        _mockPlaybackService.SetupGet(p => p.PreviewLimitReached).Returns(false);
+
+        await _viewModel.PlaySongCommand.ExecuteAsync(song);
+
+        _mockPlaybackService.Verify(p => p.TogglePlayPause(), Times.Once);
+        _mockPlaybackService.Verify(p => p.SetPlaylist(It.IsAny<List<SongDto>>(), It.IsAny<int>()), Times.Never);
+        _mockMediaPlaybackOnboardingService.Verify(s => s.EnsureBackgroundPlaybackExplainedAsync(), Times.Never);
+    }
+
+    [Test]
     public async Task PlayVisibleQueueFromStartAsync_UsesCurrentFilteredSongs()
     {
         var songs = new List<SongDto>

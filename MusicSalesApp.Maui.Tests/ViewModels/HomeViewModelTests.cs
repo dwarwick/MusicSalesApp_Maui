@@ -442,6 +442,21 @@ public class HomeViewModelTests
     }
 
     [Test]
+    public async Task PlaySongCommand_WhenSongMatchesCurrentPlayback_TogglesPlayPause()
+    {
+        var song = new SongDto { Id = 2, SongTitle = "Second" };
+        _viewModel.FeaturedSongs = new ObservableCollection<SongDto> { new SongDto { Id = 1, SongTitle = "First" }, song };
+        _mockPlaybackService.SetupGet(p => p.CurrentSong).Returns(song);
+        _mockPlaybackService.SetupGet(p => p.PreviewLimitReached).Returns(false);
+
+        await _viewModel.PlaySongCommand.ExecuteAsync(song);
+
+        _mockPlaybackService.Verify(p => p.TogglePlayPause(), Times.Once);
+        _mockPlaybackService.Verify(p => p.SetPlaylist(It.IsAny<List<SongDto>>(), It.IsAny<int>()), Times.Never);
+        _mockMediaPlaybackOnboardingService.Verify(service => service.EnsureBackgroundPlaybackExplainedAsync(), Times.Never);
+    }
+
+    [Test]
     public async Task PlayFeaturedQueueFromStartAsync_QueuesFeaturedSongsFromBeginning()
     {
         var firstSong = new SongDto { Id = 1, SongTitle = "First" };
@@ -503,7 +518,7 @@ public class HomeViewModelTests
     {
         await _viewModel.OpenSubscriptionManagementCommand.ExecuteAsync(null);
 
-        _mockBrowserService.Verify(b => b.OpenAsync("https://play.google.com/store/account/subscriptions"), Times.Once);
+        _mockBrowserService.Verify(b => b.OpenExternalAsync("https://play.google.com/store/account/subscriptions"), Times.Once);
     }
 
     [Test]
@@ -513,7 +528,7 @@ public class HomeViewModelTests
 
         await _viewModel.OpenSubscriptionManagementCommand.ExecuteAsync(null);
 
-        _mockBrowserService.Verify(b => b.OpenAsync("https://developer.apple.com/documentation/storekit/testing-disabling-auto-renew"), Times.Once);
+        _mockBrowserService.Verify(b => b.OpenExternalAsync("https://developer.apple.com/documentation/storekit/testing-disabling-auto-renew"), Times.Once);
     }
 
     [Test]
@@ -524,6 +539,24 @@ public class HomeViewModelTests
         var viewModel = CreateViewModel();
 
         Assert.That(viewModel.ManageSubscriptionText, Is.EqualTo("Manage subscription with Apple ›"));
+    }
+
+    [Test]
+    public void SubscriptionAutoRenewalText_UsesGooglePlayLabelByDefault()
+    {
+        var viewModel = CreateViewModel();
+
+        Assert.That(viewModel.SubscriptionAutoRenewalText, Does.Contain("Google Play subscription settings"));
+    }
+
+    [Test]
+    public void SubscriptionAutoRenewalText_UsesAppleLabelForAppleBillingSource()
+    {
+        _mockAuthService.SetupGet(a => a.BillingSource).Returns(BillingProviders.Apple);
+
+        var viewModel = CreateViewModel();
+
+        Assert.That(viewModel.SubscriptionAutoRenewalText, Does.Contain("Apple Account subscription settings"));
     }
 
     [Test]

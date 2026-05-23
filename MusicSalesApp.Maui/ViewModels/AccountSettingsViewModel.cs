@@ -194,7 +194,7 @@ public partial class AccountSettingsViewModel : ObservableObject
                 return;
             }
 
-            await _browserService.OpenAsync(GetExternalSubscriptionManagementUrl());
+            await _browserService.OpenExternalAsync(GetExternalSubscriptionManagementUrl());
             return;
         }
 

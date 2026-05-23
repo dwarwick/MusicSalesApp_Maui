@@ -11,8 +11,15 @@ app_environment="$1"
 workspace_root="$(cd "$(dirname "$0")/.." && pwd)"
 project_path="$workspace_root/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj"
 app_bundle="$workspace_root/MusicSalesApp.Maui/bin/Debug/net10.0-ios/ios-arm64/MusicSalesApp.Maui.app"
-mlaunch_path="/usr/local/share/dotnet/packs/Microsoft.iOS.Sdk.net10.0_26.4/26.4.10259/tools/bin/mlaunch"
 bundle_id="net.streamtunes.musicsalesapp.maui"
+
+mlaunch_candidates=(/usr/local/share/dotnet/packs/Microsoft.iOS.Sdk.net10.0_*/*/tools/bin/mlaunch(N))
+if [[ ${#mlaunch_candidates[@]} -eq 0 ]]; then
+  echo "Unable to locate mlaunch in the installed .NET iOS workload. Reinstall or repair the MAUI iOS workload first." >&2
+  exit 1
+fi
+
+mlaunch_path="$(printf '%s\n' "${mlaunch_candidates[@]}" | sort -V | tail -n 1)"
 
 device_lines="$(xcrun xctrace list devices | sed -n '/== Devices ==/,/== Simulators ==/p' | grep -E 'iPhone|iPad|iPod' || true)"
 device_count="$(printf '%s\n' "$device_lines" | sed '/^$/d' | wc -l | tr -d ' ')"
@@ -30,6 +37,12 @@ fi
 
 device_udid="$(printf '%s\n' "$device_lines" | awk -F '[()]' 'NF >= 2 { print $(NF-1) }')"
 
-dotnet build "$project_path" -f net10.0-ios -c Debug -p:AppSettingsEnvironment="$app_environment" -p:RuntimeIdentifier=ios-arm64
+ios_build_args=(
+  -p:AppSettingsEnvironment="$app_environment"
+  -p:RuntimeIdentifier=ios-arm64
+  -p:ValidateXcodeVersion=false
+)
+
+dotnet build "$project_path" -f net10.0-ios -c Debug "${ios_build_args[@]}"
 "$mlaunch_path" --installdev="$app_bundle" --devname "$device_udid" --install-progress
 "$mlaunch_path" --launchdevbundleid "$bundle_id" --devname "$device_udid"

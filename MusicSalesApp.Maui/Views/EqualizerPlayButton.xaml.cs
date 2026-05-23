@@ -170,6 +170,12 @@ public partial class EqualizerPlayButton : ContentView
 
     private void OnTapped(object? sender, TappedEventArgs e)
     {
+        if (_playbackService != null && PlaybackIndicatorStateResolver.ShouldToggleCurrentSong(SongId, _playbackService.CurrentSong))
+        {
+            _playbackService.TogglePlayPause();
+            return;
+        }
+
         var parameter = CommandParameter;
         if (Command?.CanExecute(parameter) == true)
         {
@@ -191,8 +197,7 @@ public partial class EqualizerPlayButton : ContentView
     private void UpdateVisualState()
     {
         var isCurrentSongPlaying = _playbackService?.IsPlaying == true
-            && _playbackService.CurrentSong?.Id == SongId
-            && SongId > 0;
+            && PlaybackIndicatorStateResolver.ShouldToggleCurrentSong(SongId, _playbackService.CurrentSong);
 
         if (isCurrentSongPlaying && _audioVisualizerService != null)
         {
