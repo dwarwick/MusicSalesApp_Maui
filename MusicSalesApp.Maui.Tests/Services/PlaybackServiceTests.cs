@@ -495,6 +495,29 @@ public class PlaybackServiceTests
     }
 
     [Test]
+    public void StreamTracking_PauseAndResume_PreservesAccumulatedPlaybackTowardThreshold()
+    {
+        _service.SetStreamQualifyingSeconds(5);
+        var song = new SongDto { Id = 10, SongTitle = "Test", StreamUrl = "https://test.com/song.mp3" };
+        _service.PlaySong(song);
+
+        for (int i = 1; i <= 3; i++)
+        {
+            _service.UpdatePosition(TimeSpan.FromSeconds(i), TimeSpan.FromSeconds(180));
+        }
+
+        _service.TogglePlayPause();
+        _service.TogglePlayPause();
+
+        _service.UpdatePosition(TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(180));
+        _mockMusicService.Verify(s => s.RecordStreamAsync(It.IsAny<int>()), Times.Never);
+
+        _service.UpdatePosition(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(180));
+
+        _mockMusicService.Verify(s => s.RecordStreamAsync(10), Times.Once);
+    }
+
+    [Test]
     public void StreamTracking_RecordsOnlyOncePerSong()
     {
         _service.SetStreamQualifyingSeconds(3);
