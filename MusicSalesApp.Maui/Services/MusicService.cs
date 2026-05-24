@@ -341,9 +341,16 @@ public class MusicService : IMusicService
             }
 
             var result = await response.Content.ReadFromJsonAsync<StreamRecordResponse>().ConfigureAwait(false);
-            if (result?.StreamCount is int streamCount)
+            if (result is { CountIncremented: true, StreamCount: int streamCount })
             {
                 OnStreamCountRecorded?.Invoke(songMetadataId, streamCount);
+            }
+            else if (result is { CountIncremented: false, StreamCount: int suppressedCount })
+            {
+                _logger.LogInformation(
+                    "Server accepted stream report for song {SongMetadataId} without incrementing the count. Current count: {StreamCount}",
+                    songMetadataId,
+                    suppressedCount);
             }
 
             return new StreamRecordAttemptResult(result?.StreamCount, false, false);
@@ -599,7 +606,7 @@ public class MusicService : IMusicService
 
     private sealed record CancelResponse(bool Success, DateTime? EndDate);
 
-    private sealed record StreamRecordResponse(int SongMetadataId, int StreamCount);
+    private sealed record StreamRecordResponse(int SongMetadataId, int StreamCount, bool CountIncremented);
 
     public async Task<bool> ReportSongAsync(int songMetadataId, string reason)
     {

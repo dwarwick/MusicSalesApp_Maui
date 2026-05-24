@@ -519,6 +519,9 @@ public class SongPlayerViewModelTests
             n.GoToAsync("playlist-player", It.Is<IDictionary<string, object>>(d =>
                 d.ContainsKey("GenreName") && (string)d["GenreName"] == "Rock")),
             Times.Once);
+        _mockNavigationService.Verify(n =>
+            n.GoToReplacingCurrentAsync(It.IsAny<string>(), It.IsAny<IDictionary<string, object>>()),
+            Times.Never);
     }
 
     [Test]
@@ -530,6 +533,9 @@ public class SongPlayerViewModelTests
             n.GoToAsync("playlist-player", It.Is<IDictionary<string, object>>(d =>
                 d.ContainsKey("ArtistName") && (string)d["ArtistName"] == "Band A")),
             Times.Once);
+        _mockNavigationService.Verify(n =>
+            n.GoToReplacingCurrentAsync(It.IsAny<string>(), It.IsAny<IDictionary<string, object>>()),
+            Times.Never);
     }
 
     [Test]

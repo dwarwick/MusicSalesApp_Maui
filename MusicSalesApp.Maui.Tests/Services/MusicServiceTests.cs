@@ -178,7 +178,7 @@ public class MusicServiceTests
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = JsonContent.Create(new { songMetadataId = 42, streamCount = 99 })
+                Content = JsonContent.Create(new { songMetadataId = 42, streamCount = 99, countIncremented = true })
             });
         CreateMockHttpClient(handler.Object);
         var service = CreateService();
@@ -196,6 +196,35 @@ public class MusicServiceTests
                 r.Method == HttpMethod.Post &&
                 r.RequestUri!.PathAndQuery.Contains("api/music/stream/42")),
             ItExpr.IsAny<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RecordStreamAsync_WhenServerSuppressesDuplicate_ReturnsCountWithoutRaisingEvent()
+    {
+        var handler = new Mock<HttpMessageHandler>();
+        var recordedCounts = new List<(int songId, int newCount)>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.Is<HttpRequestMessage>(r =>
+                    r.Method == HttpMethod.Post &&
+                    r.RequestUri!.PathAndQuery.Contains("api/music/stream/42")),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new { songMetadataId = 42, streamCount = 99, countIncremented = false })
+            });
+
+        CreateMockHttpClient(handler.Object);
+        var service = CreateService();
+        service.OnStreamCountRecorded += (songId, newCount) => recordedCounts.Add((songId, newCount));
+
+        var streamCount = await service.RecordStreamAsync(42);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(streamCount, Is.EqualTo(99));
+            Assert.That(recordedCounts, Is.Empty);
+        });
     }
 
     [Test]
@@ -284,7 +313,7 @@ public class MusicServiceTests
 
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
-                    Content = JsonContent.Create(new { songMetadataId = 42, streamCount = 99 })
+                    Content = JsonContent.Create(new { songMetadataId = 42, streamCount = 99, countIncremented = true })
                 });
             });
         CreateMockHttpClient(handler.Object);
@@ -331,7 +360,7 @@ public class MusicServiceTests
                 secondAttemptObserved.TrySetResult();
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
-                    Content = JsonContent.Create(new { songMetadataId = 42, streamCount = 99 })
+                    Content = JsonContent.Create(new { songMetadataId = 42, streamCount = 99, countIncremented = true })
                 });
             });
 

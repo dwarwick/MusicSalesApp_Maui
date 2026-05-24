@@ -524,7 +524,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     private async Task NavigateToGenreAsync(string? genre)
     {
         if (string.IsNullOrEmpty(genre)) return;
-        await _navigationService.GoToAsync("playlist-player", new Dictionary<string, object>
+        await _navigationService.GoToReplacingCurrentAsync("playlist-player", new Dictionary<string, object>
         {
             ["GenreName"] = genre
         });
@@ -534,7 +534,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     private async Task NavigateToArtistAsync(string? artist)
     {
         if (string.IsNullOrEmpty(artist)) return;
-        await _navigationService.GoToAsync("playlist-player", new Dictionary<string, object>
+        await _navigationService.GoToReplacingCurrentAsync("playlist-player", new Dictionary<string, object>
         {
             ["ArtistName"] = artist
         });

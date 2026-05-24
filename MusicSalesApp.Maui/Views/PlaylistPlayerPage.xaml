@@ -38,16 +38,16 @@
                                      IsVisible="{Binding CurrentSong, Converter={toolkit:IsNotNullConverter}}">
 
                     <!-- Large Album Art -->
-                          <Grid HorizontalOptions="Center"
-                             HeightRequest="280"
-                             WidthRequest="280">
+                                  <Grid HorizontalOptions="Center"
+                                      HeightRequest="{StaticResource PlayerHeroArtSize}"
+                                      WidthRequest="{StaticResource PlayerHeroArtSize}">
                            <Border HorizontalOptions="Center"
                                 StrokeShape="RoundRectangle 12"
                                 StrokeThickness="0">
                             <Image Source="{Binding CurrentSong.AlbumArtUrl}"
                                 Aspect="AspectFill"
-                                HeightRequest="280"
-                                WidthRequest="280" />
+                                          HeightRequest="{StaticResource PlayerHeroArtSize}"
+                                          WidthRequest="{StaticResource PlayerHeroArtSize}" />
                            </Border>
                            <Image Source="ai_generated_badge.png"
                                HeightRequest="44"
