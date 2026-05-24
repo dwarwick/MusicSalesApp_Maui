@@ -850,6 +850,22 @@ public class MusicLibraryViewModelTests
     }
 
     [Test]
+    public async Task LikeSong_WhenNotLoggedInAndPromptAccepted_NavigatesToAnchoredLoginEntry()
+    {
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(false);
+        _mockAlertService.Setup(a => a.ShowConfirmAsync(
+            "Login Required", It.IsAny<string>(), "Login", "Cancel"))
+            .ReturnsAsync(true);
+        var song = new SongDto { Id = 1, SongTitle = "Test" };
+
+        await _viewModel.LikeSongCommand.ExecuteAsync(song);
+
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.LoginEntry), Times.Once);
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.Login), Times.Never);
+        _mockMusicService.Verify(s => s.ToggleLikeAsync(It.IsAny<int>()), Times.Never);
+    }
+
+    [Test]
     public async Task DislikeSong_WhenNotLoggedIn_ShowsLoginPrompt()
     {
         _mockAuthService.Setup(a => a.IsLoggedIn).Returns(false);

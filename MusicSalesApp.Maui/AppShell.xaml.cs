@@ -31,17 +31,17 @@ public partial class AppShell : Shell
 		VersionLabel.Text = $"version: {AppInfo.Current.VersionString} ({AppInfo.Current.BuildString})";
 
 		// Register routes for pages that aren't in the flyout
-		Routing.RegisterRoute("login", typeof(LoginPage));
-		Routing.RegisterRoute("register", typeof(RegisterPage));
-		Routing.RegisterRoute("verify-email", typeof(VerifyEmailPage));
-		Routing.RegisterRoute("forgot-password", typeof(ForgotPasswordPage));
-		Routing.RegisterRoute("reset-password", typeof(ResetPasswordPage));
-		Routing.RegisterRoute("song-player", typeof(SongPlayerPage));
-		Routing.RegisterRoute("persona", typeof(PersonaPage));
-		Routing.RegisterRoute("playlist-player", typeof(PlaylistPlayerPage));
-		Routing.RegisterRoute("account-settings", typeof(AccountSettingsPage));
-		Routing.RegisterRoute("policy", typeof(PolicyPage));
-		Routing.RegisterRoute("my-playlists", typeof(MyPlaylistsPage));
+		Routing.RegisterRoute(NavigationRoutes.Login, typeof(LoginPage));
+		Routing.RegisterRoute(NavigationRoutes.Register, typeof(RegisterPage));
+		Routing.RegisterRoute(NavigationRoutes.VerifyEmail, typeof(VerifyEmailPage));
+		Routing.RegisterRoute(NavigationRoutes.ForgotPassword, typeof(ForgotPasswordPage));
+		Routing.RegisterRoute(NavigationRoutes.ResetPassword, typeof(ResetPasswordPage));
+		Routing.RegisterRoute(NavigationRoutes.SongPlayer, typeof(SongPlayerPage));
+		Routing.RegisterRoute(NavigationRoutes.Persona, typeof(PersonaPage));
+		Routing.RegisterRoute(NavigationRoutes.PlaylistPlayer, typeof(PlaylistPlayerPage));
+		Routing.RegisterRoute(NavigationRoutes.AccountSettings, typeof(AccountSettingsPage));
+		Routing.RegisterRoute(NavigationRoutes.Policy, typeof(PolicyPage));
+		Routing.RegisterRoute(NavigationRoutes.MyPlaylists, typeof(MyPlaylistsPage));
 
 		UpdateMenuVisibility();
 	}
@@ -97,19 +97,19 @@ public partial class AppShell : Shell
 	private async void OnLoginClicked(object? sender, EventArgs e)
 	{
 		Shell.Current.FlyoutIsPresented = false;
-		await GoToAsync("login");
+		await GoToAsync(NavigationRoutes.LoginEntry);
 	}
 
 	private async void OnRegisterClicked(object? sender, EventArgs e)
 	{
 		Shell.Current.FlyoutIsPresented = false;
-		await GoToAsync("register");
+		await GoToAsync(NavigationRoutes.Register);
 	}
 
 	private async void OnValidateEmailClicked(object? sender, EventArgs e)
 	{
 		Shell.Current.FlyoutIsPresented = false;
-		await GoToAsync("verify-email", new Dictionary<string, object>
+		await GoToAsync(NavigationRoutes.VerifyEmail, new Dictionary<string, object>
 		{
 			["UserId"] = _authService.UserId ?? 0,
 			["Email"] = _authService.Email ?? string.Empty,
@@ -120,13 +120,13 @@ public partial class AppShell : Shell
 	private async void OnAccountSettingsClicked(object? sender, EventArgs e)
 	{
 		Shell.Current.FlyoutIsPresented = false;
-		await GoToAsync("account-settings");
+		await GoToAsync(NavigationRoutes.AccountSettings);
 	}
 
 	private async void OnMyPlaylistsClicked(object? sender, EventArgs e)
 	{
 		Shell.Current.FlyoutIsPresented = false;
-		await GoToAsync("my-playlists");
+		await GoToAsync(NavigationRoutes.MyPlaylists);
 	}
 
 	private async void OnLogoutClicked(object? sender, EventArgs e)

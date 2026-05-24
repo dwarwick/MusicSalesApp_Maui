@@ -72,7 +72,7 @@ public partial class ResetPasswordViewModel : ObservableObject
             {
                 await _alertService.DisplayAlertAsync("Success", "Your password has been reset. Please log in.", "OK");
                 // Navigate back to login (pop the reset + forgot password pages)
-                await _navigationService.GoToAsync("//MusicLibrary/login");
+                await _navigationService.GoToAsync(NavigationRoutes.LoginEntry);
             }
             else
             {

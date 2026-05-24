@@ -64,7 +64,7 @@ public partial class LoginViewModel : ObservableObject
                 else
                 {
                     await PromptBiometricAsync();
-                    await _navigationService.GoToAsync("//MusicLibrary");
+                    await _navigationService.GoToAsync(NavigationRoutes.MusicLibraryRoot);
                 }
             }
             else
@@ -105,7 +105,7 @@ public partial class LoginViewModel : ObservableObject
                 }
                 else
                 {
-                    await _navigationService.GoToAsync("//MusicLibrary");
+                    await _navigationService.GoToAsync(NavigationRoutes.MusicLibraryRoot);
                 }
             }
             else
@@ -134,7 +134,7 @@ public partial class LoginViewModel : ObservableObject
             var result = await _authService.AuthenticateWithGoogleAsync();
             if (result.Success)
             {
-                await _navigationService.GoToAsync("//MusicLibrary");
+                await _navigationService.GoToAsync(NavigationRoutes.MusicLibraryRoot);
                 return;
             }
 

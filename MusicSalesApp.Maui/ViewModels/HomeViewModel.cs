@@ -402,7 +402,7 @@ public partial class HomeViewModel : ObservableObject
 
             if (goToLogin)
             {
-                await _navigationService.GoToAsync("login");
+                await _navigationService.GoToAsync(NavigationRoutes.LoginEntry);
             }
 
             return false;
@@ -462,7 +462,7 @@ public partial class HomeViewModel : ObservableObject
     private Task NavigateToMyPlaylistsAsync() => _navigationService.GoToAsync("my-playlists");
 
     [RelayCommand]
-    private Task NavigateToLoginAsync() => _navigationService.GoToAsync("login");
+    private Task NavigateToLoginAsync() => _navigationService.GoToAsync(NavigationRoutes.LoginEntry);
 
     [RelayCommand]
     private Task NavigateToRegisterAsync() => _navigationService.GoToAsync("register");
@@ -515,7 +515,7 @@ public partial class HomeViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private Task NavigateToMusicLibraryAsync() => _navigationService.GoToAsync("//MusicLibrary");
+    private Task NavigateToMusicLibraryAsync() => _navigationService.GoToAsync(NavigationRoutes.MusicLibraryRoot);
 
     [RelayCommand]
     private Task OpenSubscriptionManagementAsync()

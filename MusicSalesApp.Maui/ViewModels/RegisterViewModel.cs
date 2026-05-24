@@ -103,7 +103,7 @@ public partial class RegisterViewModel : ObservableObject
                 if (success)
                 {
                     PendingGoogleRegistrationToken = string.Empty;
-                    await _navigationService.GoToAsync("//MusicLibrary");
+                    await _navigationService.GoToAsync(NavigationRoutes.MusicLibraryRoot);
                 }
                 else
                 {
@@ -198,7 +198,7 @@ public partial class RegisterViewModel : ObservableObject
             var result = await _authService.AuthenticateWithGoogleAsync();
             if (result.Success)
             {
-                await _navigationService.GoToAsync("//MusicLibrary");
+                await _navigationService.GoToAsync(NavigationRoutes.MusicLibraryRoot);
                 return;
             }
 
@@ -212,7 +212,7 @@ public partial class RegisterViewModel : ObservableObject
 
                 if (success)
                 {
-                    await _navigationService.GoToAsync("//MusicLibrary");
+                    await _navigationService.GoToAsync(NavigationRoutes.MusicLibraryRoot);
                     return;
                 }
 
@@ -237,7 +237,7 @@ public partial class RegisterViewModel : ObservableObject
     [RelayCommand]
     private async Task GoToLoginAsync()
     {
-        await _navigationService.GoToAsync("login");
+        await _navigationService.GoToAsync(NavigationRoutes.LoginEntry);
     }
 
     private string BuildWebUrl(string relativePath)

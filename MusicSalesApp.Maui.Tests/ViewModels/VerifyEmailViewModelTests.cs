@@ -111,7 +111,7 @@ public class VerifyEmailViewModelTests
 
         await _viewModel.VerifyCommand.ExecuteAsync(null);
 
-        _mockNavigationService.Verify(n => n.GoToAsync("//MusicLibrary"), Times.Once);
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.MusicLibraryRoot), Times.Once);
     }
 
     [Test]
@@ -267,7 +267,7 @@ public class VerifyEmailViewModelTests
     {
         await _viewModel.SkipCommand.ExecuteAsync(null);
 
-        _mockNavigationService.Verify(n => n.GoToAsync("//MusicLibrary"), Times.Once);
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.MusicLibraryRoot), Times.Once);
     }
 
     #endregion

@@ -120,7 +120,7 @@ public class LoginViewModelTests
             (string)d["Email"] == "test@test.com" &&
             (string)d["Password"] == "password"
         )), Times.Once);
-        _mockNavigationService.Verify(n => n.GoToAsync("//MusicLibrary"), Times.Never);
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.MusicLibraryRoot), Times.Never);
     }
 
     [Test]
@@ -134,7 +134,7 @@ public class LoginViewModelTests
 
         await _viewModel.LoginCommand.ExecuteAsync(null);
 
-        _mockNavigationService.Verify(n => n.GoToAsync("//MusicLibrary"), Times.Once);
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.MusicLibraryRoot), Times.Once);
     }
 
     [Test]
@@ -149,7 +149,7 @@ public class LoginViewModelTests
         await _viewModel.BiometricLoginCommand.ExecuteAsync(null);
 
         _mockNavigationService.Verify(n => n.GoToAsync("verify-email", It.IsAny<IDictionary<string, object>>()), Times.Once);
-        _mockNavigationService.Verify(n => n.GoToAsync("//MusicLibrary"), Times.Never);
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.MusicLibraryRoot), Times.Never);
     }
 
     [Test]
@@ -161,7 +161,7 @@ public class LoginViewModelTests
 
         await _viewModel.BiometricLoginCommand.ExecuteAsync(null);
 
-        _mockNavigationService.Verify(n => n.GoToAsync("//MusicLibrary"), Times.Once);
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.MusicLibraryRoot), Times.Once);
     }
 
     [Test]
@@ -172,7 +172,7 @@ public class LoginViewModelTests
 
         await _viewModel.GoogleLoginCommand.ExecuteAsync(null);
 
-        _mockNavigationService.Verify(n => n.GoToAsync("//MusicLibrary"), Times.Once);
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.MusicLibraryRoot), Times.Once);
     }
 
     [Test]

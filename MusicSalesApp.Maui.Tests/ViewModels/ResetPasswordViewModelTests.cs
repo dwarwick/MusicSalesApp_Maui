@@ -74,6 +74,21 @@ public class ResetPasswordViewModelTests
     }
 
     [Test]
+    public async Task ResetPasswordAsync_Success_NavigatesToAnchoredLoginEntry()
+    {
+        _viewModel.Code = "123456";
+        _viewModel.NewPassword = "Passw0rd!";
+        _viewModel.ConfirmPassword = "Passw0rd!";
+        _mockAuthService.Setup(a => a.ResetPasswordAsync(1, "123456", "Passw0rd!"))
+            .ReturnsAsync((true, string.Empty));
+
+        await _viewModel.ResetPasswordCommand.ExecuteAsync(null);
+
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.LoginEntry), Times.Once);
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.Login), Times.Never);
+    }
+
+    [Test]
     public async Task ResendCodeAsync_Success_ShowsAlert()
     {
         _mockAuthService.Setup(a => a.ForgotPasswordAsync("test@test.com"))

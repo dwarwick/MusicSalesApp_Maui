@@ -364,7 +364,8 @@ public class HomeViewModelTests
     {
         await _viewModel.NavigateToLoginCommand.ExecuteAsync(null);
 
-        _mockNavigationService.Verify(n => n.GoToAsync("login"), Times.Once);
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.LoginEntry), Times.Once);
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.Login), Times.Never);
     }
 
     [Test]
@@ -456,7 +457,7 @@ public class HomeViewModelTests
     {
         await _viewModel.NavigateToMusicLibraryCommand.ExecuteAsync(null);
 
-        _mockNavigationService.Verify(n => n.GoToAsync("//MusicLibrary"), Times.Once);
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.MusicLibraryRoot), Times.Once);
     }
 
     [Test]
@@ -521,6 +522,23 @@ public class HomeViewModelTests
             It.IsAny<string>(),
             "Login",
             "Cancel"), Times.Once);
+        _mockMusicService.Verify(s => s.ToggleLikeAsync(It.IsAny<int>()), Times.Never);
+    }
+
+    [Test]
+    public async Task LikeSong_WhenNotLoggedInAndPromptAccepted_NavigatesToAnchoredLoginEntry()
+    {
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(false);
+        _mockAlertService.Setup(a => a.ShowConfirmAsync(
+            "Login Required",
+            It.IsAny<string>(),
+            "Login",
+            "Cancel")).ReturnsAsync(true);
+
+        await _viewModel.LikeSongCommand.ExecuteAsync(new SongDto { Id = 10, SongTitle = "Test" });
+
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.LoginEntry), Times.Once);
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.Login), Times.Never);
         _mockMusicService.Verify(s => s.ToggleLikeAsync(It.IsAny<int>()), Times.Never);
     }
 

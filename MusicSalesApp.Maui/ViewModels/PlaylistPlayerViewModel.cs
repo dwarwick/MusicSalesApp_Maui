@@ -543,7 +543,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     [RelayCommand]
     private async Task GoToMusicLibraryAsync()
     {
-        await _navigationService.GoToAsync("//MusicLibrary");
+        await _navigationService.GoToAsync(NavigationRoutes.MusicLibraryRoot);
     }
 
     // --- Auth helpers ---
@@ -555,7 +555,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
             bool goToLogin = await _alertService.ShowConfirmAsync("Login Required",
                 $"Please log in to {action}.", "Login", "Cancel");
             if (goToLogin)
-                await _navigationService.GoToAsync("login");
+                await _navigationService.GoToAsync(NavigationRoutes.LoginEntry);
             return false;
         }
 

@@ -270,7 +270,7 @@ public partial class SongPlayerViewModel : ObservableObject
             bool goToLogin = await _alertService.ShowConfirmAsync("Login Required",
                 $"Please log in to {action}.", "Login", "Cancel");
             if (goToLogin)
-                await _navigationService.GoToAsync("login");
+                await _navigationService.GoToAsync(NavigationRoutes.LoginEntry);
             return false;
         }
 

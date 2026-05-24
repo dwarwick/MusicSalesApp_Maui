@@ -115,7 +115,7 @@ public partial class VerifyEmailViewModel : ObservableObject
             if (success)
             {
                 await PromptBiometricAsync();
-                await _navigationService.GoToAsync("//MusicLibrary");
+                await _navigationService.GoToAsync(NavigationRoutes.MusicLibraryRoot);
             }
             else
             {
@@ -216,7 +216,7 @@ public partial class VerifyEmailViewModel : ObservableObject
     [RelayCommand]
     private async Task SkipAsync()
     {
-        await _navigationService.GoToAsync("//MusicLibrary");
+        await _navigationService.GoToAsync(NavigationRoutes.MusicLibraryRoot);
     }
 
     private async Task PromptBiometricAsync()

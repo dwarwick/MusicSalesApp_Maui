@@ -243,7 +243,8 @@ public class RegisterViewModelTests
     {
         await _viewModel.GoToLoginCommand.ExecuteAsync(null);
 
-        _mockNavigationService.Verify(n => n.GoToAsync("login"), Times.Once);
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.LoginEntry), Times.Once);
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.Login), Times.Never);
     }
 
     [Test]
@@ -258,7 +259,7 @@ public class RegisterViewModelTests
         await _viewModel.RegisterCommand.ExecuteAsync(null);
 
         _mockAuthService.Verify(a => a.CompleteGoogleRegistrationAsync("pending-token", true, true, true), Times.Once);
-        _mockNavigationService.Verify(n => n.GoToAsync("//MusicLibrary"), Times.Once);
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.MusicLibraryRoot), Times.Once);
     }
 
     [Test]
@@ -287,6 +288,6 @@ public class RegisterViewModelTests
         await _viewModel.RegisterWithGoogleCommand.ExecuteAsync(null);
 
         _mockAuthService.Verify(a => a.CompleteGoogleRegistrationAsync("pending-token", true, true, true), Times.Once);
-        _mockNavigationService.Verify(n => n.GoToAsync("//MusicLibrary"), Times.Once);
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.MusicLibraryRoot), Times.Once);
     }
 }
