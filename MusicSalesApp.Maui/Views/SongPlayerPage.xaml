@@ -19,16 +19,16 @@
                                      Padding="20,24,20,16">
 
                 <!-- Large Album Art -->
-                  <Grid HorizontalOptions="Center"
-                     HeightRequest="300"
-                     WidthRequest="300">
+                        <Grid HorizontalOptions="Center"
+                            HeightRequest="{StaticResource PlayerHeroArtSize}"
+                            WidthRequest="{StaticResource PlayerHeroArtSize}">
                       <Border HorizontalOptions="Center"
                         StrokeShape="RoundRectangle 12"
                         StrokeThickness="0">
                        <Image Source="{Binding Song.AlbumArtUrl}"
                            Aspect="AspectFill"
-                           HeightRequest="300"
-                           WidthRequest="300" />
+                                    HeightRequest="{StaticResource PlayerHeroArtSize}"
+                                    WidthRequest="{StaticResource PlayerHeroArtSize}" />
                       </Border>
                       <Image Source="ai_generated_badge.png"
                           HeightRequest="44"

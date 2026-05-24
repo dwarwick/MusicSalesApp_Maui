@@ -491,25 +491,31 @@ public class PlaylistPlayerViewModelTests
     // --- Navigation ---
 
     [Test]
-    public async Task NavigateToGenre_NavigatesToPlaylistPlayer()
+    public async Task NavigateToGenre_ReplacesCurrentPlaylistPlayer()
     {
         await _viewModel.NavigateToGenreCommand.ExecuteAsync("Rock");
 
         _mockNavigationService.Verify(n =>
-            n.GoToAsync("playlist-player", It.Is<Dictionary<string, object>>(d =>
+            n.GoToReplacingCurrentAsync("playlist-player", It.Is<IDictionary<string, object>>(d =>
                 d.ContainsKey("GenreName") && (string)d["GenreName"] == "Rock")),
             Times.Once);
+        _mockNavigationService.Verify(n =>
+            n.GoToAsync("playlist-player", It.IsAny<IDictionary<string, object>>()),
+            Times.Never);
     }
 
     [Test]
-    public async Task NavigateToArtist_NavigatesToPlaylistPlayer()
+    public async Task NavigateToArtist_ReplacesCurrentPlaylistPlayer()
     {
         await _viewModel.NavigateToArtistCommand.ExecuteAsync("Band A");
 
         _mockNavigationService.Verify(n =>
-            n.GoToAsync("playlist-player", It.Is<Dictionary<string, object>>(d =>
+            n.GoToReplacingCurrentAsync("playlist-player", It.Is<IDictionary<string, object>>(d =>
                 d.ContainsKey("ArtistName") && (string)d["ArtistName"] == "Band A")),
             Times.Once);
+        _mockNavigationService.Verify(n =>
+            n.GoToAsync("playlist-player", It.IsAny<IDictionary<string, object>>()),
+            Times.Never);
     }
 
     [Test]
@@ -518,7 +524,7 @@ public class PlaylistPlayerViewModelTests
         await _viewModel.NavigateToGenreCommand.ExecuteAsync(null);
 
         _mockNavigationService.Verify(n =>
-            n.GoToAsync(It.IsAny<string>(), It.IsAny<Dictionary<string, object>>()),
+            n.GoToReplacingCurrentAsync(It.IsAny<string>(), It.IsAny<IDictionary<string, object>>()),
             Times.Never);
     }
 
@@ -528,7 +534,7 @@ public class PlaylistPlayerViewModelTests
         await _viewModel.NavigateToArtistCommand.ExecuteAsync(string.Empty);
 
         _mockNavigationService.Verify(n =>
-            n.GoToAsync(It.IsAny<string>(), It.IsAny<Dictionary<string, object>>()),
+            n.GoToReplacingCurrentAsync(It.IsAny<string>(), It.IsAny<IDictionary<string, object>>()),
             Times.Never);
     }
 
