@@ -8,19 +8,22 @@ public partial class AppShell : Shell
 	private readonly IAuthService _authService;
 	private readonly IAdminMessageCoordinator _adminMessageCoordinator;
 	private readonly IBrowserService _browserService;
+	private readonly IAppConfig _appConfig;
 	private string _testingServerBannerUrl = string.Empty;
 
 	public AppShell(
 		IAuthService authService,
 		IAdminMessageCoordinator adminMessageCoordinator,
 		ITestingServerBannerService testingServerBannerService,
-		IBrowserService browserService)
+		IBrowserService browserService,
+		IAppConfig appConfig)
 	{
 		InitializeComponent();
 
 		_authService = authService;
 		_adminMessageCoordinator = adminMessageCoordinator;
 		_browserService = browserService;
+		_appConfig = appConfig;
 		_authService.AuthStateChanged += OnAuthStateChanged;
 		InitializeTestingServerBanner(testingServerBannerService.GetBannerInfo());
 
@@ -68,7 +71,7 @@ public partial class AppShell : Shell
 			return;
 		}
 
-		await _browserService.OpenAsync(_testingServerBannerUrl);
+		await _browserService.OpenExternalAsync(_testingServerBannerUrl);
 	}
 
 	private void UpdateMenuVisibility()
@@ -135,52 +138,35 @@ public partial class AppShell : Shell
 	private async void OnTermsOfUseClicked(object? sender, EventArgs e)
 	{
 		Shell.Current.FlyoutIsPresented = false;
-		await GoToAsync("policy", new Dictionary<string, object>
-		{
-			["title"] = "Terms of Use",
-			["path"] = "/terms-of-use"
-		});
+		await _browserService.OpenExternalAsync(BuildWebUrl("/terms-of-use"));
 	}
 
 	private async void OnPrivacyPolicyClicked(object? sender, EventArgs e)
 	{
 		Shell.Current.FlyoutIsPresented = false;
-		await GoToAsync("policy", new Dictionary<string, object>
-		{
-			["title"] = "Privacy Policy",
-			["path"] = "/privacy-policy"
-		});
+		await _browserService.OpenExternalAsync(BuildWebUrl("/privacy-policy"));
 	}
 
 	private async void OnAccountDeletionClicked(object? sender, EventArgs e)
 	{
 		Shell.Current.FlyoutIsPresented = false;
-		await GoToAsync("policy", new Dictionary<string, object>
-		{
-			["title"] = "Account Deletion",
-			["path"] = "/account-deletion"
-		});
+		await _browserService.OpenExternalAsync(BuildWebUrl("/account-deletion"));
 	}
 
 	private async void OnRefundPolicyClicked(object? sender, EventArgs e)
 	{
 		Shell.Current.FlyoutIsPresented = false;
-		await GoToAsync("policy", new Dictionary<string, object>
-		{
-			["title"] = "User Refund Policy",
-			["path"] = "/user-refund-policy"
-		});
+		await _browserService.OpenExternalAsync(BuildWebUrl("/user-refund-policy"));
 	}
 
 	private async void OnCopyrightPolicyClicked(object? sender, EventArgs e)
 	{
 		Shell.Current.FlyoutIsPresented = false;
-		await GoToAsync("policy", new Dictionary<string, object>
-		{
-			["title"] = "Copyright Policy",
-			["path"] = "/creator-agreement"
-		});
+		await _browserService.OpenExternalAsync(BuildWebUrl("/creator-agreement"));
 	}
+
+	private string BuildWebUrl(string relativePath)
+		=> $"{_appConfig.WebBaseUrl.TrimEnd('/')}/{relativePath.TrimStart('/')}";
 
 	protected override bool OnBackButtonPressed()
 	{

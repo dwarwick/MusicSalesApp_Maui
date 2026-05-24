@@ -4,48 +4,14 @@
              x:Class="MusicSalesApp.Maui.Views.NowPlayingView">
 
     <Grid x:Name="DrawerRoot"
-          HeightRequest="44"
-          MinimumHeightRequest="44"
-          IsClippedToBounds="True">
+                    MinimumHeightRequest="44">
         <Border x:Name="PlayerBorder"
                 Padding="0"
                 BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource PlayerBarDark}}"
                 StrokeThickness="0">
             <VerticalStackLayout Spacing="0">
-                <Grid x:Name="DrawerHandle"
-                      HeightRequest="44"
-                      Padding="12,0,12,0">
-                    <Grid.GestureRecognizers>
-                        <TapGestureRecognizer x:Name="DrawerToggleTap" />
-                        <PanGestureRecognizer x:Name="DrawerPanGesture" />
-                    </Grid.GestureRecognizers>
-                      <Grid HeightRequest="12"
-                          WidthRequest="96"
-                          HorizontalOptions="Center"
-                          VerticalOptions="Start">
-                        <Path Data="M12,1 C15,1 18,4 22,9 L74,9 C78,4 81,1 84,1 Z"
-                            Fill="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray300}}"
-                              HorizontalOptions="Fill"
-                              VerticalOptions="Fill" />
-                        <Path Data="M12,1 C15,1 18,4 22,9 L74,9 C78,4 81,1 84,1"
-                            Stroke="{AppThemeBinding Light={StaticResource Gray300}, Dark={StaticResource Gray400}}"
-                            StrokeThickness="1.25"
-                              StrokeLineJoin="Round"
-                              StrokeLineCap="Round"
-                              HorizontalOptions="Fill"
-                              VerticalOptions="Fill" />
-                        <Path Data="M2,1 L94,1"
-                            Stroke="{AppThemeBinding Light={StaticResource Gray300}, Dark={StaticResource Gray400}}"
-                            StrokeThickness="1.25"
-                              StrokeLineCap="Round"
-                              HorizontalOptions="Fill"
-                              VerticalOptions="Start" />
-                      </Grid>
-                </Grid>
-
                 <VerticalStackLayout x:Name="ExpandedContent"
-                                     Spacing="0"
-                                     InputTransparent="True">
+                                                                         Spacing="0">
                     <VerticalStackLayout x:Name="SongContentContainer"
                                          Spacing="0">
                         <!-- Progress Slider Row -->
@@ -215,28 +181,6 @@
                                     <TapGestureRecognizer x:Name="NextTap" />
                                 </Grid.GestureRecognizers>
                                 <Path Data="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"
-                                      Fill="{AppThemeBinding Light=Black, Dark=White}"
-                                      Aspect="Uniform"
-                                      HeightRequest="18"
-                                      WidthRequest="18"
-                                      HorizontalOptions="Center"
-                                      VerticalOptions="Center" />
-                            </Grid>
-                        </Border>
-
-                        <Border x:Name="StopBorder"
-                                StrokeShape="RoundRectangle 20"
-                                StrokeThickness="0"
-                                HeightRequest="40"
-                                WidthRequest="40"
-                                BackgroundColor="Transparent"
-                                VerticalOptions="Center">
-                            <Grid>
-                                <Grid.GestureRecognizers>
-                                    <TapGestureRecognizer x:Name="StopTap" />
-                                </Grid.GestureRecognizers>
-                                <Path x:Name="StopIcon"
-                                      Data="M6 6h12v12H6z"
                                       Fill="{AppThemeBinding Light=Black, Dark=White}"
                                       Aspect="Uniform"
                                       HeightRequest="18"

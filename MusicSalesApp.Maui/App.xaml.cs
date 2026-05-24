@@ -10,6 +10,7 @@ public partial class App : Application
 	private readonly IBillingService _billingService;
 	private readonly ITestingServerBannerService _testingServerBannerService;
 	private readonly IBrowserService _browserService;
+	private readonly IAppConfig _appConfig;
 	private readonly ITipFlowHandler _tipFlowHandler;
 	private readonly ISignalRConnectionManager _signalRConnectionManager;
 
@@ -20,6 +21,7 @@ public partial class App : Application
 		IBillingService billingService,
 		ITestingServerBannerService testingServerBannerService,
 		IBrowserService browserService,
+		IAppConfig appConfig,
 		ITipFlowHandler tipFlowHandler,
 		ISignalRConnectionManager signalRConnectionManager)
 	{
@@ -30,6 +32,7 @@ public partial class App : Application
 		_billingService = billingService;
 		_testingServerBannerService = testingServerBannerService;
 		_browserService = browserService;
+		_appConfig = appConfig;
 		_tipFlowHandler = tipFlowHandler;
 		_signalRConnectionManager = signalRConnectionManager;
 
@@ -49,7 +52,7 @@ public partial class App : Application
 
 	protected override Window CreateWindow(IActivationState? activationState)
 	{
-		var window = new Window(new AppShell(_authService, _adminMessageCoordinator, _testingServerBannerService, _browserService));
+		var window = new Window(new AppShell(_authService, _adminMessageCoordinator, _testingServerBannerService, _browserService, _appConfig));
 
 		window.Created += async (_, _) =>
 		{

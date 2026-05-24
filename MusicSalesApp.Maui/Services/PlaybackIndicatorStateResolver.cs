@@ -1,3 +1,5 @@
+using MusicSalesApp.Maui.ViewModels;
+
 namespace MusicSalesApp.Maui.Services;
 
 internal enum PlaybackIndicatorVisualState
@@ -10,6 +12,11 @@ internal static class PlaybackIndicatorStateResolver
 {
     private const float MinFallbackLevel = 0.18f;
     private const float MaxFallbackLevel = 0.76f;
+
+    internal static bool ShouldToggleCurrentSong(int songId, SongDto? currentSong)
+    {
+        return songId > 0 && currentSong?.Id == songId;
+    }
 
     internal static PlaybackIndicatorVisualState Resolve(bool isCurrentSongPlaying)
     {

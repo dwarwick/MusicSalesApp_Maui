@@ -33,6 +33,7 @@ public partial class HomeViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowLoginRegister))]
     [NotifyPropertyChangedFor(nameof(ShowValidateEmail))]
     [NotifyPropertyChangedFor(nameof(ShowSubscribeNow))]
+    [NotifyPropertyChangedFor(nameof(ShowArtistUploadHero))]
     public partial bool IsAuthenticated { get; set; }
 
     [ObservableProperty]
@@ -44,6 +45,10 @@ public partial class HomeViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowValidateEmail))]
     [NotifyPropertyChangedFor(nameof(ShowSubscribeNow))]
     public partial bool IsEmailVerified { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowArtistUploadHero))]
+    public partial bool IsCreator { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SubscribeButtonText))]
@@ -59,11 +64,15 @@ public partial class HomeViewModel : ObservableObject
     public bool ShowSubscribeNow => IsAuthenticated && IsEmailVerified && !HasActiveSubscription;
     public bool ShowBrowseMusic => true;
     public bool ShowFeaturedMusic => FeaturedSongs.Count > 0;
+    public bool ShowArtistUploadHero => !(IsAuthenticated && IsCreator);
 
     public string SubscribeButtonText => $"Subscribe Now — ${SubscriptionPrice}/mo";
     public string ManageSubscriptionText => ShouldUseAppleSubscriptionManagement
         ? "Manage subscription with Apple ›"
         : "Manage subscription in Google Play ›";
+    public string SubscriptionAutoRenewalText => ShouldUseAppleSubscriptionManagement
+        ? "Subscription automatically renews monthly. Cancel anytime from your Apple Account subscription settings."
+        : "Subscription automatically renews monthly. Cancel anytime from your Google Play subscription settings.";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowPlaylists))]
@@ -261,6 +270,13 @@ public partial class HomeViewModel : ObservableObject
     {
         if (song == null)
         {
+            return;
+        }
+
+        if (!_playbackService.PreviewLimitReached
+            && PlaybackIndicatorStateResolver.ShouldToggleCurrentSong(song.Id, _playbackService.CurrentSong))
+        {
+            _playbackService.TogglePlayPause();
             return;
         }
 
@@ -503,15 +519,21 @@ public partial class HomeViewModel : ObservableObject
 
     [RelayCommand]
     private Task OpenSubscriptionManagementAsync()
-        => _browserService.OpenAsync(GetSubscriptionManagementUrl());
+        => _browserService.OpenExternalAsync(GetSubscriptionManagementUrl());
+
+    [RelayCommand]
+    private Task OpenArtistUploadAsync()
+        => _browserService.OpenExternalAsync(_appConfig.ApiBaseUrl);
 
     private void RefreshAuthState()
     {
         IsAuthenticated = _authService.IsLoggedIn;
         HasActiveSubscription = _authService.HasActiveSubscription;
         IsEmailVerified = _authService.EmailConfirmed;
+        IsCreator = _authService.IsCreator;
         OnPropertyChanged(nameof(ShowPlaylists));
         OnPropertyChanged(nameof(ManageSubscriptionText));
+        OnPropertyChanged(nameof(SubscriptionAutoRenewalText));
     }
 
     private bool ShouldUseAppleSubscriptionManagement

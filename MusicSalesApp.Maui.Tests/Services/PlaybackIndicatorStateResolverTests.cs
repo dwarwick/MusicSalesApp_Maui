@@ -1,4 +1,5 @@
 using MusicSalesApp.Maui.Services;
+using MusicSalesApp.Maui.ViewModels;
 
 namespace MusicSalesApp.Maui.Tests.Services;
 
@@ -19,6 +20,26 @@ public class PlaybackIndicatorStateResolverTests
         var result = PlaybackIndicatorStateResolver.Resolve(isCurrentSongPlaying: true);
 
         Assert.That(result, Is.EqualTo(PlaybackIndicatorVisualState.Equalizer));
+    }
+
+    [Test]
+    public void ShouldToggleCurrentSong_ReturnsTrue_WhenSongMatchesCurrentSong()
+    {
+        var currentSong = new SongDto { Id = 42 };
+
+        var result = PlaybackIndicatorStateResolver.ShouldToggleCurrentSong(42, currentSong);
+
+        Assert.That(result, Is.True);
+    }
+
+    [Test]
+    public void ShouldToggleCurrentSong_ReturnsFalse_WhenSongDoesNotMatchCurrentSong()
+    {
+        var currentSong = new SongDto { Id = 42 };
+
+        var result = PlaybackIndicatorStateResolver.ShouldToggleCurrentSong(99, currentSong);
+
+        Assert.That(result, Is.False);
     }
 
     [Test]

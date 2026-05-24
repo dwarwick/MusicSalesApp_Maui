@@ -206,6 +206,12 @@ public class MusicLibraryViewModelTests
     }
 
     [Test]
+    public void HasAnyActiveFilters_IsFalseByDefault()
+    {
+        Assert.That(_viewModel.HasAnyActiveFilters, Is.False);
+    }
+
+    [Test]
     public void ToggleAiPanel_ClosesOtherPanels()
     {
         _viewModel.ToggleGenrePanelCommand.Execute(null);
@@ -281,6 +287,21 @@ public class MusicLibraryViewModelTests
         // Assert — now uses SetPlaylist instead of PlaySong
         _mockPlaybackService.Verify(p => p.SetPlaylist(It.Is<List<SongDto>>(l => l.Count == 1 && l[0] == song), 0), Times.Once);
         _mockMediaPlaybackOnboardingService.Verify(s => s.EnsureBackgroundPlaybackExplainedAsync(), Times.Once);
+    }
+
+    [Test]
+    public async Task PlaySong_WhenSongMatchesCurrentPlayback_TogglesPlayPause()
+    {
+        var song = new SongDto { Id = 1, SongTitle = "Test", StreamUrl = "https://example.com/test.mp3" };
+        _viewModel.Songs.Add(song);
+        _mockPlaybackService.SetupGet(p => p.CurrentSong).Returns(song);
+        _mockPlaybackService.SetupGet(p => p.PreviewLimitReached).Returns(false);
+
+        await _viewModel.PlaySongCommand.ExecuteAsync(song);
+
+        _mockPlaybackService.Verify(p => p.TogglePlayPause(), Times.Once);
+        _mockPlaybackService.Verify(p => p.SetPlaylist(It.IsAny<List<SongDto>>(), It.IsAny<int>()), Times.Never);
+        _mockMediaPlaybackOnboardingService.Verify(s => s.EnsureBackgroundPlaybackExplainedAsync(), Times.Never);
     }
 
     [Test]
@@ -582,6 +603,7 @@ public class MusicLibraryViewModelTests
         Assert.That(_viewModel.Songs, Has.Count.EqualTo(5));
         Assert.That(_viewModel.SelectedGenres, Is.Empty);
         Assert.That(_viewModel.SelectedArtists, Is.Empty);
+        Assert.That(_viewModel.HasAnyActiveFilters, Is.False);
     }
 
     [Test]

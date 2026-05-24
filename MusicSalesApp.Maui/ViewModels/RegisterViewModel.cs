@@ -1,12 +1,14 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MusicSalesApp.Maui.Services;
+using System.ComponentModel.DataAnnotations;
 
 namespace MusicSalesApp.Maui.ViewModels;
 
 public partial class RegisterViewModel : ObservableObject
 {
     private readonly IAuthService _authService;
+    private readonly IBrowserService _browserService;
     private readonly INavigationService _navigationService;
     private readonly IAppConfig _appConfig;
 
@@ -46,9 +48,14 @@ public partial class RegisterViewModel : ObservableObject
     public bool IsGoogleRegistrationPending => !string.IsNullOrWhiteSpace(PendingGoogleRegistrationToken);
     public string RegisterButtonText => IsGoogleRegistrationPending ? "Complete Google Sign Up" : "Register";
 
-    public RegisterViewModel(IAuthService authService, INavigationService navigationService, IAppConfig appConfig)
+    public RegisterViewModel(
+        IAuthService authService,
+        IBrowserService browserService,
+        INavigationService navigationService,
+        IAppConfig appConfig)
     {
         _authService = authService;
+        _browserService = browserService;
         _navigationService = navigationService;
         _appConfig = appConfig;
     }
@@ -56,31 +63,19 @@ public partial class RegisterViewModel : ObservableObject
     [RelayCommand]
     private async Task OpenTermsOfUseAsync()
     {
-        await _navigationService.GoToAsync("policy", new Dictionary<string, object>
-        {
-            ["title"] = "Terms of Use",
-            ["path"] = "/terms-of-use"
-        });
+        await _browserService.OpenExternalAsync(BuildWebUrl("/terms-of-use"));
     }
 
     [RelayCommand]
     private async Task OpenPrivacyPolicyAsync()
     {
-        await _navigationService.GoToAsync("policy", new Dictionary<string, object>
-        {
-            ["title"] = "Privacy Policy",
-            ["path"] = "/privacy-policy"
-        });
+        await _browserService.OpenExternalAsync(BuildWebUrl("/privacy-policy"));
     }
 
     [RelayCommand]
     private async Task OpenRefundPolicyAsync()
     {
-        await _navigationService.GoToAsync("policy", new Dictionary<string, object>
-        {
-            ["title"] = "User Refund Policy",
-            ["path"] = "/user-refund-policy"
-        });
+        await _browserService.OpenExternalAsync(BuildWebUrl("/user-refund-policy"));
     }
 
     [RelayCommand]
@@ -133,6 +128,13 @@ public partial class RegisterViewModel : ObservableObject
             return;
         }
 
+        var normalizedEmail = Email.Trim();
+        if (!new EmailAddressAttribute().IsValid(normalizedEmail))
+        {
+            ErrorMessage = "Please enter a valid email address and retype it.";
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(Password))
         {
             ErrorMessage = "Please enter a password.";
@@ -147,17 +149,18 @@ public partial class RegisterViewModel : ObservableObject
 
         IsBusy = true;
         ErrorMessage = null;
+        Email = normalizedEmail;
 
         try
         {
-            var (success, message, userId) = await _authService.RegisterAsync(Email.Trim(), Password);
+            var (success, message, userId) = await _authService.RegisterAsync(normalizedEmail, Password);
 
             if (success && userId != 0)
             {
                 var parameters = new Dictionary<string, object>
                 {
                     ["UserId"] = userId,
-                    ["Email"] = Email.Trim(),
+                    ["Email"] = normalizedEmail,
                     ["Password"] = Password,
                     ["CodeAlreadySent"] = true
                 };
@@ -234,8 +237,11 @@ public partial class RegisterViewModel : ObservableObject
     [RelayCommand]
     private async Task GoToLoginAsync()
     {
-        await _navigationService.GoToAsync("..");
+        await _navigationService.GoToAsync("login");
     }
+
+    private string BuildWebUrl(string relativePath)
+        => $"{_appConfig.WebBaseUrl.TrimEnd('/')}/{relativePath.TrimStart('/')}";
 
     public void ApplyQueryAttributes(IDictionary<string, object> query)
     {

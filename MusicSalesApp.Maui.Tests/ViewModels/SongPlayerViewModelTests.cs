@@ -94,6 +94,23 @@ public class SongPlayerViewModelTests
     }
 
     [Test]
+    public async Task PlaySongCommand_WhenDisplayedSongMatchesCurrentPlayback_TogglesPlayPause()
+    {
+        var song = new SongDto { Id = 1, SongTitle = "Test" };
+        _viewModel.Song = song;
+        _mockPlaybackService.Invocations.Clear();
+        _mockMediaPlaybackOnboardingService.Invocations.Clear();
+        _mockPlaybackService.SetupGet(p => p.CurrentSong).Returns(song);
+        _mockPlaybackService.SetupGet(p => p.PreviewLimitReached).Returns(false);
+
+        await _viewModel.PlaySongCommand.ExecuteAsync(null);
+
+        _mockPlaybackService.Verify(p => p.TogglePlayPause(), Times.Once);
+        _mockPlaybackService.Verify(p => p.SetPlaylist(It.IsAny<List<SongDto>>(), It.IsAny<int>()), Times.Never);
+        _mockMediaPlaybackOnboardingService.Verify(s => s.EnsureBackgroundPlaybackExplainedAsync(), Times.Never);
+    }
+
+    [Test]
     public async Task PlayDisplayedSongQueueAsync_QueuesDisplayedSong()
     {
         var song = new SongDto { Id = 9, SongTitle = "Queued Song" };

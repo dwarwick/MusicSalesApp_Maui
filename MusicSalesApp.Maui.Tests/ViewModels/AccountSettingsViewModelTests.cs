@@ -341,7 +341,7 @@ public class AccountSettingsViewModelTests
 
         await _viewModel.CancelSubscriptionCommand.ExecuteAsync(null);
 
-        _mockBrowserService.Verify(b => b.OpenAsync("https://developer.apple.com/documentation/storekit/testing-disabling-auto-renew"), Times.Once);
+        _mockBrowserService.Verify(b => b.OpenExternalAsync("https://developer.apple.com/documentation/storekit/testing-disabling-auto-renew"), Times.Once);
         _mockMusicService.Verify(m => m.CancelSubscriptionAsync(), Times.Never);
     }
 

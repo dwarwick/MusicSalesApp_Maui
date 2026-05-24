@@ -164,6 +164,54 @@ public class PlaybackServiceTests
     }
 
     [Test]
+    public void PlaySong_UsesAlbumArtForMediaItemImage()
+    {
+        IMediaItem? capturedMediaItem = null;
+        _mockMediaManager
+            .Setup(m => m.Play(It.IsAny<IMediaItem>()))
+            .Callback<IMediaItem>(mediaItem => capturedMediaItem = mediaItem)
+            .ReturnsAsync(Mock.Of<IMediaItem>());
+
+        var song = new SongDto
+        {
+            Id = 1,
+            SongTitle = "Test",
+            StreamUrl = "https://test.com/song1.mp3",
+            AlbumArtUrl = "https://test.com/art.jpg",
+            PersonaImageUrl = "https://test.com/persona.jpg"
+        };
+
+        _service.PlaySong(song);
+
+        Assert.That(capturedMediaItem?.AlbumImageUri, Is.EqualTo("https://test.com/art.jpg"));
+        Assert.That(capturedMediaItem?.ImageUri, Is.EqualTo("https://test.com/art.jpg"));
+    }
+
+    [Test]
+    public void PlaySong_FallsBackToPersonaImageWhenAlbumArtUriIsInvalid()
+    {
+        IMediaItem? capturedMediaItem = null;
+        _mockMediaManager
+            .Setup(m => m.Play(It.IsAny<IMediaItem>()))
+            .Callback<IMediaItem>(mediaItem => capturedMediaItem = mediaItem)
+            .ReturnsAsync(Mock.Of<IMediaItem>());
+
+        var song = new SongDto
+        {
+            Id = 1,
+            SongTitle = "Test",
+            StreamUrl = "https://test.com/song1.mp3",
+            AlbumArtUrl = "/relative-art.jpg",
+            PersonaImageUrl = "https://test.com/persona.jpg"
+        };
+
+        _service.PlaySong(song);
+
+        Assert.That(capturedMediaItem?.AlbumImageUri, Is.EqualTo("https://test.com/persona.jpg"));
+        Assert.That(capturedMediaItem?.ImageUri, Is.EqualTo("https://test.com/persona.jpg"));
+    }
+
+    [Test]
     public void PlaySong_ActivatesPlaybackKeepAlive()
     {
         var song = new SongDto { Id = 1, SongTitle = "Test", StreamUrl = "https://test.com/song1.mp3" };
@@ -444,6 +492,29 @@ public class PlaybackServiceTests
         }
 
         _mockMusicService.Verify(s => s.RecordStreamAsync(It.IsAny<int>()), Times.Never);
+    }
+
+    [Test]
+    public void StreamTracking_PauseAndResume_PreservesAccumulatedPlaybackTowardThreshold()
+    {
+        _service.SetStreamQualifyingSeconds(5);
+        var song = new SongDto { Id = 10, SongTitle = "Test", StreamUrl = "https://test.com/song.mp3" };
+        _service.PlaySong(song);
+
+        for (int i = 1; i <= 3; i++)
+        {
+            _service.UpdatePosition(TimeSpan.FromSeconds(i), TimeSpan.FromSeconds(180));
+        }
+
+        _service.TogglePlayPause();
+        _service.TogglePlayPause();
+
+        _service.UpdatePosition(TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(180));
+        _mockMusicService.Verify(s => s.RecordStreamAsync(It.IsAny<int>()), Times.Never);
+
+        _service.UpdatePosition(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(180));
+
+        _mockMusicService.Verify(s => s.RecordStreamAsync(10), Times.Once);
     }
 
     [Test]

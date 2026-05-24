@@ -11,30 +11,24 @@ public partial class NowPlayingView : ContentView
 {
     private const string PlayIconPathData = "M8 5v14l11-7z";
     private const string PauseIconPathData = "M6 19h4V5H6zm8-14v14h4V5z";
-    private const string DrawerAnimationName = "NowPlayingDrawerHeight";
     private static readonly Microsoft.Maui.Controls.Shapes.Geometry? PlayIconGeometry = CreateGeometry(PlayIconPathData);
     private static readonly Microsoft.Maui.Controls.Shapes.Geometry? PauseIconGeometry = CreateGeometry(PauseIconPathData);
 
-    private readonly NowPlayingDrawerController _drawerController = new();
     private readonly NowPlayingEmptyStateActionRunner _emptyStateActionRunner = new();
     private IPlaybackService? _playbackService;
     private IAuthService? _authService;
     private Func<Task<bool>>? _playFromEmptyStateAsync;
     private string? _emptyStateHint;
-    private double _dragStartHeight;
 
     /// <summary>
-    /// Legacy property kept for XAML compatibility. The player now stays available
-    /// as a collapsed drawer even when no song is selected.
+    /// Legacy property kept for XAML compatibility. The player now stays visible
+    /// even when no song is selected.
     /// </summary>
     public bool CollapseWhenEmpty { get; set; } = true;
 
     public NowPlayingView()
     {
         InitializeComponent();
-        DrawerRoot.HeightRequest = _drawerController.CollapsedHeight;
-        ExpandedContent.InputTransparent = true;
-        UpdateDrawerState();
     }
 
     public void Initialize(
@@ -49,13 +43,10 @@ public partial class NowPlayingView : ContentView
         _emptyStateHint = emptyStateHint;
 
         PlayPauseTap.Tapped += OnPlayPauseClicked;
-        StopTap.Tapped += OnStopClicked;
         RepeatTap.Tapped += OnRepeatClicked;
         ShuffleTap.Tapped += OnShuffleClicked;
         PrevTap.Tapped += OnPrevClicked;
         NextTap.Tapped += OnNextClicked;
-        DrawerToggleTap.Tapped += OnDrawerToggleTapped;
-        DrawerPanGesture.PanUpdated += OnDrawerPanUpdated;
 
         _playbackService.StateChanged += OnPlaybackStateChanged;
 
@@ -65,7 +56,6 @@ public partial class NowPlayingView : ContentView
         // Set initial state
         UpdateSongInfo();
         UpdatePlayPauseIcon();
-        UpdateStopButtonVisibility();
         UpdateRepeatVisual();
         UpdateTimeLabels();
         UpdatePlaylistControls();
@@ -88,32 +78,6 @@ public partial class NowPlayingView : ContentView
 
         _playbackService.TogglePlayPause();
     }
-
-    private async void OnDrawerToggleTapped(object? sender, TappedEventArgs e) =>
-        await AnimateDrawerHeightAsync(_drawerController.Toggle());
-
-    private void OnDrawerPanUpdated(object? sender, PanUpdatedEventArgs e)
-    {
-        switch (e.StatusType)
-        {
-            case GestureStatus.Started:
-                this.AbortAnimation(DrawerAnimationName);
-                _dragStartHeight = DrawerRoot.HeightRequest > 0
-                    ? DrawerRoot.HeightRequest
-                    : _drawerController.CollapsedHeight;
-                break;
-            case GestureStatus.Running:
-                SetDrawerHeight(_drawerController.ClampDraggedHeight(_dragStartHeight, e.TotalY));
-                break;
-            case GestureStatus.Completed:
-            case GestureStatus.Canceled:
-                _ = AnimateDrawerHeightAsync(_drawerController.ResolveSnapHeight(DrawerRoot.HeightRequest));
-                break;
-        }
-    }
-
-    private void OnStopClicked(object? sender, TappedEventArgs e) =>
-        _playbackService?.Stop();
 
     private async void OnRepeatClicked(object? sender, TappedEventArgs e)
     {
@@ -154,7 +118,6 @@ public partial class NowPlayingView : ContentView
                     break;
                 case nameof(IPlaybackService.IsPlaying):
                     UpdatePlayPauseIcon();
-                    UpdateStopButtonVisibility();
                     break;
                 case nameof(IPlaybackService.IsRepeatEnabled):
                     UpdateRepeatVisual();
@@ -206,8 +169,6 @@ public partial class NowPlayingView : ContentView
             AlbumArtImage.Source = null;
             UpdateEmptyStateText();
         }
-
-        UpdateDrawerState();
     }
 
     private void UpdatePlayPauseIcon()
@@ -215,11 +176,6 @@ public partial class NowPlayingView : ContentView
         PlayPauseIcon.Data = _playbackService?.IsPlaying == true
             ? PauseIconGeometry
             : PlayIconGeometry;
-    }
-
-    private void UpdateStopButtonVisibility()
-    {
-        StopBorder.IsVisible = _playbackService?.IsPlaying == true;
     }
 
     private void UpdateTimeLabels()
@@ -322,61 +278,9 @@ public partial class NowPlayingView : ContentView
             : _emptyStateHint;
     }
 
-    private void UpdateDrawerState()
-    {
-        ExpandedContent.InputTransparent = !_drawerController.IsExpanded;
-    }
-
     public bool CollapseDrawerIfExpanded()
     {
-        if (!_drawerController.IsExpanded)
-        {
-            return false;
-        }
-
-        _ = AnimateDrawerHeightAsync(_drawerController.Collapse());
-        return true;
-    }
-
-    private Task AnimateDrawerHeightAsync(double targetHeight)
-    {
-        var currentHeight = DrawerRoot.HeightRequest > 0
-            ? DrawerRoot.HeightRequest
-            : _drawerController.CollapsedHeight;
-
-        if (Math.Abs(currentHeight - targetHeight) < 0.5)
-        {
-            SetDrawerHeight(targetHeight);
-            return Task.CompletedTask;
-        }
-
-        var completionSource = new TaskCompletionSource<bool>();
-        this.AbortAnimation(DrawerAnimationName);
-
-        var animation = new Animation(
-            callback: height => SetDrawerHeight(height),
-            start: currentHeight,
-            end: targetHeight,
-            easing: Easing.CubicOut);
-
-        animation.Commit(
-            owner: this,
-            name: DrawerAnimationName,
-            rate: 16,
-            length: 180,
-            finished: (_, _) =>
-            {
-                SetDrawerHeight(targetHeight);
-                completionSource.TrySetResult(true);
-            });
-
-        return completionSource.Task;
-    }
-
-    private void SetDrawerHeight(double height)
-    {
-        DrawerRoot.HeightRequest = height;
-        UpdateDrawerState();
+        return false;
     }
 
     private static double ParseDurationToSeconds(string duration)

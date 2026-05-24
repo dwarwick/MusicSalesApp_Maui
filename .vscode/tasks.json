@@ -290,7 +290,7 @@
     {
       "label": "maui-run-ios-simulator",
       "type": "shell",
-      "command": "dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Debug && dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -t:Run -f net10.0-ios -c Debug -p:_DeviceName=:v2:udid=${input:mauiIosSimulatorUdid}",
+      "command": "dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Debug -p:ValidateXcodeVersion=false && dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -t:Run -f net10.0-ios -c Debug -p:_DeviceName=:v2:udid=${input:mauiIosSimulatorUdid} -p:ValidateXcodeVersion=false",
       "dependsOn": "maui-boot-ios-simulator",
       "problemMatcher": "$msCompile",
       "group": "build"
@@ -298,7 +298,7 @@
     {
       "label": "maui-run-ios-simulator-test",
       "type": "shell",
-      "command": "dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Test && dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -t:Run -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Test -p:_DeviceName=:v2:udid=${input:mauiIosSimulatorUdid}",
+      "command": "dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Test -p:ValidateXcodeVersion=false && dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -t:Run -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Test -p:_DeviceName=:v2:udid=${input:mauiIosSimulatorUdid} -p:ValidateXcodeVersion=false",
       "dependsOn": "maui-boot-ios-simulator",
       "problemMatcher": "$msCompile",
       "group": "build"
@@ -306,7 +306,7 @@
     {
       "label": "maui-run-ios-simulator-production",
       "type": "shell",
-      "command": "dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Production && dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -t:Run -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Production -p:_DeviceName=:v2:udid=${input:mauiIosSimulatorUdid}",
+      "command": "dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Production -p:ValidateXcodeVersion=false && dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -t:Run -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Production -p:_DeviceName=:v2:udid=${input:mauiIosSimulatorUdid} -p:ValidateXcodeVersion=false",
       "dependsOn": "maui-boot-ios-simulator",
       "problemMatcher": "$msCompile",
       "group": "build"
@@ -347,7 +347,7 @@
     {
       "label": "maui-run-ios-iphone-17-pro",
       "type": "shell",
-      "command": "dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Debug && dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -t:Run -f net10.0-ios -c Debug -p:_DeviceName=:v2:udid=2668A94C-8C13-4240-B20E-5D6624B34830",
+      "command": "dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Debug -p:ValidateXcodeVersion=false && dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -t:Run -f net10.0-ios -c Debug -p:_DeviceName=:v2:udid=2668A94C-8C13-4240-B20E-5D6624B34830 -p:ValidateXcodeVersion=false",
       "dependsOn": "maui-boot-ios-iphone-17-pro",
       "problemMatcher": "$msCompile",
       "group": "build"
@@ -355,7 +355,7 @@
     {
       "label": "maui-run-ios-iphone-17-pro-test",
       "type": "shell",
-      "command": "dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Test && dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -t:Run -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Test -p:_DeviceName=:v2:udid=2668A94C-8C13-4240-B20E-5D6624B34830",
+      "command": "dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Test -p:ValidateXcodeVersion=false && dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -t:Run -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Test -p:_DeviceName=:v2:udid=2668A94C-8C13-4240-B20E-5D6624B34830 -p:ValidateXcodeVersion=false",
       "dependsOn": "maui-boot-ios-iphone-17-pro",
       "problemMatcher": "$msCompile",
       "group": "build"
@@ -363,7 +363,7 @@
     {
       "label": "maui-run-ios-iphone-17-pro-production",
       "type": "shell",
-      "command": "dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Production && dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -t:Run -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Production -p:_DeviceName=:v2:udid=2668A94C-8C13-4240-B20E-5D6624B34830",
+      "command": "dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Production -p:ValidateXcodeVersion=false && dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -t:Run -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Production -p:_DeviceName=:v2:udid=2668A94C-8C13-4240-B20E-5D6624B34830 -p:ValidateXcodeVersion=false",
       "dependsOn": "maui-boot-ios-iphone-17-pro",
       "problemMatcher": "$msCompile",
       "group": "build"
@@ -371,7 +371,7 @@
     {
       "label": "maui-run-ios-iphone-17-pro-test-dark",
       "type": "shell",
-      "command": "xcrun simctl ui 2668A94C-8C13-4240-B20E-5D6624B34830 appearance dark && dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Test && dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -t:Run -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Test -p:_DeviceName=:v2:udid=2668A94C-8C13-4240-B20E-5D6624B34830",
+      "command": "xcrun simctl ui 2668A94C-8C13-4240-B20E-5D6624B34830 appearance dark && dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Test -p:ValidateXcodeVersion=false && dotnet build ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -t:Run -f net10.0-ios -c Debug -p:AppSettingsEnvironment=Test -p:_DeviceName=:v2:udid=2668A94C-8C13-4240-B20E-5D6624B34830 -p:ValidateXcodeVersion=false",
       "dependsOn": "maui-boot-ios-iphone-17-pro",
       "problemMatcher": "$msCompile",
       "group": "build"
@@ -379,7 +379,7 @@
     {
       "label": "maui-publish-ios-appstore-ipa",
       "type": "shell",
-      "command": "dotnet publish ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Release -p:RuntimeIdentifier=ios-arm64 -p:AppSettingsEnvironment=Production -p:ArchiveOnBuild=true -p:BuildIpa=true -p:CodesignKey='Apple Distribution: David Warwick (K7ZGP97YV6)' -p:CodesignProvision='StreamTunes App Store' -p:CodesignTeamId=K7ZGP97YV6",
+      "command": "dotnet publish ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Release -p:RuntimeIdentifier=ios-arm64 -p:AppSettingsEnvironment=Production -p:ArchiveOnBuild=true -p:BuildIpa=true -p:CodesignKey='Apple Distribution: David Warwick (K7ZGP97YV6)' -p:CodesignProvision='StreamTunes App Store' -p:CodesignTeamId=K7ZGP97YV6 -p:ValidateXcodeVersion=false",
       "options": {
         "cwd": "${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui"
       },
@@ -389,7 +389,7 @@
     {
       "label": "maui-publish-ios-appstore-ipa-test",
       "type": "shell",
-      "command": "dotnet publish ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Release -p:RuntimeIdentifier=ios-arm64 -p:AppSettingsEnvironment=Test -p:ArchiveOnBuild=true -p:BuildIpa=true -p:CodesignKey='Apple Distribution: David Warwick (K7ZGP97YV6)' -p:CodesignProvision='StreamTunes App Store' -p:CodesignTeamId=K7ZGP97YV6",
+      "command": "dotnet publish ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Release -p:RuntimeIdentifier=ios-arm64 -p:AppSettingsEnvironment=Test -p:ArchiveOnBuild=true -p:BuildIpa=true -p:CodesignKey='Apple Distribution: David Warwick (K7ZGP97YV6)' -p:CodesignProvision='StreamTunes App Store' -p:CodesignTeamId=K7ZGP97YV6 -p:ValidateXcodeVersion=false",
       "options": {
         "cwd": "${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui"
       },
@@ -400,7 +400,7 @@
       "label": "maui-publish-and-upload-testflight-test",
       "detail": "One-time setup: xcrun altool --store-password-in-keychain-item --item AC_TESTFLIGHT -u david.warwick1969@gmail.com -p <app-specific-password>",
       "type": "shell",
-      "command": "perl -i -pe 's{<ApplicationVersion>(\\d+)</ApplicationVersion>}{\"<ApplicationVersion>\".($1+1).\"</ApplicationVersion>\"}e' ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj && grep -E '<ApplicationDisplayVersion>|<ApplicationVersion>' ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj && dotnet publish ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Release -p:RuntimeIdentifier=ios-arm64 -p:AppSettingsEnvironment=Test -p:ArchiveOnBuild=true -p:BuildIpa=true -p:CodesignKey='Apple Distribution: David Warwick (K7ZGP97YV6)' -p:CodesignProvision='StreamTunes App Store' -p:CodesignTeamId=K7ZGP97YV6 && xcrun altool --upload-app -f ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/bin/Release/net10.0-ios/ios-arm64/publish/MusicSalesApp.Maui.ipa -t ios -u david.warwick1969@gmail.com -p '@keychain:AC_TESTFLIGHT'",
+      "command": "perl -i -pe 's{<ApplicationVersion>(\\d+)</ApplicationVersion>}{\"<ApplicationVersion>\".($1+1).\"</ApplicationVersion>\"}e' ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj && grep -E '<ApplicationDisplayVersion>|<ApplicationVersion>' ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj && dotnet publish ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Release -p:RuntimeIdentifier=ios-arm64 -p:AppSettingsEnvironment=Test -p:ArchiveOnBuild=true -p:BuildIpa=true -p:CodesignKey='Apple Distribution: David Warwick (K7ZGP97YV6)' -p:CodesignProvision='StreamTunes App Store' -p:CodesignTeamId=K7ZGP97YV6 -p:ValidateXcodeVersion=false && xcrun altool --upload-app -f ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/bin/Release/net10.0-ios/ios-arm64/publish/MusicSalesApp.Maui.ipa -t ios -u david.warwick1969@gmail.com -p '@keychain:AC_TESTFLIGHT'",
       "options": {
         "cwd": "${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui"
       },
@@ -411,7 +411,7 @@
       "label": "maui-publish-and-upload-testflight-production",
       "detail": "One-time setup: xcrun altool --store-password-in-keychain-item --item AC_TESTFLIGHT -u david.warwick1969@gmail.com -p <app-specific-password>",
       "type": "shell",
-      "command": "perl -i -pe 's{<ApplicationVersion>(\\d+)</ApplicationVersion>}{\"<ApplicationVersion>\".($1+1).\"</ApplicationVersion>\"}e' ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj && grep -E '<ApplicationDisplayVersion>|<ApplicationVersion>' ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj && dotnet publish ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Release -p:RuntimeIdentifier=ios-arm64 -p:AppSettingsEnvironment=Production -p:ArchiveOnBuild=true -p:BuildIpa=true -p:CodesignKey='Apple Distribution: David Warwick (K7ZGP97YV6)' -p:CodesignProvision='StreamTunes App Store' -p:CodesignTeamId=K7ZGP97YV6 && xcrun altool --upload-app -f ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/bin/Release/net10.0-ios/ios-arm64/publish/MusicSalesApp.Maui.ipa -t ios -u david.warwick1969@gmail.com -p '@keychain:AC_TESTFLIGHT'",
+      "command": "perl -i -pe 's{<ApplicationVersion>(\\d+)</ApplicationVersion>}{\"<ApplicationVersion>\".($1+1).\"</ApplicationVersion>\"}e' ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj && grep -E '<ApplicationDisplayVersion>|<ApplicationVersion>' ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj && dotnet publish ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Release -p:RuntimeIdentifier=ios-arm64 -p:AppSettingsEnvironment=Production -p:ArchiveOnBuild=true -p:BuildIpa=true -p:CodesignKey='Apple Distribution: David Warwick (K7ZGP97YV6)' -p:CodesignProvision='StreamTunes App Store' -p:CodesignTeamId=K7ZGP97YV6 -p:ValidateXcodeVersion=false && xcrun altool --upload-app -f ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/bin/Release/net10.0-ios/ios-arm64/publish/MusicSalesApp.Maui.ipa -t ios -u david.warwick1969@gmail.com -p '@keychain:AC_TESTFLIGHT'",
       "options": {
         "cwd": "${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui"
       },
