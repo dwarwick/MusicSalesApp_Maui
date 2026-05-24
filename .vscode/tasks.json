@@ -398,22 +398,45 @@
     },
     {
       "label": "maui-publish-and-upload-testflight-test",
-      "detail": "One-time setup: xcrun altool --store-password-in-keychain-item --item AC_TESTFLIGHT -u david.warwick1969@gmail.com -p <app-specific-password>",
-      "type": "shell",
-      "command": "perl -i -pe 's{<ApplicationVersion>(\\d+)</ApplicationVersion>}{\"<ApplicationVersion>\".($1+1).\"</ApplicationVersion>\"}e' ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj && grep -E '<ApplicationDisplayVersion>|<ApplicationVersion>' ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj && dotnet publish ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Release -p:RuntimeIdentifier=ios-arm64 -p:AppSettingsEnvironment=Test -p:ArchiveOnBuild=true -p:BuildIpa=true -p:CodesignKey='Apple Distribution: David Warwick (K7ZGP97YV6)' -p:CodesignProvision='StreamTunes App Store' -p:CodesignTeamId=K7ZGP97YV6 -p:ValidateXcodeVersion=false && xcrun altool --upload-app -f ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/bin/Release/net10.0-ios/ios-arm64/publish/MusicSalesApp.Maui.ipa -t ios -u david.warwick1969@gmail.com -p '@keychain:AC_TESTFLIGHT'",
+      "detail": "Bumps ApplicationVersion, builds a signed IPA, and uploads it to App Store Connect via Transporter for the Test environment.",
+      "type": "process",
+      "command": "zsh",
+      "args": [
+        "${workspaceFolder:MusicSalesApp_Maui}/.vscode/publish-and-upload-ios-appstore-macos.sh",
+        "Test"
+      ],
       "options": {
-        "cwd": "${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui"
+        "cwd": "${workspaceFolder:MusicSalesApp_Maui}"
+      },
+      "problemMatcher": "$msCompile",
+      "group": "build"
+    },
+    {
+      "label": "maui-publish-and-upload-testflight",
+      "detail": "Bumps ApplicationVersion, builds a signed IPA, and uploads it to App Store Connect via Transporter. Defaults to Production.",
+      "type": "process",
+      "command": "zsh",
+      "args": [
+        "${workspaceFolder:MusicSalesApp_Maui}/.vscode/publish-and-upload-ios-appstore-macos.sh",
+        "${input:mauiApplePublishEnvironment}"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder:MusicSalesApp_Maui}"
       },
       "problemMatcher": "$msCompile",
       "group": "build"
     },
     {
       "label": "maui-publish-and-upload-testflight-production",
-      "detail": "One-time setup: xcrun altool --store-password-in-keychain-item --item AC_TESTFLIGHT -u david.warwick1969@gmail.com -p <app-specific-password>",
-      "type": "shell",
-      "command": "perl -i -pe 's{<ApplicationVersion>(\\d+)</ApplicationVersion>}{\"<ApplicationVersion>\".($1+1).\"</ApplicationVersion>\"}e' ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj && grep -E '<ApplicationDisplayVersion>|<ApplicationVersion>' ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj && dotnet publish ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/MusicSalesApp.Maui.csproj -f net10.0-ios -c Release -p:RuntimeIdentifier=ios-arm64 -p:AppSettingsEnvironment=Production -p:ArchiveOnBuild=true -p:BuildIpa=true -p:CodesignKey='Apple Distribution: David Warwick (K7ZGP97YV6)' -p:CodesignProvision='StreamTunes App Store' -p:CodesignTeamId=K7ZGP97YV6 -p:ValidateXcodeVersion=false && xcrun altool --upload-app -f ${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui/bin/Release/net10.0-ios/ios-arm64/publish/MusicSalesApp.Maui.ipa -t ios -u david.warwick1969@gmail.com -p '@keychain:AC_TESTFLIGHT'",
+      "detail": "Bumps ApplicationVersion, builds a signed IPA, and uploads it to App Store Connect via Transporter for the Production environment.",
+      "type": "process",
+      "command": "zsh",
+      "args": [
+        "${workspaceFolder:MusicSalesApp_Maui}/.vscode/publish-and-upload-ios-appstore-macos.sh",
+        "Production"
+      ],
       "options": {
-        "cwd": "${workspaceFolder:MusicSalesApp_Maui}/MusicSalesApp.Maui"
+        "cwd": "${workspaceFolder:MusicSalesApp_Maui}"
       },
       "problemMatcher": "$msCompile",
       "group": "build"
@@ -517,6 +540,16 @@
       "type": "promptString",
       "description": "Paste the Android AVD name. Run maui-list-android-emulators first, or create one in Android Studio Device Manager.",
       "default": ""
+    },
+    {
+      "id": "mauiApplePublishEnvironment",
+      "type": "pickString",
+      "description": "Choose which environment to publish and upload to App Store Connect.",
+      "options": [
+        "Production",
+        "Test"
+      ],
+      "default": "Production"
     },
     {
       "id": "mauiMacCatalystRuntimeIdentifier",
