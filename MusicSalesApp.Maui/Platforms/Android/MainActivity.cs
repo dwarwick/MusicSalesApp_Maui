@@ -67,6 +67,8 @@ public class MainActivity : MauiAppCompatActivity
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
+        SetTheme(Resource.Style.MainThemeEdgeToEdge);
+
         base.OnCreate(savedInstanceState);
 
         CrossMediaManager.Current.Init(this);

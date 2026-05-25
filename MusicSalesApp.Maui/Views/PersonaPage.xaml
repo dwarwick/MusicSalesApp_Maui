@@ -6,6 +6,7 @@
              x:Class="MusicSalesApp.Maui.Views.PersonaPage"
              x:DataType="vm:PersonaViewModel"
              Title="{Binding PersonaName}"
+             SafeAreaEdges="Container"
              BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
 
     <ScrollView>

@@ -6,6 +6,7 @@
              x:Class="MusicSalesApp.Maui.Views.AccountSettingsPage"
              x:DataType="vm:AccountSettingsViewModel"
              Title="Account Settings"
+             SafeAreaEdges="All"
              BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
 
     <Grid>

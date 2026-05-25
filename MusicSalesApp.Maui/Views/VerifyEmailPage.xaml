@@ -6,6 +6,7 @@
              x:Class="MusicSalesApp.Maui.Views.VerifyEmailPage"
              x:DataType="vm:VerifyEmailViewModel"
              Title="Verify Email"
+             SafeAreaEdges="All"
              BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
 
     <ScrollView>

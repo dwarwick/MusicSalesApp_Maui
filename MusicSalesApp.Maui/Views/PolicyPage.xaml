@@ -5,6 +5,7 @@
              x:Class="MusicSalesApp.Maui.Views.PolicyPage"
              x:DataType="vm:PolicyViewModel"
              Title="{Binding PolicyTitle}"
+             SafeAreaEdges="Container"
              BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
 
     <Grid>

@@ -8,6 +8,7 @@
              x:DataType="vm:MusicLibraryViewModel"
              Title="Music Library"
              HideSoftInputOnTapped="True"
+             SafeAreaEdges="All"
              BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
 
     <ContentPage.Resources>
