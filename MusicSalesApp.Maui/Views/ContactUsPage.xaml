@@ -39,7 +39,7 @@
                 Padding="12,0">
             <Picker Title="Subject"
                     ItemsSource="{Binding SubjectOptions}"
-                    SelectedItem="{Binding SelectedSubject}"
+                SelectedIndex="{Binding SelectedSubjectIndex}"
                     IsEnabled="{Binding IsBusy, Converter={toolkit:InvertedBoolConverter}}" />
         </Border>
 

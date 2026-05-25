@@ -26,6 +26,11 @@ public partial class ContactUsViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanSubmit))]
     [NotifyCanExecuteChangedFor(nameof(SubmitCommand))]
+    public partial int SelectedSubjectIndex { get; set; } = -1;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSubmit))]
+    [NotifyCanExecuteChangedFor(nameof(SubmitCommand))]
     public partial string Message { get; set; } = string.Empty;
 
     [ObservableProperty]
@@ -57,6 +62,27 @@ public partial class ContactUsViewModel : ObservableObject
         _alertService = alertService;
         _contactApiService = contactApiService;
         _navigationService = navigationService;
+    }
+
+    partial void OnSelectedSubjectChanged(string? value)
+    {
+        var selectedIndex = GetSelectedSubjectIndex(value);
+        if (SelectedSubjectIndex != selectedIndex)
+        {
+            SelectedSubjectIndex = selectedIndex;
+        }
+    }
+
+    partial void OnSelectedSubjectIndexChanged(int value)
+    {
+        var selectedSubject = value >= 0 && value < SubjectOptions.Count
+            ? SubjectOptions[value]
+            : null;
+
+        if (!string.Equals(SelectedSubject, selectedSubject, StringComparison.Ordinal))
+        {
+            SelectedSubject = selectedSubject;
+        }
     }
 
     [RelayCommand(CanExecute = nameof(CanSubmit))]
@@ -104,7 +130,7 @@ public partial class ContactUsViewModel : ObservableObject
             {
                 await _alertService.DisplayAlertAsync(SuccessAlertTitle, SuccessAlertBody, "OK");
 
-                SelectedSubject = null;
+                SelectedSubjectIndex = -1;
                 Message = string.Empty;
                 await _navigationService.GoBackAsync();
                 return;
@@ -120,5 +146,23 @@ public partial class ContactUsViewModel : ObservableObject
         {
             IsBusy = false;
         }
+    }
+
+    private int GetSelectedSubjectIndex(string? subject)
+    {
+        if (string.IsNullOrWhiteSpace(subject))
+        {
+            return -1;
+        }
+
+        for (var index = 0; index < SubjectOptions.Count; index++)
+        {
+            if (string.Equals(SubjectOptions[index], subject, StringComparison.Ordinal))
+            {
+                return index;
+            }
+        }
+
+        return -1;
     }
 }

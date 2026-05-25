@@ -62,6 +62,18 @@ public class ContactUsViewModelTests
     }
 
     [Test]
+    public void SelectedSubjectIndex_FirstOption_PopulatesBugReportSubject()
+    {
+        _viewModel.SelectedSubjectIndex = 0;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.SelectedSubject, Is.EqualTo(ContactRequestSubjectTypes.BugReport));
+            Assert.That(_viewModel.SelectedSubjectIndex, Is.EqualTo(0));
+        });
+    }
+
+    [Test]
     public async Task SubmitAsync_ValidRequest_ShowsPopupAndNavigatesBack()
     {
         _viewModel.SelectedSubject = ContactRequestSubjectTypes.AppSuggestion;
@@ -82,6 +94,7 @@ public class ContactUsViewModelTests
                 Times.Once);
             _mockNavigationService.Verify(service => service.GoBackAsync(), Times.Once);
             Assert.That(_viewModel.SelectedSubject, Is.Null);
+            Assert.That(_viewModel.SelectedSubjectIndex, Is.EqualTo(-1));
             Assert.That(_viewModel.Message, Is.Empty);
             Assert.That(_viewModel.StatusMessage, Is.Null);
             Assert.That(_viewModel.ErrorMessage, Is.Null);
