@@ -124,6 +124,10 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<ProjectReference Include="..\..\MusicSalesApp\MusicSalesApp.Common\MusicSalesApp.Common.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<PackageReference Include="Azure.Storage.Blobs" Version="12.27.0" />
 		<PackageReference Include="CommunityToolkit.Maui" Version="14.0.1" />
 		<PackageReference Include="Plugin.MediaManager" Version="1.2.2" />

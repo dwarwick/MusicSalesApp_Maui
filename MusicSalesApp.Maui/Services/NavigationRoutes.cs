@@ -16,6 +16,7 @@ public static class NavigationRoutes
     public const string AccountSettings = "account-settings";
     public const string Policy = "policy";
     public const string MyPlaylists = "my-playlists";
+    public const string ContactUs = "contact-us";
 
     public const string LoginEntry = MusicLibraryRoot + "/" + Login;
 }

@@ -42,6 +42,7 @@ public partial class AppShell : Shell
 		Routing.RegisterRoute(NavigationRoutes.AccountSettings, typeof(AccountSettingsPage));
 		Routing.RegisterRoute(NavigationRoutes.Policy, typeof(PolicyPage));
 		Routing.RegisterRoute(NavigationRoutes.MyPlaylists, typeof(MyPlaylistsPage));
+		Routing.RegisterRoute(NavigationRoutes.ContactUs, typeof(ContactUsPage));
 
 		UpdateMenuVisibility();
 	}
@@ -82,6 +83,7 @@ public partial class AppShell : Shell
 		Shell.SetFlyoutItemIsVisible(AccountSettingsMenuItem, _authService.IsLoggedIn);
 		Shell.SetFlyoutItemIsVisible(LogoutMenuItem, _authService.IsLoggedIn);
 		Shell.SetFlyoutItemIsVisible(MyPlaylistsMenuItem, _authService.IsLoggedIn && _authService.EmailConfirmed);
+		Shell.SetFlyoutItemIsVisible(ContactUsMenuItem, _authService.IsLoggedIn && _authService.EmailConfirmed);
 	}
 
 	protected override void OnNavigated(ShellNavigatedEventArgs args)
@@ -127,6 +129,12 @@ public partial class AppShell : Shell
 	{
 		Shell.Current.FlyoutIsPresented = false;
 		await GoToAsync(NavigationRoutes.MyPlaylists);
+	}
+
+	private async void OnContactUsClicked(object? sender, EventArgs e)
+	{
+		Shell.Current.FlyoutIsPresented = false;
+		await GoToAsync(NavigationRoutes.ContactUs);
 	}
 
 	private async void OnLogoutClicked(object? sender, EventArgs e)

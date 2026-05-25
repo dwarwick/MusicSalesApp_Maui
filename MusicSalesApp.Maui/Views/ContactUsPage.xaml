@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             xmlns:vm="clr-namespace:MusicSalesApp.Maui.ViewModels"
+             x:Class="MusicSalesApp.Maui.Views.ContactUsPage"
+             x:DataType="vm:ContactUsViewModel"
+             Title="Contact Us"
+             HideSoftInputOnTapped="True"
+             SafeAreaEdges="All"
+             BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
+
+    <Grid Padding="24" RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="14">
+        <VerticalStackLayout Grid.Row="0" Spacing="6">
+            <Label Text="Contact Us"
+                   FontSize="22"
+                   FontAttributes="Bold"
+                   TextColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}" />
+            <Label Text="Send a message to StreamTunes support."
+                   FontSize="14"
+                   TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray300}}" />
+        </VerticalStackLayout>
+
+        <VerticalStackLayout Grid.Row="1" Spacing="8">
+            <Label Text="{Binding ErrorMessage}"
+                   IsVisible="{Binding ErrorMessage, Converter={toolkit:IsNotNullOrEmptyConverter}}"
+                   TextColor="Red"
+                   FontSize="13" />
+            <Label Text="{Binding StatusMessage}"
+                   IsVisible="{Binding StatusMessage, Converter={toolkit:IsNotNullOrEmptyConverter}}"
+                   TextColor="{StaticResource Primary}"
+                   FontSize="13" />
+        </VerticalStackLayout>
+
+        <Border Grid.Row="2"
+                StrokeShape="RoundRectangle 8"
+                Stroke="{AppThemeBinding Light={StaticResource Gray300}, Dark={StaticResource Gray600}}"
+                BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource CardBackgroundDark}}"
+                Padding="12,0">
+            <Picker Title="Subject"
+                    ItemsSource="{Binding SubjectOptions}"
+                    SelectedItem="{Binding SelectedSubject}"
+                    IsEnabled="{Binding IsBusy, Converter={toolkit:InvertedBoolConverter}}" />
+        </Border>
+
+        <Border Grid.Row="3"
+                StrokeShape="RoundRectangle 8"
+                Stroke="{AppThemeBinding Light={StaticResource Gray300}, Dark={StaticResource Gray600}}"
+                BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource CardBackgroundDark}}"
+                Padding="12">
+            <Editor Placeholder="Message"
+                    Text="{Binding Message}"
+                    MaxLength="4000"
+                    AutoSize="Disabled"
+                    Keyboard="Text"
+                    IsReadOnly="{Binding IsBusy}"
+                    VerticalOptions="Fill"
+                    HorizontalOptions="Fill"
+                    BackgroundColor="Transparent"
+                    TextColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}"
+                    PlaceholderColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray500}}" />
+        </Border>
+
+        <Grid Grid.Row="4" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <Button Grid.Column="0"
+                    Text="Submit"
+                    Command="{Binding SubmitCommand}"
+                    IsEnabled="{Binding CanSubmit}"
+                    BackgroundColor="{StaticResource Primary}"
+                    TextColor="White"
+                    FontAttributes="Bold"
+                    CornerRadius="8"
+                    HeightRequest="48" />
+            <ActivityIndicator Grid.Column="1"
+                               IsRunning="{Binding IsBusy}"
+                               IsVisible="{Binding IsBusy}"
+                               Color="{StaticResource Primary}"
+                               VerticalOptions="Center" />
+        </Grid>
+    </Grid>
+</ContentPage>

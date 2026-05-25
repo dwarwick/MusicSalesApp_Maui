@@ -177,6 +177,7 @@ public static class MauiProgram
 	#endif
 		builder.Services.AddSingleton<IBrowserService, BrowserService>();
 		builder.Services.AddSingleton<IPlaylistService, PlaylistService>();
+		builder.Services.AddSingleton<IContactApiService, ContactApiService>();
 		builder.Services.AddSingleton<ITipApiService, TipApiService>();
 		builder.Services.AddSingleton<ITipAmountPicker, TipAmountPicker>();
 		builder.Services.AddSingleton<ITipFlowHandler, TipFlowHandler>();
@@ -264,6 +265,8 @@ public static class MauiProgram
 		builder.Services.AddTransient<PlaylistPlayerPage>();
 		builder.Services.AddTransient<MyPlaylistsViewModel>();
 		builder.Services.AddTransient<MyPlaylistsPage>();
+		builder.Services.AddTransient<ContactUsViewModel>();
+		builder.Services.AddTransient<ContactUsPage>();
 
 		builder.Logging.AddProvider(new RollingFileLoggerProvider(RollingFileLoggerOptions.CreateDefault()));
 

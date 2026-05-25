@@ -35,6 +35,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\MusicSalesApp\MusicSalesApp.Common\MusicSalesApp.Common.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="NUnit.Framework" />
     <Using Include="Microsoft.Maui.Controls" />
   </ItemGroup>

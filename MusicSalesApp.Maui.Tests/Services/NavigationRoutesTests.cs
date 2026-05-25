@@ -13,6 +13,7 @@ public class NavigationRoutesTests
             Assert.That(NavigationRoutes.LoginEntry, Is.EqualTo("//MusicLibrary/login"));
             Assert.That(NavigationRoutes.LoginEntry, Does.StartWith(NavigationRoutes.MusicLibraryRoot + "/"));
             Assert.That(NavigationRoutes.LoginEntry, Is.Not.EqualTo(NavigationRoutes.Login));
+            Assert.That(NavigationRoutes.ContactUs, Is.EqualTo("contact-us"));
         });
     }
 }
