@@ -9,16 +9,24 @@ namespace MusicSalesApp.Maui.Tests.ViewModels;
 public class ContactUsViewModelTests
 {
     private Mock<IAuthService> _mockAuthService = null!;
+    private Mock<IAlertService> _mockAlertService = null!;
     private Mock<IContactApiService> _mockContactApiService = null!;
+    private Mock<INavigationService> _mockNavigationService = null!;
     private ContactUsViewModel _viewModel = null!;
 
     [SetUp]
     public void SetUp()
     {
         _mockAuthService = new Mock<IAuthService>();
+        _mockAlertService = new Mock<IAlertService>();
         _mockContactApiService = new Mock<IContactApiService>();
+        _mockNavigationService = new Mock<INavigationService>();
         SetAuthState(isLoggedIn: true, emailConfirmed: true);
-        _viewModel = new ContactUsViewModel(_mockAuthService.Object, _mockContactApiService.Object);
+        _viewModel = new ContactUsViewModel(
+            _mockAuthService.Object,
+            _mockAlertService.Object,
+            _mockContactApiService.Object,
+            _mockNavigationService.Object);
     }
 
     [Test]
@@ -39,7 +47,11 @@ public class ContactUsViewModelTests
     public void CanSubmit_IsFalse_WhenUserEmailIsNotConfirmed()
     {
         SetAuthState(isLoggedIn: true, emailConfirmed: false);
-        _viewModel = new ContactUsViewModel(_mockAuthService.Object, _mockContactApiService.Object)
+        _viewModel = new ContactUsViewModel(
+            _mockAuthService.Object,
+            _mockAlertService.Object,
+            _mockContactApiService.Object,
+            _mockNavigationService.Object)
         {
             SelectedSubject = ContactRequestSubjectTypes.BugReport,
             Message = "Hello"
@@ -50,7 +62,7 @@ public class ContactUsViewModelTests
     }
 
     [Test]
-    public async Task SubmitAsync_ValidRequest_ClearsMessageAndSetsStatus()
+    public async Task SubmitAsync_ValidRequest_ShowsPopupAndNavigatesBack()
     {
         _viewModel.SelectedSubject = ContactRequestSubjectTypes.AppSuggestion;
         _viewModel.Message = "Please add a compact player.";
@@ -62,8 +74,16 @@ public class ContactUsViewModelTests
 
         Assert.Multiple(() =>
         {
+            _mockAlertService.Verify(
+                service => service.DisplayAlertAsync(
+                    "Message Sent",
+                    "Your message was sent. Check your email for a copy of the message.",
+                    "OK"),
+                Times.Once);
+            _mockNavigationService.Verify(service => service.GoBackAsync(), Times.Once);
+            Assert.That(_viewModel.SelectedSubject, Is.Null);
             Assert.That(_viewModel.Message, Is.Empty);
-            Assert.That(_viewModel.StatusMessage, Is.EqualTo("Your message has been sent."));
+            Assert.That(_viewModel.StatusMessage, Is.Null);
             Assert.That(_viewModel.ErrorMessage, Is.Null);
             Assert.That(_viewModel.IsBusy, Is.False);
         });
@@ -82,6 +102,8 @@ public class ContactUsViewModelTests
 
         Assert.Multiple(() =>
         {
+            _mockAlertService.Verify(service => service.DisplayAlertAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+            _mockNavigationService.Verify(service => service.GoBackAsync(), Times.Never);
             Assert.That(_viewModel.Message, Is.EqualTo("Playback fails after one minute."));
             Assert.That(_viewModel.ErrorMessage, Is.EqualTo("Please wait before sending another message."));
             Assert.That(_viewModel.StatusMessage, Is.Null);

@@ -8,9 +8,13 @@ namespace MusicSalesApp.Maui.ViewModels;
 public partial class ContactUsViewModel : ObservableObject
 {
     public const int MaxMessageLength = 4000;
+    private const string SuccessAlertTitle = "Message Sent";
+    private const string SuccessAlertBody = "Your message was sent. Check your email for a copy of the message.";
 
     private readonly IAuthService _authService;
+    private readonly IAlertService _alertService;
     private readonly IContactApiService _contactApiService;
+    private readonly INavigationService _navigationService;
 
     public IReadOnlyList<string> SubjectOptions { get; } = ContactRequestSubjectTypes.All;
 
@@ -43,10 +47,16 @@ public partial class ContactUsViewModel : ObservableObject
         !string.IsNullOrWhiteSpace(Message) &&
         Message.Trim().Length <= MaxMessageLength;
 
-    public ContactUsViewModel(IAuthService authService, IContactApiService contactApiService)
+    public ContactUsViewModel(
+        IAuthService authService,
+        IAlertService alertService,
+        IContactApiService contactApiService,
+        INavigationService navigationService)
     {
         _authService = authService;
+        _alertService = alertService;
         _contactApiService = contactApiService;
+        _navigationService = navigationService;
     }
 
     [RelayCommand(CanExecute = nameof(CanSubmit))]
@@ -92,12 +102,19 @@ public partial class ContactUsViewModel : ObservableObject
             var result = await _contactApiService.SubmitContactRequestAsync(SelectedSubject, trimmedMessage);
             if (result.Success)
             {
+                await _alertService.DisplayAlertAsync(SuccessAlertTitle, SuccessAlertBody, "OK");
+
+                SelectedSubject = null;
                 Message = string.Empty;
-                StatusMessage = "Your message has been sent.";
+                await _navigationService.GoBackAsync();
                 return;
             }
 
             ErrorMessage = result.ErrorMessage ?? "Unable to send your message. Please try again later.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Unable to complete your request: {ex.Message}";
         }
         finally
         {
