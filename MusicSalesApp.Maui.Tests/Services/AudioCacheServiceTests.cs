@@ -90,6 +90,43 @@ public class AudioCacheServiceTests
         Assert.That(playbackUri, Is.EqualTo(song.StreamUrl));
     }
 
+    [Test]
+    public async Task GetImmediatePlaybackUri_WhenCachedFileExists_ReturnsLocalPathWithoutDownloading()
+    {
+        var factory = new Mock<IHttpClientFactory>();
+        var handler = CreateHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent([4, 3, 2, 1])
+        });
+        factory.Setup(f => f.CreateClient(AudioCacheService.AudioDownloadClientName))
+            .Returns(CreateHttpClient(handler.Object));
+
+        var service = new AudioCacheService(factory.Object, NullLogger<AudioCacheService>.Instance, _cacheDirectory);
+        var song = new SongDto { Id = 22, StreamUrl = "https://example.com/audio/cached-song.mp3?sig=xyz" };
+
+        var cachedPlaybackUri = await service.ResolvePlaybackUriAsync(song);
+        var immediatePlaybackUri = service.GetImmediatePlaybackUri(song);
+
+        Assert.That(immediatePlaybackUri, Is.EqualTo(cachedPlaybackUri));
+        handler.Protected().Verify(
+            "SendAsync",
+            Times.Once(),
+            ItExpr.IsAny<HttpRequestMessage>(),
+            ItExpr.IsAny<CancellationToken>());
+    }
+
+    [Test]
+    public void GetImmediatePlaybackUri_WhenCacheMiss_ReturnsRemoteStreamUrlWithoutDownloading()
+    {
+        var factory = new Mock<IHttpClientFactory>(MockBehavior.Strict);
+        var service = new AudioCacheService(factory.Object, NullLogger<AudioCacheService>.Instance, _cacheDirectory);
+        var song = new SongDto { Id = 23, StreamUrl = "https://example.com/audio/uncached-song.mp3" };
+
+        var immediatePlaybackUri = service.GetImmediatePlaybackUri(song);
+
+        Assert.That(immediatePlaybackUri, Is.EqualTo(song.StreamUrl));
+    }
+
     private static HttpClient CreateHttpClient(HttpMessageHandler handler)
     {
         return new HttpClient(handler)

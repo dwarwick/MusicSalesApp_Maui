@@ -53,6 +53,9 @@ public class PlaybackServiceTests
         _mockMediaManager.Setup(m => m.Queue).Returns(_mockMediaQueue.Object);
         _mockMusicService.Setup(s => s.RecordStreamAsync(It.IsAny<int>())).ReturnsAsync((int?)null);
         _mockAudioCacheService
+            .Setup(s => s.GetImmediatePlaybackUri(It.IsAny<SongDto>()))
+            .Returns((SongDto song) => song.StreamUrl ?? string.Empty);
+        _mockAudioCacheService
             .Setup(s => s.ResolvePlaybackUriAsync(It.IsAny<SongDto>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((SongDto song, CancellationToken _) => song.StreamUrl);
         _mockMediaQueue.Setup(q => q.HasCurrent).Returns(false);
@@ -1490,13 +1493,40 @@ public class PlaybackServiceTests
         var song = new SongDto { Id = 31, SongTitle = "Cached Song", StreamUrl = "https://test.com/song31.mp3" };
         const string localPlaybackPath = "/data/user/0/com.streamtunes/cache/song31.mp3";
         _mockAudioCacheService
-            .Setup(s => s.ResolvePlaybackUriAsync(song, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(localPlaybackPath);
+            .Setup(s => s.GetImmediatePlaybackUri(song))
+            .Returns(localPlaybackPath);
 
         _service.PlaySong(song);
 
         _mockMediaManager.Verify(
             m => m.Play(It.Is<IMediaItem>(item => item.MediaUri == localPlaybackPath && item.MediaLocation == MediaLocation.FileSystem)),
+            Times.Once);
+    }
+
+    [Test]
+    public async Task PlaySong_WhenCacheWarmIsStillRunning_StartsImmediatelyFromRemoteUri()
+    {
+        var song = new SongDto { Id = 32, SongTitle = "Remote Start", StreamUrl = "https://test.com/song32.mp3" };
+        var cacheWarmStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cacheWarmCompletion = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        _mockAudioCacheService
+            .Setup(s => s.GetImmediatePlaybackUri(song))
+            .Returns(song.StreamUrl!);
+        _mockAudioCacheService
+            .Setup(s => s.ResolvePlaybackUriAsync(song, It.IsAny<CancellationToken>()))
+            .Returns(() =>
+            {
+                cacheWarmStarted.TrySetResult(true);
+                return cacheWarmCompletion.Task;
+            });
+
+        _service.PlaySong(song);
+
+        await cacheWarmStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        _mockMediaManager.Verify(
+            m => m.Play(It.Is<IMediaItem>(item => item.MediaUri == song.StreamUrl && item.MediaLocation == MediaLocation.Remote)),
             Times.Once);
     }
 
@@ -1511,8 +1541,8 @@ public class PlaybackServiceTests
             .Callback<IEnumerable<IMediaItem>>(items => queuedItemsSource.TrySetResult(items.ToList()))
             .ReturnsAsync(Mock.Of<IMediaItem>());
         _mockAudioCacheService
-            .Setup(s => s.ResolvePlaybackUriAsync(songs[1], It.IsAny<CancellationToken>()))
-            .ReturnsAsync(localPlaybackPath);
+            .Setup(s => s.GetImmediatePlaybackUri(songs[1]))
+            .Returns(localPlaybackPath);
 
         _service.SetPlaylist(songs, 1);
 
@@ -1535,11 +1565,11 @@ public class PlaybackServiceTests
             .Callback<IEnumerable<IMediaItem>>(items => queuedItemsSource.TrySetResult(items.ToList()))
             .ReturnsAsync(Mock.Of<IMediaItem>());
         _mockAudioCacheService
-            .Setup(s => s.ResolvePlaybackUriAsync(songs[0], It.IsAny<CancellationToken>()))
-            .ReturnsAsync(localCurrentPath);
+            .Setup(s => s.GetImmediatePlaybackUri(songs[0]))
+            .Returns(localCurrentPath);
         _mockAudioCacheService
-            .Setup(s => s.ResolvePlaybackUriAsync(songs[1], It.IsAny<CancellationToken>()))
-            .ReturnsAsync(localNextPath);
+            .Setup(s => s.GetImmediatePlaybackUri(songs[1]))
+            .Returns(localNextPath);
 
         _service.SetPlaylist(songs, 0);
 
@@ -1550,6 +1580,28 @@ public class PlaybackServiceTests
         Assert.That(queuedItems[1].MediaUri, Is.EqualTo(localNextPath));
         Assert.That(queuedItems[1].MediaLocation, Is.EqualTo(MediaLocation.FileSystem));
         Assert.That(queuedItems[2].MediaUri, Is.EqualTo(songs[2].StreamUrl));
+    }
+
+    [Test]
+    public async Task SetPlaylist_WhenCacheWarmIsStillRunning_StartsQueueImmediatelyFromAvailableUris()
+    {
+        var songs = CreateTestPlaylist(3);
+        var queueStarted = new TaskCompletionSource<IReadOnlyList<IMediaItem>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cacheWarmCompletion = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        _mockMediaManager
+            .Setup(m => m.Play(It.IsAny<IEnumerable<IMediaItem>>()))
+            .Callback<IEnumerable<IMediaItem>>(items => queueStarted.TrySetResult(items.ToList()))
+            .ReturnsAsync(Mock.Of<IMediaItem>());
+        _mockAudioCacheService
+            .Setup(s => s.ResolvePlaybackUriAsync(It.IsAny<SongDto>(), It.IsAny<CancellationToken>()))
+            .Returns(() => cacheWarmCompletion.Task);
+
+        _service.SetPlaylist(songs, 0);
+
+        var queuedItems = await queueStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.That(queuedItems.Select(item => item.MediaUri), Is.EqualTo(songs.Select(song => song.StreamUrl)));
     }
 
     [Test]

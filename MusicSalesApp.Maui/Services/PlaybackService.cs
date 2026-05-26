@@ -33,6 +33,7 @@ public class PlaybackService : IPlaybackService
 #endif
     private static readonly TimeSpan DefaultPositionEventStaleThreshold = TimeSpan.FromSeconds(2);
     private const int QueueCacheResolutionConcurrency = 3;
+    private const int BackgroundWarmAheadTrackCount = 3;
     private const int MaxLoggedPlaylistItems = 10;
     private const int MaxLoggedNativeQueueItems = 5;
 
@@ -230,7 +231,7 @@ public class PlaybackService : IPlaybackService
         else
         {
             var requestGeneration = BeginPlaybackRequest();
-            _ = StartSingleSongPlaybackAsync(song, requestGeneration);
+            StartSingleSongPlayback(song, requestGeneration);
         }
 
         LogPlaybackSnapshot("PlaySong started", song, null);
@@ -1107,7 +1108,7 @@ public class PlaybackService : IPlaybackService
 
         var playlistSnapshot = _playlist;
         var currentSong = playlistSnapshot[startIndex];
-        var playbackUris = await ResolveQueuePlaybackUrisAsync(playlistSnapshot).ConfigureAwait(false);
+        var playbackUris = ResolveImmediateQueuePlaybackUris(playlistSnapshot);
 
         if (!IsPlaybackRequestCurrent(requestGeneration) ||
             !ReferenceEquals(_playlist, playlistSnapshot) ||
@@ -1140,6 +1141,7 @@ public class PlaybackService : IPlaybackService
 
         var playQueueTask = _mediaManager.Play((IEnumerable<IMediaItem>)items);
         ObserveMediaCommand("MediaManager.Play queue", playQueueTask, DescribeMediaItem, CurrentSong, null);
+        WarmPlaybackCacheInBackground(playlistSnapshot, startIndex);
 
         try
         {
@@ -1190,49 +1192,32 @@ public class PlaybackService : IPlaybackService
         }
     }
 
-    private async Task<string[]> ResolveQueuePlaybackUrisAsync(IReadOnlyList<SongDto> playlistSnapshot)
+    private string[] ResolveImmediateQueuePlaybackUris(IReadOnlyList<SongDto> playlistSnapshot)
     {
         var playbackUris = new string[playlistSnapshot.Count];
-        using var concurrencyGate = new SemaphoreSlim(QueueCacheResolutionConcurrency);
 
-        var resolveTasks = playlistSnapshot.Select((song, index) => ResolveQueuePlaybackUriAsync(song, index, playbackUris, concurrencyGate));
-        await Task.WhenAll(resolveTasks).ConfigureAwait(false);
+        for (var index = 0; index < playlistSnapshot.Count; index++)
+        {
+            var playbackUri = _audioCacheService.GetImmediatePlaybackUri(playlistSnapshot[index]);
+            playbackUris[index] = string.IsNullOrWhiteSpace(playbackUri)
+                ? playlistSnapshot[index].StreamUrl ?? string.Empty
+                : playbackUri;
+        }
 
         return playbackUris;
     }
 
-    private async Task ResolveQueuePlaybackUriAsync(
-        SongDto song,
-        int index,
-        string[] playbackUris,
-        SemaphoreSlim concurrencyGate)
-    {
-        await concurrencyGate.WaitAsync().ConfigureAwait(false);
-
-        try
-        {
-            var playbackUri = await _audioCacheService.ResolvePlaybackUriAsync(song).ConfigureAwait(false);
-            playbackUris[index] = string.IsNullOrWhiteSpace(playbackUri)
-                ? song.StreamUrl ?? string.Empty
-                : playbackUri;
-        }
-        finally
-        {
-            concurrencyGate.Release();
-        }
-    }
-
-    private async Task StartSingleSongPlaybackAsync(SongDto song, int requestGeneration)
+    private void StartSingleSongPlayback(SongDto song, int requestGeneration)
     {
         try
         {
             _urlToSong.Clear();
-            var mediaItem = await CreateMediaItemAsync(song).ConfigureAwait(false);
+            var mediaItem = CreateMediaItem(song, _audioCacheService.GetImmediatePlaybackUri(song));
 
             if (!IsPlaybackRequestCurrent(requestGeneration) || CurrentSong?.Id != song.Id)
             {
                 _logger.LogInformation(
-                    "PlaySong async start skipped because a newer playback request superseded it. SongId={SongId}; RequestGeneration={RequestGeneration}; CurrentGeneration={CurrentGeneration}; {Snapshot}",
+                    "PlaySong start skipped because a newer playback request superseded it. SongId={SongId}; RequestGeneration={RequestGeneration}; CurrentGeneration={CurrentGeneration}; {Snapshot}",
                     song.Id,
                     requestGeneration,
                     Volatile.Read(ref _playbackRequestGeneration),
@@ -1241,6 +1226,7 @@ public class PlaybackService : IPlaybackService
             }
 
             ObserveMediaCommand("MediaManager.Play single song", _mediaManager.Play(mediaItem), DescribeMediaItem, song, mediaItem);
+            WarmPlaybackCacheInBackground([song], 0);
         }
         catch (Exception ex)
         {
@@ -1248,10 +1234,58 @@ public class PlaybackService : IPlaybackService
         }
     }
 
-    private async Task<IMediaItem> CreateMediaItemAsync(SongDto song)
+    private void WarmPlaybackCacheInBackground(IReadOnlyList<SongDto> playlistSnapshot, int startIndex)
     {
-        var playbackUri = await _audioCacheService.ResolvePlaybackUriAsync(song).ConfigureAwait(false);
-        return CreateMediaItem(song, playbackUri);
+        if (playlistSnapshot.Count == 0 || startIndex < 0 || startIndex >= playlistSnapshot.Count)
+        {
+            return;
+        }
+
+        var warmTargets = new List<SongDto>(Math.Min(BackgroundWarmAheadTrackCount, playlistSnapshot.Count - startIndex));
+        for (var index = startIndex; index < playlistSnapshot.Count && warmTargets.Count < BackgroundWarmAheadTrackCount; index++)
+        {
+            warmTargets.Add(playlistSnapshot[index]);
+        }
+
+        _ = WarmPlaybackCacheInBackgroundAsync(warmTargets);
+    }
+
+    private async Task WarmPlaybackCacheInBackgroundAsync(IReadOnlyList<SongDto> songs)
+    {
+        if (songs.Count == 0)
+        {
+            return;
+        }
+
+        using var concurrencyGate = new SemaphoreSlim(QueueCacheResolutionConcurrency);
+        var warmTasks = songs.Select(song => WarmPlaybackUriAsync(song, concurrencyGate));
+
+        try
+        {
+            await Task.WhenAll(warmTasks).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Background playback cache warming encountered an unexpected failure.");
+        }
+    }
+
+    private async Task WarmPlaybackUriAsync(SongDto song, SemaphoreSlim concurrencyGate)
+    {
+        await concurrencyGate.WaitAsync().ConfigureAwait(false);
+
+        try
+        {
+            await _audioCacheService.ResolvePlaybackUriAsync(song).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Background playback cache warm failed for song {SongId}", song.Id);
+        }
+        finally
+        {
+            concurrencyGate.Release();
+        }
     }
 
     private IMediaItem CreateMediaItem(SongDto song, string? playbackUri = null)

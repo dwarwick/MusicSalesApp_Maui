@@ -8,6 +8,8 @@ namespace MusicSalesApp.Maui.Services;
 
 public interface IAudioCacheService
 {
+    string GetImmediatePlaybackUri(SongDto song);
+
     Task<string> ResolvePlaybackUriAsync(SongDto song, CancellationToken cancellationToken = default);
 }
 
@@ -37,9 +39,22 @@ public class AudioCacheService : IAudioCacheService
         _cacheDirectory = cacheDirectory;
     }
 
+    public string GetImmediatePlaybackUri(SongDto song)
+    {
+        if (!TryGetRemoteUri(song, out var remoteUri))
+        {
+            return song.StreamUrl ?? string.Empty;
+        }
+
+        var cachePath = GetCachePath(song, remoteUri);
+        return HasCachedFile(cachePath)
+            ? cachePath
+            : song.StreamUrl ?? string.Empty;
+    }
+
     public async Task<string> ResolvePlaybackUriAsync(SongDto song, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(song.StreamUrl) || !Uri.TryCreate(song.StreamUrl, UriKind.Absolute, out var remoteUri))
+        if (!TryGetRemoteUri(song, out var remoteUri))
         {
             return song.StreamUrl ?? string.Empty;
         }
@@ -122,6 +137,17 @@ public class AudioCacheService : IAudioCacheService
     private static bool HasCachedFile(string cachePath)
     {
         return File.Exists(cachePath) && new FileInfo(cachePath).Length > 0;
+    }
+
+    private static bool TryGetRemoteUri(SongDto song, out Uri remoteUri)
+    {
+        if (string.IsNullOrWhiteSpace(song.StreamUrl))
+        {
+            remoteUri = null!;
+            return false;
+        }
+
+        return Uri.TryCreate(song.StreamUrl, UriKind.Absolute, out remoteUri!);
     }
 
     private string GetCachePath(SongDto song, Uri remoteUri)
