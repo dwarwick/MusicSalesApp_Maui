@@ -156,10 +156,11 @@ public class PlaybackServiceTests
         {
             Assert.That(_service.IsPlaying, Is.False);
             Assert.That(_service.PreviewLimitReached, Is.True);
-            Assert.That(_service.FormattedPosition, Is.EqualTo("1:00"));
+            Assert.That(_service.FormattedPosition, Is.EqualTo("0:00"));
         });
         _mockAuthService.Verify(a => a.RefreshUserStatusAsync(), Times.Once);
         _mockMediaManager.Verify(m => m.Pause(), Times.Once);
+        _mockMediaManager.Verify(m => m.SeekTo(TimeSpan.Zero), Times.Once);
     }
 
     [Test]
@@ -201,10 +202,11 @@ public class PlaybackServiceTests
         {
             Assert.That(_service.IsPlaying, Is.False);
             Assert.That(_service.PreviewLimitReached, Is.True);
-            Assert.That(_service.FormattedPosition, Is.EqualTo("1:00"));
+            Assert.That(_service.FormattedPosition, Is.EqualTo("0:00"));
         });
         _mockAuthService.Verify(a => a.RefreshUserStatusAsync(), Times.Never);
         _mockMediaManager.Verify(m => m.Pause(), Times.Once);
+        _mockMediaManager.Verify(m => m.SeekTo(TimeSpan.Zero), Times.Once);
     }
 
     [Test]
@@ -363,7 +365,7 @@ public class PlaybackServiceTests
     }
 
     [Test]
-    public void TogglePlayPause_WhenPreviewLimitReached_DoesNotResumePlayback()
+    public void TogglePlayPause_WhenPreviewLimitReached_ReplaysFromStart()
     {
         _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
         var song = new SongDto { Id = 1, SongTitle = "Test", StreamUrl = "https://test.com/song1.mp3" };
@@ -377,16 +379,15 @@ public class PlaybackServiceTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(_service.IsPlaying, Is.False);
-            Assert.That(_service.PreviewLimitReached, Is.True);
-            Assert.That(_service.FormattedPosition, Is.EqualTo("1:00"));
+            Assert.That(_service.IsPlaying, Is.True);
+            Assert.That(_service.PreviewLimitReached, Is.False);
+            Assert.That(_service.FormattedPosition, Is.EqualTo("0:00"));
         });
-        _mockMediaManager.Verify(m => m.Play(), Times.Never);
-        _mockMediaManager.Verify(m => m.Pause(), Times.Once);
+        _mockMediaManager.Verify(m => m.Play(), Times.Once);
     }
 
     [Test]
-    public void MediaManagerPlayingState_WhenPreviewLimitReached_PausesAgainAndKeepsUiBlocked()
+    public void MediaManagerPlayingState_WhenPreviewLimitReached_DoesNotForcePause()
     {
         _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
         var song = new SongDto { Id = 1, SongTitle = "Test", StreamUrl = "https://test.com/song1.mp3" };
@@ -400,11 +401,11 @@ public class PlaybackServiceTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(_service.IsPlaying, Is.False);
+            Assert.That(_service.IsPlaying, Is.True);
             Assert.That(_service.PreviewLimitReached, Is.True);
-            Assert.That(_service.FormattedPosition, Is.EqualTo("1:00"));
+            Assert.That(_service.FormattedPosition, Is.EqualTo("0:00"));
         });
-        _mockMediaManager.Verify(m => m.Pause(), Times.Once);
+        _mockMediaManager.Verify(m => m.Pause(), Times.Never);
     }
 
     // --- Stop ---
@@ -475,6 +476,20 @@ public class PlaybackServiceTests
 
         _service.ToggleRepeat();
         Assert.That(_service.IsRepeatEnabled, Is.False);
+    }
+
+    [Test]
+    public void ToggleRepeat_WithPlaylist_LeavesNativeRepeatAllForQueueAdvancement()
+    {
+        var songs = CreateTestPlaylist(3);
+        _service.SetPlaylist(songs, 0);
+
+        Assert.That(_mockMediaManager.Object.RepeatMode, Is.EqualTo(RepeatMode.All));
+
+        _service.ToggleRepeat();
+
+        Assert.That(_service.IsRepeatEnabled, Is.True);
+        Assert.That(_mockMediaManager.Object.RepeatMode, Is.EqualTo(RepeatMode.All));
     }
 
     [Test]
@@ -976,6 +991,49 @@ public class PlaybackServiceTests
 
         Assert.That(_service.IsPlaying, Is.False);
         Assert.That(_service.PreviewLimitReached, Is.True);
+        Assert.That(_service.FormattedPosition, Is.EqualTo("0:00"));
+        _mockMediaManager.Verify(m => m.SeekTo(TimeSpan.Zero), Times.Once);
+    }
+
+    [Test]
+    public void PreviewLimit_Playlist_AutoAdvancesToNextTrack()
+    {
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+        var songs = CreateTestPlaylist(3);
+        _service.SetPlaylist(songs, 0);
+
+        _mockMediaManager.Invocations.Clear();
+
+        _service.UpdatePosition(TimeSpan.FromSeconds(61), TimeSpan.FromSeconds(180));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_service.CurrentTrackIndex, Is.EqualTo(1));
+            Assert.That(_service.CurrentSong?.Id, Is.EqualTo(songs[1].Id));
+            Assert.That(_service.IsPlaying, Is.True);
+            Assert.That(_service.PreviewLimitReached, Is.False);
+        });
+        _mockMediaManager.Verify(m => m.Play(), Times.Once);
+    }
+
+    [Test]
+    public void PreviewLimit_Playlist_LastTrack_StopsAndResetsToStart()
+    {
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+        var songs = CreateTestPlaylist(2);
+        _service.SetPlaylist(songs, 1);
+
+        _service.UpdatePosition(TimeSpan.FromSeconds(61), TimeSpan.FromSeconds(180));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_service.CurrentTrackIndex, Is.EqualTo(1));
+            Assert.That(_service.CurrentSong?.Id, Is.EqualTo(songs[1].Id));
+            Assert.That(_service.IsPlaying, Is.False);
+            Assert.That(_service.PreviewLimitReached, Is.True);
+            Assert.That(_service.FormattedPosition, Is.EqualTo("0:00"));
+        });
+        _mockMediaManager.Verify(m => m.SeekTo(TimeSpan.Zero), Times.AtLeastOnce);
     }
 
     [Test]
@@ -1120,6 +1178,7 @@ public class PlaybackServiceTests
         Assert.That(_service.CurrentTrackIndex, Is.EqualTo(0));
         Assert.That(_service.CurrentSong, Is.SameAs(songs[0]));
         Assert.That(_service.IsPlaying, Is.True);
+        Assert.That(_mockMediaManager.Object.RepeatMode, Is.EqualTo(RepeatMode.All));
     }
 
     [Test]

@@ -181,7 +181,6 @@ public partial class SongPlayerViewModel : ObservableObject
     private async Task PlaySongAsync()
     {
         if (Song != null
-            && !_playbackService.PreviewLimitReached
             && PlaybackIndicatorStateResolver.ShouldToggleCurrentSong(Song.Id, _playbackService.CurrentSong))
         {
             _playbackService.TogglePlayPause();

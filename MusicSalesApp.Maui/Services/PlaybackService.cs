@@ -252,14 +252,14 @@ public class PlaybackService : IPlaybackService
         CancelPendingPlaylistAdvance();
         LogPlaybackSnapshot("TogglePlayPause requested", CurrentSong, null);
 
-        if (IsPreviewResumeBlocked())
+         var wasPlaying = IsPlaying;
+        if (!wasPlaying && PreviewLimitReached)
         {
-            BlockPreviewLimitResume("TogglePlayPause");
-            LogPlaybackSnapshot("TogglePlayPause blocked by preview limit", CurrentSong, null);
-            return;
+            ResetPreviewPositionToStart("TogglePlayPause preview replay");
+            PreviewLimitReached = false;
         }
 
-        IsPlaying = !IsPlaying;
+        IsPlaying = !wasPlaying;
         if (IsPlaying)
         {
             QueueImmediateSubscriptionStatusRefreshForPlayback(_playbackPosition);
@@ -293,11 +293,20 @@ public class PlaybackService : IPlaybackService
         }
 
         IsRepeatEnabled = !IsRepeatEnabled;
-        _mediaManager.RepeatMode = IsRepeatEnabled ? RepeatMode.All : RepeatMode.Off;
+        _mediaManager.RepeatMode = HasPlaylist
+            ? RepeatMode.All
+            : IsRepeatEnabled ? RepeatMode.All : RepeatMode.Off;
     }
 
     internal void UpdatePosition(TimeSpan position, TimeSpan duration)
     {
+        // Some platforms emit a final stale position event at/after the preview boundary
+        // after we already paused and reset to start. Ignore it to keep UI at 0:00.
+        if (PreviewLimitReached && !IsPlaying && position.TotalSeconds >= PreviewLimitSeconds)
+        {
+            return;
+        }
+
         var shouldRefreshSubscriptionStatus = false;
 
         lock (_positionSync)
@@ -419,7 +428,7 @@ public class PlaybackService : IPlaybackService
         IsPlaying = true;
         QueueImmediateSubscriptionStatusRefreshForPlayback(TimeSpan.Zero);
 
-        _mediaManager.RepeatMode = IsRepeatEnabled ? RepeatMode.All : RepeatMode.Off;
+        _mediaManager.RepeatMode = RepeatMode.All;
         _mediaManager.ShuffleMode = ShuffleMode.Off;
 
         var requestGeneration = BeginPlaybackRequest();
@@ -895,41 +904,6 @@ public class PlaybackService : IPlaybackService
         return true;
     }
 
-    private bool IsPreviewResumeBlocked()
-    {
-        if (!PreviewLimitReached || CurrentSong == null)
-        {
-            return false;
-        }
-
-        if (HasPlaybackEntitlement())
-        {
-            return false;
-        }
-
-        return !_authService.IsCreator || CurrentSong.CreatorUserId != _authService.UserId;
-    }
-
-    private void BlockPreviewLimitResume(string reason)
-    {
-        if (CurrentSong == null)
-        {
-            return;
-        }
-
-        _logger.LogInformation(
-            "Blocking preview-limited playback resume. Reason={Reason}; HasActiveSubscription={HasActiveSubscription}; SubscriptionStatus={SubscriptionStatus}; SubscriptionEndDate={SubscriptionEndDate}; {Snapshot}",
-            reason,
-            _authService.HasActiveSubscription,
-            _authService.SubscriptionStatus,
-            _authService.SubscriptionEndDate,
-            CreatePlaybackSnapshot(CurrentSong, null));
-
-        IsPlaying = false;
-        ClampPreviewPositionDisplay();
-        ObserveMediaCommand($"MediaManager.Pause from {reason} preview-limit resume block", _mediaManager.Pause(), CurrentSong, null);
-    }
-
     private bool HasPlaybackEntitlement()
     {
         if (!_authService.HasActiveSubscription)
@@ -984,6 +958,99 @@ public class PlaybackService : IPlaybackService
             _nextCtaThreshold = _previewEndCount + _random.Next(MinPreviewInterval, MaxPreviewIntervalExclusive);
             _ = ShowSubscribeCtaRequested?.Invoke();
         }
+
+        ContinueAfterPreviewLimit(reason);
+    }
+
+    private void ContinueAfterPreviewLimit(string reason)
+    {
+        if (CurrentSong == null)
+        {
+            return;
+        }
+
+        if (!HasPlaylist)
+        {
+            ResetPreviewPositionToStart($"{reason} non-playlist stop");
+            return;
+        }
+
+        var finishedSongId = CurrentSong.Id;
+        var finishedTrackIndex = _currentTrackIndex;
+        var generation = _playlistAdvanceGeneration;
+        _ = ContinuePlaylistAfterPreviewLimitAsync(finishedSongId, finishedTrackIndex, generation);
+    }
+
+    private async Task ContinuePlaylistAfterPreviewLimitAsync(int finishedSongId, int finishedTrackIndex, int generation)
+    {
+        if (!HasPlaylist || _playlist == null)
+        {
+            ResetPreviewPositionToStart("preview-limit playlist continuation fallback");
+            return;
+        }
+
+        if (generation != _playlistAdvanceGeneration || CurrentSong?.Id != finishedSongId || _currentTrackIndex != finishedTrackIndex)
+        {
+            return;
+        }
+
+        if (_isShuffleEnabled)
+        {
+            var advanced = await _mediaManager.PlayNext().ConfigureAwait(false);
+            if (advanced)
+            {
+                ObserveMediaCommand("MediaManager.Play after preview-limit shuffle advance", _mediaManager.Play(), CurrentSong, null);
+                _logger.LogInformation(
+                    "Preview limit advanced shuffled queue via MediaManager.PlayNext. FinishedSongId={FinishedSongId}; FinishedTrackIndex={FinishedTrackIndex}; {Snapshot}",
+                    finishedSongId,
+                    finishedTrackIndex,
+                    CreatePlaybackSnapshot(CurrentSong, null));
+
+                _ = EnsurePlaylistContinuesAsync(finishedSongId, finishedTrackIndex, generation, resetPositionWhenStopped: true);
+                return;
+            }
+
+            _logger.LogInformation(
+                "Preview limit shuffle PlayNext returned false; falling back to app-level next index. FinishedSongId={FinishedSongId}; FinishedTrackIndex={FinishedTrackIndex}; {Snapshot}",
+                finishedSongId,
+                finishedTrackIndex,
+                CreatePlaybackSnapshot(CurrentSong, null));
+        }
+
+        var nextIndex = ResolveSequentialNextTrackIndex(finishedTrackIndex);
+        if (nextIndex.HasValue)
+        {
+            PlayTrackAtIndex(nextIndex.Value);
+            ObserveMediaCommand("MediaManager.Play after preview-limit track advance", _mediaManager.Play(), CurrentSong, null);
+            return;
+        }
+
+        IsPlaying = false;
+        ResetPreviewPositionToStart("preview-limit playlist end");
+        _logger.LogInformation(
+            "Preview limit reached end of queue; stopped playback. FinishedSongId={FinishedSongId}; FinishedTrackIndex={FinishedTrackIndex}; {Snapshot}",
+            finishedSongId,
+            finishedTrackIndex,
+            CreatePlaybackSnapshot(CurrentSong, null));
+    }
+
+    private void ResetPreviewPositionToStart(string reason)
+    {
+        if (CurrentSong == null)
+        {
+            return;
+        }
+
+        lock (_positionSync)
+        {
+            _playbackPosition = TimeSpan.Zero;
+            PlaybackProgress = _playbackDuration.TotalSeconds > 0
+                ? 0
+                : 0;
+            FormattedPosition = "0:00";
+        }
+
+        ObserveMediaCommand($"MediaManager.SeekTo start from {reason}", _mediaManager.SeekTo(TimeSpan.Zero), CurrentSong, null);
     }
 
     private void ClampPreviewPositionDisplay()
@@ -1101,12 +1168,6 @@ public class PlaybackService : IPlaybackService
         {
             case MediaPlayerState.Playing:
                 CancelPendingTerminalPlaybackStateConfirmation();
-                if (IsPreviewResumeBlocked())
-                {
-                    BlockPreviewLimitResume("MediaManagerStateChanged");
-                    break;
-                }
-
                 if (!IsPlaying) IsPlaying = true;
                 break;
             case MediaPlayerState.Buffering:
@@ -1207,7 +1268,7 @@ public class PlaybackService : IPlaybackService
             CreatePlaybackSnapshot(CurrentSong, e.MediaItem));
     }
 
-    private async Task EnsurePlaylistContinuesAsync(int finishedSongId, int finishedTrackIndex, int generation)
+    private async Task EnsurePlaylistContinuesAsync(int finishedSongId, int finishedTrackIndex, int generation, bool resetPositionWhenStopped = false)
     {
         await Task.Delay(_playlistAdvanceFallbackDelay).ConfigureAwait(false);
 
@@ -1272,6 +1333,10 @@ public class PlaybackService : IPlaybackService
             if (!IsRepeatEnabled)
             {
                 IsPlaying = false;
+                if (resetPositionWhenStopped)
+                {
+                    ResetPreviewPositionToStart("playlist continuation stop");
+                }
                 _logger.LogInformation("Playlist continuation fallback reached end of queue and stopped playback. {Snapshot}", CreatePlaybackSnapshot(CurrentSong, null));
             }
 
