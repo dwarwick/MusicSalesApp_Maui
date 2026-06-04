@@ -3,7 +3,9 @@ using System.Net.Http.Json;
 using System.Security.Claims;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Authentication;
+using MusicSalesApp.Common.Helpers;
 using MusicSalesApp.Maui.ViewModels;
 
 namespace MusicSalesApp.Maui.Services;
@@ -33,6 +35,8 @@ public class AuthService : IAuthService
     public bool HasActiveSubscription { get; private set; }
     public string? SubscriptionStatus { get; private set; }
     public DateTime? SubscriptionEndDate { get; private set; }
+    public bool IsOnTrial { get; private set; }
+    public DateTime? TrialEndDate { get; private set; }
     public string? BillingSource { get; private set; }
     public bool IsCreator { get; private set; }
     public int? CreatorId { get; private set; }
@@ -271,7 +275,7 @@ public class AuthService : IAuthService
             // Update locally stored email
             Email = newEmail;
             await SecureStorage.Default.SetAsync(EmailStorageKey, newEmail);
-            AuthStateChanged?.Invoke();
+            NotifyAuthStateChanged();
 
             return (true, string.Empty);
         }
@@ -333,7 +337,7 @@ public class AuthService : IAuthService
         SecureStorage.Default.Remove(EmailStorageKey);
         SecureStorage.Default.Remove(EmailConfirmedStorageKey);
         ClearState();
-        AuthStateChanged?.Invoke();
+        NotifyAuthStateChanged();
     }
 
     public async Task TryRestoreSessionAsync()
@@ -380,7 +384,7 @@ public class AuthService : IAuthService
                 await TryRestoreBillingAsync();
 
             await _musicService.FlushPendingStreamRecordsAsync();
-            AuthStateChanged?.Invoke();
+            NotifyAuthStateChanged();
         }
         catch (Exception ex)
         {
@@ -432,17 +436,7 @@ public class AuthService : IAuthService
 
     private async Task StoreSessionAsync(LoginResponseDto data)
     {
-        Token = data.Token;
-        UserId = data.UserId;
-        Email = data.Email;
-        Roles = data.Roles;
-        EmailConfirmed = data.EmailConfirmed;
-        HasActiveSubscription = data.HasActiveSubscription;
-        SubscriptionStatus = data.HasActiveSubscription ? "ACTIVE" : null;
-        SubscriptionEndDate = null;
-        IsCreator = data.IsCreator;
-        CreatorId = data.CreatorId;
-        IsLoggedIn = true;
+        ApplyLoginResponse(data);
 
         await SecureStorage.Default.SetAsync(TokenStorageKey, data.Token);
         await SecureStorage.Default.SetAsync(AuthStorageKeys.UserId, data.UserId.ToString());
@@ -454,7 +448,25 @@ public class AuthService : IAuthService
             await TryRestoreBillingAsync();
 
         await _musicService.FlushPendingStreamRecordsAsync();
-        AuthStateChanged?.Invoke();
+        NotifyAuthStateChanged();
+    }
+
+    internal void ApplyLoginResponse(LoginResponseDto data)
+    {
+        Token = data.Token;
+        UserId = data.UserId;
+        Email = data.Email;
+        Roles = data.Roles;
+        EmailConfirmed = data.EmailConfirmed;
+        HasActiveSubscription = data.HasActiveSubscription;
+        SubscriptionStatus = data.SubscriptionStatus ?? (data.HasActiveSubscription ? SubscriptionStatuses.Active : null);
+        SubscriptionEndDate = data.SubscriptionEndDate;
+        IsOnTrial = data.IsOnTrial;
+        TrialEndDate = data.TrialEndDate;
+        BillingSource = data.BillingSource;
+        IsCreator = data.IsCreator;
+        CreatorId = data.CreatorId;
+        IsLoggedIn = true;
     }
 
     private void ClearState()
@@ -466,6 +478,8 @@ public class AuthService : IAuthService
         HasActiveSubscription = false;
         SubscriptionStatus = null;
         SubscriptionEndDate = null;
+        IsOnTrial = false;
+        TrialEndDate = null;
         BillingSource = null;
         IsCreator = false;
         CreatorId = null;
@@ -477,6 +491,13 @@ public class AuthService : IAuthService
     {
         try
         {
+            var previousHasActiveSubscription = HasActiveSubscription;
+            var previousSubscriptionStatus = SubscriptionStatus;
+            var previousSubscriptionEndDate = SubscriptionEndDate;
+            var previousIsOnTrial = IsOnTrial;
+            var previousTrialEndDate = TrialEndDate;
+            var previousBillingSource = BillingSource;
+
             var client = _httpClientFactory.CreateClient("MusicSalesApi");
             if (!string.IsNullOrEmpty(Token))
                 client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Token);
@@ -485,11 +506,47 @@ public class AuthService : IAuthService
             HasActiveSubscription = response?.HasSubscription ?? false;
             SubscriptionStatus = response?.Status;
             SubscriptionEndDate = response?.EndDate;
+            IsOnTrial = response?.IsOnTrial ?? false;
+            TrialEndDate = response?.TrialEndDate;
             BillingSource = response?.BillingSource;
+
+            if (previousHasActiveSubscription != HasActiveSubscription ||
+                previousSubscriptionStatus != SubscriptionStatus ||
+                previousSubscriptionEndDate != SubscriptionEndDate ||
+                previousIsOnTrial != IsOnTrial ||
+                previousTrialEndDate != TrialEndDate ||
+                previousBillingSource != BillingSource)
+            {
+                NotifyAuthStateChanged();
+            }
         }
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Could not refresh subscription status on session restore");
+        }
+    }
+
+    private void NotifyAuthStateChanged()
+    {
+        var handler = AuthStateChanged;
+        if (handler == null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (MainThread.IsMainThread)
+            {
+                handler();
+                return;
+            }
+
+            MainThread.BeginInvokeOnMainThread(handler);
+        }
+        catch (Exception ex) when (ex is NotImplementedException || ex.GetType().Name == "NotImplementedInReferenceAssemblyException")
+        {
+            handler();
         }
     }
 

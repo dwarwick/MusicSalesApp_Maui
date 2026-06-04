@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Moq;
 using MusicSalesApp.Maui.Services;
 using MusicSalesApp.Maui.ViewModels;
+using System.Globalization;
 
 namespace MusicSalesApp.Maui.Tests.ViewModels;
 
@@ -15,6 +16,7 @@ public class AccountSettingsViewModelTests
     private Mock<IConfiguration> _mockConfiguration;
     private Mock<IMusicService> _mockMusicService;
     private Mock<IBillingService> _mockBillingService;
+    private Mock<IAppSettingsService> _mockAppSettingsService;
     private AccountSettingsViewModel _viewModel;
 
     [SetUp]
@@ -27,6 +29,7 @@ public class AccountSettingsViewModelTests
         _mockConfiguration = new Mock<IConfiguration>();
         _mockMusicService = new Mock<IMusicService>();
         _mockBillingService = new Mock<IBillingService>();
+        _mockAppSettingsService = new Mock<IAppSettingsService>();
 
         _mockConfiguration.Setup(c => c["AppleAppStore:SubscriptionManagementUrl"])
             .Returns("https://developer.apple.com/documentation/storekit/testing-disabling-auto-renew");
@@ -34,6 +37,7 @@ public class AccountSettingsViewModelTests
         _mockAuthService.Setup(a => a.Email).Returns("test@example.com");
         _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
         _mockAuthService.Setup(a => a.IsCreator).Returns(false);
+        _mockAppSettingsService.Setup(a => a.GetSubscriptionPriceAsync()).ReturnsAsync("3.99");
         _mockMusicService.Setup(m => m.GetSubscriptionStatusAsync())
             .ReturnsAsync(new SubscriptionStatusDto { HasSubscription = false });
 
@@ -49,7 +53,8 @@ public class AccountSettingsViewModelTests
             _mockBrowserService.Object,
             _mockConfiguration.Object,
             _mockMusicService.Object,
-            _mockBillingService.Object);
+                _mockBillingService.Object,
+                _mockAppSettingsService.Object);
     }
 
     [Test]
@@ -224,15 +229,253 @@ public class AccountSettingsViewModelTests
     }
 
     [Test]
-    public async Task LoadCommand_ExpiredSubscription_ShowsExpiredStateAndAllowsNewSubscription()
+    public async Task LoadCommand_ActiveTrial_ShowsTrialMessageAndEndDate()
     {
+        var trialEnd = DateTime.UtcNow.AddDays(3);
+        _mockMusicService.Setup(m => m.GetSubscriptionStatusAsync())
+            .ReturnsAsync(new SubscriptionStatusDto
+            {
+                HasSubscription = true,
+                IsOnTrial = true,
+                Status = "ACTIVE",
+                EndDate = trialEnd,
+                TrialEndDate = trialEnd,
+                BillingSource = BillingProviders.GooglePlay
+            });
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.SubscriptionStatusText, Is.EqualTo("Free Trial Active"));
+            Assert.That(_viewModel.SubscriptionStatusMessage, Does.Contain("free trial is active until"));
+            Assert.That(_viewModel.SubscriptionStatusMessage, Does.Contain("full subscription benefits"));
+            Assert.That(_viewModel.SubscriptionEndDateText, Does.StartWith("Trial Active Until:"));
+        });
+    }
+
+    [Test]
+    public async Task LoadCommand_NoSubscriptionWithGoogleTrialOffer_ShowsOfferCardWithGooglePrice()
+    {
+        _viewModel.IsAndroidSubscriptionPlatform = true;
+        _mockMusicService.Setup(m => m.GetSubscriptionStatusAsync())
+            .ReturnsAsync(new SubscriptionStatusDto { HasSubscription = false });
+        _mockBillingService.Setup(b => b.GetSubscriptionOfferAsync())
+            .ReturnsAsync(new SubscriptionOfferInfo
+            {
+                LookupSucceeded = true,
+                IsAvailable = true,
+                HasFreeTrial = true,
+                FreeTrialDays = 3,
+                RenewalPrice = "$4.99"
+            });
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.ShowSubscriptionOfferCard, Is.True);
+            Assert.That(_viewModel.ShowPlainSubscribeButton, Is.False);
+            Assert.That(_viewModel.SubscriptionOfferTitleText, Does.Contain("3 day free trial"));
+            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Contain("$4.99/month"));
+        });
+    }
+
+    [Test]
+    public async Task LoadCommand_DoesNotPublishConfiguredPriceBeforeAndroidStorePrice()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        var originalUICulture = CultureInfo.CurrentUICulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-US");
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-US");
+
+            _viewModel.IsAndroidSubscriptionPlatform = true;
+            _mockMusicService.Setup(m => m.GetSubscriptionStatusAsync())
+                .ReturnsAsync(new SubscriptionStatusDto { HasSubscription = false });
+            _mockAppSettingsService.Setup(a => a.GetSubscriptionPriceAsync()).ReturnsAsync("4.99");
+            _mockBillingService.Setup(b => b.GetSubscriptionOfferAsync())
+                .ReturnsAsync(new SubscriptionOfferInfo
+                {
+                    LookupSucceeded = true,
+                    IsAvailable = true,
+                    HasFreeTrial = true,
+                    FreeTrialDays = 3,
+                    RenewalPrice = "\u20B1205.00"
+                });
+
+            var observedPrices = new List<string>();
+            _viewModel.PropertyChanged += (_, args) =>
+            {
+                if (args.PropertyName == nameof(AccountSettingsViewModel.SubscriptionPriceDisplay))
+                {
+                    observedPrices.Add(_viewModel.SubscriptionPriceDisplay);
+                }
+            };
+
+            await _viewModel.LoadCommand.ExecuteAsync(null);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(observedPrices, Does.Contain("\u20B1205.00"));
+                Assert.That(observedPrices, Does.Not.Contain("$4.99"));
+                Assert.That(_viewModel.SubscriptionPriceDisplay, Is.EqualTo("\u20B1205.00"));
+            });
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+            CultureInfo.CurrentUICulture = originalUICulture;
+        }
+    }
+
+    [Test]
+    public async Task LoadCommand_ActiveAndroidSubscription_StillUsesGoogleRenewalPriceForDisplay()
+    {
+        _viewModel.IsAndroidSubscriptionPlatform = true;
+        _mockMusicService.Setup(m => m.GetSubscriptionStatusAsync())
+            .ReturnsAsync(new SubscriptionStatusDto
+            {
+                HasSubscription = true,
+                Status = "ACTIVE",
+                EndDate = DateTime.UtcNow.AddMonths(1),
+                BillingSource = BillingProviders.GooglePlay
+            });
+        _mockAppSettingsService.Setup(a => a.GetSubscriptionPriceAsync()).ReturnsAsync("4.99");
+        _mockBillingService.Setup(b => b.GetSubscriptionOfferAsync())
+            .ReturnsAsync(new SubscriptionOfferInfo
+            {
+                LookupSucceeded = true,
+                IsAvailable = true,
+                HasFreeTrial = false,
+                RenewalPrice = "\u20B1205.00"
+            });
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.HasActiveSubscription, Is.True);
+            Assert.That(_viewModel.SubscriptionPriceDisplay, Is.EqualTo("\u20B1205.00"));
+            Assert.That(_viewModel.ShowSubscriptionOfferCard, Is.False);
+            Assert.That(_viewModel.ShowPlainSubscribeButton, Is.False);
+        });
+        _mockBillingService.Verify(b => b.GetSubscriptionOfferAsync(), Times.Once);
+        _mockAppSettingsService.Verify(a => a.GetSubscriptionPriceAsync(), Times.Never);
+    }
+
+    [Test]
+    public async Task LoadCommand_KeepsStorePrice_WhenSubsequentOfferLookupFails()
+    {
+        _viewModel.IsAndroidSubscriptionPlatform = true;
+        _mockMusicService.Setup(m => m.GetSubscriptionStatusAsync())
+            .ReturnsAsync(new SubscriptionStatusDto { HasSubscription = false });
+        _mockBillingService.SetupSequence(b => b.GetSubscriptionOfferAsync())
+            .ReturnsAsync(new SubscriptionOfferInfo
+            {
+                LookupSucceeded = true,
+                IsAvailable = true,
+                HasFreeTrial = true,
+                FreeTrialDays = 3,
+                RenewalPrice = "\u20B1205.00"
+            })
+            .ReturnsAsync(new SubscriptionOfferInfo
+            {
+                LookupSucceeded = false,
+                ErrorMessage = "Temporary billing lookup failure"
+            });
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.SubscriptionPriceDisplay, Is.EqualTo("\u20B1205.00"));
+            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Contain("\u20B1205.00/month"));
+        });
+    }
+
+    [Test]
+    public async Task LoadCommand_KeepsFirstStorePrice_WhenLaterLookupReturnsDifferentPrice()
+    {
+        _viewModel.IsAndroidSubscriptionPlatform = true;
+        _mockMusicService.Setup(m => m.GetSubscriptionStatusAsync())
+            .ReturnsAsync(new SubscriptionStatusDto { HasSubscription = false });
+        _mockBillingService.SetupSequence(b => b.GetSubscriptionOfferAsync())
+            .ReturnsAsync(new SubscriptionOfferInfo
+            {
+                LookupSucceeded = true,
+                IsAvailable = true,
+                HasFreeTrial = true,
+                FreeTrialDays = 3,
+                RenewalPrice = "\u20B1205.00"
+            })
+            .ReturnsAsync(new SubscriptionOfferInfo
+            {
+                LookupSucceeded = true,
+                IsAvailable = true,
+                HasFreeTrial = true,
+                FreeTrialDays = 3,
+                RenewalPrice = "$5.99"
+            });
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.SubscriptionPriceDisplay, Is.EqualTo("\u20B1205.00"));
+            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Contain("\u20B1205.00/month"));
+        });
+    }
+
+    [Test]
+    public async Task LoadCommand_NoSubscriptionWithBillingLookupFailure_ShowsFallbackOfferCard()
+    {
+        _viewModel.IsAndroidSubscriptionPlatform = true;
+        _mockMusicService.Setup(m => m.GetSubscriptionStatusAsync())
+            .ReturnsAsync(new SubscriptionStatusDto { HasSubscription = false });
+        _mockAppSettingsService.Setup(a => a.GetSubscriptionPriceAsync()).ReturnsAsync("$4.99");
+        _mockBillingService.Setup(b => b.GetSubscriptionOfferAsync())
+            .ReturnsAsync(new SubscriptionOfferInfo { LookupSucceeded = false });
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.ShowSubscriptionOfferCard, Is.True);
+            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Contain("monthly price shown in Google Play"));
+            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Not.Contain("$4.99"));
+            Assert.That(_viewModel.SubscriptionOfferPriceText, Is.Empty);
+            Assert.That(_viewModel.ShowSubscriptionOfferPriceText, Is.False);
+            Assert.That(_viewModel.SubscriptionPriceDisplay, Is.Empty);
+        });
+        _mockAppSettingsService.Verify(a => a.GetSubscriptionPriceAsync(), Times.Never);
+    }
+
+    [Test]
+    public async Task LoadCommand_ExpiredSubscription_WhenGoogleReportsTrial_ShowsExpiredStateAndOfferCard()
+    {
+        _viewModel.IsAndroidSubscriptionPlatform = true;
+        var endDate = DateTime.UtcNow.AddDays(-1);
         _mockMusicService.Setup(m => m.GetSubscriptionStatusAsync())
             .ReturnsAsync(new SubscriptionStatusDto
             {
                 HasSubscription = false,
                 Status = "EXPIRED",
-                EndDate = DateTime.UtcNow.AddDays(-1),
-                BillingSource = "GooglePlay"
+                EndDate = endDate,
+                TrialEndDate = endDate,
+                BillingSource = BillingProviders.GooglePlay
+            });
+        _mockBillingService.Setup(b => b.GetSubscriptionOfferAsync())
+            .ReturnsAsync(new SubscriptionOfferInfo
+            {
+                LookupSucceeded = true,
+                IsAvailable = true,
+                HasFreeTrial = true,
+                FreeTrialDays = 3,
+                RenewalPrice = "$2.99"
             });
 
         await _viewModel.LoadCommand.ExecuteAsync(null);
@@ -243,7 +486,77 @@ public class AccountSettingsViewModelTests
             Assert.That(_viewModel.ShowCancelSubscription, Is.False);
             Assert.That(_viewModel.CanCreateSubscription, Is.True);
             Assert.That(_viewModel.SubscriptionStatusText, Is.EqualTo("Expired"));
+            Assert.That(_viewModel.ShowSubscriptionOfferCard, Is.True);
+            Assert.That(_viewModel.ShowPlainSubscribeButton, Is.False);
+            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Contain("$2.99/month"));
+            Assert.That(_viewModel.SubscriptionOfferTitleText, Does.Contain("3 day free trial"));
         });
+        _mockBillingService.Verify(b => b.GetSubscriptionOfferAsync(), Times.Once);
+    }
+
+    [Test]
+    public async Task LoadCommand_ExpiredSubscription_WhenGoogleHasNoTrial_ShowsPlainSubscribeWithGooglePrice()
+    {
+        _viewModel.IsAndroidSubscriptionPlatform = true;
+        var endDate = DateTime.UtcNow.AddDays(-1);
+        _mockMusicService.Setup(m => m.GetSubscriptionStatusAsync())
+            .ReturnsAsync(new SubscriptionStatusDto
+            {
+                HasSubscription = false,
+                Status = "EXPIRED",
+                EndDate = endDate,
+                TrialEndDate = endDate,
+                BillingSource = BillingProviders.GooglePlay
+            });
+        _mockBillingService.Setup(b => b.GetSubscriptionOfferAsync())
+            .ReturnsAsync(new SubscriptionOfferInfo
+            {
+                LookupSucceeded = true,
+                IsAvailable = true,
+                HasFreeTrial = false,
+                RenewalPrice = "$2.99"
+            });
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.HasActiveSubscription, Is.False);
+            Assert.That(_viewModel.SubscriptionStatusText, Is.EqualTo("Expired"));
+            Assert.That(_viewModel.ShowSubscriptionOfferCard, Is.False);
+            Assert.That(_viewModel.ShowPlainSubscribeButton, Is.True);
+            Assert.That(_viewModel.SubscriptionPriceDisplay, Is.EqualTo("$2.99"));
+            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Not.Contain("free trial"));
+        });
+        _mockBillingService.Verify(b => b.GetSubscriptionOfferAsync(), Times.Once);
+    }
+
+    [Test]
+    public async Task LoadCommand_ExpiredSubscription_WhenGoogleLookupFails_DoesNotShowFallbackTrialCard()
+    {
+        _viewModel.IsAndroidSubscriptionPlatform = true;
+        var endDate = DateTime.UtcNow.AddDays(-1);
+        _mockMusicService.Setup(m => m.GetSubscriptionStatusAsync())
+            .ReturnsAsync(new SubscriptionStatusDto
+            {
+                HasSubscription = false,
+                Status = "EXPIRED",
+                EndDate = endDate,
+                TrialEndDate = endDate,
+                BillingSource = BillingProviders.GooglePlay
+            });
+        _mockBillingService.Setup(b => b.GetSubscriptionOfferAsync())
+            .ReturnsAsync(new SubscriptionOfferInfo { LookupSucceeded = false });
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.ShowSubscriptionOfferCard, Is.False);
+            Assert.That(_viewModel.ShowPlainSubscribeButton, Is.True);
+            Assert.That(_viewModel.SubscriptionOfferTitleText, Does.Not.Contain("free trial"));
+        });
+        _mockBillingService.Verify(b => b.GetSubscriptionOfferAsync(), Times.Once);
     }
 
     [Test]

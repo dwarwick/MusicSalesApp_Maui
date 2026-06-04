@@ -1,5 +1,10 @@
 # .NET MAUI .gitignore
 
+## Local handoff notes
+HANDOFF*.md
+handoff*.md
+.handoff*.md
+
 ## Build results
 [Dd]ebug/
 [Rr]elease/

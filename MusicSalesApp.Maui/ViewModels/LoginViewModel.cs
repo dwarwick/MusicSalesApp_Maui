@@ -25,6 +25,8 @@ public partial class LoginViewModel : ObservableObject
     [ObservableProperty]
     public partial string? ErrorMessage { get; set; }
 
+    public bool ReturnToHomeAfterAuth { get; private set; }
+
     public LoginViewModel(IAuthService authService, IAlertService alertService, INavigationService navigationService)
     {
         _authService = authService;
@@ -58,13 +60,14 @@ public partial class LoginViewModel : ObservableObject
                     {
                         ["UserId"] = _authService.UserId ?? 0,
                         ["Email"] = _authService.Email ?? Email.Trim(),
-                        ["Password"] = Password
+                        ["Password"] = Password,
+                        [NavigationRoutes.ReturnToHomeAfterAuthParameter] = ReturnToHomeAfterAuth
                     });
                 }
                 else
                 {
                     await PromptBiometricAsync();
-                    await _navigationService.GoToAsync(NavigationRoutes.MusicLibraryRoot);
+                    await NavigateAfterAuthAsync();
                 }
             }
             else
@@ -100,12 +103,13 @@ public partial class LoginViewModel : ObservableObject
                     {
                         ["UserId"] = _authService.UserId ?? 0,
                         ["Email"] = _authService.Email ?? string.Empty,
-                        ["Password"] = string.Empty
+                        ["Password"] = string.Empty,
+                        [NavigationRoutes.ReturnToHomeAfterAuthParameter] = ReturnToHomeAfterAuth
                     });
                 }
                 else
                 {
-                    await _navigationService.GoToAsync(NavigationRoutes.MusicLibraryRoot);
+                    await NavigateAfterAuthAsync();
                 }
             }
             else
@@ -134,7 +138,7 @@ public partial class LoginViewModel : ObservableObject
             var result = await _authService.AuthenticateWithGoogleAsync();
             if (result.Success)
             {
-                await _navigationService.GoToAsync(NavigationRoutes.MusicLibraryRoot);
+                await NavigateAfterAuthAsync();
                 return;
             }
 
@@ -143,7 +147,8 @@ public partial class LoginViewModel : ObservableObject
                 await _navigationService.GoToAsync("register", new Dictionary<string, object>
                 {
                     ["PendingGoogleRegistrationToken"] = result.PendingRegistrationToken,
-                    ["Email"] = result.Email
+                    ["Email"] = result.Email,
+                    [NavigationRoutes.ReturnToHomeAfterAuthParameter] = ReturnToHomeAfterAuth
                 });
                 return;
             }
@@ -165,6 +170,15 @@ public partial class LoginViewModel : ObservableObject
     [RelayCommand]
     private async Task GoToRegisterAsync()
     {
+        if (ReturnToHomeAfterAuth)
+        {
+            await _navigationService.GoToAsync("register", new Dictionary<string, object>
+            {
+                [NavigationRoutes.ReturnToHomeAfterAuthParameter] = true
+            });
+            return;
+        }
+
         await _navigationService.GoToAsync("register");
     }
 
@@ -189,4 +203,20 @@ public partial class LoginViewModel : ObservableObject
             await _authService.EnableBiometricLoginAsync(Email.Trim(), Password);
         }
     }
+
+    public void ApplyQueryAttributes(IDictionary<string, object> query)
+    {
+        ReturnToHomeAfterAuth = false;
+
+        if (NavigationQueryHelper.TryReadBoolean(query, NavigationRoutes.ReturnToHomeAfterAuthParameter, out var returnToHomeAfterAuth))
+        {
+            ReturnToHomeAfterAuth = returnToHomeAfterAuth;
+        }
+    }
+
+    private Task NavigateAfterAuthAsync()
+        => _navigationService.GoToAsync(ReturnToHomeAfterAuth
+            ? NavigationRoutes.HomeRoot
+            : NavigationRoutes.MusicLibraryRoot);
+
 }

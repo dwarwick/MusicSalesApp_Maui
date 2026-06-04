@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Configuration;
+using MusicSalesApp.Common.Helpers;
 using MusicSalesApp.Maui.Services;
 
 namespace MusicSalesApp.Maui.ViewModels;
@@ -14,6 +15,8 @@ public partial class AccountSettingsViewModel : ObservableObject
     private readonly IConfiguration _configuration;
     private readonly IMusicService _musicService;
     private readonly IBillingService _billingService;
+    private readonly IAppSettingsService _appSettingsService;
+    private bool _hasBillingDerivedSubscriptionPrice;
 
     private const string DefaultAppleSubscriptionManagementUrl = "https://account.apple.com/account/manage/section/subscriptions";
 
@@ -21,8 +24,11 @@ public partial class AccountSettingsViewModel : ObservableObject
     public partial string UserEmail { get; set; } = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsActiveTrial))]
     [NotifyPropertyChangedFor(nameof(ShowCancelSubscription))]
     [NotifyPropertyChangedFor(nameof(CanCreateSubscription))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferCard))]
+    [NotifyPropertyChangedFor(nameof(ShowPlainSubscribeButton))]
     [NotifyPropertyChangedFor(nameof(CanDeleteAccount))]
     [NotifyPropertyChangedFor(nameof(IsNonRenewingSubscription))]
     [NotifyPropertyChangedFor(nameof(SubscriptionStatusText))]
@@ -33,8 +39,28 @@ public partial class AccountSettingsViewModel : ObservableObject
     public partial bool HasActiveSubscription { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsActiveTrial))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionStatusText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionStatusMessage))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionEndDateText))]
+    public partial bool IsOnTrial { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsActiveTrial))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferCard))]
+    [NotifyPropertyChangedFor(nameof(ShowPlainSubscribeButton))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionStatusMessage))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionEndDateText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
+    public partial DateTime? TrialEndDate { get; set; }
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowCancelSubscription))]
     [NotifyPropertyChangedFor(nameof(CanCreateSubscription))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferCard))]
+    [NotifyPropertyChangedFor(nameof(ShowPlainSubscribeButton))]
     [NotifyPropertyChangedFor(nameof(CanDeleteAccount))]
     [NotifyPropertyChangedFor(nameof(IsNonRenewingSubscription))]
     [NotifyPropertyChangedFor(nameof(SubscriptionStatusText))]
@@ -55,12 +81,18 @@ public partial class AccountSettingsViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SubscriptionStatusText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionStatusMessage))]
     [NotifyPropertyChangedFor(nameof(SubscriptionEndDateText))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferCard))]
+    [NotifyPropertyChangedFor(nameof(ShowPlainSubscribeButton))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
     public partial string SubscriptionStatus { get; set; } = string.Empty;
 
     [ObservableProperty]
     public partial bool IsCancelling { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSubscriptionOfferPrimaryButtonEnabled))]
     public partial bool IsSubscribing { get; set; }
 
     [ObservableProperty]
@@ -81,10 +113,63 @@ public partial class AccountSettingsViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowCreatorDeletionBlockedMessage))]
     public partial bool IsActiveCreator { get; set; }
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SubscriptionPriceDisplay))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionPriceDisplay))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferPriceText))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferPriceText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
+    public partial string SubscriptionPrice { get; set; } = "3.99";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferCard))]
+    [NotifyPropertyChangedFor(nameof(ShowPlainSubscribeButton))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
+    public partial bool HasEligibleAndroidFreeTrial { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferCard))]
+    [NotifyPropertyChangedFor(nameof(ShowPlainSubscribeButton))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
+    public partial bool ShouldShowFallbackAndroidFreeTrial { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferCard))]
+    [NotifyPropertyChangedFor(nameof(ShowPlainSubscribeButton))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionPriceDisplay))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionPriceDisplay))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferPriceText))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferPriceText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
+    public partial bool IsAndroidSubscriptionPlatform { get; set; } = DeviceInfo.Platform == DevicePlatform.Android;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferCard))]
+    [NotifyPropertyChangedFor(nameof(ShowPlainSubscribeButton))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
+    public partial bool HasResolvedAndroidSubscriptionOffer { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
+    public partial int? AndroidFreeTrialDays { get; set; }
+
     public bool IsNonRenewingSubscription =>
         HasActiveSubscription &&
         SubscriptionEndDate.HasValue &&
-        string.Equals(SubscriptionStatus, "CANCELLED", StringComparison.OrdinalIgnoreCase);
+        string.Equals(SubscriptionStatus, SubscriptionStatuses.Cancelled, StringComparison.OrdinalIgnoreCase);
+    public bool IsActiveTrial => HasActiveSubscription && IsOnTrial;
     public bool ShowCancelSubscription => HasActiveSubscription && !IsNonRenewingSubscription;
     public bool CanCreateSubscription => !HasActiveSubscription;
     public bool CanDeleteAccount => !HasActiveSubscription && !IsActiveCreator;
@@ -92,14 +177,36 @@ public partial class AccountSettingsViewModel : ObservableObject
     public bool ShowSubscriptionEndDate => SubscriptionEndDate.HasValue && HasActiveSubscription;
     public bool ShowBillingSource => !string.IsNullOrWhiteSpace(SubscriptionBillingSource);
     public bool ShowCreatorDeletionBlockedMessage => IsActiveCreator;
-    public string SubscriptionStatusText => IsNonRenewingSubscription
+    public bool ShowSubscriptionOfferCard => IsAndroidSubscriptionPlatform
+        && CanCreateSubscription
+        && (HasEligibleAndroidFreeTrial || ShouldShowFallbackAndroidFreeTrial || !HasResolvedAndroidSubscriptionOffer)
+        && (!HasPreviousSubscriptionHistory || HasEligibleAndroidFreeTrial || !HasResolvedAndroidSubscriptionOffer);
+    public bool ShowPlainSubscribeButton => CanCreateSubscription && !ShowSubscriptionOfferCard;
+    public bool IsSubscriptionOfferPrimaryButtonEnabled => !IsSubscribing;
+    public string SubscriptionPriceDisplay => SubscriptionOfferDisplayBuilder.FormatMonthlyPriceOrEmpty(
+        SubscriptionPriceForDisplay,
+        "3.99",
+        AllowConfiguredSubscriptionPriceFallback);
+    public bool ShowSubscriptionPriceDisplay => !string.IsNullOrWhiteSpace(SubscriptionPriceDisplay);
+    public string SubscriptionOfferTitleText => CurrentSubscriptionOfferDisplay.Title;
+    public string SubscriptionOfferBodyText => CurrentSubscriptionOfferDisplay.Body;
+    public string SubscriptionOfferPriceText => CurrentSubscriptionOfferDisplay.PriceText;
+    public bool ShowSubscriptionOfferPriceText => !string.IsNullOrWhiteSpace(SubscriptionOfferPriceText);
+    public string SubscriptionOfferDisclosureText => CurrentSubscriptionOfferDisplay.DisclosureText;
+    public string SubscriptionStatusText => IsActiveTrial
+        ? "Free Trial Active"
+        : IsNonRenewingSubscription
         ? "Renews Off"
         : HasActiveSubscription
             ? "Active"
             : SubscriptionEndDate.HasValue
                 ? "Expired"
                 : "No Active Subscription";
-    public string SubscriptionStatusMessage => IsNonRenewingSubscription
+    public string SubscriptionStatusMessage => IsActiveTrial
+        ? IsNonRenewingSubscription
+            ? $"Your free trial has been canceled. It will not automatically renew, and you will continue to enjoy subscription benefits until {GetTrialEndDateForDisplay():MMMM dd, yyyy h:mm tt}."
+            : $"Your free trial is active until {GetTrialEndDateForDisplay():MMMM dd, yyyy h:mm tt}. During the trial, you have full subscription benefits. After the trial, your subscription will automatically renew unless canceled."
+        : IsNonRenewingSubscription
         ? $"Your subscription has been canceled. It will not automatically renew. You will continue to enjoy subscription benefits until {SubscriptionEndDate!.Value.ToLocalTime():MMMM dd, yyyy h:mm tt}."
         : HasActiveSubscription
             ? SubscriptionEndDate.HasValue
@@ -109,7 +216,9 @@ public partial class AccountSettingsViewModel : ObservableObject
                 ? $"Your previous subscription ended on {SubscriptionEndDate.Value.ToLocalTime():MMMM dd, yyyy h:mm tt}."
                 : "You do not currently have an active subscription.";
     public string SubscriptionEndDateText => SubscriptionEndDate.HasValue
-        ? IsNonRenewingSubscription
+        ? IsActiveTrial
+            ? $"Trial Active Until: {GetTrialEndDateForDisplay():MMMM dd, yyyy h:mm tt}"
+            : IsNonRenewingSubscription
             ? $"Access Until: {SubscriptionEndDate.Value.ToLocalTime():MMMM dd, yyyy h:mm tt}"
             : HasActiveSubscription
                 ? $"Current Billing Period Ends: {SubscriptionEndDate.Value.ToLocalTime():MMMM dd, yyyy h:mm tt}"
@@ -117,6 +226,28 @@ public partial class AccountSettingsViewModel : ObservableObject
         : string.Empty;
     public string BillingSourceText => $"Billed via: {SubscriptionBillingSource}";
     public string SubscribeButtonText => SubscriptionEndDate.HasValue ? "Create New Subscription" : "Subscribe Now";
+
+    private bool HasPreviousSubscriptionHistory => SubscriptionEndDate.HasValue
+        || TrialEndDate.HasValue
+        || string.Equals(SubscriptionStatus, SubscriptionStatuses.Expired, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(SubscriptionStatus, SubscriptionStatuses.Cancelled, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(SubscriptionStatus, SubscriptionStatuses.Canceled, StringComparison.OrdinalIgnoreCase);
+
+    private bool ShouldUseTrialTerms => HasEligibleAndroidFreeTrial
+        || (!HasPreviousSubscriptionHistory && (ShouldShowFallbackAndroidFreeTrial || !HasResolvedAndroidSubscriptionOffer));
+
+    private string? SubscriptionPriceForDisplay => IsAndroidSubscriptionPlatform && !_hasBillingDerivedSubscriptionPrice
+        ? null
+        : SubscriptionPrice;
+
+    private bool AllowConfiguredSubscriptionPriceFallback => !IsAndroidSubscriptionPlatform;
+
+    private SubscriptionOfferDisplay CurrentSubscriptionOfferDisplay => SubscriptionOfferDisplayBuilder.Create(
+        ShouldUseTrialTerms,
+        AndroidFreeTrialDays,
+        SubscriptionPriceForDisplay,
+        "3.99",
+        AllowConfiguredSubscriptionPriceFallback);
 
     private bool ShouldUseExternalSubscriptionManagement =>
         string.Equals(SubscriptionBillingSource, BillingProviders.Apple, StringComparison.Ordinal) ||
@@ -151,7 +282,8 @@ public partial class AccountSettingsViewModel : ObservableObject
         IBrowserService browserService,
         IConfiguration configuration,
         IMusicService musicService,
-        IBillingService billingService)
+        IBillingService billingService,
+        IAppSettingsService appSettingsService)
     {
         _authService = authService;
         _alertService = alertService;
@@ -160,6 +292,7 @@ public partial class AccountSettingsViewModel : ObservableObject
         _configuration = configuration;
         _musicService = musicService;
         _billingService = billingService;
+        _appSettingsService = appSettingsService;
 
         _authService.AuthStateChanged += OnAuthStateChanged;
         ApplySubscriptionState(null);
@@ -169,6 +302,8 @@ public partial class AccountSettingsViewModel : ObservableObject
     {
         await _authService.RefreshUserStatusAsync();
         ApplySubscriptionState(null);
+        await LoadAndroidSubscriptionOfferAsync();
+        await LoadConfiguredSubscriptionPriceAsync();
     }
 
     [RelayCommand]
@@ -176,6 +311,8 @@ public partial class AccountSettingsViewModel : ObservableObject
     {
         var status = await _musicService.GetSubscriptionStatusAsync();
         ApplySubscriptionState(status);
+        await LoadAndroidSubscriptionOfferAsync();
+        await LoadConfiguredSubscriptionPriceAsync();
     }
 
     [RelayCommand]
@@ -368,13 +505,85 @@ public partial class AccountSettingsViewModel : ObservableObject
         UserEmail = _authService.Email ?? string.Empty;
         HasActiveSubscription = status?.HasSubscription ?? _authService.HasActiveSubscription;
         SubscriptionEndDate = status?.EndDate ?? _authService.SubscriptionEndDate;
+        IsOnTrial = status?.IsOnTrial ?? _authService.IsOnTrial;
+        TrialEndDate = status?.TrialEndDate ?? _authService.TrialEndDate;
         SubscriptionStatus = status?.Status ?? _authService.SubscriptionStatus ?? string.Empty;
         SubscriptionBillingSource = status?.BillingSource ?? _authService.BillingSource ?? string.Empty;
         IsActiveCreator = _authService.IsCreator;
+    }
+
+    private async Task LoadAndroidSubscriptionOfferAsync()
+    {
+        HasResolvedAndroidSubscriptionOffer = false;
+        HasEligibleAndroidFreeTrial = false;
+        ShouldShowFallbackAndroidFreeTrial = false;
+        AndroidFreeTrialDays = null;
+
+        if (!IsAndroidSubscriptionPlatform)
+        {
+            return;
+        }
+
+        var offer = await _billingService.GetSubscriptionOfferAsync();
+        if (!offer.LookupSucceeded)
+        {
+            HasResolvedAndroidSubscriptionOffer = true;
+            ShouldShowFallbackAndroidFreeTrial = !HasPreviousSubscriptionHistory;
+            return;
+        }
+
+        HasResolvedAndroidSubscriptionOffer = true;
+
+        if (!string.IsNullOrWhiteSpace(offer.RenewalPrice))
+        {
+            if (!_hasBillingDerivedSubscriptionPrice)
+            {
+                _hasBillingDerivedSubscriptionPrice = true;
+                SubscriptionPrice = offer.RenewalPrice;
+                NotifySubscriptionPriceDisplayProperties();
+            }
+            else if (string.Equals(SubscriptionPrice, offer.RenewalPrice, StringComparison.Ordinal))
+            {
+                SubscriptionPrice = offer.RenewalPrice;
+                NotifySubscriptionPriceDisplayProperties();
+            }
+        }
+
+        HasEligibleAndroidFreeTrial = offer.HasFreeTrial;
+        AndroidFreeTrialDays = offer.FreeTrialDays;
+    }
+
+    private void NotifySubscriptionPriceDisplayProperties()
+    {
+        OnPropertyChanged(nameof(SubscriptionPriceDisplay));
+        OnPropertyChanged(nameof(ShowSubscriptionPriceDisplay));
+        OnPropertyChanged(nameof(SubscriptionOfferTitleText));
+        OnPropertyChanged(nameof(SubscriptionOfferBodyText));
+        OnPropertyChanged(nameof(SubscriptionOfferPriceText));
+        OnPropertyChanged(nameof(ShowSubscriptionOfferPriceText));
+        OnPropertyChanged(nameof(SubscriptionOfferDisclosureText));
+    }
+
+    private async Task LoadConfiguredSubscriptionPriceAsync()
+    {
+        if (IsAndroidSubscriptionPlatform)
+        {
+            return;
+        }
+
+        if (_hasBillingDerivedSubscriptionPrice && !string.IsNullOrWhiteSpace(SubscriptionPrice))
+        {
+            return;
+        }
+
+        SubscriptionPrice = await _appSettingsService.GetSubscriptionPriceAsync();
     }
 
     private void OnAuthStateChanged()
     {
         _ = LoadAsync();
     }
+
+    private DateTime GetTrialEndDateForDisplay()
+        => (TrialEndDate ?? SubscriptionEndDate ?? DateTime.UtcNow).ToLocalTime();
 }

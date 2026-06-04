@@ -7,6 +7,7 @@ using Microsoft.Maui.Authentication;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Moq.Protected;
+using MusicSalesApp.Common.Helpers;
 using MusicSalesApp.Maui.Services;
 using MusicSalesApp.Maui.ViewModels;
 
@@ -109,6 +110,111 @@ public class AuthServiceTests
         Assert.That(_authService.HasActiveSubscription, Is.True);
         Assert.That(_authService.SubscriptionStatus, Is.EqualTo("CANCELLED"));
         Assert.That(_authService.SubscriptionEndDate, Is.EqualTo(endDate));
+    }
+
+    [Test]
+    public async Task RefreshUserStatusAsync_MapsTrialFields()
+    {
+        var trialEnd = DateTime.UtcNow.AddDays(3);
+        SetupMockSubscriptionStatusResponse(
+            hasSubscription: true,
+            billingSource: "GooglePlay",
+            status: "ACTIVE",
+            endDate: trialEnd,
+            isOnTrial: true,
+            trialEndDate: trialEnd);
+
+        await _authService.RefreshUserStatusAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_authService.HasActiveSubscription, Is.True);
+            Assert.That(_authService.IsOnTrial, Is.True);
+            Assert.That(_authService.TrialEndDate, Is.EqualTo(trialEnd));
+        });
+    }
+
+    [Test]
+    public async Task RefreshUserStatusAsync_WhenSubscriptionStateChanges_RaisesAuthStateChanged()
+    {
+        SetBackingField(nameof(AuthService.HasActiveSubscription), true);
+        SetBackingField(nameof(AuthService.SubscriptionStatus), "ACTIVE");
+        SetBackingField(nameof(AuthService.BillingSource), "GooglePlay");
+        var eventCount = 0;
+        _authService.AuthStateChanged += () => eventCount++;
+        SetupMockSubscriptionStatusResponse(hasSubscription: false, billingSource: "GooglePlay", status: "EXPIRED");
+
+        await _authService.RefreshUserStatusAsync();
+
+        Assert.That(eventCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task RefreshUserStatusAsync_WhenSubscriptionStateUnchanged_DoesNotRaiseAuthStateChanged()
+    {
+        var endDate = DateTime.UtcNow.AddDays(2);
+        SetBackingField(nameof(AuthService.HasActiveSubscription), true);
+        SetBackingField(nameof(AuthService.SubscriptionStatus), "ACTIVE");
+        SetBackingField(nameof(AuthService.SubscriptionEndDate), endDate);
+        SetBackingField(nameof(AuthService.BillingSource), "GooglePlay");
+        var eventCount = 0;
+        _authService.AuthStateChanged += () => eventCount++;
+        SetupMockSubscriptionStatusResponse(hasSubscription: true, billingSource: "GooglePlay", status: "ACTIVE", endDate: endDate);
+
+        await _authService.RefreshUserStatusAsync();
+
+        Assert.That(eventCount, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void ApplyLoginResponse_StoresSubscriptionHistoryFields()
+    {
+        var endDate = DateTime.UtcNow.AddDays(-1);
+        var trialEndDate = DateTime.UtcNow.AddDays(-2);
+        var response = new LoginResponseDto
+        {
+            Token = "token",
+            UserId = 42,
+            Email = "user@test.com",
+            Roles = [Roles.User],
+            EmailConfirmed = true,
+            HasActiveSubscription = false,
+            SubscriptionStatus = SubscriptionStatuses.Expired,
+            SubscriptionEndDate = endDate,
+            IsOnTrial = false,
+            TrialEndDate = trialEndDate,
+            BillingSource = BillingSources.GooglePlay
+        };
+
+        _authService.ApplyLoginResponse(response);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_authService.IsLoggedIn, Is.True);
+            Assert.That(_authService.HasActiveSubscription, Is.False);
+            Assert.That(_authService.SubscriptionStatus, Is.EqualTo(SubscriptionStatuses.Expired));
+            Assert.That(_authService.SubscriptionEndDate, Is.EqualTo(endDate));
+            Assert.That(_authService.TrialEndDate, Is.EqualTo(trialEndDate));
+            Assert.That(_authService.BillingSource, Is.EqualTo(BillingSources.GooglePlay));
+        });
+    }
+
+    [Test]
+    public void ApplyLoginResponse_WhenActiveWithoutStatus_UsesActiveStatusFallback()
+    {
+        var response = new LoginResponseDto
+        {
+            Token = "token",
+            UserId = 42,
+            Email = "user@test.com",
+            Roles = [Roles.User],
+            EmailConfirmed = true,
+            HasActiveSubscription = true
+        };
+
+        _authService.ApplyLoginResponse(response);
+
+        Assert.That(_authService.SubscriptionStatus, Is.EqualTo(SubscriptionStatuses.Active));
     }
 
     [Test]
@@ -294,7 +400,13 @@ public class AuthServiceTests
         field!.SetValue(_authService, value);
     }
 
-    private void SetupMockSubscriptionStatusResponse(bool hasSubscription, string? billingSource, string? status = null, DateTime? endDate = null)
+    private void SetupMockSubscriptionStatusResponse(
+        bool hasSubscription,
+        string? billingSource,
+        string? status = null,
+        DateTime? endDate = null,
+        bool isOnTrial = false,
+        DateTime? trialEndDate = null)
     {
         var messageHandler = new Mock<HttpMessageHandler>();
         messageHandler.Protected()
@@ -303,7 +415,15 @@ public class AuthServiceTests
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = JsonContent.Create(new { HasSubscription = hasSubscription, BillingSource = billingSource, Status = status, EndDate = endDate })
+                Content = JsonContent.Create(new
+                {
+                    HasSubscription = hasSubscription,
+                    BillingSource = billingSource,
+                    Status = status,
+                    EndDate = endDate,
+                    IsOnTrial = isOnTrial,
+                    TrialEndDate = trialEndDate
+                })
             });
 
         var httpClient = new HttpClient(messageHandler.Object)

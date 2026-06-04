@@ -3,6 +3,7 @@ using Moq;
 using MusicSalesApp.Maui.Services;
 using MusicSalesApp.Maui.ViewModels;
 using System.Collections.ObjectModel;
+using System.Globalization;
 
 namespace MusicSalesApp.Maui.Tests.ViewModels;
 
@@ -133,6 +134,42 @@ public class HomeViewModelTests
     }
 
     [Test]
+    public void AndroidFreeTrialCard_HidesStandaloneSubscribeButton()
+    {
+        _viewModel.IsAuthenticated = true;
+        _viewModel.IsEmailVerified = true;
+        _viewModel.HasActiveSubscription = false;
+        _viewModel.HasEligibleAndroidFreeTrial = true;
+
+        Assert.Multiple(() =>
+        {
+            _viewModel.IsAndroidSubscriptionPlatform = true;
+            Assert.That(_viewModel.ShowSubscriptionOfferCard, Is.True);
+            Assert.That(_viewModel.ShowSubscribeNow, Is.False);
+        });
+    }
+
+    [Test]
+    public void LoggedInVerifiedAndroidFirstTimeUser_SeesOfferCardWhileGoogleOfferLookupIsUnresolved()
+    {
+        _viewModel.IsAndroidSubscriptionPlatform = true;
+        _viewModel.IsAuthenticated = true;
+        _viewModel.IsEmailVerified = true;
+        _viewModel.HasActiveSubscription = false;
+        _viewModel.HasPreviousSubscriptionHistory = false;
+        _viewModel.HasResolvedAndroidSubscriptionOffer = false;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.ShowSubscriptionOfferCard, Is.True);
+            Assert.That(_viewModel.ShowSubscribeNow, Is.False);
+            Assert.That(_viewModel.SubscriptionOfferPrimaryButtonText, Is.EqualTo("Subscribe"));
+            Assert.That(_viewModel.ShowSubscriptionOfferSecondaryButton, Is.False);
+            Assert.That(_viewModel.SubscriptionOfferTitleText, Does.Contain("free trial"));
+        });
+    }
+
+    [Test]
     public void ShowSubscribeNow_FalseWhenHasSubscription()
     {
         _viewModel.IsAuthenticated = true;
@@ -204,6 +241,436 @@ public class HomeViewModelTests
         await _viewModel.LoadCommand.ExecuteAsync(null);
 
         Assert.That(_viewModel.SubscriptionPrice, Is.EqualTo("9.99"));
+    }
+
+    [Test]
+    public async Task LoadAsync_UsesGoogleRenewalPrice_WhenSubscriptionOfferLookupSucceeds()
+    {
+        _viewModel.IsAndroidSubscriptionPlatform = true;
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
+        _mockBillingService.Setup(b => b.GetSubscriptionOfferAsync())
+            .ReturnsAsync(new SubscriptionOfferInfo
+            {
+                LookupSucceeded = true,
+                IsAvailable = true,
+                HasFreeTrial = true,
+                FreeTrialDays = 3,
+                RenewalPrice = "$4.99"
+            });
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.SubscriptionPriceDisplay, Is.EqualTo("$4.99"));
+            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Contain("$4.99/month"));
+            Assert.That(_viewModel.ShowSubscriptionOfferCard, Is.True);
+        });
+    }
+
+    [Test]
+    public async Task LoadAsync_DoesNotPublishConfiguredPriceBeforeAndroidStorePrice()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        var originalUICulture = CultureInfo.CurrentUICulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-US");
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-US");
+
+            _viewModel.IsAndroidSubscriptionPlatform = true;
+            _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+            _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
+            _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+            _mockAppSettingsService.Setup(s => s.GetSubscriptionPriceAsync()).ReturnsAsync("4.99");
+            _mockBillingService.Setup(b => b.GetSubscriptionOfferAsync())
+                .ReturnsAsync(new SubscriptionOfferInfo
+                {
+                    LookupSucceeded = true,
+                    IsAvailable = true,
+                    HasFreeTrial = true,
+                    FreeTrialDays = 3,
+                    RenewalPrice = "\u20B1205.00"
+                });
+
+            var observedPrices = new List<string>();
+            _viewModel.PropertyChanged += (_, args) =>
+            {
+                if (args.PropertyName == nameof(HomeViewModel.SubscriptionPriceDisplay))
+                {
+                    observedPrices.Add(_viewModel.SubscriptionPriceDisplay);
+                }
+            };
+
+            await _viewModel.LoadCommand.ExecuteAsync(null);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(observedPrices, Does.Contain("\u20B1205.00"));
+                Assert.That(observedPrices, Does.Not.Contain("$4.99"));
+                Assert.That(_viewModel.SubscriptionPriceDisplay, Is.EqualTo("\u20B1205.00"));
+            });
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+            CultureInfo.CurrentUICulture = originalUICulture;
+        }
+    }
+
+    [Test]
+    public async Task LoadAsync_ActiveAndroidSubscription_StillUsesGoogleRenewalPriceForDisplay()
+    {
+        _viewModel.IsAndroidSubscriptionPlatform = true;
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(true);
+        _mockAppSettingsService.Setup(s => s.GetSubscriptionPriceAsync()).ReturnsAsync("4.99");
+        _mockBillingService.Setup(b => b.GetSubscriptionOfferAsync())
+            .ReturnsAsync(new SubscriptionOfferInfo
+            {
+                LookupSucceeded = true,
+                IsAvailable = true,
+                HasFreeTrial = false,
+                RenewalPrice = "\u20B1205.00"
+            });
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.HasActiveSubscription, Is.True);
+            Assert.That(_viewModel.SubscriptionPriceDisplay, Is.EqualTo("\u20B1205.00"));
+            Assert.That(_viewModel.SubscriptionHeroDescriptionText, Does.Contain("\u20B1205.00"));
+            Assert.That(_viewModel.ShowSubscriptionContent, Is.False);
+        });
+        _mockBillingService.Verify(b => b.GetSubscriptionOfferAsync(), Times.Once);
+        _mockAppSettingsService.Verify(s => s.GetSubscriptionPriceAsync(), Times.Never);
+    }
+
+    [Test]
+    public async Task LoadAsync_KeepsStorePrice_WhenSubsequentOfferLookupFails()
+    {
+        _viewModel.IsAndroidSubscriptionPlatform = true;
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+        _mockBillingService.SetupSequence(b => b.GetSubscriptionOfferAsync())
+            .ReturnsAsync(new SubscriptionOfferInfo
+            {
+                LookupSucceeded = true,
+                IsAvailable = true,
+                HasFreeTrial = true,
+                FreeTrialDays = 3,
+                RenewalPrice = "\u20B1205.00"
+            })
+            .ReturnsAsync(new SubscriptionOfferInfo
+            {
+                LookupSucceeded = false,
+                ErrorMessage = "Temporary billing lookup failure"
+            });
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.SubscriptionPriceDisplay, Is.EqualTo("\u20B1205.00"));
+            Assert.That(_viewModel.SubscriptionHeroDescriptionText, Does.Contain("\u20B1205.00"));
+        });
+    }
+
+    [Test]
+    public async Task LoadAsync_KeepsFirstStorePrice_WhenLaterLookupReturnsDifferentPrice()
+    {
+        _viewModel.IsAndroidSubscriptionPlatform = true;
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+        _mockBillingService.SetupSequence(b => b.GetSubscriptionOfferAsync())
+            .ReturnsAsync(new SubscriptionOfferInfo
+            {
+                LookupSucceeded = true,
+                IsAvailable = true,
+                HasFreeTrial = true,
+                FreeTrialDays = 3,
+                RenewalPrice = "\u20B1205.00"
+            })
+            .ReturnsAsync(new SubscriptionOfferInfo
+            {
+                LookupSucceeded = true,
+                IsAvailable = true,
+                HasFreeTrial = true,
+                FreeTrialDays = 3,
+                RenewalPrice = "$5.99"
+            });
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.SubscriptionPriceDisplay, Is.EqualTo("\u20B1205.00"));
+            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Contain("\u20B1205.00/month"));
+        });
+    }
+
+    [Test]
+    public async Task LoadAsync_ExpiredGooglePlaySubscription_WhenGoogleReportsTrial_ShowsFreeTrialOfferCard()
+    {
+        _viewModel.IsAndroidSubscriptionPlatform = true;
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+        _mockAuthService.Setup(a => a.SubscriptionStatus).Returns("EXPIRED");
+        _mockAuthService.Setup(a => a.SubscriptionEndDate).Returns(DateTime.UtcNow.AddMinutes(-5));
+        _mockAuthService.Setup(a => a.BillingSource).Returns(BillingProviders.GooglePlay);
+        _mockBillingService.Setup(b => b.GetSubscriptionOfferAsync())
+            .ReturnsAsync(new SubscriptionOfferInfo
+            {
+                LookupSucceeded = true,
+                IsAvailable = true,
+                HasFreeTrial = true,
+                FreeTrialDays = 3,
+                RenewalPrice = "$2.99"
+            });
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.HasPreviousSubscriptionHistory, Is.True);
+            Assert.That(_viewModel.ShowSubscriptionOfferCard, Is.True);
+            Assert.That(_viewModel.ShowSubscribeNow, Is.False);
+            Assert.That(_viewModel.SubscriptionOfferTitleText, Does.Contain("3 day free trial"));
+            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Contain("$2.99/month"));
+        });
+        _mockBillingService.Verify(b => b.GetSubscriptionOfferAsync(), Times.Once);
+    }
+
+    [Test]
+    public async Task LoadAsync_ExpiredGooglePlaySubscription_WhenGoogleHasNoTrial_ShowsPlainSubscribeWithGooglePrice()
+    {
+        _viewModel.IsAndroidSubscriptionPlatform = true;
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+        _mockAuthService.Setup(a => a.SubscriptionStatus).Returns("EXPIRED");
+        _mockAuthService.Setup(a => a.SubscriptionEndDate).Returns(DateTime.UtcNow.AddMinutes(-5));
+        _mockAuthService.Setup(a => a.TrialEndDate).Returns(DateTime.UtcNow.AddMinutes(-10));
+        _mockAuthService.Setup(a => a.BillingSource).Returns(BillingProviders.GooglePlay);
+        _mockBillingService.Setup(b => b.GetSubscriptionOfferAsync())
+            .ReturnsAsync(new SubscriptionOfferInfo
+            {
+                LookupSucceeded = true,
+                IsAvailable = true,
+                HasFreeTrial = false,
+                RenewalPrice = "$2.99"
+            });
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.HasPreviousSubscriptionHistory, Is.True);
+            Assert.That(_viewModel.ShowSubscriptionOfferCard, Is.False);
+            Assert.That(_viewModel.ShowSubscribeNow, Is.True);
+            Assert.That(_viewModel.SubscribeButtonText, Is.EqualTo("Subscribe Now - $2.99/mo"));
+            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Not.Contain("free trial"));
+        });
+        _mockBillingService.Verify(b => b.GetSubscriptionOfferAsync(), Times.Once);
+    }
+
+    [Test]
+    public async Task LoadAsync_ExpiredGooglePlaySubscription_WhenGoogleLookupFails_DoesNotShowFallbackTrial()
+    {
+        _viewModel.IsAndroidSubscriptionPlatform = true;
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+        _mockAuthService.Setup(a => a.SubscriptionStatus).Returns("EXPIRED");
+        _mockAuthService.Setup(a => a.SubscriptionEndDate).Returns(DateTime.UtcNow.AddMinutes(-5));
+        _mockAuthService.Setup(a => a.TrialEndDate).Returns(DateTime.UtcNow.AddMinutes(-10));
+        _mockAuthService.Setup(a => a.BillingSource).Returns(BillingProviders.GooglePlay);
+        _mockBillingService.Setup(b => b.GetSubscriptionOfferAsync())
+            .ReturnsAsync(new SubscriptionOfferInfo
+            {
+                LookupSucceeded = false,
+                ErrorMessage = "Google Play Billing is not available for this installed build."
+            });
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.HasPreviousSubscriptionHistory, Is.True);
+            Assert.That(_viewModel.ShowSubscriptionOfferCard, Is.False);
+            Assert.That(_viewModel.ShowSubscribeNow, Is.True);
+            Assert.That(_viewModel.SubscriptionOfferTitleText, Does.Not.Contain("free trial"));
+        });
+        _mockBillingService.Verify(b => b.GetSubscriptionOfferAsync(), Times.Once);
+    }
+
+    [Test]
+    public async Task LoadAsync_ShowsFallbackTrialCard_WhenGoogleOfferLookupFails()
+    {
+        _viewModel.IsAndroidSubscriptionPlatform = true;
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
+        _mockAppSettingsService.Setup(s => s.GetSubscriptionPriceAsync()).ReturnsAsync("$4.99");
+        _mockBillingService.Setup(b => b.GetSubscriptionOfferAsync())
+            .ReturnsAsync(new SubscriptionOfferInfo
+            {
+                LookupSucceeded = false,
+                ErrorMessage = "Google Play Billing is not available for this installed build."
+            });
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.ShowSubscriptionOfferCard, Is.True);
+            Assert.That(_viewModel.SubscriptionOfferTitleText, Does.Contain("3 day free trial"));
+            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Contain("monthly price shown in Google Play"));
+            Assert.That(_viewModel.SubscriptionOfferPriceText, Is.Empty);
+            Assert.That(_viewModel.ShowSubscriptionOfferPriceText, Is.False);
+            Assert.That(_viewModel.SubscriptionPriceDisplay, Is.Empty);
+        });
+        _mockAppSettingsService.Verify(s => s.GetSubscriptionPriceAsync(), Times.Never);
+    }
+
+    [Test]
+    public async Task LoadAsync_LoggedOutAndroidVisitor_WhenGoogleOfferLookupFails_DoesNotShowConfiguredUsdFallback()
+    {
+        _viewModel.IsAndroidSubscriptionPlatform = true;
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(false);
+        _mockAppSettingsService.Setup(s => s.GetSubscriptionPriceAsync()).ReturnsAsync("$4.99");
+        _mockBillingService.Setup(b => b.GetSubscriptionOfferAsync())
+            .ReturnsAsync(new SubscriptionOfferInfo
+            {
+                LookupSucceeded = false,
+                ErrorMessage = "Temporary billing lookup failure."
+            });
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.IsAuthenticated, Is.False);
+            Assert.That(_viewModel.ShowSubscriptionOfferCard, Is.True);
+            Assert.That(_viewModel.SubscriptionPriceDisplay, Is.Empty);
+            Assert.That(_viewModel.SubscriptionHeroDescriptionText, Does.Not.Contain("$4.99"));
+            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Contain("monthly price shown in Google Play"));
+            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Not.Contain("$4.99"));
+            Assert.That(_viewModel.SubscriptionOfferPriceText, Is.Empty);
+            Assert.That(_viewModel.ShowSubscriptionOfferPriceText, Is.False);
+        });
+        _mockAppSettingsService.Verify(s => s.GetSubscriptionPriceAsync(), Times.Never);
+    }
+
+    [Test]
+    public async Task LoadAsync_UnverifiedUser_WhenGoogleOfferHasNoTrial_ShowsNonTrialOfferCopy()
+    {
+        _viewModel.IsAndroidSubscriptionPlatform = true;
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(false);
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+        _mockBillingService.Setup(b => b.GetSubscriptionOfferAsync())
+            .ReturnsAsync(new SubscriptionOfferInfo
+            {
+                LookupSucceeded = true,
+                IsAvailable = true,
+                HasFreeTrial = false,
+                RenewalPrice = "$2.99"
+            });
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.ShowSubscriptionOfferCard, Is.True);
+            Assert.That(_viewModel.SubscriptionOfferTitleText, Does.Not.Contain("free trial"));
+            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Not.Contain("After 3 days"));
+            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Contain("$2.99/month"));
+            Assert.That(_viewModel.SubscriptionOfferPrimaryButtonText, Is.EqualTo("Validate Email"));
+        });
+    }
+
+    [Test]
+    public async Task LoadAsync_VerifiedUser_WhenGoogleOfferHasNoTrial_ShowsPlainSubscribeWithGooglePrice()
+    {
+        _viewModel.IsAndroidSubscriptionPlatform = true;
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+        _mockBillingService.Setup(b => b.GetSubscriptionOfferAsync())
+            .ReturnsAsync(new SubscriptionOfferInfo
+            {
+                LookupSucceeded = true,
+                IsAvailable = true,
+                HasFreeTrial = false,
+                RenewalPrice = "$2.99"
+            });
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.ShowSubscriptionOfferCard, Is.False);
+            Assert.That(_viewModel.ShowSubscribeNow, Is.True);
+            Assert.That(_viewModel.SubscribeButtonText, Is.EqualTo("Subscribe Now - $2.99/mo"));
+        });
+    }
+
+    [Test]
+    public void LoggedOutAndroidVisitor_SeesTrialIncentiveCard()
+    {
+        _viewModel.IsAndroidSubscriptionPlatform = true;
+        _viewModel.IsAuthenticated = false;
+        _viewModel.HasActiveSubscription = false;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.ShowSubscriptionOfferCard, Is.True);
+            Assert.That(_viewModel.ShowLoginRegister, Is.False);
+            Assert.That(_viewModel.SubscriptionOfferPrimaryButtonText, Is.EqualTo("Create Account"));
+            Assert.That(_viewModel.ShowSubscriptionOfferSecondaryButton, Is.True);
+            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Contain("Google Play subscription settings"));
+        });
+    }
+
+    [Test]
+    public async Task NavigateToRegisterFromOfferCommand_PassesReturnHomeFlag()
+    {
+        await _viewModel.NavigateToRegisterFromOfferCommand.ExecuteAsync(null);
+
+        _mockNavigationService.Verify(n => n.GoToAsync("register", It.Is<IDictionary<string, object>>(d =>
+            (bool)d[NavigationRoutes.ReturnToHomeAfterAuthParameter])), Times.Once);
+    }
+
+    [Test]
+    public async Task NavigateToLoginFromOfferCommand_PassesReturnHomeFlag()
+    {
+        await _viewModel.NavigateToLoginFromOfferCommand.ExecuteAsync(null);
+
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.LoginEntry, It.Is<IDictionary<string, object>>(d =>
+            (bool)d[NavigationRoutes.ReturnToHomeAfterAuthParameter])), Times.Once);
+    }
+
+    [Test]
+    public async Task NavigateToValidateEmailFromOfferCommand_PassesReturnHomeFlag()
+    {
+        _mockAuthService.Setup(a => a.UserId).Returns(42);
+        _mockAuthService.Setup(a => a.Email).Returns("test@test.com");
+        _viewModel = CreateViewModel();
+
+        await _viewModel.NavigateToValidateEmailFromOfferCommand.ExecuteAsync(null);
+
+        _mockNavigationService.Verify(n => n.GoToAsync("verify-email", It.Is<IDictionary<string, object>>(d =>
+            (int)d["UserId"] == 42 &&
+            (string)d["Email"] == "test@test.com" &&
+            (bool)d[NavigationRoutes.ReturnToHomeAfterAuthParameter])), Times.Once);
     }
 
     [Test]
@@ -546,7 +1013,7 @@ public class HomeViewModelTests
     public void SubscribeButtonText_IncludesPrice()
     {
         _viewModel.SubscriptionPrice = "4.99";
-        Assert.That(_viewModel.SubscribeButtonText, Is.EqualTo("Subscribe Now — $4.99/mo"));
+        Assert.That(_viewModel.SubscribeButtonText, Is.EqualTo("Subscribe Now - $4.99/mo"));
     }
 
     [Test]

@@ -2,6 +2,8 @@ namespace MusicSalesApp.Maui.Services;
 
 public static class NavigationRoutes
 {
+    public const string ReturnToHomeAfterAuthParameter = "ReturnToHomeAfterAuth";
+
     public const string HomeRoot = "//Home";
     public const string MusicLibraryRoot = "//MusicLibrary";
 

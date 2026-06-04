@@ -47,6 +47,7 @@ public partial class RegisterViewModel : ObservableObject
     public bool CanRegister => AcceptTermsOfUse && AcceptPrivacyPolicy && AcceptRefundPolicy;
     public bool IsGoogleRegistrationPending => !string.IsNullOrWhiteSpace(PendingGoogleRegistrationToken);
     public string RegisterButtonText => IsGoogleRegistrationPending ? "Complete Google Sign Up" : "Register";
+    public bool ReturnToHomeAfterAuth { get; private set; }
 
     public RegisterViewModel(
         IAuthService authService,
@@ -103,7 +104,7 @@ public partial class RegisterViewModel : ObservableObject
                 if (success)
                 {
                     PendingGoogleRegistrationToken = string.Empty;
-                    await _navigationService.GoToAsync(NavigationRoutes.MusicLibraryRoot);
+                    await NavigateAfterAuthAsync();
                 }
                 else
                 {
@@ -162,7 +163,8 @@ public partial class RegisterViewModel : ObservableObject
                     ["UserId"] = userId,
                     ["Email"] = normalizedEmail,
                     ["Password"] = Password,
-                    ["CodeAlreadySent"] = true
+                    ["CodeAlreadySent"] = true,
+                    [NavigationRoutes.ReturnToHomeAfterAuthParameter] = ReturnToHomeAfterAuth
                 };
                 await _navigationService.GoToAsync("verify-email", parameters);
             }
@@ -198,7 +200,7 @@ public partial class RegisterViewModel : ObservableObject
             var result = await _authService.AuthenticateWithGoogleAsync();
             if (result.Success)
             {
-                await _navigationService.GoToAsync(NavigationRoutes.MusicLibraryRoot);
+                await NavigateAfterAuthAsync();
                 return;
             }
 
@@ -212,7 +214,7 @@ public partial class RegisterViewModel : ObservableObject
 
                 if (success)
                 {
-                    await _navigationService.GoToAsync(NavigationRoutes.MusicLibraryRoot);
+                    await NavigateAfterAuthAsync();
                     return;
                 }
 
@@ -237,6 +239,15 @@ public partial class RegisterViewModel : ObservableObject
     [RelayCommand]
     private async Task GoToLoginAsync()
     {
+        if (ReturnToHomeAfterAuth)
+        {
+            await _navigationService.GoToAsync(NavigationRoutes.LoginEntry, new Dictionary<string, object>
+            {
+                [NavigationRoutes.ReturnToHomeAfterAuthParameter] = true
+            });
+            return;
+        }
+
         await _navigationService.GoToAsync(NavigationRoutes.LoginEntry);
     }
 
@@ -245,6 +256,8 @@ public partial class RegisterViewModel : ObservableObject
 
     public void ApplyQueryAttributes(IDictionary<string, object> query)
     {
+        ReturnToHomeAfterAuth = false;
+
         if (query.TryGetValue("PendingGoogleRegistrationToken", out var pendingToken) && pendingToken is string token)
         {
             PendingGoogleRegistrationToken = token;
@@ -256,5 +269,16 @@ public partial class RegisterViewModel : ObservableObject
         {
             Email = emailValue;
         }
+
+        if (NavigationQueryHelper.TryReadBoolean(query, NavigationRoutes.ReturnToHomeAfterAuthParameter, out var returnToHomeAfterAuth))
+        {
+            ReturnToHomeAfterAuth = returnToHomeAfterAuth;
+        }
     }
+
+    private Task NavigateAfterAuthAsync()
+        => _navigationService.GoToAsync(ReturnToHomeAfterAuth
+            ? NavigationRoutes.HomeRoot
+            : NavigationRoutes.MusicLibraryRoot);
+
 }

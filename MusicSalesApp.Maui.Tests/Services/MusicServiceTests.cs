@@ -735,12 +735,15 @@ public class MusicServiceTests
         var service = CreateService();
 
         var result = await service.VerifySubscriptionPurchaseAsync(
-            BillingPurchaseVerificationRequest.ForGooglePlay("token-123", "order-456"));
+            BillingPurchaseVerificationRequest.ForGooglePlay("token-123", "order-456", 2_990_000, "USD", "$2.99"));
 
         Assert.That(result.Success, Is.True);
         Assert.That(requestBody, Is.Not.Null);
         using var document = JsonDocument.Parse(requestBody!);
         Assert.That(document.RootElement.GetProperty("timeZoneId").GetString(), Is.EqualTo(TimeZoneInfo.Local.Id));
+        Assert.That(document.RootElement.GetProperty("priceAmountMicros").GetInt64(), Is.EqualTo(2_990_000));
+        Assert.That(document.RootElement.GetProperty("priceCurrencyCode").GetString(), Is.EqualTo("USD"));
+        Assert.That(document.RootElement.GetProperty("formattedPrice").GetString(), Is.EqualTo("$2.99"));
     }
 
     [Test]
