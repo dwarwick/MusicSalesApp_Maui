@@ -6,6 +6,7 @@ using MediaManager.Playback;
 using MediaManager.Player;
 using MediaManager.Queue;
 using Microsoft.Extensions.Logging;
+using MusicSalesApp.Common.Helpers;
 using MusicSalesApp.Maui.ViewModels;
 using MmPositionChangedEventArgs = MediaManager.Playback.PositionChangedEventArgs;
 #if IOS
@@ -32,6 +33,7 @@ public class PlaybackService : IPlaybackService
     private static readonly TimeSpan DefaultPositionSamplerInterval = TimeSpan.Zero;
 #endif
     private static readonly TimeSpan DefaultPositionEventStaleThreshold = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan DefaultSubscriptionStatusRefreshInterval = TimeSpan.FromSeconds(15);
     private const int QueueCacheResolutionConcurrency = 3;
     private const int BackgroundWarmAheadTrackCount = 3;
     private const int MaxLoggedPlaylistItems = 10;
@@ -47,10 +49,13 @@ public class PlaybackService : IPlaybackService
     private readonly TimeSpan _positionSamplerInterval;
     private readonly TimeSpan _positionEventStaleThreshold;
     private readonly TimeSpan _transientStopConfirmationDelay;
+    private readonly TimeSpan _subscriptionStatusRefreshInterval;
     private readonly object _positionSync = new();
     private CancellationTokenSource? _positionSamplerCancellation;
     private CancellationTokenSource? _terminalStateConfirmationCancellation;
     private long _lastPositionChangedUtcTicks;
+    private long _lastSubscriptionStatusRefreshUtcTicks;
+    private int _subscriptionStatusRefreshInProgress;
 
     // Stream tracking state
     private int _streamQualifyingSeconds = 30;
@@ -94,7 +99,8 @@ public class PlaybackService : IPlaybackService
         TimeSpan? playlistAdvanceFallbackDelay = null,
         TimeSpan? positionSamplerInterval = null,
         TimeSpan? positionEventStaleThreshold = null,
-        TimeSpan? transientStopConfirmationDelay = null)
+        TimeSpan? transientStopConfirmationDelay = null,
+        TimeSpan? subscriptionStatusRefreshInterval = null)
     {
         _authService = authService;
         _musicService = musicService;
@@ -106,6 +112,7 @@ public class PlaybackService : IPlaybackService
         _positionSamplerInterval = positionSamplerInterval ?? DefaultPositionSamplerInterval;
         _positionEventStaleThreshold = positionEventStaleThreshold ?? DefaultPositionEventStaleThreshold;
         _transientStopConfirmationDelay = transientStopConfirmationDelay ?? DefaultTransientStopConfirmationDelay;
+        _subscriptionStatusRefreshInterval = subscriptionStatusRefreshInterval ?? DefaultSubscriptionStatusRefreshInterval;
         _nextCtaThreshold = 0;
 
         _musicService.OnStreamCountRecorded += ApplyRecordedStreamCount;
@@ -221,6 +228,7 @@ public class PlaybackService : IPlaybackService
 
         CurrentSong = song;
         IsPlaying = true;
+        QueueImmediateSubscriptionStatusRefreshForPlayback(TimeSpan.Zero);
 
         if (isSameSong)
         {
@@ -244,11 +252,23 @@ public class PlaybackService : IPlaybackService
         CancelPendingPlaylistAdvance();
         LogPlaybackSnapshot("TogglePlayPause requested", CurrentSong, null);
 
+        if (IsPreviewResumeBlocked())
+        {
+            BlockPreviewLimitResume("TogglePlayPause");
+            LogPlaybackSnapshot("TogglePlayPause blocked by preview limit", CurrentSong, null);
+            return;
+        }
+
         IsPlaying = !IsPlaying;
         if (IsPlaying)
+        {
+            QueueImmediateSubscriptionStatusRefreshForPlayback(_playbackPosition);
             ObserveMediaCommand("MediaManager.Play from TogglePlayPause", _mediaManager.Play(), CurrentSong, null);
+        }
         else
+        {
             ObserveMediaCommand("MediaManager.Pause from TogglePlayPause", _mediaManager.Pause(), CurrentSong, null);
+        }
 
         LogPlaybackSnapshot("TogglePlayPause completed", CurrentSong, null);
     }
@@ -278,6 +298,8 @@ public class PlaybackService : IPlaybackService
 
     internal void UpdatePosition(TimeSpan position, TimeSpan duration)
     {
+        var shouldRefreshSubscriptionStatus = false;
+
         lock (_positionSync)
         {
             var previousPosition = _playbackPosition;
@@ -302,6 +324,12 @@ public class PlaybackService : IPlaybackService
 
             TrackStreamPlayback(position, previousPosition);
             CheckPreviewLimit(position);
+            shouldRefreshSubscriptionStatus = ShouldRefreshSubscriptionStatusDuringPlayback();
+        }
+
+        if (shouldRefreshSubscriptionStatus)
+        {
+            QueueSubscriptionStatusRefreshForPlayback(position);
         }
     }
 
@@ -389,6 +417,7 @@ public class PlaybackService : IPlaybackService
         PreviewLimitReached = false;
         CurrentSong = song;
         IsPlaying = true;
+        QueueImmediateSubscriptionStatusRefreshForPlayback(TimeSpan.Zero);
 
         _mediaManager.RepeatMode = IsRepeatEnabled ? RepeatMode.All : RepeatMode.Off;
         _mediaManager.ShuffleMode = ShuffleMode.Off;
@@ -449,6 +478,7 @@ public class PlaybackService : IPlaybackService
         PreviewLimitReached = false;
         CurrentSong = song;
         IsPlaying = true;
+        QueueImmediateSubscriptionStatusRefreshForPlayback(TimeSpan.Zero);
 
         if (shouldForceQueueReload)
         {
@@ -858,10 +888,62 @@ public class PlaybackService : IPlaybackService
     {
         if (CurrentSong == null || !IsPlaying)
             return false;
-        if (_authService.HasActiveSubscription)
+        if (HasPlaybackEntitlement())
             return false;
         if (_authService.IsCreator && CurrentSong.CreatorUserId == _authService.UserId)
             return false;
+        return true;
+    }
+
+    private bool IsPreviewResumeBlocked()
+    {
+        if (!PreviewLimitReached || CurrentSong == null)
+        {
+            return false;
+        }
+
+        if (HasPlaybackEntitlement())
+        {
+            return false;
+        }
+
+        return !_authService.IsCreator || CurrentSong.CreatorUserId != _authService.UserId;
+    }
+
+    private void BlockPreviewLimitResume(string reason)
+    {
+        if (CurrentSong == null)
+        {
+            return;
+        }
+
+        _logger.LogInformation(
+            "Blocking preview-limited playback resume. Reason={Reason}; HasActiveSubscription={HasActiveSubscription}; SubscriptionStatus={SubscriptionStatus}; SubscriptionEndDate={SubscriptionEndDate}; {Snapshot}",
+            reason,
+            _authService.HasActiveSubscription,
+            _authService.SubscriptionStatus,
+            _authService.SubscriptionEndDate,
+            CreatePlaybackSnapshot(CurrentSong, null));
+
+        IsPlaying = false;
+        ClampPreviewPositionDisplay();
+        ObserveMediaCommand($"MediaManager.Pause from {reason} preview-limit resume block", _mediaManager.Pause(), CurrentSong, null);
+    }
+
+    private bool HasPlaybackEntitlement()
+    {
+        if (!_authService.HasActiveSubscription)
+        {
+            return false;
+        }
+
+        if (string.Equals(_authService.SubscriptionStatus, SubscriptionStatuses.Cancelled, StringComparison.OrdinalIgnoreCase) &&
+            _authService.SubscriptionEndDate is { } endDate &&
+            endDate <= DateTime.UtcNow)
+        {
+            return false;
+        }
+
         return true;
     }
 
@@ -872,16 +954,132 @@ public class PlaybackService : IPlaybackService
 
         if (position.TotalSeconds >= PreviewLimitSeconds)
         {
-            IsPlaying = false;
-            PreviewLimitReached = true;
-            ObserveMediaCommand("MediaManager.Pause from CheckPreviewLimit", _mediaManager.Pause(), CurrentSong, null);
-            _previewEndCount++;
+            EnforcePreviewLimit("CheckPreviewLimit");
+        }
+    }
 
-            if (_previewEndCount >= _nextCtaThreshold)
+    private void EnforcePreviewLimit(string reason)
+    {
+        if (CurrentSong == null || PreviewLimitReached)
+        {
+            return;
+        }
+
+        _logger.LogInformation(
+            "Enforcing preview limit. Reason={Reason}; HasActiveSubscription={HasActiveSubscription}; SubscriptionStatus={SubscriptionStatus}; SubscriptionEndDate={SubscriptionEndDate}; {Snapshot}",
+            reason,
+            _authService.HasActiveSubscription,
+            _authService.SubscriptionStatus,
+            _authService.SubscriptionEndDate,
+            CreatePlaybackSnapshot(CurrentSong, null));
+
+        IsPlaying = false;
+        PreviewLimitReached = true;
+        ClampPreviewPositionDisplay();
+        ObserveMediaCommand($"MediaManager.Pause from {reason}", _mediaManager.Pause(), CurrentSong, null);
+        _previewEndCount++;
+
+        if (_previewEndCount >= _nextCtaThreshold)
+        {
+            _nextCtaThreshold = _previewEndCount + _random.Next(MinPreviewInterval, MaxPreviewIntervalExclusive);
+            _ = ShowSubscribeCtaRequested?.Invoke();
+        }
+    }
+
+    private void ClampPreviewPositionDisplay()
+    {
+        if (_playbackPosition.TotalSeconds < PreviewLimitSeconds)
+        {
+            return;
+        }
+
+        var previewPosition = TimeSpan.FromSeconds(PreviewLimitSeconds);
+        PlaybackProgress = _playbackDuration.TotalSeconds > 0
+            ? previewPosition.TotalSeconds / _playbackDuration.TotalSeconds
+            : 0;
+        FormattedPosition = FormatDuration(previewPosition.TotalSeconds);
+    }
+
+    private bool ShouldRefreshSubscriptionStatusDuringPlayback(bool force = false)
+    {
+        if (_subscriptionStatusRefreshInterval <= TimeSpan.Zero || CurrentSong == null || !IsPlaying)
+        {
+            return false;
+        }
+
+        if (!_authService.IsLoggedIn || !_authService.HasActiveSubscription)
+        {
+            return false;
+        }
+
+        if (_authService.IsCreator && CurrentSong.CreatorUserId == _authService.UserId)
+        {
+            return false;
+        }
+
+        if (force)
+        {
+            return true;
+        }
+
+        var lastRefreshTicks = Volatile.Read(ref _lastSubscriptionStatusRefreshUtcTicks);
+        var nowTicks = DateTime.UtcNow.Ticks;
+        return lastRefreshTicks <= 0
+            || TimeSpan.FromTicks(Math.Max(0, nowTicks - lastRefreshTicks)) >= _subscriptionStatusRefreshInterval;
+    }
+
+    private void QueueImmediateSubscriptionStatusRefreshForPlayback(TimeSpan observedPosition)
+    {
+        if (ShouldRefreshSubscriptionStatusDuringPlayback(force: true))
+        {
+            QueueSubscriptionStatusRefreshForPlayback(observedPosition);
+        }
+    }
+
+    private void QueueSubscriptionStatusRefreshForPlayback(TimeSpan observedPosition)
+    {
+        if (Interlocked.CompareExchange(ref _subscriptionStatusRefreshInProgress, 1, 0) != 0)
+        {
+            return;
+        }
+
+        Interlocked.Exchange(ref _lastSubscriptionStatusRefreshUtcTicks, DateTime.UtcNow.Ticks);
+        _ = RefreshSubscriptionStatusForPlaybackAsync(observedPosition);
+    }
+
+    private async Task RefreshSubscriptionStatusForPlaybackAsync(TimeSpan observedPosition)
+    {
+        try
+        {
+            var previousHasActiveSubscription = _authService.HasActiveSubscription;
+            var previousStatus = _authService.SubscriptionStatus;
+            var previousEndDate = _authService.SubscriptionEndDate;
+
+            await _authService.RefreshUserStatusAsync().ConfigureAwait(false);
+
+            _logger.LogInformation(
+                "Playback subscription refresh completed. PreviousHasActiveSubscription={PreviousHasActiveSubscription}; CurrentHasActiveSubscription={CurrentHasActiveSubscription}; PreviousStatus={PreviousStatus}; CurrentStatus={CurrentStatus}; PreviousEndDate={PreviousEndDate}; CurrentEndDate={CurrentEndDate}; ObservedPosition={ObservedPosition}; {Snapshot}",
+                previousHasActiveSubscription,
+                _authService.HasActiveSubscription,
+                previousStatus,
+                _authService.SubscriptionStatus,
+                previousEndDate,
+                _authService.SubscriptionEndDate,
+                observedPosition,
+                CreatePlaybackSnapshot(CurrentSong, null));
+
+            if (ShouldEnforcePreviewLimit() && _playbackPosition.TotalSeconds >= PreviewLimitSeconds)
             {
-                _nextCtaThreshold = _previewEndCount + _random.Next(MinPreviewInterval, MaxPreviewIntervalExclusive);
-                _ = ShowSubscribeCtaRequested?.Invoke();
+                EnforcePreviewLimit("SubscriptionStatusRefresh");
             }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Unable to refresh subscription status during playback.");
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _subscriptionStatusRefreshInProgress, 0);
         }
     }
 
@@ -903,6 +1101,12 @@ public class PlaybackService : IPlaybackService
         {
             case MediaPlayerState.Playing:
                 CancelPendingTerminalPlaybackStateConfirmation();
+                if (IsPreviewResumeBlocked())
+                {
+                    BlockPreviewLimitResume("MediaManagerStateChanged");
+                    break;
+                }
+
                 if (!IsPlaying) IsPlaying = true;
                 break;
             case MediaPlayerState.Buffering:
@@ -968,6 +1172,7 @@ public class PlaybackService : IPlaybackService
         ResetPlaybackState();
         CurrentSong = song;
         IsPlaying = true;
+        QueueImmediateSubscriptionStatusRefreshForPlayback(TimeSpan.Zero);
         _logger.LogInformation("MediaItemChanged updated app state. ResolvedSongId={SongId}; PlaylistIndex={PlaylistIndex}; {Snapshot}", song.Id, playlistIndex, CreatePlaybackSnapshot(CurrentSong, e.MediaItem));
     }
 

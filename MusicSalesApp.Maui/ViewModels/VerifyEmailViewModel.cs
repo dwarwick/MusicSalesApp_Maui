@@ -8,6 +8,7 @@ namespace MusicSalesApp.Maui.ViewModels;
 [QueryProperty(nameof(Email), "Email")]
 [QueryProperty(nameof(Password), "Password")]
 [QueryProperty(nameof(CodeAlreadySent), "CodeAlreadySent")]
+[QueryProperty(nameof(ReturnToHomeAfterAuth), NavigationRoutes.ReturnToHomeAfterAuthParameter)]
 public partial class VerifyEmailViewModel : ObservableObject
 {
     private readonly IAuthService _authService;
@@ -35,6 +36,9 @@ public partial class VerifyEmailViewModel : ObservableObject
     /// </summary>
     [ObservableProperty]
     public partial bool CodeAlreadySent { get; set; }
+
+    [ObservableProperty]
+    public partial bool ReturnToHomeAfterAuth { get; set; }
 
     [ObservableProperty]
     public partial bool IsBusy { get; set; }
@@ -115,7 +119,7 @@ public partial class VerifyEmailViewModel : ObservableObject
             if (success)
             {
                 await PromptBiometricAsync();
-                await _navigationService.GoToAsync(NavigationRoutes.MusicLibraryRoot);
+                await NavigateAfterAuthAsync();
             }
             else
             {
@@ -216,8 +220,13 @@ public partial class VerifyEmailViewModel : ObservableObject
     [RelayCommand]
     private async Task SkipAsync()
     {
-        await _navigationService.GoToAsync(NavigationRoutes.MusicLibraryRoot);
+        await NavigateAfterAuthAsync();
     }
+
+    private Task NavigateAfterAuthAsync()
+        => _navigationService.GoToAsync(ReturnToHomeAfterAuth
+            ? NavigationRoutes.HomeRoot
+            : NavigationRoutes.MusicLibraryRoot);
 
     private async Task PromptBiometricAsync()
     {

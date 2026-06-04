@@ -15,6 +15,8 @@ public interface IAuthService
     bool HasActiveSubscription { get; }
     string? SubscriptionStatus { get; }
     DateTime? SubscriptionEndDate { get; }
+    bool IsOnTrial { get; }
+    DateTime? TrialEndDate { get; }
     string? BillingSource { get; }
     bool IsCreator { get; }
     int? CreatorId { get; }

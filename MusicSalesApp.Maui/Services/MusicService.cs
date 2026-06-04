@@ -499,6 +499,9 @@ public class MusicService : IMusicService
             {
                 PurchaseToken = request.PurchaseToken,
                 OrderId = request.OrderId ?? string.Empty,
+                PriceAmountMicros = request.PriceAmountMicros,
+                PriceCurrencyCode = request.PriceCurrencyCode ?? string.Empty,
+                FormattedPrice = request.FormattedPrice ?? string.Empty,
                 TimeZoneId = GetLocalTimeZoneId()
             };
             var response = await client.PostAsJsonAsync("api/subscription/google-play/verify", payload);

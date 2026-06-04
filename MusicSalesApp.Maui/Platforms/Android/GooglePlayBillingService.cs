@@ -20,6 +20,9 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
     private BillingClient? _billingClient;
     private TaskCompletionSource<BillingPurchaseResult>? _purchaseTcs;
     private ProductDetails? _subscriptionProductDetails;
+    private long? _pendingRenewalPriceAmountMicros;
+    private string? _pendingRenewalPriceCurrencyCode;
+    private string? _pendingFormattedPrice;
 
     public GooglePlayBillingService(IConfiguration configuration, ILogger<GooglePlayBillingService> logger)
     {
@@ -71,12 +74,16 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
                 return queryResult; // Error result
         }
 
-        // Find the first offer (base plan)
         var offerDetails = _subscriptionProductDetails!.GetSubscriptionOfferDetails();
         if (offerDetails == null || offerDetails.Count == 0)
             return BillingPurchaseResult.Failed("No subscription offers available.");
 
-        var offerToken = offerDetails[0].OfferToken;
+        var purchaseOffer = FindFreeTrialOffer(offerDetails) ?? offerDetails[0];
+        var offerToken = purchaseOffer.OfferToken;
+        var renewalPricePhase = ResolveRenewalPricePhase(purchaseOffer);
+        _pendingRenewalPriceAmountMicros = renewalPricePhase?.PriceAmountMicros;
+        _pendingRenewalPriceCurrencyCode = renewalPricePhase?.PriceCurrencyCode;
+        _pendingFormattedPrice = renewalPricePhase?.FormattedPrice;
 
         // Build the billing flow params
         var productDetailsParams = BillingFlowParams.ProductDetailsParams.NewBuilder()
@@ -95,7 +102,7 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
         if (responseCode.ResponseCode != BillingResponseCode.Ok)
         {
             _purchaseTcs = null;
-            return BillingPurchaseResult.Failed($"Failed to launch billing flow (code: {responseCode.ResponseCode}).");
+            return BillingPurchaseResult.Failed(CreateBillingFailureMessage(responseCode));
         }
 
         // Wait for the OnPurchasesUpdated callback
@@ -141,6 +148,60 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
         return null;
     }
 
+    public async Task<SubscriptionOfferInfo> GetSubscriptionOfferAsync()
+    {
+        if (_billingClient == null || !_billingClient.IsReady)
+        {
+            await InitializeAsync();
+            if (_billingClient == null || !_billingClient.IsReady)
+                return SubscriptionOfferInfo.None;
+        }
+
+        _subscriptionProductDetails = null;
+        var queryResult = await QuerySubscriptionProductAsync();
+        if (queryResult != null || _subscriptionProductDetails == null)
+        {
+            _logger.LogWarning("Google Play subscription offer lookup failed: {ErrorMessage}", queryResult?.ErrorMessage);
+            return new SubscriptionOfferInfo
+            {
+                LookupSucceeded = false,
+                ErrorMessage = queryResult?.ErrorMessage
+            };
+        }
+
+        var offerDetails = _subscriptionProductDetails.GetSubscriptionOfferDetails();
+        if (offerDetails == null || offerDetails.Count == 0)
+        {
+            return new SubscriptionOfferInfo
+            {
+                LookupSucceeded = true,
+                IsAvailable = false,
+                ErrorMessage = "No subscription offers available."
+            };
+        }
+
+        var freeTrialOffer = FindFreeTrialOffer(offerDetails);
+        var displayOffer = freeTrialOffer ?? offerDetails[0];
+        var renewalPrice = ResolveRenewalPrice(displayOffer);
+        var freeTrialDays = freeTrialOffer == null ? null : ResolveFreeTrialDays(freeTrialOffer);
+
+        _logger.LogInformation(
+            "Google Play subscription offer lookup succeeded. HasFreeTrial={HasFreeTrial}; FreeTrialDays={FreeTrialDays}; RenewalPrice={RenewalPrice}",
+            freeTrialOffer != null,
+            freeTrialDays,
+            renewalPrice);
+
+        return new SubscriptionOfferInfo
+        {
+            LookupSucceeded = true,
+            IsAvailable = true,
+            HasFreeTrial = freeTrialOffer != null,
+            FreeTrialDays = freeTrialDays,
+            OfferToken = displayOffer.OfferToken,
+            RenewalPrice = renewalPrice
+        };
+    }
+
     /// <summary>
     /// Callback from BillingClient when a purchase flow completes.
     /// </summary>
@@ -158,7 +219,11 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
                 _ = AcknowledgePurchaseAsync(purchase.PurchaseToken);
 
                 _purchaseTcs.TrySetResult(BillingPurchaseResult.Succeeded(
-                    purchase.PurchaseToken, purchase.OrderId));
+                    purchase.PurchaseToken,
+                    purchase.OrderId,
+                    _pendingRenewalPriceAmountMicros,
+                    _pendingRenewalPriceCurrencyCode,
+                    _pendingFormattedPrice));
             }
             else if (purchase.PurchaseState == PurchaseState.Pending)
             {
@@ -176,8 +241,7 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
         }
         else
         {
-            _purchaseTcs.TrySetResult(BillingPurchaseResult.Failed(
-                $"Purchase failed: {billingResult.DebugMessage} (code: {billingResult.ResponseCode})"));
+            _purchaseTcs.TrySetResult(BillingPurchaseResult.Failed(CreateBillingFailureMessage(billingResult)));
         }
     }
 
@@ -220,7 +284,7 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
         var result = await _billingClient!.QueryProductDetailsAsync(queryParams);
         if (result == null || result.Result.ResponseCode != BillingResponseCode.Ok)
         {
-            return BillingPurchaseResult.Failed($"Failed to query product details (code: {result?.Result.ResponseCode}).");
+            return BillingPurchaseResult.Failed(CreateBillingFailureMessage(result?.Result));
         }
 
         var productDetailsList = result.ProductDetails;
@@ -231,6 +295,55 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
 
         _subscriptionProductDetails = productDetailsList[0];
         return null; // Success — no error
+    }
+
+    private static ProductDetails.SubscriptionOfferDetails? FindFreeTrialOffer(IList<ProductDetails.SubscriptionOfferDetails> offerDetails)
+    {
+        return offerDetails.FirstOrDefault(HasFreeTrialPhase);
+    }
+
+    private static bool HasFreeTrialPhase(ProductDetails.SubscriptionOfferDetails offer)
+    {
+        var phases = offer.PricingPhases?.PricingPhaseList;
+        if (phases == null)
+        {
+            return false;
+        }
+
+        return phases.Any(phase => phase.PriceAmountMicros == 0 && !string.IsNullOrWhiteSpace(phase.BillingPeriod));
+    }
+
+    private static int? ResolveFreeTrialDays(ProductDetails.SubscriptionOfferDetails offer)
+    {
+        var phase = offer.PricingPhases?.PricingPhaseList?
+            .FirstOrDefault(item => item.PriceAmountMicros == 0 && !string.IsNullOrWhiteSpace(item.BillingPeriod));
+
+        return phase == null ? null : BillingPeriodParser.ParseIso8601PeriodDays(phase.BillingPeriod);
+    }
+
+    private static string? ResolveRenewalPrice(ProductDetails.SubscriptionOfferDetails offer)
+    {
+        return ResolveRenewalPricePhase(offer)?.FormattedPrice;
+    }
+
+    private static ProductDetails.PricingPhase? ResolveRenewalPricePhase(ProductDetails.SubscriptionOfferDetails offer)
+    {
+        return offer.PricingPhases?.PricingPhaseList?
+            .LastOrDefault(phase => phase.PriceAmountMicros > 0);
+    }
+
+    private string CreateBillingFailureMessage(BillingResult? billingResult)
+    {
+        var debugMessage = billingResult?.DebugMessage ?? string.Empty;
+        if (debugMessage.Contains("not configured for billing", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Google Play Billing is not available for this installed build. Install the app from a Google Play internal or closed testing track that uses the same package name, signing key, version, and subscription product, then try again.";
+        }
+
+        var responseCode = billingResult?.ResponseCode.ToString() ?? "Unknown";
+        return string.IsNullOrWhiteSpace(debugMessage)
+            ? $"Google Play Billing failed (code: {responseCode})."
+            : $"Google Play Billing failed: {debugMessage} (code: {responseCode}).";
     }
 
     private async Task AcknowledgePurchaseAsync(string purchaseToken)

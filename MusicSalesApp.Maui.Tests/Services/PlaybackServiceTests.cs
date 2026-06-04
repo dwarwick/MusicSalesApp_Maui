@@ -7,6 +7,7 @@ using MediaManager.Queue;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using MusicSalesApp.Common.Helpers;
 using MusicSalesApp.Maui.Services;
 using MusicSalesApp.Maui.ViewModels;
 
@@ -67,7 +68,8 @@ public class PlaybackServiceTests
         TimeSpan? playlistAdvanceFallbackDelay = null,
         TimeSpan? positionSamplerInterval = null,
         TimeSpan? positionEventStaleThreshold = null,
-        TimeSpan? transientStopConfirmationDelay = null)
+        TimeSpan? transientStopConfirmationDelay = null,
+        TimeSpan? subscriptionStatusRefreshInterval = null)
     {
         return new PlaybackService(
             _mockAuthService.Object,
@@ -79,7 +81,8 @@ public class PlaybackServiceTests
             playlistAdvanceFallbackDelay,
             positionSamplerInterval,
             positionEventStaleThreshold,
-            transientStopConfirmationDelay);
+                transientStopConfirmationDelay,
+                subscriptionStatusRefreshInterval);
     }
 
     [Test]
@@ -129,6 +132,79 @@ public class PlaybackServiceTests
 
         Assert.That(_service.CurrentSong, Is.SameAs(song));
         Assert.That(_service.IsPlaying, Is.True);
+    }
+
+    [Test]
+    public async Task UpdatePosition_WhenSubscriptionExpiresDuringPlayback_EnforcesPreviewLimitImmediately()
+    {
+        var hasActiveSubscription = true;
+        _mockAuthService.SetupGet(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.SetupGet(a => a.HasActiveSubscription).Returns(() => hasActiveSubscription);
+        _mockAuthService.SetupGet(a => a.SubscriptionStatus).Returns(() => hasActiveSubscription ? "ACTIVE" : "EXPIRED");
+        _mockAuthService.Setup(a => a.RefreshUserStatusAsync())
+            .Callback(() => hasActiveSubscription = false)
+            .Returns(Task.CompletedTask);
+        _service = CreateService(subscriptionStatusRefreshInterval: TimeSpan.FromMilliseconds(1));
+        var song = new SongDto { Id = 1, SongTitle = "Test", StreamUrl = "https://test.com/song.mp3" };
+
+        _service.PlaySong(song);
+        _service.UpdatePosition(TimeSpan.FromSeconds(61), TimeSpan.FromSeconds(180));
+
+        await WaitForAsync(() => _service.PreviewLimitReached);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_service.IsPlaying, Is.False);
+            Assert.That(_service.PreviewLimitReached, Is.True);
+            Assert.That(_service.FormattedPosition, Is.EqualTo("1:00"));
+        });
+        _mockAuthService.Verify(a => a.RefreshUserStatusAsync(), Times.Once);
+        _mockMediaManager.Verify(m => m.Pause(), Times.Once);
+    }
+
+    [Test]
+    public async Task UpdatePosition_WhenSubscriptionRemainsActive_DoesNotEnforcePreviewLimit()
+    {
+        _mockAuthService.SetupGet(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.SetupGet(a => a.HasActiveSubscription).Returns(true);
+        _mockAuthService.SetupGet(a => a.SubscriptionStatus).Returns("ACTIVE");
+        _mockAuthService.Setup(a => a.RefreshUserStatusAsync()).Returns(Task.CompletedTask);
+        _service = CreateService(subscriptionStatusRefreshInterval: TimeSpan.FromMilliseconds(1));
+        var song = new SongDto { Id = 1, SongTitle = "Test", StreamUrl = "https://test.com/song.mp3" };
+
+        _service.PlaySong(song);
+        _service.UpdatePosition(TimeSpan.FromSeconds(61), TimeSpan.FromSeconds(180));
+
+        await WaitForAsync(() => _mockAuthService.Invocations.Any(invocation => invocation.Method.Name == nameof(IAuthService.RefreshUserStatusAsync)));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_service.IsPlaying, Is.True);
+            Assert.That(_service.PreviewLimitReached, Is.False);
+            Assert.That(_service.FormattedPosition, Is.EqualTo("1:01"));
+        });
+        _mockMediaManager.Verify(m => m.Pause(), Times.Never);
+    }
+
+    [Test]
+    public void UpdatePosition_WhenCancelledSubscriptionEndDateHasPassed_EnforcesPreviewLimitWithoutServerRefresh()
+    {
+        _mockAuthService.SetupGet(a => a.HasActiveSubscription).Returns(true);
+        _mockAuthService.SetupGet(a => a.SubscriptionStatus).Returns(SubscriptionStatuses.Cancelled);
+        _mockAuthService.SetupGet(a => a.SubscriptionEndDate).Returns(DateTime.UtcNow.AddMinutes(-1));
+        var song = new SongDto { Id = 1, SongTitle = "Test", StreamUrl = "https://test.com/song.mp3" };
+
+        _service.PlaySong(song);
+        _service.UpdatePosition(TimeSpan.FromSeconds(61), TimeSpan.FromSeconds(180));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_service.IsPlaying, Is.False);
+            Assert.That(_service.PreviewLimitReached, Is.True);
+            Assert.That(_service.FormattedPosition, Is.EqualTo("1:00"));
+        });
+        _mockAuthService.Verify(a => a.RefreshUserStatusAsync(), Times.Never);
+        _mockMediaManager.Verify(m => m.Pause(), Times.Once);
     }
 
     [Test]
@@ -284,6 +360,51 @@ public class PlaybackServiceTests
         // Resume
         _service.TogglePlayPause();
         _mockMediaManager.Verify(m => m.Play(), Times.Once);
+    }
+
+    [Test]
+    public void TogglePlayPause_WhenPreviewLimitReached_DoesNotResumePlayback()
+    {
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+        var song = new SongDto { Id = 1, SongTitle = "Test", StreamUrl = "https://test.com/song1.mp3" };
+        _service.PlaySong(song);
+        _service.UpdatePosition(TimeSpan.FromSeconds(61), TimeSpan.FromSeconds(180));
+        Assert.That(_service.PreviewLimitReached, Is.True);
+
+        _mockMediaManager.Invocations.Clear();
+
+        _service.TogglePlayPause();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_service.IsPlaying, Is.False);
+            Assert.That(_service.PreviewLimitReached, Is.True);
+            Assert.That(_service.FormattedPosition, Is.EqualTo("1:00"));
+        });
+        _mockMediaManager.Verify(m => m.Play(), Times.Never);
+        _mockMediaManager.Verify(m => m.Pause(), Times.Once);
+    }
+
+    [Test]
+    public void MediaManagerPlayingState_WhenPreviewLimitReached_PausesAgainAndKeepsUiBlocked()
+    {
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+        var song = new SongDto { Id = 1, SongTitle = "Test", StreamUrl = "https://test.com/song1.mp3" };
+        _service.PlaySong(song);
+        _service.UpdatePosition(TimeSpan.FromSeconds(61), TimeSpan.FromSeconds(180));
+        Assert.That(_service.PreviewLimitReached, Is.True);
+
+        _mockMediaManager.Invocations.Clear();
+
+        _mockMediaManager.Raise(m => m.StateChanged += null, new StateChangedEventArgs(MediaPlayerState.Playing));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_service.IsPlaying, Is.False);
+            Assert.That(_service.PreviewLimitReached, Is.True);
+            Assert.That(_service.FormattedPosition, Is.EqualTo("1:00"));
+        });
+        _mockMediaManager.Verify(m => m.Pause(), Times.Once);
     }
 
     // --- Stop ---
@@ -1741,6 +1862,15 @@ public class PlaybackServiceTests
                 StreamUrl = $"https://test.com/song{i}.mp3"
             })
             .ToList();
+    }
+
+    private static async Task WaitForAsync(Func<bool> condition)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        while (!condition())
+        {
+            await Task.Delay(10, timeout.Token);
+        }
     }
 }
 

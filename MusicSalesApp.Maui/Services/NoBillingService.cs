@@ -13,4 +13,7 @@ public class NoBillingService : IBillingService
 
     public Task<BillingPurchaseResult?> RestorePurchaseAsync()
         => Task.FromResult<BillingPurchaseResult?>(null);
+
+    public Task<SubscriptionOfferInfo> GetSubscriptionOfferAsync()
+        => Task.FromResult(SubscriptionOfferInfo.None);
 }

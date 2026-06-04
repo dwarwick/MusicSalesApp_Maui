@@ -66,6 +66,11 @@ public class LoginResponseDto
     public List<string> Roles { get; set; } = [];
     public bool EmailConfirmed { get; set; }
     public bool HasActiveSubscription { get; set; }
+    public bool IsOnTrial { get; set; }
+    public string? SubscriptionStatus { get; set; }
+    public DateTime? SubscriptionEndDate { get; set; }
+    public DateTime? TrialEndDate { get; set; }
+    public string? BillingSource { get; set; }
     public bool IsCreator { get; set; }
     public int? CreatorId { get; set; }
 }
@@ -93,10 +98,14 @@ public class ApiMessageResponse
 public class SubscriptionStatusDto
 {
     public bool HasSubscription { get; set; }
+    public bool IsOnTrial { get; set; }
     public string Status { get; set; } = string.Empty;
     public DateTime? StartDate { get; set; }
     public DateTime? EndDate { get; set; }
     public DateTime? NextBillingDate { get; set; }
+    public DateTime? TrialStartDate { get; set; }
+    public DateTime? TrialEndDate { get; set; }
+    public DateTime? TrialConvertedAt { get; set; }
     public decimal MonthlyPrice { get; set; }
     public string PaypalSubscriptionId { get; set; } = string.Empty;
     public string BillingSource { get; set; } = string.Empty;

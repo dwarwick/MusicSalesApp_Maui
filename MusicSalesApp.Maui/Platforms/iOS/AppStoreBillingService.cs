@@ -75,6 +75,9 @@ public class AppStoreBillingService : NSObject, IBillingService, ISKPaymentTrans
         return await _restoreTcs.Task;
     }
 
+    public Task<SubscriptionOfferInfo> GetSubscriptionOfferAsync()
+        => Task.FromResult(SubscriptionOfferInfo.None);
+
     public void UpdatedTransactions(SKPaymentQueue queue, SKPaymentTransaction[] transactions)
     {
         foreach (var transaction in transactions)

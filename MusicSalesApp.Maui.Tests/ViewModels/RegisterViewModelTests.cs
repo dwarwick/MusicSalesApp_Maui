@@ -212,6 +212,27 @@ public class RegisterViewModelTests
             (bool)d["CodeAlreadySent"] == true)), Times.Once);
     }
 
+    [Test]
+    public async Task RegisterAsync_FromOfferCard_PassesReturnHomeToVerifyEmail()
+    {
+        AcceptAllTerms();
+        _viewModel.ApplyQueryAttributes(new Dictionary<string, object>
+        {
+            [NavigationRoutes.ReturnToHomeAfterAuthParameter] = true
+        });
+        _viewModel.Email = "test@test.com";
+        _viewModel.Password = "Passw0rd!";
+        _viewModel.ConfirmPassword = "Passw0rd!";
+        _mockAuthService.Setup(a => a.RegisterAsync("test@test.com", "Passw0rd!"))
+            .ReturnsAsync((true, string.Empty, 42));
+
+        await _viewModel.RegisterCommand.ExecuteAsync(null);
+
+        _mockNavigationService.Verify(n => n.GoToAsync("verify-email", It.Is<Dictionary<string, object>>(d =>
+            (int)d["UserId"] == 42 &&
+            (bool)d[NavigationRoutes.ReturnToHomeAfterAuthParameter])), Times.Once);
+    }
+
     // --- Open policy commands open externally ---
 
     [Test]
@@ -248,6 +269,20 @@ public class RegisterViewModelTests
     }
 
     [Test]
+    public async Task GoToLoginCommand_FromOfferCard_PassesReturnHomeFlag()
+    {
+        _viewModel.ApplyQueryAttributes(new Dictionary<string, object>
+        {
+            [NavigationRoutes.ReturnToHomeAfterAuthParameter] = true
+        });
+
+        await _viewModel.GoToLoginCommand.ExecuteAsync(null);
+
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.LoginEntry, It.Is<IDictionary<string, object>>(d =>
+            (bool)d[NavigationRoutes.ReturnToHomeAfterAuthParameter])), Times.Once);
+    }
+
+    [Test]
     public async Task RegisterAsync_WhenPendingGoogleRegistration_CompletesGoogleRegistration()
     {
         AcceptAllTerms();
@@ -260,6 +295,41 @@ public class RegisterViewModelTests
 
         _mockAuthService.Verify(a => a.CompleteGoogleRegistrationAsync("pending-token", true, true, true), Times.Once);
         _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.MusicLibraryRoot), Times.Once);
+    }
+
+    [Test]
+    public async Task RegisterAsync_FromOfferCard_WhenPendingGoogleRegistration_NavigatesToHome()
+    {
+        AcceptAllTerms();
+        _viewModel.ApplyQueryAttributes(new Dictionary<string, object>
+        {
+            ["PendingGoogleRegistrationToken"] = "pending-token",
+            ["Email"] = "new-google@test.com",
+            [NavigationRoutes.ReturnToHomeAfterAuthParameter] = true
+        });
+        _mockAuthService.Setup(a => a.CompleteGoogleRegistrationAsync("pending-token", true, true, true))
+            .ReturnsAsync((true, string.Empty));
+
+        await _viewModel.RegisterCommand.ExecuteAsync(null);
+
+        _mockAuthService.Verify(a => a.CompleteGoogleRegistrationAsync("pending-token", true, true, true), Times.Once);
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.HomeRoot), Times.Once);
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.MusicLibraryRoot), Times.Never);
+    }
+
+    [Test]
+    public async Task ApplyQueryAttributes_WhenReturnHomeKeyAbsent_ResetsReturnHomeFlag()
+    {
+        _viewModel.ApplyQueryAttributes(new Dictionary<string, object>
+        {
+            [NavigationRoutes.ReturnToHomeAfterAuthParameter] = true
+        });
+        _viewModel.ApplyQueryAttributes(new Dictionary<string, object>());
+
+        await _viewModel.GoToLoginCommand.ExecuteAsync(null);
+
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.LoginEntry), Times.Once);
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.LoginEntry, It.IsAny<IDictionary<string, object>>()), Times.Never);
     }
 
     [Test]

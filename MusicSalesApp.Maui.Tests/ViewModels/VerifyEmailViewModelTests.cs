@@ -115,6 +115,20 @@ public class VerifyEmailViewModelTests
     }
 
     [Test]
+    public async Task VerifyAsync_FromOfferCard_Success_NavigatesToHome()
+    {
+        _viewModel.ReturnToHomeAfterAuth = true;
+        _viewModel.Code = "123456";
+        _mockAuthService.Setup(a => a.VerifyCodeAsync(1, "123456"))
+            .ReturnsAsync((true, string.Empty, new LoginResponseDto()));
+
+        await _viewModel.VerifyCommand.ExecuteAsync(null);
+
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.HomeRoot), Times.Once);
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.MusicLibraryRoot), Times.Never);
+    }
+
+    [Test]
     public async Task VerifyAsync_Success_ClearsErrorMessage()
     {
         _viewModel.Code = "123456";

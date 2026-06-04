@@ -41,7 +41,7 @@
                                        WidthRequest="140" />
                 </FlexLayout>
 
-                <Label Text="Stream all songs, discover new artists, and create the perfect playlist for every moment. All for less than $5 per month."
+                  <Label Text="{Binding SubscriptionHeroDescriptionText}"
                        FontSize="15"
                        LineBreakMode="WordWrap"
                        TextColor="{AppThemeBinding Light=#4a4a6a, Dark=#b3b3b3}" />
@@ -82,6 +82,20 @@
                         HorizontalOptions="Start"
                         Padding="20,0"
                         Margin="0,8,0,0" />
+
+                    <views:SubscriptionOfferCardView IsVisible="{Binding ShowSubscriptionOfferCard}"
+                                                     Margin="0,8,0,0"
+                                                     TitleText="{Binding SubscriptionOfferTitleText}"
+                                                     BodyText="{Binding SubscriptionOfferBodyText}"
+                                                     PriceText="{Binding SubscriptionOfferPriceText}"
+                                                     ShowPriceText="{Binding ShowSubscriptionOfferPriceText}"
+                                                     DisclosureText="{Binding SubscriptionOfferDisclosureText}"
+                                                     PrimaryButtonText="{Binding SubscriptionOfferPrimaryButtonText}"
+                                                     PrimaryCommand="{Binding SubscriptionOfferPrimaryCommand}"
+                                                     ShowPrimaryButton="{Binding ShowSubscriptionOfferPrimaryButton}"
+                                                     SecondaryButtonText="Log In"
+                                                     SecondaryCommand="{Binding SubscriptionOfferSecondaryCommand}"
+                                                     ShowSecondaryButton="{Binding ShowSubscriptionOfferSecondaryButton}" />
 
                 <!-- CTA: Logged in, verified, no subscription -->
                 <Button Text="{Binding SubscribeButtonText}"
@@ -297,7 +311,7 @@
                                HorizontalTextAlignment="Center"
                                TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
 
-                        <Label Text="Stream all songs with no limits. Access our entire catalog for less than $5 per month."
+                           <Label Text="{Binding SubscriptionCardDescriptionText}"
                                FontSize="14"
                                HorizontalTextAlignment="Center"
                                TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
@@ -327,12 +341,14 @@
                         </VerticalStackLayout>
 
                         <!-- Price highlight -->
-                        <Label HorizontalTextAlignment="Center" Padding="0,8,0,0">
+                        <Label HorizontalTextAlignment="Center"
+                               Padding="0,8,0,0"
+                               IsVisible="{Binding ShowSubscriptionPriceDisplay}">
                             <Label.FormattedText>
                                 <FormattedString>
                                     <Span Text="Just " FontSize="16"
                                           TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
-                                    <Span Text="{Binding SubscriptionPrice, StringFormat='${0}'}"
+                                    <Span Text="{Binding SubscriptionPriceDisplay}"
                                           FontSize="24" FontAttributes="Bold"
                                           TextColor="{StaticResource Primary}" />
                                     <Span Text=" per month" FontSize="16"

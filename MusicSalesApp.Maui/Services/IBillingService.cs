@@ -22,13 +22,24 @@ public sealed class BillingPurchaseVerificationRequest
     public string? OriginalTransactionId { get; init; }
     public string? ProductId { get; init; }
     public string? AppAccountToken { get; init; }
+    public long? PriceAmountMicros { get; init; }
+    public string? PriceCurrencyCode { get; init; }
+    public string? FormattedPrice { get; init; }
 
-    public static BillingPurchaseVerificationRequest ForGooglePlay(string purchaseToken, string? orderId)
+    public static BillingPurchaseVerificationRequest ForGooglePlay(
+        string purchaseToken,
+        string? orderId,
+        long? priceAmountMicros = null,
+        string? priceCurrencyCode = null,
+        string? formattedPrice = null)
         => new()
         {
             Provider = BillingProviders.GooglePlay,
             PurchaseToken = purchaseToken,
-            OrderId = orderId
+            OrderId = orderId,
+            PriceAmountMicros = priceAmountMicros,
+            PriceCurrencyCode = priceCurrencyCode,
+            FormattedPrice = formattedPrice
         };
 
     public static BillingPurchaseVerificationRequest ForApple(
@@ -44,6 +55,19 @@ public sealed class BillingPurchaseVerificationRequest
             ProductId = productId,
             AppAccountToken = appAccountToken
         };
+}
+
+public sealed class SubscriptionOfferInfo
+{
+    public bool LookupSucceeded { get; init; }
+    public bool IsAvailable { get; init; }
+    public bool HasFreeTrial { get; init; }
+    public int? FreeTrialDays { get; init; }
+    public string? OfferToken { get; init; }
+    public string? RenewalPrice { get; init; }
+    public string? ErrorMessage { get; init; }
+
+    public static SubscriptionOfferInfo None { get; } = new();
 }
 
 /// <summary>
@@ -64,6 +88,8 @@ public interface IBillingService
     /// </summary>
     Task<BillingPurchaseResult?> RestorePurchaseAsync();
 
+    Task<SubscriptionOfferInfo> GetSubscriptionOfferAsync();
+
     /// <summary>
     /// Connects to platform billing. Called once at app startup.
     /// </summary>
@@ -83,15 +109,26 @@ public class BillingPurchaseResult
     public string? OriginalTransactionId { get; init; }
     public string? ProductId { get; init; }
     public string? AppAccountToken { get; init; }
+    public long? PriceAmountMicros { get; init; }
+    public string? PriceCurrencyCode { get; init; }
+    public string? FormattedPrice { get; init; }
     public string? ErrorMessage { get; init; }
 
-    public static BillingPurchaseResult Succeeded(string purchaseToken, string? orderId)
+    public static BillingPurchaseResult Succeeded(
+        string purchaseToken,
+        string? orderId,
+        long? priceAmountMicros = null,
+        string? priceCurrencyCode = null,
+        string? formattedPrice = null)
         => new()
         {
             Success = true,
             Provider = BillingProviders.GooglePlay,
             PurchaseToken = purchaseToken,
-            OrderId = orderId
+            OrderId = orderId,
+            PriceAmountMicros = priceAmountMicros,
+            PriceCurrencyCode = priceCurrencyCode,
+            FormattedPrice = formattedPrice
         };
 
     public static BillingPurchaseResult Succeeded(BillingPurchaseVerificationRequest verificationRequest)
@@ -104,7 +141,10 @@ public class BillingPurchaseResult
             TransactionId = verificationRequest.TransactionId,
             OriginalTransactionId = verificationRequest.OriginalTransactionId,
             ProductId = verificationRequest.ProductId,
-            AppAccountToken = verificationRequest.AppAccountToken
+            AppAccountToken = verificationRequest.AppAccountToken,
+            PriceAmountMicros = verificationRequest.PriceAmountMicros,
+            PriceCurrencyCode = verificationRequest.PriceCurrencyCode,
+            FormattedPrice = verificationRequest.FormattedPrice
         };
 
     public static BillingPurchaseResult Failed(string error)
@@ -122,6 +162,9 @@ public class BillingPurchaseResult
             TransactionId = TransactionId,
             OriginalTransactionId = OriginalTransactionId,
             ProductId = ProductId,
-            AppAccountToken = AppAccountToken
+            AppAccountToken = AppAccountToken,
+            PriceAmountMicros = PriceAmountMicros,
+            PriceCurrencyCode = PriceCurrencyCode,
+            FormattedPrice = FormattedPrice
         };
 }

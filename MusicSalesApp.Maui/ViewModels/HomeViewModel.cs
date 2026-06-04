@@ -2,7 +2,9 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Configuration;
+using MusicSalesApp.Common.Helpers;
 using MusicSalesApp.Maui.Services;
+using System.Windows.Input;
 
 namespace MusicSalesApp.Maui.ViewModels;
 
@@ -22,6 +24,7 @@ public partial class HomeViewModel : ObservableObject
     private readonly IConfiguration _configuration;
     private readonly IPlaylistService _playlistService;
     private bool _signalRSubscriptionsAttached;
+    private bool _hasBillingDerivedSubscriptionPrice;
 
     private const string DefaultAppleSubscriptionManagementUrl = "https://account.apple.com/account/manage/section/subscriptions";
 
@@ -30,20 +33,41 @@ public partial class HomeViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SubscribeButtonText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionPriceDisplay))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferPriceText))]
     [NotifyPropertyChangedFor(nameof(ShowLoginRegister))]
     [NotifyPropertyChangedFor(nameof(ShowValidateEmail))]
     [NotifyPropertyChangedFor(nameof(ShowSubscribeNow))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferCard))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferPrimaryButtonText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferPrimaryCommand))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferSecondaryButton))]
     [NotifyPropertyChangedFor(nameof(ShowArtistUploadHero))]
     public partial bool IsAuthenticated { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowSubscriptionContent))]
+    [NotifyPropertyChangedFor(nameof(ShowLoginRegister))]
     [NotifyPropertyChangedFor(nameof(ShowSubscribeNow))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferCard))]
     public partial bool HasActiveSubscription { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowLoginRegister))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscribeNow))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferCard))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
+    public partial bool HasPreviousSubscriptionHistory { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowLoginRegister))]
     [NotifyPropertyChangedFor(nameof(ShowValidateEmail))]
     [NotifyPropertyChangedFor(nameof(ShowSubscribeNow))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferCard))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferPrimaryButtonText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferPrimaryCommand))]
     public partial bool IsEmailVerified { get; set; }
 
     [ObservableProperty]
@@ -52,21 +76,114 @@ public partial class HomeViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SubscribeButtonText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionPriceDisplay))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionPriceDisplay))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionHeroDescriptionText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionCardDescriptionText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferPriceText))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferPriceText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
     public partial string SubscriptionPrice { get; set; } = "3.99";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowLoginRegister))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscribeNow))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferCard))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
+    public partial bool HasEligibleAndroidFreeTrial { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowLoginRegister))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscribeNow))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferCard))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
+    public partial bool ShouldShowFallbackAndroidFreeTrial { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowLoginRegister))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscribeNow))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferCard))]
+    [NotifyPropertyChangedFor(nameof(SubscribeButtonText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionPriceDisplay))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionPriceDisplay))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionHeroDescriptionText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionCardDescriptionText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferPriceText))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferPriceText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
+    public partial bool IsAndroidSubscriptionPlatform { get; set; } = DeviceInfo.Platform == DevicePlatform.Android;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowLoginRegister))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscribeNow))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferCard))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
+    public partial bool HasResolvedAndroidSubscriptionOffer { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
+    public partial int? AndroidFreeTrialDays { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowFeaturedMusic))]
     public partial ObservableCollection<SongDto> FeaturedSongs { get; set; } = new();
 
     public bool ShowSubscriptionContent => !HasActiveSubscription;
-    public bool ShowLoginRegister => !IsAuthenticated;
+    public bool ShowLoginRegister => !IsAuthenticated && !ShowSubscriptionOfferCard;
     public bool ShowValidateEmail => IsAuthenticated && !IsEmailVerified;
-    public bool ShowSubscribeNow => IsAuthenticated && IsEmailVerified && !HasActiveSubscription;
+    public bool ShowSubscribeNow => IsAuthenticated && IsEmailVerified && !HasActiveSubscription && !ShowSubscriptionOfferCard;
+    public bool ShowSubscriptionOfferCard => IsAndroidSubscriptionPlatform
+        && !HasActiveSubscription
+        && (!IsAuthenticated || !IsEmailVerified || HasEligibleAndroidFreeTrial || ShouldShowFallbackAndroidFreeTrial || !HasResolvedAndroidSubscriptionOffer)
+        && (!HasPreviousSubscriptionHistory || HasEligibleAndroidFreeTrial || !HasResolvedAndroidSubscriptionOffer);
     public bool ShowBrowseMusic => true;
     public bool ShowFeaturedMusic => FeaturedSongs.Count > 0;
     public bool ShowArtistUploadHero => !(IsAuthenticated && IsCreator);
 
-    public string SubscribeButtonText => $"Subscribe Now — ${SubscriptionPrice}/mo";
+    public string SubscriptionPriceDisplay => SubscriptionOfferDisplayBuilder.FormatMonthlyPriceOrEmpty(
+        SubscriptionPriceForDisplay,
+        "3.99",
+        AllowConfiguredSubscriptionPriceFallback);
+    public bool ShowSubscriptionPriceDisplay => !string.IsNullOrWhiteSpace(SubscriptionPriceDisplay);
+    public string SubscriptionHeroDescriptionText => ShowSubscriptionPriceDisplay
+        ? $"Stream all songs, discover new artists, and create the perfect playlist for every moment. All for {SubscriptionPriceDisplay} per month."
+        : "Stream all songs, discover new artists, and create the perfect playlist for every moment.";
+    public string SubscriptionCardDescriptionText => ShowSubscriptionPriceDisplay
+        ? $"Stream all songs with no limits. Access our entire catalog for {SubscriptionPriceDisplay} per month."
+        : "Stream all songs with no limits. Access our entire catalog with a monthly subscription.";
+    public string SubscribeButtonText => ShowSubscriptionPriceDisplay
+        ? $"Subscribe Now - {SubscriptionPriceDisplay}/mo"
+        : "Subscribe Now";
+    public string SubscriptionOfferTitleText => CurrentSubscriptionOfferDisplay.Title;
+    public string SubscriptionOfferBodyText => CurrentSubscriptionOfferDisplay.Body;
+    public string SubscriptionOfferPriceText => CurrentSubscriptionOfferDisplay.PriceText;
+    public bool ShowSubscriptionOfferPriceText => !string.IsNullOrWhiteSpace(SubscriptionOfferPriceText);
+    public string SubscriptionOfferDisclosureText => CurrentSubscriptionOfferDisplay.DisclosureText;
+    public string SubscriptionOfferPrimaryButtonText => !IsAuthenticated
+        ? "Create Account"
+        : !IsEmailVerified
+            ? "Validate Email"
+            : "Subscribe";
+    public ICommand? SubscriptionOfferPrimaryCommand => !IsAuthenticated
+        ? NavigateToRegisterFromOfferCommand
+        : !IsEmailVerified
+            ? NavigateToValidateEmailFromOfferCommand
+            : SubscribeCommand;
+    public bool ShowSubscriptionOfferPrimaryButton => true;
+    public bool ShowSubscriptionOfferSecondaryButton => !IsAuthenticated;
+    public ICommand? SubscriptionOfferSecondaryCommand => NavigateToLoginFromOfferCommand;
     public string ManageSubscriptionText => ShouldUseAppleSubscriptionManagement
         ? "Manage subscription with Apple ›"
         : "Manage subscription in Google Play ›";
@@ -89,6 +206,22 @@ public partial class HomeViewModel : ObservableObject
 
     public bool ShowRecommended => RecommendedPlaylist != null;
     public bool ShowLikedSongs => LikedSongsPlaylist != null;
+
+    private bool ShouldUseTrialTerms => HasEligibleAndroidFreeTrial
+        || (!HasPreviousSubscriptionHistory && (ShouldShowFallbackAndroidFreeTrial || !HasResolvedAndroidSubscriptionOffer));
+
+    private string? SubscriptionPriceForDisplay => IsAndroidSubscriptionPlatform && !_hasBillingDerivedSubscriptionPrice
+        ? null
+        : SubscriptionPrice;
+
+    private bool AllowConfiguredSubscriptionPriceFallback => !IsAndroidSubscriptionPlatform;
+
+    private SubscriptionOfferDisplay CurrentSubscriptionOfferDisplay => SubscriptionOfferDisplayBuilder.Create(
+        ShouldUseTrialTerms,
+        AndroidFreeTrialDays,
+        SubscriptionPriceForDisplay,
+        "3.99",
+        AllowConfiguredSubscriptionPriceFallback);
 
     public HomeViewModel(
         IAuthService authService,
@@ -162,9 +295,9 @@ public partial class HomeViewModel : ObservableObject
         IsLoading = true;
         try
         {
-            SubscriptionPrice = await _appSettingsService.GetSubscriptionPriceAsync();
-            OnPropertyChanged(nameof(SubscribeButtonText));
             RefreshAuthState();
+            await LoadAndroidSubscriptionOfferAsync();
+            await LoadConfiguredSubscriptionPriceAsync();
             await LoadStreamQualifyingSecondsAsync();
             await LoadHomePlaylistsAsync();
             await LoadFeaturedSongsAsync();
@@ -173,6 +306,21 @@ public partial class HomeViewModel : ObservableObject
         {
             IsLoading = false;
         }
+    }
+
+    private async Task LoadConfiguredSubscriptionPriceAsync()
+    {
+        if (IsAndroidSubscriptionPlatform)
+        {
+            return;
+        }
+
+        if (_hasBillingDerivedSubscriptionPrice && !string.IsNullOrWhiteSpace(SubscriptionPrice))
+        {
+            return;
+        }
+
+        SubscriptionPrice = await _appSettingsService.GetSubscriptionPriceAsync();
     }
 
     private async Task LoadHomePlaylistsAsync()
@@ -465,7 +613,21 @@ public partial class HomeViewModel : ObservableObject
     private Task NavigateToLoginAsync() => _navigationService.GoToAsync(NavigationRoutes.LoginEntry);
 
     [RelayCommand]
+    private Task NavigateToLoginFromOfferAsync()
+        => _navigationService.GoToAsync(NavigationRoutes.LoginEntry, new Dictionary<string, object>
+        {
+            [NavigationRoutes.ReturnToHomeAfterAuthParameter] = true
+        });
+
+    [RelayCommand]
     private Task NavigateToRegisterAsync() => _navigationService.GoToAsync("register");
+
+    [RelayCommand]
+    private Task NavigateToRegisterFromOfferAsync()
+        => _navigationService.GoToAsync("register", new Dictionary<string, object>
+        {
+            [NavigationRoutes.ReturnToHomeAfterAuthParameter] = true
+        });
 
     [RelayCommand]
     private Task NavigateToValidateEmailAsync()
@@ -475,6 +637,18 @@ public partial class HomeViewModel : ObservableObject
             ["UserId"] = _authService.UserId ?? 0,
             ["Email"] = _authService.Email ?? string.Empty,
             ["Password"] = string.Empty
+        });
+    }
+
+    [RelayCommand]
+    private Task NavigateToValidateEmailFromOfferAsync()
+    {
+        return _navigationService.GoToAsync("verify-email", new Dictionary<string, object>
+        {
+            ["UserId"] = _authService.UserId ?? 0,
+            ["Email"] = _authService.Email ?? string.Empty,
+            ["Password"] = string.Empty,
+            [NavigationRoutes.ReturnToHomeAfterAuthParameter] = true
         });
     }
 
@@ -529,11 +703,82 @@ public partial class HomeViewModel : ObservableObject
     {
         IsAuthenticated = _authService.IsLoggedIn;
         HasActiveSubscription = _authService.HasActiveSubscription;
+        HasPreviousSubscriptionHistory = IsAuthenticated && HasSubscriptionHistory(
+            _authService.SubscriptionStatus,
+            _authService.SubscriptionEndDate,
+            _authService.TrialEndDate);
         IsEmailVerified = _authService.EmailConfirmed;
         IsCreator = _authService.IsCreator;
         OnPropertyChanged(nameof(ShowPlaylists));
         OnPropertyChanged(nameof(ManageSubscriptionText));
         OnPropertyChanged(nameof(SubscriptionAutoRenewalText));
+        OnPropertyChanged(nameof(SubscriptionOfferPrimaryButtonText));
+        OnPropertyChanged(nameof(SubscriptionOfferPrimaryCommand));
+        OnPropertyChanged(nameof(ShowSubscriptionOfferSecondaryButton));
+    }
+
+    private async Task LoadAndroidSubscriptionOfferAsync()
+    {
+        HasResolvedAndroidSubscriptionOffer = false;
+        HasEligibleAndroidFreeTrial = false;
+        ShouldShowFallbackAndroidFreeTrial = false;
+        AndroidFreeTrialDays = null;
+
+        if (!IsAndroidSubscriptionPlatform)
+        {
+            return;
+        }
+
+        var offer = await _billingService.GetSubscriptionOfferAsync();
+        if (!offer.LookupSucceeded)
+        {
+            HasResolvedAndroidSubscriptionOffer = true;
+            ShouldShowFallbackAndroidFreeTrial = !HasPreviousSubscriptionHistory;
+            return;
+        }
+
+        HasResolvedAndroidSubscriptionOffer = true;
+
+        if (!string.IsNullOrWhiteSpace(offer.RenewalPrice))
+        {
+            if (!_hasBillingDerivedSubscriptionPrice)
+            {
+                _hasBillingDerivedSubscriptionPrice = true;
+                SubscriptionPrice = offer.RenewalPrice;
+                NotifySubscriptionPriceDisplayProperties();
+            }
+            else if (string.Equals(SubscriptionPrice, offer.RenewalPrice, StringComparison.Ordinal))
+            {
+                SubscriptionPrice = offer.RenewalPrice;
+                NotifySubscriptionPriceDisplayProperties();
+            }
+        }
+
+        HasEligibleAndroidFreeTrial = offer.HasFreeTrial;
+        AndroidFreeTrialDays = offer.FreeTrialDays;
+    }
+
+    private void NotifySubscriptionPriceDisplayProperties()
+    {
+        OnPropertyChanged(nameof(SubscribeButtonText));
+        OnPropertyChanged(nameof(SubscriptionPriceDisplay));
+        OnPropertyChanged(nameof(ShowSubscriptionPriceDisplay));
+        OnPropertyChanged(nameof(SubscriptionHeroDescriptionText));
+        OnPropertyChanged(nameof(SubscriptionCardDescriptionText));
+        OnPropertyChanged(nameof(SubscriptionOfferTitleText));
+        OnPropertyChanged(nameof(SubscriptionOfferBodyText));
+        OnPropertyChanged(nameof(SubscriptionOfferPriceText));
+        OnPropertyChanged(nameof(ShowSubscriptionOfferPriceText));
+        OnPropertyChanged(nameof(SubscriptionOfferDisclosureText));
+    }
+
+    private static bool HasSubscriptionHistory(string? subscriptionStatus, DateTime? subscriptionEndDate, DateTime? trialEndDate)
+    {
+        return subscriptionEndDate.HasValue
+            || trialEndDate.HasValue
+            || string.Equals(subscriptionStatus, SubscriptionStatuses.Expired, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(subscriptionStatus, SubscriptionStatuses.Cancelled, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(subscriptionStatus, SubscriptionStatuses.Canceled, StringComparison.OrdinalIgnoreCase);
     }
 
     private bool ShouldUseAppleSubscriptionManagement
@@ -548,6 +793,7 @@ public partial class HomeViewModel : ObservableObject
     private void OnAuthStateChanged()
     {
         RefreshAuthState();
+        _ = LoadAndroidSubscriptionOfferAsync();
         _ = LoadHomePlaylistsAsync();
         _ = LoadFeaturedSongsAsync();
     }
