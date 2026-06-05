@@ -59,12 +59,20 @@ public sealed class PlaybackKeepAliveService : IPlaybackKeepAliveService, IDispo
 
             var wakeLock = _wakeLock ??= CreateWakeLock(powerManager);
 
-            if (wakeLock == null || wakeLock.IsHeld)
+            if (wakeLock == null)
             {
+                _logger.LogWarning("Playback keep-alive could not acquire CPU wake lock because NewWakeLock returned null.");
+                return;
+            }
+
+            if (wakeLock.IsHeld)
+            {
+                _logger.LogInformation("Playback keep-alive CPU wake lock already held. IsHeld={IsHeld}", wakeLock.IsHeld);
                 return;
             }
 
             wakeLock.Acquire();
+            _logger.LogInformation("Playback keep-alive CPU wake lock acquired. IsHeld={IsHeld}", wakeLock.IsHeld);
         }
         catch (Exception ex)
         {
@@ -85,12 +93,20 @@ public sealed class PlaybackKeepAliveService : IPlaybackKeepAliveService, IDispo
 
             var wifiLock = _wifiLock ??= CreateWifiLock(wifiManager);
 
-            if (wifiLock == null || wifiLock.IsHeld)
+            if (wifiLock == null)
             {
+                _logger.LogWarning("Playback keep-alive could not acquire Wi-Fi lock because CreateWifiLock returned null.");
+                return;
+            }
+
+            if (wifiLock.IsHeld)
+            {
+                _logger.LogInformation("Playback keep-alive Wi-Fi lock already held. IsHeld={IsHeld}", wifiLock.IsHeld);
                 return;
             }
 
             wifiLock.Acquire();
+            _logger.LogInformation("Playback keep-alive Wi-Fi lock acquired. IsHeld={IsHeld}", wifiLock.IsHeld);
         }
         catch (Exception ex)
         {
@@ -133,10 +149,23 @@ public sealed class PlaybackKeepAliveService : IPlaybackKeepAliveService, IDispo
     {
         try
         {
-            if (_wakeLock?.IsHeld == true)
+            var wakeLock = _wakeLock;
+            if (wakeLock == null)
             {
-                _wakeLock.Release();
+                _logger.LogInformation("Playback keep-alive CPU wake lock release skipped because the lock was not created.");
+                return;
             }
+
+            var wasHeld = wakeLock.IsHeld;
+            if (wasHeld)
+            {
+                wakeLock.Release();
+            }
+
+            _logger.LogInformation(
+                "Playback keep-alive CPU wake lock release completed. WasHeld={WasHeld}; IsHeld={IsHeld}",
+                wasHeld,
+                wakeLock.IsHeld);
         }
         catch (Exception ex)
         {
@@ -148,10 +177,23 @@ public sealed class PlaybackKeepAliveService : IPlaybackKeepAliveService, IDispo
     {
         try
         {
-            if (_wifiLock?.IsHeld == true)
+            var wifiLock = _wifiLock;
+            if (wifiLock == null)
             {
-                _wifiLock.Release();
+                _logger.LogInformation("Playback keep-alive Wi-Fi lock release skipped because the lock was not created.");
+                return;
             }
+
+            var wasHeld = wifiLock.IsHeld;
+            if (wasHeld)
+            {
+                wifiLock.Release();
+            }
+
+            _logger.LogInformation(
+                "Playback keep-alive Wi-Fi lock release completed. WasHeld={WasHeld}; IsHeld={IsHeld}",
+                wasHeld,
+                wifiLock.IsHeld);
         }
         catch (Exception ex)
         {

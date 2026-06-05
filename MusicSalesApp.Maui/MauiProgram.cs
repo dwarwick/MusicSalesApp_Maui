@@ -25,7 +25,12 @@ public static class MauiProgram
 		builder
 			.UseMauiApp<App>()
 			.UseMauiCommunityToolkit()
-			.UseSkiaSharp();
+			.UseSkiaSharp()
+			.ConfigureFonts(fonts =>
+			{
+				fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
+				fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
+			});
 
 		// Load configuration from embedded appsettings JSON files
 		var assembly = Assembly.GetExecutingAssembly();
@@ -105,6 +110,14 @@ public static class MauiProgram
 		})
 		.AddHttpMessageHandler<AuthDelegatingHandler>();
 
+		var audioDownloadClientBuilder = builder.Services.AddHttpClient(AudioCacheService.AudioDownloadClientName, client =>
+		{
+			client.Timeout = TimeSpan.FromSeconds(20);
+		});
+#if ANDROID
+		audioDownloadClientBuilder.ConfigurePrimaryHttpMessageHandler(() => new Xamarin.Android.Net.AndroidMessageHandler());
+#endif
+
 		if (isLocalDev)
 		{
 #if DEBUG
@@ -119,11 +132,6 @@ public static class MauiProgram
 					}
 				};
 			});
-
-				var audioDownloadClientBuilder = builder.Services.AddHttpClient(AudioCacheService.AudioDownloadClientName);
-		#if ANDROID
-				audioDownloadClientBuilder.ConfigurePrimaryHttpMessageHandler(() => new Xamarin.Android.Net.AndroidMessageHandler());
-		#endif
 #endif
 		}
 		else
