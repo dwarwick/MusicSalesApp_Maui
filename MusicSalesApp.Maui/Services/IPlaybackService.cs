@@ -18,6 +18,8 @@ public interface IPlaybackService
     string FormattedDuration { get; }
     bool IsRepeatEnabled { get; }
     bool PreviewLimitReached { get; }
+    PlaybackPreparationState PreparationState { get; }
+    QueuePreparationResult? LastQueuePreparationResult { get; }
 
     // --- Playlist state ---
     List<SongDto>? Playlist { get; }

@@ -931,6 +931,12 @@ sealed class InMemoryPreferenceStore : IAppPreferenceStore
     public void SetBool(string key, bool value)
         => SetString(key, value.ToString());
 
+    public int GetInt(string key, int defaultValue = 0)
+        => int.TryParse(GetString(key), out var value) ? value : defaultValue;
+
+    public void SetInt(string key, int value)
+        => SetString(key, value.ToString());
+
     public string? GetString(string key)
         => _values.TryGetValue(key, out var value) ? value : null;
 

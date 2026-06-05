@@ -10,6 +10,12 @@ public sealed class AppPreferenceStore : IAppPreferenceStore
     public void SetBool(string key, bool value)
         => Preferences.Default.Set(key, value);
 
+    public int GetInt(string key, int defaultValue = 0)
+        => Preferences.Default.Get(key, defaultValue);
+
+    public void SetInt(string key, int value)
+        => Preferences.Default.Set(key, value);
+
     public string? GetString(string key)
         => Preferences.Default.Get<string?>(key, null);
 

@@ -1,4 +1,4 @@
-# Copilot Instructions — MusicSalesApp MAUI
+# Agent Instructions - MusicSalesApp MAUI
 
 ## Original Requirements
 
@@ -48,4 +48,4 @@ The goal is to create an Android app based on the MusicSalesApp web server solut
 
 ## Reference Documents
 - `MAUI_REQUIREMENTS.md` — Full feature requirements for the Android app
-- `MusicSalesApp/.github/copilot-instructions.md` — Web server conventions (for reference when adding API endpoints)
+- `MusicSalesApp/AGENTS.md` - Web server conventions (for reference when adding API endpoints)

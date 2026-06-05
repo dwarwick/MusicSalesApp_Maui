@@ -24,17 +24,8 @@ foreach ($dir in @($binDir, $objDir)) {
     }
 }
 
-# --- Step 2: Uninstall old app from phone ---
-Write-Host '=== Uninstalling old app ===' -ForegroundColor Cyan
-& $adb uninstall $packageName 2>$null
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "  Uninstalled $packageName" -ForegroundColor Yellow
-} else {
-    Write-Host "  App was not installed (OK)" -ForegroundColor Gray
-}
-
-# --- Step 3: Force rebuild and install ---
-Write-Host '=== Building and installing (clean) ===' -ForegroundColor Cyan
+# --- Step 2: Force rebuild/package ---
+Write-Host '=== Building package (clean) ===' -ForegroundColor Cyan
 $buildArgs = @(
     'build'
     $csproj
@@ -42,9 +33,9 @@ $buildArgs = @(
     'net10.0-android'
     '-c'
     $Configuration
-    '-t:Install'
     '--no-incremental'
     '/p:EmbedAssembliesIntoApk=true'
+    '/p:AndroidPackageFormat=apk'
 )
 
 if (-not [string]::IsNullOrWhiteSpace($AppSettingsEnvironment)) {
@@ -55,7 +46,45 @@ if (-not [string]::IsNullOrWhiteSpace($AppSettingsEnvironment)) {
 Write-Host "  Build configuration: $Configuration" -ForegroundColor Yellow
 & dotnet @buildArgs
 if ($LASTEXITCODE -ne 0) {
-    Write-Host 'Build/install failed!' -ForegroundColor Red
+    Write-Host 'Build failed!' -ForegroundColor Red
+    exit 1
+}
+
+# --- Step 3: Install the signed APK ---
+Write-Host '=== Installing app ===' -ForegroundColor Cyan
+$apk = Get-ChildItem -Path $binDir -Recurse -File -Filter "$packageName-Signed.apk" |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1
+
+if ($null -eq $apk) {
+    $apk = Get-ChildItem -Path $binDir -Recurse -File -Filter '*.apk' |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+}
+
+if ($null -eq $apk) {
+    Write-Host "No APK was produced under $binDir" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "  APK: $($apk.FullName)" -ForegroundColor Yellow
+$installOutput = & $adb install -r -d $apk.FullName 2>&1
+$installExitCode = $LASTEXITCODE
+$installOutput | ForEach-Object { Write-Host "  $_" }
+
+if ($installExitCode -ne 0) {
+    $installText = $installOutput -join "`n"
+    if ($installText -match 'INSTALL_FAILED_UPDATE_INCOMPATIBLE|INSTALL_FAILED_VERSION_DOWNGRADE') {
+        Write-Host '  Existing install is incompatible; uninstalling and reinstalling once.' -ForegroundColor Yellow
+        & $adb uninstall $packageName | Out-Host
+        $installOutput = & $adb install -r -d $apk.FullName 2>&1
+        $installExitCode = $LASTEXITCODE
+        $installOutput | ForEach-Object { Write-Host "  $_" }
+    }
+}
+
+if ($installExitCode -ne 0) {
+    Write-Host 'Install failed!' -ForegroundColor Red
     exit 1
 }
 

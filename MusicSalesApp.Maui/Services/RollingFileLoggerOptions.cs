@@ -10,6 +10,8 @@ public sealed class RollingFileLoggerOptions
 
     public LogLevel MinimumLevel { get; init; } = LogLevel.Information;
 
+    public Func<string, LogLevel, bool>? CategoryFilter { get; init; }
+
     public static RollingFileLoggerOptions CreateDefault()
     {
         var baseDirectory = FileSystem.AppDataDirectory;
@@ -26,7 +28,9 @@ public sealed class RollingFileLoggerOptions
         {
             DirectoryPath = Path.Combine(baseDirectory, "logs"),
             RetentionDays = 30,
-            MinimumLevel = LogLevel.Information
+            MinimumLevel = LogLevel.Information,
+            CategoryFilter = (categoryName, logLevel) =>
+                PlaybackDiagnosticsLoggerFilter.ShouldLog(categoryName, logLevel, LogLevel.Information)
         };
     }
 }

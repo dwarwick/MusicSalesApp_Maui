@@ -75,6 +75,37 @@ public class AudioCacheServiceTests
     }
 
     [Test]
+    public async Task SignedUrlChanges_ButStableCacheKeyStillFindsDownloadedTrack()
+    {
+        var factory = new Mock<IHttpClientFactory>();
+        var handler = CreateHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent([1, 2, 3])
+        });
+        factory.Setup(f => f.CreateClient(AudioCacheService.AudioDownloadClientName))
+            .Returns(CreateHttpClient(handler.Object));
+
+        var service = new AudioCacheService(factory.Object, NullLogger<AudioCacheService>.Instance, _cacheDirectory);
+        var firstLease = new SongDto { Id = 30, StreamUrl = "https://example.com/audio/stable-song.mp3?sig=old" };
+        var renewedLease = new SongDto { Id = 30, StreamUrl = "https://example.com/audio/stable-song.mp3?sig=new" };
+
+        var firstPlaybackUri = await service.ResolvePlaybackUriAsync(firstLease);
+        var renewedPlaybackUri = service.GetImmediatePlaybackUri(renewedLease);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(renewedPlaybackUri, Is.EqualTo(firstPlaybackUri));
+            Assert.That(service.GetStableCacheKey(renewedLease), Is.EqualTo(service.GetStableCacheKey(firstLease)));
+            Assert.That(service.GetCacheStatus(renewedLease).IsLocalReady, Is.True);
+        });
+        handler.Protected().Verify(
+            "SendAsync",
+            Times.Once(),
+            ItExpr.IsAny<HttpRequestMessage>(),
+            ItExpr.IsAny<CancellationToken>());
+    }
+
+    [Test]
     public async Task ResolvePlaybackUriAsync_WhenDownloadFails_FallsBackToRemoteStreamUrl()
     {
         var factory = new Mock<IHttpClientFactory>();
@@ -88,6 +119,36 @@ public class AudioCacheServiceTests
         var playbackUri = await service.ResolvePlaybackUriAsync(song);
 
         Assert.That(playbackUri, Is.EqualTo(song.StreamUrl));
+    }
+
+    [Test]
+    public async Task ResolvePlaybackUriAsync_WhenContentWouldExceedConfiguredCacheLimit_FallsBackToRemoteStreamUrl()
+    {
+        var factory = new Mock<IHttpClientFactory>();
+        var handler = CreateHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent([1, 2, 3, 4])
+        });
+        var settings = new Mock<IOfflineCacheSettingsService>();
+        settings.Setup(s => s.GetOfflineCacheLimitBytes()).Returns(3);
+        settings.Setup(s => s.GetDeviceFreeSpaceReserveBytes()).Returns(0);
+        factory.Setup(f => f.CreateClient(AudioCacheService.AudioDownloadClientName))
+            .Returns(CreateHttpClient(handler.Object));
+
+        var service = new AudioCacheService(
+            factory.Object,
+            NullLogger<AudioCacheService>.Instance,
+            _cacheDirectory,
+            settings.Object);
+        var song = new SongDto { Id = 24, StreamUrl = "https://example.com/audio/too-large-song.mp3" };
+
+        var playbackUri = await service.ResolvePlaybackUriAsync(song);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(playbackUri, Is.EqualTo(song.StreamUrl));
+            Assert.That(Directory.EnumerateFiles(_cacheDirectory), Is.Empty);
+        });
     }
 
     [Test]

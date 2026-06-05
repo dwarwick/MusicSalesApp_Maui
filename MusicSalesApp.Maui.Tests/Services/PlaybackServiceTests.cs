@@ -1,9 +1,3 @@
-using MediaManager;
-using MediaManager.Library;
-using MediaManager.Media;
-using MediaManager.Playback;
-using MediaManager.Player;
-using MediaManager.Queue;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -18,34 +12,36 @@ public class PlaybackServiceTests
 {
     private Mock<IAuthService> _mockAuthService;
     private Mock<IMusicService> _mockMusicService;
-    private Mock<IMediaManager> _mockMediaManager;
-    private Mock<IMediaQueue> _mockMediaQueue;
+    private Mock<IPlatformPlaybackRuntime> _mockMediaManager;
+    private Mock<IPlaybackRuntimeQueue> _mockMediaQueue;
     private Mock<IAudioCacheService> _mockAudioCacheService;
+    private Mock<IQueuePreparationService> _mockQueuePreparationService;
     private Mock<IPlaybackKeepAliveService> _mockPlaybackKeepAliveService;
     private PlaybackService _service;
-    private MediaPlayerState _mediaManagerState;
+    private PlaybackRuntimeState _mediaManagerState;
 
     [SetUp]
     public void Setup()
     {
         _mockAuthService = new Mock<IAuthService>();
         _mockMusicService = new Mock<IMusicService>();
-        _mockMediaManager = new Mock<IMediaManager>();
-        _mockMediaQueue = new Mock<IMediaQueue>();
+        _mockMediaManager = new Mock<IPlatformPlaybackRuntime>();
+        _mockMediaQueue = new Mock<IPlaybackRuntimeQueue>();
         _mockAudioCacheService = new Mock<IAudioCacheService>();
+        _mockQueuePreparationService = new Mock<IQueuePreparationService>();
         _mockPlaybackKeepAliveService = new Mock<IPlaybackKeepAliveService>();
-        _mediaManagerState = MediaPlayerState.Stopped;
+        _mediaManagerState = PlaybackRuntimeState.Stopped;
 
         // Set up async methods to return completed tasks
-        _mockMediaManager.Setup(m => m.Play(It.IsAny<IMediaItem>())).ReturnsAsync(Mock.Of<IMediaItem>());
-        _mockMediaManager.Setup(m => m.Play(It.IsAny<IEnumerable<IMediaItem>>())).ReturnsAsync(Mock.Of<IMediaItem>());
-        _mockMediaManager.Setup(m => m.Play()).Returns(Task.CompletedTask);
-        _mockMediaManager.Setup(m => m.Pause()).Returns(Task.CompletedTask);
-        _mockMediaManager.Setup(m => m.Stop()).Returns(Task.CompletedTask);
-        _mockMediaManager.Setup(m => m.PlayNext()).Returns(Task.FromResult(false));
-        _mockMediaManager.Setup(m => m.PlayPrevious()).Returns(Task.FromResult(false));
-        _mockMediaManager.Setup(m => m.PlayQueueItem(It.IsAny<int>())).Returns(Task.FromResult(false));
-        _mockMediaManager.Setup(m => m.SeekTo(It.IsAny<TimeSpan>())).Returns(Task.CompletedTask);
+        _mockMediaManager.Setup(m => m.PlayAsync(It.IsAny<PlaybackMediaItem>())).ReturnsAsync((PlaybackMediaItem?)null);
+        _mockMediaManager.Setup(m => m.PlayAsync(It.IsAny<IEnumerable<PlaybackMediaItem>>())).ReturnsAsync((PlaybackMediaItem?)null);
+        _mockMediaManager.Setup(m => m.PlayAsync()).Returns(Task.CompletedTask);
+        _mockMediaManager.Setup(m => m.PauseAsync()).Returns(Task.CompletedTask);
+        _mockMediaManager.Setup(m => m.StopAsync()).Returns(Task.CompletedTask);
+        _mockMediaManager.Setup(m => m.PlayNextAsync()).Returns(Task.FromResult(false));
+        _mockMediaManager.Setup(m => m.PlayPreviousAsync()).Returns(Task.FromResult(false));
+        _mockMediaManager.Setup(m => m.PlayQueueItemAsync(It.IsAny<int>())).Returns(Task.FromResult(false));
+        _mockMediaManager.Setup(m => m.SeekToAsync(It.IsAny<TimeSpan>())).Returns(Task.CompletedTask);
         _mockMediaManager.SetupProperty(m => m.RepeatMode);
         _mockMediaManager.SetupProperty(m => m.ShuffleMode);
         _mockMediaManager.Setup(m => m.Position).Returns(TimeSpan.Zero);
@@ -57,8 +53,23 @@ public class PlaybackServiceTests
             .Setup(s => s.GetImmediatePlaybackUri(It.IsAny<SongDto>()))
             .Returns((SongDto song) => song.StreamUrl ?? string.Empty);
         _mockAudioCacheService
+            .Setup(s => s.GetStableCacheKey(It.IsAny<SongDto>()))
+            .Returns((SongDto song) => $"song-{song.Id}");
+        _mockAudioCacheService
             .Setup(s => s.ResolvePlaybackUriAsync(It.IsAny<SongDto>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((SongDto song, CancellationToken _) => song.StreamUrl);
+        _mockAudioCacheService
+            .Setup(s => s.GetCacheStatus(It.IsAny<SongDto>()))
+            .Returns((SongDto song) => new TrackCacheStatus(song.Id, $"song-{song.Id}", null, false, false));
+        _mockQueuePreparationService
+            .Setup(s => s.PrepareAsync(
+                It.IsAny<IReadOnlyList<SongDto>>(),
+                It.IsAny<int>(),
+                It.IsAny<QueuePreparationMode>(),
+                It.IsAny<TimeSpan>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<SongDto> queue, int startIndex, QueuePreparationMode mode, TimeSpan _, CancellationToken _) =>
+                new QueuePreparationResult(false, startIndex - 1, TimeSpan.Zero, [], mode, null));
         _mockMediaQueue.Setup(q => q.HasCurrent).Returns(false);
 
         _service = CreateService();
@@ -77,6 +88,7 @@ public class PlaybackServiceTests
             _mockMusicService.Object,
             _mockMediaManager.Object,
             _mockAudioCacheService.Object,
+            _mockQueuePreparationService.Object,
             _mockPlaybackKeepAliveService.Object,
             NullLogger<PlaybackService>.Instance,
             playlistAdvanceFallbackDelay,
@@ -96,6 +108,7 @@ public class PlaybackServiceTests
             _mockMusicService.Object,
             _mockMediaManager.Object,
             _mockAudioCacheService.Object,
+            _mockQueuePreparationService.Object,
             _mockPlaybackKeepAliveService.Object,
             logger);
 
@@ -108,7 +121,7 @@ public class PlaybackServiceTests
 
         _mockMediaQueue.Setup(q => q.HasCurrent).Returns(true);
         _mockMediaQueue.Setup(q => q.CurrentIndex).Returns(0);
-        _mockMediaQueue.Setup(q => q.Current).Returns(new MediaItem(songs[0].StreamUrl!)
+        _mockMediaQueue.Setup(q => q.Current).Returns(new PlaybackMediaItem(songs[0].StreamUrl!)
         {
             Title = songs[0].SongTitle,
             Artist = songs[0].ArtistName
@@ -161,8 +174,8 @@ public class PlaybackServiceTests
             Assert.That(_service.FormattedPosition, Is.EqualTo("0:00"));
         });
         _mockAuthService.Verify(a => a.RefreshUserStatusAsync(), Times.Once);
-        _mockMediaManager.Verify(m => m.Pause(), Times.Once);
-        _mockMediaManager.Verify(m => m.SeekTo(TimeSpan.Zero), Times.Once);
+        _mockMediaManager.Verify(m => m.PauseAsync(), Times.Once);
+        _mockMediaManager.Verify(m => m.SeekToAsync(TimeSpan.Zero), Times.Once);
     }
 
     [Test]
@@ -186,7 +199,7 @@ public class PlaybackServiceTests
             Assert.That(_service.PreviewLimitReached, Is.False);
             Assert.That(_service.FormattedPosition, Is.EqualTo("1:01"));
         });
-        _mockMediaManager.Verify(m => m.Pause(), Times.Never);
+        _mockMediaManager.Verify(m => m.PauseAsync(), Times.Never);
     }
 
     [Test]
@@ -207,8 +220,8 @@ public class PlaybackServiceTests
             Assert.That(_service.FormattedPosition, Is.EqualTo("0:00"));
         });
         _mockAuthService.Verify(a => a.RefreshUserStatusAsync(), Times.Never);
-        _mockMediaManager.Verify(m => m.Pause(), Times.Once);
-        _mockMediaManager.Verify(m => m.SeekTo(TimeSpan.Zero), Times.Once);
+        _mockMediaManager.Verify(m => m.PauseAsync(), Times.Once);
+        _mockMediaManager.Verify(m => m.SeekToAsync(TimeSpan.Zero), Times.Once);
     }
 
     [Test]
@@ -243,17 +256,17 @@ public class PlaybackServiceTests
 
         _service.PlaySong(song);
 
-        _mockMediaManager.Verify(m => m.Play(It.IsAny<IMediaItem>()), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayAsync(It.IsAny<PlaybackMediaItem>()), Times.Once);
     }
 
     [Test]
     public void PlaySong_UsesAlbumArtForMediaItemImage()
     {
-        IMediaItem? capturedMediaItem = null;
+        PlaybackMediaItem? capturedMediaItem = null;
         _mockMediaManager
-            .Setup(m => m.Play(It.IsAny<IMediaItem>()))
-            .Callback<IMediaItem>(mediaItem => capturedMediaItem = mediaItem)
-            .ReturnsAsync(Mock.Of<IMediaItem>());
+            .Setup(m => m.PlayAsync(It.IsAny<PlaybackMediaItem>()))
+            .Callback<PlaybackMediaItem>(mediaItem => capturedMediaItem = mediaItem)
+            .ReturnsAsync((PlaybackMediaItem?)null);
 
         var song = new SongDto
         {
@@ -273,11 +286,11 @@ public class PlaybackServiceTests
     [Test]
     public void PlaySong_FallsBackToPersonaImageWhenAlbumArtUriIsInvalid()
     {
-        IMediaItem? capturedMediaItem = null;
+        PlaybackMediaItem? capturedMediaItem = null;
         _mockMediaManager
-            .Setup(m => m.Play(It.IsAny<IMediaItem>()))
-            .Callback<IMediaItem>(mediaItem => capturedMediaItem = mediaItem)
-            .ReturnsAsync(Mock.Of<IMediaItem>());
+            .Setup(m => m.PlayAsync(It.IsAny<PlaybackMediaItem>()))
+            .Callback<PlaybackMediaItem>(mediaItem => capturedMediaItem = mediaItem)
+            .ReturnsAsync((PlaybackMediaItem?)null);
 
         var song = new SongDto
         {
@@ -312,7 +325,7 @@ public class PlaybackServiceTests
 
         _service.PlaySong(song);
 
-        _mockMediaManager.Verify(m => m.Pause(), Times.Once);
+        _mockMediaManager.Verify(m => m.PauseAsync(), Times.Once);
     }
 
     [Test]
@@ -359,11 +372,11 @@ public class PlaybackServiceTests
 
         // Pause
         _service.TogglePlayPause();
-        _mockMediaManager.Verify(m => m.Pause(), Times.AtLeastOnce);
+        _mockMediaManager.Verify(m => m.PauseAsync(), Times.AtLeastOnce);
 
         // Resume
         _service.TogglePlayPause();
-        _mockMediaManager.Verify(m => m.Play(), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayAsync(), Times.Once);
     }
 
     [Test]
@@ -385,7 +398,7 @@ public class PlaybackServiceTests
             Assert.That(_service.PreviewLimitReached, Is.False);
             Assert.That(_service.FormattedPosition, Is.EqualTo("0:00"));
         });
-        _mockMediaManager.Verify(m => m.Play(), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayAsync(), Times.Once);
     }
 
     [Test]
@@ -399,7 +412,7 @@ public class PlaybackServiceTests
 
         _mockMediaManager.Invocations.Clear();
 
-        _mockMediaManager.Raise(m => m.StateChanged += null, new StateChangedEventArgs(MediaPlayerState.Playing));
+        _mockMediaManager.Raise(m => m.StateChanged += null, new PlaybackRuntimeStateChangedEventArgs(PlaybackRuntimeState.Playing));
 
         Assert.Multiple(() =>
         {
@@ -407,7 +420,7 @@ public class PlaybackServiceTests
             Assert.That(_service.PreviewLimitReached, Is.True);
             Assert.That(_service.FormattedPosition, Is.EqualTo("0:00"));
         });
-        _mockMediaManager.Verify(m => m.Pause(), Times.Never);
+        _mockMediaManager.Verify(m => m.PauseAsync(), Times.Never);
     }
 
     // --- Stop ---
@@ -448,8 +461,8 @@ public class PlaybackServiceTests
 
         _service.Stop();
 
-        _mockMediaManager.Verify(m => m.Pause(), Times.Once);
-        _mockMediaManager.Verify(m => m.SeekTo(TimeSpan.Zero), Times.Once);
+        _mockMediaManager.Verify(m => m.PauseAsync(), Times.Once);
+        _mockMediaManager.Verify(m => m.SeekToAsync(TimeSpan.Zero), Times.Once);
     }
 
     [Test]
@@ -486,12 +499,12 @@ public class PlaybackServiceTests
         var songs = CreateTestPlaylist(3);
         _service.SetPlaylist(songs, 0);
 
-        Assert.That(_mockMediaManager.Object.RepeatMode, Is.EqualTo(RepeatMode.All));
+        Assert.That(_mockMediaManager.Object.RepeatMode, Is.EqualTo(PlaybackRepeatMode.All));
 
         _service.ToggleRepeat();
 
         Assert.That(_service.IsRepeatEnabled, Is.True);
-        Assert.That(_mockMediaManager.Object.RepeatMode, Is.EqualTo(RepeatMode.All));
+        Assert.That(_mockMediaManager.Object.RepeatMode, Is.EqualTo(PlaybackRepeatMode.All));
     }
 
     [Test]
@@ -500,7 +513,7 @@ public class PlaybackServiceTests
         _service.ToggleRepeat();
 
         Assert.That(_service.IsRepeatEnabled, Is.False);
-        Assert.That(_mockMediaManager.Object.RepeatMode, Is.EqualTo(RepeatMode.Off));
+        Assert.That(_mockMediaManager.Object.RepeatMode, Is.EqualTo(PlaybackRepeatMode.Off));
     }
 
     // --- UpdatePosition ---
@@ -544,7 +557,7 @@ public class PlaybackServiceTests
 
         _service.Seek(0.5);
 
-        _mockMediaManager.Verify(m => m.SeekTo(TimeSpan.FromSeconds(100)), Times.Once);
+        _mockMediaManager.Verify(m => m.SeekToAsync(TimeSpan.FromSeconds(100)), Times.Once);
     }
 
     // --- FormatDuration ---
@@ -598,8 +611,8 @@ public class PlaybackServiceTests
 
         _service.OnMediaEnded();
 
-        _mockMediaManager.Verify(m => m.SeekTo(TimeSpan.Zero), Times.Once);
-        _mockMediaManager.Verify(m => m.Play(), Times.Once);
+        _mockMediaManager.Verify(m => m.SeekToAsync(TimeSpan.Zero), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayAsync(), Times.Once);
         Assert.That(_service.IsPlaying, Is.True);
     }
 
@@ -738,7 +751,7 @@ public class PlaybackServiceTests
 
         _service.UpdatePosition(TimeSpan.FromSeconds(100), TimeSpan.FromSeconds(180));
 
-        _mockMediaManager.Verify(m => m.SeekTo(TimeSpan.FromSeconds(90)), Times.Once);
+        _mockMediaManager.Verify(m => m.SeekToAsync(TimeSpan.FromSeconds(90)), Times.Once);
         _mockMusicService.Verify(s => s.RecordStreamAsync(10), Times.Once);
     }
 
@@ -845,7 +858,7 @@ public class PlaybackServiceTests
 
         service.PlaySong(song);
 
-        _mockMediaManager.Raise(m => m.StateChanged += null, new StateChangedEventArgs(MediaPlayerState.Stopped));
+        _mockMediaManager.Raise(m => m.StateChanged += null, new PlaybackRuntimeStateChangedEventArgs(PlaybackRuntimeState.Stopped));
 
         await Task.Delay(40);
         currentPosition = TimeSpan.FromSeconds(1.1);
@@ -868,7 +881,7 @@ public class PlaybackServiceTests
 
         service.PlaySong(song);
 
-        _mockMediaManager.Raise(m => m.StateChanged += null, new StateChangedEventArgs(MediaPlayerState.Stopped));
+        _mockMediaManager.Raise(m => m.StateChanged += null, new PlaybackRuntimeStateChangedEventArgs(PlaybackRuntimeState.Stopped));
 
         await Task.Delay(120);
 
@@ -885,7 +898,7 @@ public class PlaybackServiceTests
         service.SetPlaylist(songs, 1);
         _mockMediaManager.Invocations.Clear();
 
-        _mockMediaManager.Raise(m => m.StateChanged += null, new StateChangedEventArgs(MediaPlayerState.Stopped));
+        _mockMediaManager.Raise(m => m.StateChanged += null, new PlaybackRuntimeStateChangedEventArgs(PlaybackRuntimeState.Stopped));
 
         await Task.Delay(120);
 
@@ -903,8 +916,8 @@ public class PlaybackServiceTests
         _mockMediaManager.Invocations.Clear();
         _mockPlaybackKeepAliveService.Invocations.Clear();
 
-        _mediaManagerState = MediaPlayerState.Paused;
-        _mockMediaManager.Raise(m => m.StateChanged += null, new StateChangedEventArgs(MediaPlayerState.Paused));
+        _mediaManagerState = PlaybackRuntimeState.Paused;
+        _mockMediaManager.Raise(m => m.StateChanged += null, new PlaybackRuntimeStateChangedEventArgs(PlaybackRuntimeState.Paused));
 
         await Task.Delay(120);
 
@@ -915,8 +928,8 @@ public class PlaybackServiceTests
             Assert.That(service.IsPlaying, Is.True);
         });
         _mockPlaybackKeepAliveService.Verify(s => s.SetPlaybackActive(false), Times.Never);
-        _mockMediaManager.Verify(m => m.Play(It.IsAny<IEnumerable<IMediaItem>>()), Times.Once);
-        _mockMediaManager.Verify(m => m.PlayQueueItem(1), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayAsync(It.IsAny<IEnumerable<PlaybackMediaItem>>()), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(1), Times.Once);
     }
 
     [Test]
@@ -933,8 +946,8 @@ public class PlaybackServiceTests
         _mockMediaQueue.Setup(q => q.HasCurrent).Returns(true);
         _mockMediaQueue.Setup(q => q.CurrentIndex).Returns(0);
 
-        _mediaManagerState = MediaPlayerState.Stopped;
-        _mockMediaManager.Raise(m => m.StateChanged += null, new StateChangedEventArgs(MediaPlayerState.Stopped));
+        _mediaManagerState = PlaybackRuntimeState.Stopped;
+        _mockMediaManager.Raise(m => m.StateChanged += null, new PlaybackRuntimeStateChangedEventArgs(PlaybackRuntimeState.Stopped));
 
         await Task.Delay(120);
 
@@ -945,9 +958,9 @@ public class PlaybackServiceTests
             Assert.That(service.IsPlaying, Is.True);
         });
         _mockPlaybackKeepAliveService.Verify(s => s.SetPlaybackActive(false), Times.Never);
-        _mockMediaManager.Verify(m => m.Play(It.IsAny<IEnumerable<IMediaItem>>()), Times.Once);
-        _mockMediaManager.Verify(m => m.PlayQueueItem(2), Times.Once);
-        _mockMediaManager.Verify(m => m.PlayQueueItem(0), Times.Never);
+        _mockMediaManager.Verify(m => m.PlayAsync(It.IsAny<IEnumerable<PlaybackMediaItem>>()), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(2), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(0), Times.Never);
     }
 
     [Test]
@@ -964,8 +977,8 @@ public class PlaybackServiceTests
         }
 
         _service.PlayNext();
-        var item = new MediaItem(songs[1].StreamUrl!);
-        _mockMediaManager.Raise(m => m.MediaItemChanged += null, new MediaItemEventArgs(item));
+        var item = new PlaybackMediaItem(songs[1].StreamUrl!);
+        _mockMediaManager.Raise(m => m.MediaItemChanged += null, new PlaybackMediaItemEventArgs(item));
 
         for (int i = 1; i <= 9; i++)
         {
@@ -994,8 +1007,8 @@ public class PlaybackServiceTests
         }
 
         _service.PlayPrevious();
-        var item = new MediaItem(songs[0].StreamUrl!) { Title = songs[0].SongTitle };
-        _mockMediaManager.Raise(m => m.MediaItemChanged += null, new MediaItemEventArgs(item));
+        var item = new PlaybackMediaItem(songs[0].StreamUrl!) { Title = songs[0].SongTitle };
+        _mockMediaManager.Raise(m => m.MediaItemChanged += null, new PlaybackMediaItemEventArgs(item));
 
         for (int i = 1; i <= 9; i++)
         {
@@ -1068,7 +1081,7 @@ public class PlaybackServiceTests
         Assert.That(_service.IsPlaying, Is.False);
         Assert.That(_service.PreviewLimitReached, Is.True);
         Assert.That(_service.FormattedPosition, Is.EqualTo("0:00"));
-        _mockMediaManager.Verify(m => m.SeekTo(TimeSpan.Zero), Times.Once);
+        _mockMediaManager.Verify(m => m.SeekToAsync(TimeSpan.Zero), Times.Once);
     }
 
     [Test]
@@ -1089,7 +1102,8 @@ public class PlaybackServiceTests
             Assert.That(_service.IsPlaying, Is.True);
             Assert.That(_service.PreviewLimitReached, Is.False);
         });
-        _mockMediaManager.Verify(m => m.Play(), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(1), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayAsync(), Times.Never);
     }
 
     [Test]
@@ -1109,7 +1123,7 @@ public class PlaybackServiceTests
             Assert.That(_service.PreviewLimitReached, Is.True);
             Assert.That(_service.FormattedPosition, Is.EqualTo("0:00"));
         });
-        _mockMediaManager.Verify(m => m.SeekTo(TimeSpan.Zero), Times.AtLeastOnce);
+        _mockMediaManager.Verify(m => m.SeekToAsync(TimeSpan.Zero), Times.AtLeastOnce);
     }
 
     [Test]
@@ -1206,7 +1220,7 @@ public class PlaybackServiceTests
 
         Assert.That(_service.PreviewLimitReached, Is.False);
         Assert.That(_service.IsPlaying, Is.True);
-        _mockMediaManager.Verify(m => m.Play(), Times.AtLeastOnce);
+        _mockMediaManager.Verify(m => m.PlayAsync(), Times.AtLeastOnce);
     }
 
     [Test]
@@ -1254,7 +1268,7 @@ public class PlaybackServiceTests
         Assert.That(_service.CurrentTrackIndex, Is.EqualTo(0));
         Assert.That(_service.CurrentSong, Is.SameAs(songs[0]));
         Assert.That(_service.IsPlaying, Is.True);
-        Assert.That(_mockMediaManager.Object.RepeatMode, Is.EqualTo(RepeatMode.All));
+        Assert.That(_mockMediaManager.Object.RepeatMode, Is.EqualTo(PlaybackRepeatMode.All));
     }
 
     [Test]
@@ -1339,7 +1353,7 @@ public class PlaybackServiceTests
 
         _service.PlayNext();
 
-        _mockMediaManager.Verify(m => m.PlayNext(), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayNextAsync(), Times.Once);
     }
 
     [Test]
@@ -1351,8 +1365,8 @@ public class PlaybackServiceTests
         _service.PlayNext();
 
         // Simulate Plugin.MediaManager firing MediaItemChanged for songs[1]
-        var item = new MediaItem(songs[1].StreamUrl!);
-        _mockMediaManager.Raise(m => m.MediaItemChanged += null, new MediaItemEventArgs(item));
+        var item = new PlaybackMediaItem(songs[1].StreamUrl!);
+        _mockMediaManager.Raise(m => m.MediaItemChanged += null, new PlaybackMediaItemEventArgs(item));
 
         Assert.That(_service.CurrentTrackIndex, Is.EqualTo(1));
         Assert.That(_service.CurrentSong, Is.SameAs(songs[1]));
@@ -1381,8 +1395,8 @@ public class PlaybackServiceTests
         _service.PlayNext();
 
         // Simulate Plugin.MediaManager looping to first item
-        var item = new MediaItem(songs[0].StreamUrl!);
-        _mockMediaManager.Raise(m => m.MediaItemChanged += null, new MediaItemEventArgs(item));
+        var item = new PlaybackMediaItem(songs[0].StreamUrl!);
+        _mockMediaManager.Raise(m => m.MediaItemChanged += null, new PlaybackMediaItemEventArgs(item));
 
         Assert.That(_service.CurrentTrackIndex, Is.EqualTo(0));
         Assert.That(_service.CurrentSong, Is.SameAs(songs[0]));
@@ -1397,7 +1411,7 @@ public class PlaybackServiceTests
         _service.PlayNext();
 
         Assert.That(_service.CurrentSong, Is.SameAs(song));
-        _mockMediaManager.Verify(m => m.PlayNext(), Times.Never);
+        _mockMediaManager.Verify(m => m.PlayNextAsync(), Times.Never);
     }
 
     // --- PlayPrevious ---
@@ -1410,7 +1424,7 @@ public class PlaybackServiceTests
 
         _service.PlayPrevious();
 
-        _mockMediaManager.Verify(m => m.PlayPrevious(), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayPreviousAsync(), Times.Once);
     }
 
     [Test]
@@ -1422,8 +1436,8 @@ public class PlaybackServiceTests
         _service.PlayPrevious();
 
         // Simulate Plugin.MediaManager firing MediaItemChanged for songs[1]
-        var item = new MediaItem(songs[1].StreamUrl!) { Title = songs[1].SongTitle };
-        _mockMediaManager.Raise(m => m.MediaItemChanged += null, new MediaItemEventArgs(item));
+        var item = new PlaybackMediaItem(songs[1].StreamUrl!) { Title = songs[1].SongTitle };
+        _mockMediaManager.Raise(m => m.MediaItemChanged += null, new PlaybackMediaItemEventArgs(item));
 
         Assert.That(_service.CurrentTrackIndex, Is.EqualTo(1));
         Assert.That(_service.CurrentSong, Is.SameAs(songs[1]));
@@ -1454,7 +1468,7 @@ public class PlaybackServiceTests
 
         Assert.That(_service.CurrentTrackIndex, Is.EqualTo(3));
         Assert.That(_service.CurrentSong, Is.SameAs(songs[3]));
-        _mockMediaManager.Verify(m => m.PlayQueueItem(3), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(3), Times.Once);
     }
 
     [Test]
@@ -1464,15 +1478,49 @@ public class PlaybackServiceTests
         _service.SetPlaylist(songs, 0);
         _mockMediaManager.Invocations.Clear();
 
-        _mediaManagerState = MediaPlayerState.Failed;
-        _mockMediaManager.Raise(m => m.StateChanged += null, new StateChangedEventArgs(MediaPlayerState.Failed));
+        _mediaManagerState = PlaybackRuntimeState.Failed;
+        _mockMediaManager.Raise(m => m.StateChanged += null, new PlaybackRuntimeStateChangedEventArgs(PlaybackRuntimeState.Failed));
 
         _service.PlayTrackAtIndex(2);
 
         Assert.That(_service.CurrentTrackIndex, Is.EqualTo(2));
         Assert.That(_service.CurrentSong, Is.SameAs(songs[2]));
-        _mockMediaManager.Verify(m => m.Play(It.IsAny<IEnumerable<IMediaItem>>()), Times.Once);
-        _mockMediaManager.Verify(m => m.PlayQueueItem(2), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayAsync(It.IsAny<IEnumerable<PlaybackMediaItem>>()), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(2), Times.Once);
+    }
+
+    [Test]
+    public async Task PlayTrackAtIndex_WhenNativeQueueCountDoesNotMatchPlaylist_RebuildsQueue()
+    {
+        var songs = CreateTestPlaylist(5);
+        _service.SetPlaylist(songs, 0);
+        await Task.Delay(50);
+        _mockMediaManager.Invocations.Clear();
+
+        var staleNativeItems = new List<PlaybackMediaItem>
+        {
+            new(songs[0].StreamUrl!, songs[0].Id, $"song-{songs[0].Id}")
+        };
+        var rebuiltQueueSource = new TaskCompletionSource<IReadOnlyList<PlaybackMediaItem>>();
+        _mockMediaQueue.Setup(q => q.Count).Returns(staleNativeItems.Count);
+        _mockMediaQueue.Setup(q => q.HasCurrent).Returns(true);
+        _mockMediaQueue.Setup(q => q.CurrentIndex).Returns(0);
+        _mockMediaQueue.Setup(q => q.Current).Returns(staleNativeItems[0]);
+        _mockMediaQueue
+            .As<IEnumerable<PlaybackMediaItem>>()
+            .Setup(q => q.GetEnumerator())
+            .Returns(() => staleNativeItems.GetEnumerator());
+        _mockMediaManager
+            .Setup(m => m.PlayAsync(It.IsAny<IEnumerable<PlaybackMediaItem>>()))
+            .Callback<IEnumerable<PlaybackMediaItem>>(items => rebuiltQueueSource.TrySetResult(items.ToList()))
+            .ReturnsAsync((PlaybackMediaItem?)null);
+
+        _service.PlayTrackAtIndex(3);
+
+        var rebuiltQueue = await rebuiltQueueSource.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.That(rebuiltQueue.Select(item => item.SongId), Is.EqualTo(songs.Select(song => song.Id)));
+        _mockMediaManager.Verify(m => m.PlayAsync(It.IsAny<IEnumerable<PlaybackMediaItem>>()), Times.Once);
     }
 
     [Test]
@@ -1498,11 +1546,11 @@ public class PlaybackServiceTests
 
         _service.ToggleShuffle();
         Assert.That(_service.IsShuffleEnabled, Is.True);
-        Assert.That(_mockMediaManager.Object.ShuffleMode, Is.EqualTo(ShuffleMode.Off));
+        Assert.That(_mockMediaManager.Object.ShuffleMode, Is.EqualTo(PlaybackShuffleMode.Off));
 
         _service.ToggleShuffle();
         Assert.That(_service.IsShuffleEnabled, Is.False);
-        Assert.That(_mockMediaManager.Object.ShuffleMode, Is.EqualTo(ShuffleMode.Off));
+        Assert.That(_mockMediaManager.Object.ShuffleMode, Is.EqualTo(PlaybackShuffleMode.Off));
     }
 
     [Test]
@@ -1511,7 +1559,7 @@ public class PlaybackServiceTests
         _service.ToggleShuffle();
 
         Assert.That(_service.IsShuffleEnabled, Is.False);
-        Assert.That(_mockMediaManager.Object.ShuffleMode, Is.EqualTo(ShuffleMode.Off));
+        Assert.That(_mockMediaManager.Object.ShuffleMode, Is.EqualTo(PlaybackShuffleMode.Off));
     }
 
     [Test]
@@ -1523,7 +1571,7 @@ public class PlaybackServiceTests
         _service.ToggleShuffle();
 
         Assert.That(_service.IsShuffleEnabled, Is.False);
-        Assert.That(_mockMediaManager.Object.ShuffleMode, Is.EqualTo(ShuffleMode.Off));
+        Assert.That(_mockMediaManager.Object.ShuffleMode, Is.EqualTo(PlaybackShuffleMode.Off));
     }
 
     [Test]
@@ -1531,11 +1579,11 @@ public class PlaybackServiceTests
     {
         var songs = CreateTestPlaylist(5);
         var playCallCount = 0;
-        var reshuffledQueueSource = new TaskCompletionSource<IReadOnlyList<IMediaItem>>();
+        var reshuffledQueueSource = new TaskCompletionSource<IReadOnlyList<PlaybackMediaItem>>();
 
         _mockMediaManager
-            .Setup(m => m.Play(It.IsAny<IEnumerable<IMediaItem>>()))
-            .Callback<IEnumerable<IMediaItem>>(items =>
+            .Setup(m => m.PlayAsync(It.IsAny<IEnumerable<PlaybackMediaItem>>()))
+            .Callback<IEnumerable<PlaybackMediaItem>>(items =>
             {
                 playCallCount++;
                 if (playCallCount == 2)
@@ -1543,17 +1591,17 @@ public class PlaybackServiceTests
                     reshuffledQueueSource.TrySetResult(items.ToList());
                 }
             })
-            .ReturnsAsync(Mock.Of<IMediaItem>());
+            .ReturnsAsync((PlaybackMediaItem?)null);
 
         _mockMediaManager
-            .SetupSet(m => m.ShuffleMode = It.IsAny<ShuffleMode>())
-            .Callback<ShuffleMode>(mode =>
+            .SetupSet(m => m.ShuffleMode = It.IsAny<PlaybackShuffleMode>())
+            .Callback<PlaybackShuffleMode>(mode =>
             {
-                if (mode == ShuffleMode.All)
+                if (mode == PlaybackShuffleMode.All)
                 {
                     _mockMediaManager.Raise(
                         m => m.MediaItemChanged += null,
-                        new MediaItemEventArgs(new MediaItem(songs[1].StreamUrl!)));
+                        new PlaybackMediaItemEventArgs(new PlaybackMediaItem(songs[1].StreamUrl!)));
                 }
             });
 
@@ -1568,7 +1616,7 @@ public class PlaybackServiceTests
         Assert.That(_service.CurrentTrackIndex, Is.EqualTo(0));
         Assert.That(reshuffledQueue[0].MediaUri, Is.EqualTo(songs[0].StreamUrl));
         Assert.That(reshuffledQueue.Select(item => item.MediaUri), Is.EquivalentTo(songs.Select(song => song.StreamUrl)));
-        _mockMediaManager.VerifySet(m => m.ShuffleMode = ShuffleMode.All, Times.Never);
+        _mockMediaManager.VerifySet(m => m.ShuffleMode = PlaybackShuffleMode.All, Times.Never);
     }
 
     // --- OnMediaEnded with playlist ---
@@ -1603,7 +1651,7 @@ public class PlaybackServiceTests
         Assert.That(service.CurrentTrackIndex, Is.EqualTo(1));
         Assert.That(service.CurrentSong, Is.SameAs(songs[1]));
         Assert.That(service.IsPlaying, Is.True);
-        _mockMediaManager.Verify(m => m.PlayQueueItem(1), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(1), Times.Once);
     }
 
     [Test]
@@ -1611,7 +1659,7 @@ public class PlaybackServiceTests
     {
         var service = CreateService(TimeSpan.FromMilliseconds(10));
         var songs = CreateTestPlaylist(3);
-        _mediaManagerState = MediaPlayerState.Playing;
+        _mediaManagerState = PlaybackRuntimeState.Playing;
         service.SetPlaylist(songs, 0);
 
         service.OnMediaEnded();
@@ -1621,7 +1669,7 @@ public class PlaybackServiceTests
         Assert.That(service.CurrentTrackIndex, Is.EqualTo(1));
         Assert.That(service.CurrentSong, Is.SameAs(songs[1]));
         Assert.That(service.IsPlaying, Is.True);
-        _mockMediaManager.Verify(m => m.PlayQueueItem(1), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(1), Times.Once);
     }
 
     [Test]
@@ -1631,7 +1679,7 @@ public class PlaybackServiceTests
         var songs = CreateTestPlaylist(4);
         _mockMediaQueue.Setup(q => q.HasCurrent).Returns(true);
         _mockMediaQueue.Setup(q => q.CurrentIndex).Returns(2);
-        _mockMediaQueue.Setup(q => q.Current).Returns(new MediaItem(songs[2].StreamUrl!));
+        _mockMediaQueue.Setup(q => q.Current).Returns(new PlaybackMediaItem(songs[2].StreamUrl!));
         service.SetPlaylist(songs, 0);
 
         service.OnMediaEnded();
@@ -1641,8 +1689,8 @@ public class PlaybackServiceTests
         Assert.That(service.CurrentTrackIndex, Is.EqualTo(2));
         Assert.That(service.CurrentSong, Is.SameAs(songs[2]));
         Assert.That(service.IsPlaying, Is.True);
-        _mockMediaManager.Verify(m => m.PlayQueueItem(2), Times.Once);
-        _mockMediaManager.Verify(m => m.PlayQueueItem(1), Times.Never);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(2), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(1), Times.Never);
     }
 
     [Test]
@@ -1654,14 +1702,14 @@ public class PlaybackServiceTests
 
         service.OnMediaEnded();
 
-        var item = new MediaItem(songs[1].StreamUrl!);
-        _mockMediaManager.Raise(m => m.MediaItemChanged += null, new MediaItemEventArgs(item));
+        var item = new PlaybackMediaItem(songs[1].StreamUrl!);
+        _mockMediaManager.Raise(m => m.MediaItemChanged += null, new PlaybackMediaItemEventArgs(item));
 
         await Task.Delay(125);
 
         Assert.That(service.CurrentTrackIndex, Is.EqualTo(1));
         Assert.That(service.CurrentSong, Is.SameAs(songs[1]));
-        _mockMediaManager.Verify(m => m.PlayQueueItem(1), Times.Never);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(1), Times.Never);
     }
 
     [Test]
@@ -1673,20 +1721,20 @@ public class PlaybackServiceTests
 
         service.OnMediaEnded();
 
-        var item = new MediaItem(songs[1].StreamUrl!);
-        _mockMediaManager.Raise(m => m.MediaItemChanged += null, new MediaItemEventArgs(item));
-        _mediaManagerState = MediaPlayerState.Failed;
-        _mockMediaManager.Raise(m => m.StateChanged += null, new StateChangedEventArgs(MediaPlayerState.Failed));
-        _mediaManagerState = MediaPlayerState.Buffering;
-        _mockMediaManager.Raise(m => m.StateChanged += null, new StateChangedEventArgs(MediaPlayerState.Buffering));
+        var item = new PlaybackMediaItem(songs[1].StreamUrl!);
+        _mockMediaManager.Raise(m => m.MediaItemChanged += null, new PlaybackMediaItemEventArgs(item));
+        _mediaManagerState = PlaybackRuntimeState.Failed;
+        _mockMediaManager.Raise(m => m.StateChanged += null, new PlaybackRuntimeStateChangedEventArgs(PlaybackRuntimeState.Failed));
+        _mediaManagerState = PlaybackRuntimeState.Buffering;
+        _mockMediaManager.Raise(m => m.StateChanged += null, new PlaybackRuntimeStateChangedEventArgs(PlaybackRuntimeState.Buffering));
 
         await Task.Delay(125);
 
         Assert.That(service.CurrentTrackIndex, Is.EqualTo(1));
         Assert.That(service.CurrentSong, Is.SameAs(songs[1]));
         Assert.That(service.IsPlaying, Is.True);
-        _mockMediaManager.Verify(m => m.Play(It.IsAny<IEnumerable<IMediaItem>>()), Times.Exactly(2));
-        _mockMediaManager.Verify(m => m.PlayQueueItem(1), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayAsync(It.IsAny<IEnumerable<PlaybackMediaItem>>()), Times.Exactly(2));
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(1), Times.Once);
     }
 
     [Test]
@@ -1695,22 +1743,41 @@ public class PlaybackServiceTests
         var service = CreateService(TimeSpan.FromMilliseconds(10));
         var songs = CreateTestPlaylist(3);
         var duration = TimeSpan.FromSeconds(219.144);
-        _mediaManagerState = MediaPlayerState.Buffering;
+        _mediaManagerState = PlaybackRuntimeState.Buffering;
         _mockMediaManager.Setup(m => m.Duration).Returns(duration);
         service.SetPlaylist(songs, 0);
 
-        var item = new MediaItem(songs[1].StreamUrl!);
-        _mockMediaManager.Raise(m => m.MediaItemChanged += null, new MediaItemEventArgs(item));
+        var item = new PlaybackMediaItem(songs[1].StreamUrl!);
+        _mockMediaManager.Raise(m => m.MediaItemChanged += null, new PlaybackMediaItemEventArgs(item));
         service.UpdatePosition(TimeSpan.Zero, duration);
 
-        _mockMediaManager.Raise(m => m.MediaItemFinished += null, new MediaItemEventArgs(item));
+        _mockMediaManager.Raise(m => m.MediaItemFinished += null, new PlaybackMediaItemEventArgs(item));
 
         await Task.Delay(75);
 
         Assert.That(service.CurrentTrackIndex, Is.EqualTo(1));
         Assert.That(service.CurrentSong, Is.SameAs(songs[1]));
         Assert.That(service.IsPlaying, Is.True);
-        _mockMediaManager.Verify(m => m.PlayQueueItem(2), Times.Never);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(2), Times.Never);
+    }
+
+    [Test]
+    public async Task MediaItemFinished_WithPlaylist_WhenNoPositionOrDurationReported_IgnoresStartupFinish()
+    {
+        var service = CreateService(TimeSpan.FromMilliseconds(10));
+        var songs = CreateTestPlaylist(3);
+        service.SetPlaylist(songs, 0);
+        service.UpdatePosition(TimeSpan.Zero, TimeSpan.Zero);
+
+        var item = new PlaybackMediaItem(songs[0].StreamUrl!);
+        _mockMediaManager.Raise(m => m.MediaItemFinished += null, new PlaybackMediaItemEventArgs(item));
+
+        await Task.Delay(75);
+
+        Assert.That(service.CurrentTrackIndex, Is.EqualTo(0));
+        Assert.That(service.CurrentSong, Is.SameAs(songs[0]));
+        Assert.That(service.IsPlaying, Is.True);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(1), Times.Never);
     }
 
     [Test]
@@ -1719,20 +1786,20 @@ public class PlaybackServiceTests
         var service = CreateService(TimeSpan.FromMilliseconds(10));
         var songs = CreateTestPlaylist(3);
         var duration = TimeSpan.FromSeconds(219.144);
-        _mediaManagerState = MediaPlayerState.Playing;
+        _mediaManagerState = PlaybackRuntimeState.Playing;
         _mockMediaManager.Setup(m => m.Duration).Returns(duration);
         service.SetPlaylist(songs, 0);
         service.UpdatePosition(duration - TimeSpan.FromMilliseconds(250), duration);
 
-        var item = new MediaItem(songs[0].StreamUrl!);
-        _mockMediaManager.Raise(m => m.MediaItemFinished += null, new MediaItemEventArgs(item));
+        var item = new PlaybackMediaItem(songs[0].StreamUrl!);
+        _mockMediaManager.Raise(m => m.MediaItemFinished += null, new PlaybackMediaItemEventArgs(item));
 
         await Task.Delay(75);
 
         Assert.That(service.CurrentTrackIndex, Is.EqualTo(1));
         Assert.That(service.CurrentSong, Is.SameAs(songs[1]));
         Assert.That(service.IsPlaying, Is.True);
-        _mockMediaManager.Verify(m => m.PlayQueueItem(1), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(1), Times.Once);
     }
 
     [Test]
@@ -1744,6 +1811,7 @@ public class PlaybackServiceTests
             _mockMusicService.Object,
             _mockMediaManager.Object,
             _mockAudioCacheService.Object,
+            _mockQueuePreparationService.Object,
             _mockPlaybackKeepAliveService.Object,
             logger);
 
@@ -1753,7 +1821,7 @@ public class PlaybackServiceTests
         var failure = new InvalidOperationException("Simulated native player failure");
         _mockMediaManager.Raise(
             m => m.MediaItemFailed += null,
-            new MediaItemFailedEventArgs(new MediaItem(song.StreamUrl), failure, failure.Message));
+            new PlaybackMediaItemFailedEventArgs(new PlaybackMediaItem(song.StreamUrl), failure, failure.Message));
 
         var combinedLogs = string.Join(Environment.NewLine, logger.Messages);
         Assert.That(combinedLogs, Does.Contain("MediaItemFailed received"));
@@ -1766,16 +1834,17 @@ public class PlaybackServiceTests
     {
         var service = CreateService(TimeSpan.FromMilliseconds(50));
         var songs = CreateTestPlaylist(3);
+        SetupCachedSong(songs[1]);
         service.SetPlaylist(songs, 0);
         _mockPlaybackKeepAliveService.Invocations.Clear();
 
-        _mediaManagerState = MediaPlayerState.Failed;
-        _mockMediaManager.Raise(m => m.StateChanged += null, new StateChangedEventArgs(MediaPlayerState.Failed));
+        _mediaManagerState = PlaybackRuntimeState.Failed;
+        _mockMediaManager.Raise(m => m.StateChanged += null, new PlaybackRuntimeStateChangedEventArgs(PlaybackRuntimeState.Failed));
 
         var failure = new InvalidOperationException("simulated playback failure");
         _mockMediaManager.Raise(
             m => m.MediaItemFailed += null,
-            new MediaItemFailedEventArgs(new MediaItem(songs[0].StreamUrl!), failure, failure.Message));
+            new PlaybackMediaItemFailedEventArgs(new PlaybackMediaItem(songs[0].StreamUrl!), failure, failure.Message));
 
         await Task.Delay(125);
 
@@ -1786,7 +1855,34 @@ public class PlaybackServiceTests
             Assert.That(service.IsPlaying, Is.True);
         });
         _mockPlaybackKeepAliveService.Verify(s => s.SetPlaybackActive(false), Times.Never);
-        _mockMediaManager.Verify(m => m.PlayQueueItem(1), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(1), Times.Once);
+    }
+
+    [Test]
+    public async Task SleepNetworkFailure_DoesNotAdvanceToRemoteOnlyTrack()
+    {
+        var service = CreateService(TimeSpan.FromMilliseconds(50));
+        var songs = CreateTestPlaylist(3);
+        service.SetPlaylist(songs, 0);
+        _mockMediaManager.Invocations.Clear();
+
+        _mediaManagerState = PlaybackRuntimeState.Failed;
+        var failure = new InvalidOperationException("Unable to resolve host");
+        _mockMediaManager.Raise(
+            m => m.MediaItemFailed += null,
+            new PlaybackMediaItemFailedEventArgs(new PlaybackMediaItem(songs[0].StreamUrl!), failure, failure.Message));
+
+        await Task.Delay(125);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(service.CurrentTrackIndex, Is.EqualTo(0));
+            Assert.That(service.CurrentSong, Is.SameAs(songs[0]));
+            Assert.That(service.IsPlaying, Is.False);
+            Assert.That(service.PreparationState, Is.EqualTo(PlaybackPreparationState.WaitingForNetwork));
+        });
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(1), Times.Never);
+        _mockMediaManager.Verify(m => m.PlayAsync(It.IsAny<IEnumerable<PlaybackMediaItem>>()), Times.Never);
     }
 
     [Test]
@@ -1796,26 +1892,26 @@ public class PlaybackServiceTests
         var songs = CreateTestPlaylist(3);
         const string cachedPlaybackUri = "/data/user/0/com.streamtunes/cache/song1.mp3";
         var useCachedPlaybackUri = false;
-        var queuedItemsSource = new TaskCompletionSource<IReadOnlyList<IMediaItem>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var queuedItemsSource = new TaskCompletionSource<IReadOnlyList<PlaybackMediaItem>>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         _mockAudioCacheService
             .Setup(s => s.GetImmediatePlaybackUri(songs[0]))
             .Returns(() => useCachedPlaybackUri ? cachedPlaybackUri : songs[0].StreamUrl!);
         _mockMediaManager
-            .Setup(m => m.Play(It.IsAny<IEnumerable<IMediaItem>>()))
-            .Callback<IEnumerable<IMediaItem>>(items => queuedItemsSource.TrySetResult(items.ToList()))
-            .ReturnsAsync(Mock.Of<IMediaItem>());
+            .Setup(m => m.PlayAsync(It.IsAny<IEnumerable<PlaybackMediaItem>>()))
+            .Callback<IEnumerable<PlaybackMediaItem>>(items => queuedItemsSource.TrySetResult(items.ToList()))
+            .ReturnsAsync((PlaybackMediaItem?)null);
 
         service.SetPlaylist(songs, 0);
         _mockMediaManager.Invocations.Clear();
-        queuedItemsSource = new TaskCompletionSource<IReadOnlyList<IMediaItem>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        queuedItemsSource = new TaskCompletionSource<IReadOnlyList<PlaybackMediaItem>>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         useCachedPlaybackUri = true;
-        _mediaManagerState = MediaPlayerState.Failed;
+        _mediaManagerState = PlaybackRuntimeState.Failed;
         var failure = new InvalidOperationException("simulated remote playback failure");
         _mockMediaManager.Raise(
             m => m.MediaItemFailed += null,
-            new MediaItemFailedEventArgs(new MediaItem(songs[0].StreamUrl!), failure, failure.Message));
+            new PlaybackMediaItemFailedEventArgs(new PlaybackMediaItem(songs[0].StreamUrl!), failure, failure.Message));
 
         var queuedItems = await queuedItemsSource.Task.WaitAsync(TimeSpan.FromSeconds(1));
 
@@ -1825,9 +1921,9 @@ public class PlaybackServiceTests
             Assert.That(service.CurrentSong, Is.SameAs(songs[0]));
             Assert.That(service.IsPlaying, Is.True);
             Assert.That(queuedItems[0].MediaUri, Is.EqualTo(cachedPlaybackUri));
-            Assert.That(queuedItems[0].MediaLocation, Is.EqualTo(MediaLocation.FileSystem));
+            Assert.That(queuedItems[0].MediaLocation, Is.EqualTo(PlaybackMediaLocation.FileSystem));
         });
-        _mockMediaManager.Verify(m => m.PlayQueueItem(1), Times.Never);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(1), Times.Never);
     }
 
     [Test]
@@ -1839,8 +1935,8 @@ public class PlaybackServiceTests
         _mockMediaManager.Invocations.Clear();
         _mockPlaybackKeepAliveService.Invocations.Clear();
 
-        _mediaManagerState = MediaPlayerState.Failed;
-        _mockMediaManager.Raise(m => m.StateChanged += null, new StateChangedEventArgs(MediaPlayerState.Failed));
+        _mediaManagerState = PlaybackRuntimeState.Failed;
+        _mockMediaManager.Raise(m => m.StateChanged += null, new PlaybackRuntimeStateChangedEventArgs(PlaybackRuntimeState.Failed));
 
         Assert.That(service.IsPlaying, Is.True);
         _mockPlaybackKeepAliveService.Verify(s => s.SetPlaybackActive(false), Times.Never);
@@ -1854,8 +1950,8 @@ public class PlaybackServiceTests
             Assert.That(service.IsPlaying, Is.True);
         });
         _mockPlaybackKeepAliveService.Verify(s => s.SetPlaybackActive(false), Times.Never);
-        _mockMediaManager.Verify(m => m.Play(It.IsAny<IEnumerable<IMediaItem>>()), Times.Once);
-        _mockMediaManager.Verify(m => m.PlayQueueItem(1), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayAsync(It.IsAny<IEnumerable<PlaybackMediaItem>>()), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(1), Times.Once);
     }
 
     [Test]
@@ -1865,8 +1961,8 @@ public class PlaybackServiceTests
         _service.SetPlaylist(songs, 1);
         _mockPlaybackKeepAliveService.Invocations.Clear();
 
-        _mediaManagerState = MediaPlayerState.Failed;
-        _mockMediaManager.Raise(m => m.StateChanged += null, new StateChangedEventArgs(MediaPlayerState.Failed));
+        _mediaManagerState = PlaybackRuntimeState.Failed;
+        _mockMediaManager.Raise(m => m.StateChanged += null, new PlaybackRuntimeStateChangedEventArgs(PlaybackRuntimeState.Failed));
 
         Assert.That(_service.IsPlaying, Is.False);
         _mockPlaybackKeepAliveService.Verify(s => s.SetPlaybackActive(false), Times.Once);
@@ -1877,13 +1973,14 @@ public class PlaybackServiceTests
     {
         var service = CreateService(bufferingStallRecoveryDelay: TimeSpan.FromMilliseconds(50));
         var songs = CreateTestPlaylist(4);
+        SetupCachedSong(songs[2]);
         service.SetPlaylist(songs, 0);
         service.PlayTrackAtIndex(1);
         _mockMediaManager.Invocations.Clear();
         _mockPlaybackKeepAliveService.Invocations.Clear();
 
-        _mediaManagerState = MediaPlayerState.Buffering;
-        _mockMediaManager.Raise(m => m.StateChanged += null, new StateChangedEventArgs(MediaPlayerState.Buffering));
+        _mediaManagerState = PlaybackRuntimeState.Buffering;
+        _mockMediaManager.Raise(m => m.StateChanged += null, new PlaybackRuntimeStateChangedEventArgs(PlaybackRuntimeState.Buffering));
 
         await Task.Delay(125);
 
@@ -1894,7 +1991,7 @@ public class PlaybackServiceTests
             Assert.That(service.IsPlaying, Is.True);
         });
         _mockPlaybackKeepAliveService.Verify(s => s.SetPlaybackActive(false), Times.Never);
-        _mockMediaManager.Verify(m => m.PlayQueueItem(2), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(2), Times.Once);
     }
 
     [Test]
@@ -1906,11 +2003,11 @@ public class PlaybackServiceTests
         service.PlayTrackAtIndex(1);
         _mockMediaManager.Invocations.Clear();
 
-        _mediaManagerState = MediaPlayerState.Buffering;
-        _mockMediaManager.Raise(m => m.StateChanged += null, new StateChangedEventArgs(MediaPlayerState.Buffering));
+        _mediaManagerState = PlaybackRuntimeState.Buffering;
+        _mockMediaManager.Raise(m => m.StateChanged += null, new PlaybackRuntimeStateChangedEventArgs(PlaybackRuntimeState.Buffering));
 
-        _mediaManagerState = MediaPlayerState.Playing;
-        _mockMediaManager.Raise(m => m.StateChanged += null, new StateChangedEventArgs(MediaPlayerState.Playing));
+        _mediaManagerState = PlaybackRuntimeState.Playing;
+        _mockMediaManager.Raise(m => m.StateChanged += null, new PlaybackRuntimeStateChangedEventArgs(PlaybackRuntimeState.Playing));
 
         await Task.Delay(125);
 
@@ -1920,7 +2017,7 @@ public class PlaybackServiceTests
             Assert.That(service.CurrentSong, Is.SameAs(songs[1]));
             Assert.That(service.IsPlaying, Is.True);
         });
-        _mockMediaManager.Verify(m => m.PlayQueueItem(2), Times.Never);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(2), Times.Never);
     }
 
     [Test]
@@ -1930,14 +2027,15 @@ public class PlaybackServiceTests
             playlistAdvanceFallbackDelay: TimeSpan.FromMilliseconds(10),
             bufferingStallRecoveryDelay: TimeSpan.FromMilliseconds(50));
         var songs = CreateTestPlaylist(4);
+        SetupCachedSong(songs[2]);
         service.SetPlaylist(songs, 0);
         service.PlayTrackAtIndex(1);
         _mockMediaManager.Invocations.Clear();
         _mockPlaybackKeepAliveService.Invocations.Clear();
 
-        _mediaManagerState = MediaPlayerState.Failed;
-        _mockMediaManager.Raise(m => m.StateChanged += null, new StateChangedEventArgs(MediaPlayerState.Failed));
-        _mediaManagerState = MediaPlayerState.Buffering;
+        _mediaManagerState = PlaybackRuntimeState.Failed;
+        _mockMediaManager.Raise(m => m.StateChanged += null, new PlaybackRuntimeStateChangedEventArgs(PlaybackRuntimeState.Failed));
+        _mediaManagerState = PlaybackRuntimeState.Buffering;
 
         await Task.Delay(150);
 
@@ -1948,9 +2046,9 @@ public class PlaybackServiceTests
             Assert.That(service.IsPlaying, Is.True);
         });
         _mockPlaybackKeepAliveService.Verify(s => s.SetPlaybackActive(false), Times.Never);
-        _mockMediaManager.Verify(m => m.PlayQueueItem(1), Times.Once);
-        _mockMediaManager.Verify(m => m.PlayQueueItem(2), Times.Once);
-        _mockMediaManager.Verify(m => m.PlayQueueItem(3), Times.Never);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(1), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(2), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(3), Times.Never);
     }
 
     [Test]
@@ -1958,21 +2056,22 @@ public class PlaybackServiceTests
     {
         var service = CreateService(TimeSpan.FromMilliseconds(50));
         var songs = CreateTestPlaylist(3);
+        SetupCachedSong(songs[1]);
         service.SetPlaylist(songs, 0);
 
-        _mediaManagerState = MediaPlayerState.Failed;
+        _mediaManagerState = PlaybackRuntimeState.Failed;
         var failure = new InvalidOperationException("simulated playback failure");
         _mockMediaManager.Raise(
             m => m.MediaItemFailed += null,
-            new MediaItemFailedEventArgs(new MediaItem(songs[0].StreamUrl!), failure, failure.Message));
+            new PlaybackMediaItemFailedEventArgs(new PlaybackMediaItem(songs[0].StreamUrl!), failure, failure.Message));
 
-        _mockMediaManager.Raise(m => m.MediaItemChanged += null, new MediaItemEventArgs(new MediaItem(songs[1].StreamUrl!)));
+        _mockMediaManager.Raise(m => m.MediaItemChanged += null, new PlaybackMediaItemEventArgs(new PlaybackMediaItem(songs[1].StreamUrl!)));
 
         await Task.Delay(125);
 
         Assert.That(service.CurrentTrackIndex, Is.EqualTo(1));
-        _mockMediaManager.Verify(m => m.PlayQueueItem(1), Times.Once);
-        _mockMediaManager.Verify(m => m.PlayQueueItem(2), Times.Never);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(1), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(2), Times.Never);
     }
 
     [Test]
@@ -1980,20 +2079,21 @@ public class PlaybackServiceTests
     {
         var service = CreateService(TimeSpan.FromSeconds(5));
         var songs = CreateTestPlaylist(3);
+        SetupCachedSong(songs[1]);
         service.SetPlaylist(songs, 0);
         _mockMediaManager.Invocations.Clear();
         _mockPlaybackKeepAliveService.Invocations.Clear();
 
-        _mediaManagerState = MediaPlayerState.Playing;
+        _mediaManagerState = PlaybackRuntimeState.Playing;
         var failure = new InvalidOperationException("simulated playback failure");
         _mockMediaManager.Raise(
             m => m.MediaItemFailed += null,
-            new MediaItemFailedEventArgs(new MediaItem(songs[0].StreamUrl!), failure, failure.Message));
+            new PlaybackMediaItemFailedEventArgs(new PlaybackMediaItem(songs[0].StreamUrl!), failure, failure.Message));
 
         Assert.That(service.CurrentTrackIndex, Is.EqualTo(0));
 
-        _mediaManagerState = MediaPlayerState.Failed;
-        _mockMediaManager.Raise(m => m.StateChanged += null, new StateChangedEventArgs(MediaPlayerState.Failed));
+        _mediaManagerState = PlaybackRuntimeState.Failed;
+        _mockMediaManager.Raise(m => m.StateChanged += null, new PlaybackRuntimeStateChangedEventArgs(PlaybackRuntimeState.Failed));
 
         Assert.Multiple(() =>
         {
@@ -2002,7 +2102,7 @@ public class PlaybackServiceTests
             Assert.That(service.IsPlaying, Is.True);
         });
         _mockPlaybackKeepAliveService.Verify(s => s.SetPlaybackActive(false), Times.Never);
-        _mockMediaManager.Verify(m => m.PlayQueueItem(1), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(1), Times.Once);
     }
 
     [Test]
@@ -2013,15 +2113,15 @@ public class PlaybackServiceTests
         _service.PlayTrackAtIndex(3);
         _mockMediaManager.Invocations.Clear();
 
-        _mediaManagerState = MediaPlayerState.Playing;
+        _mediaManagerState = PlaybackRuntimeState.Playing;
         var failure = new InvalidOperationException("simulated playback failure");
         _mockMediaManager.Raise(
             m => m.MediaItemFailed += null,
-            new MediaItemFailedEventArgs(new MediaItem(songs[3].StreamUrl!), failure, failure.Message));
+            new PlaybackMediaItemFailedEventArgs(new PlaybackMediaItem(songs[3].StreamUrl!), failure, failure.Message));
 
         _mockMediaManager.Raise(
             m => m.MediaItemChanged += null,
-            new MediaItemEventArgs(new MediaItem(songs[0].StreamUrl!)));
+            new PlaybackMediaItemEventArgs(new PlaybackMediaItem(songs[0].StreamUrl!)));
 
         Assert.Multiple(() =>
         {
@@ -2035,6 +2135,7 @@ public class PlaybackServiceTests
     {
         var service = CreateService(TimeSpan.FromMilliseconds(50));
         var songs = CreateTestPlaylist(5);
+        SetupCachedSong(songs[4]);
         service.SetPlaylist(songs, 0);
         service.PlayTrackAtIndex(3);
         _mockMediaManager.Invocations.Clear();
@@ -2044,18 +2145,18 @@ public class PlaybackServiceTests
         _mockMediaQueue.Setup(q => q.CurrentIndex).Returns(() => nativeCurrentIndex);
         _mockMediaQueue
             .Setup(q => q.Current)
-            .Returns(() => new MediaItem(songs[nativeCurrentIndex].StreamUrl!));
+            .Returns(() => new PlaybackMediaItem(songs[nativeCurrentIndex].StreamUrl!));
 
-        _mediaManagerState = MediaPlayerState.Playing;
+        _mediaManagerState = PlaybackRuntimeState.Playing;
         var failure = new InvalidOperationException("simulated playback failure");
         _mockMediaManager.Raise(
             m => m.MediaItemFailed += null,
-            new MediaItemFailedEventArgs(new MediaItem(songs[3].StreamUrl!), failure, failure.Message));
+            new PlaybackMediaItemFailedEventArgs(new PlaybackMediaItem(songs[3].StreamUrl!), failure, failure.Message));
 
         nativeCurrentIndex = 0;
         _mockMediaManager.Raise(
             m => m.MediaItemChanged += null,
-            new MediaItemEventArgs(new MediaItem(songs[0].StreamUrl!)));
+            new PlaybackMediaItemEventArgs(new PlaybackMediaItem(songs[0].StreamUrl!)));
 
         await Task.Delay(125);
 
@@ -2065,9 +2166,9 @@ public class PlaybackServiceTests
             Assert.That(service.CurrentSong, Is.SameAs(songs[4]));
             Assert.That(service.IsPlaying, Is.True);
         });
-        _mockMediaManager.Verify(m => m.PlayQueueItem(0), Times.Never);
-        _mockMediaManager.Verify(m => m.Play(It.IsAny<IEnumerable<IMediaItem>>()), Times.Once);
-        _mockMediaManager.Verify(m => m.PlayQueueItem(4), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(0), Times.Never);
+        _mockMediaManager.Verify(m => m.PlayAsync(It.IsAny<IEnumerable<PlaybackMediaItem>>()), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(4), Times.Once);
     }
 
     [Test]
@@ -2075,15 +2176,16 @@ public class PlaybackServiceTests
     {
         var service = CreateService(TimeSpan.FromSeconds(5));
         var songs = CreateTestPlaylist(6);
+        SetupCachedSong(songs[5]);
         service.SetPlaylist(songs, 0);
         service.PlayTrackAtIndex(4);
         _mockMediaManager.Invocations.Clear();
 
-        _mediaManagerState = MediaPlayerState.Buffering;
+        _mediaManagerState = PlaybackRuntimeState.Buffering;
         var failure = new InvalidOperationException("simulated stale playback failure");
         _mockMediaManager.Raise(
             m => m.MediaItemFailed += null,
-            new MediaItemFailedEventArgs(new MediaItem(songs[0].StreamUrl!), failure, failure.Message));
+            new PlaybackMediaItemFailedEventArgs(new PlaybackMediaItem(songs[0].StreamUrl!), failure, failure.Message));
 
         await Task.Delay(50);
 
@@ -2093,8 +2195,8 @@ public class PlaybackServiceTests
             Assert.That(service.CurrentSong, Is.SameAs(songs[5]));
             Assert.That(service.IsPlaying, Is.True);
         });
-        _mockMediaManager.Verify(m => m.PlayQueueItem(1), Times.Never);
-        _mockMediaManager.Verify(m => m.PlayQueueItem(5), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(1), Times.Never);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(5), Times.Once);
     }
 
     [Test]
@@ -2102,22 +2204,23 @@ public class PlaybackServiceTests
     {
         var service = CreateService(TimeSpan.FromMilliseconds(50));
         var songs = CreateTestPlaylist(5);
+        SetupCachedSong(songs[4]);
         service.SetPlaylist(songs, 0);
         service.PlayTrackAtIndex(3);
         _mockMediaManager.Invocations.Clear();
 
-        _mediaManagerState = MediaPlayerState.Playing;
+        _mediaManagerState = PlaybackRuntimeState.Playing;
         var failure = new InvalidOperationException("simulated playback failure");
         _mockMediaManager.Raise(
             m => m.MediaItemFailed += null,
-            new MediaItemFailedEventArgs(new MediaItem(songs[3].StreamUrl!), failure, failure.Message));
+            new PlaybackMediaItemFailedEventArgs(new PlaybackMediaItem(songs[3].StreamUrl!), failure, failure.Message));
 
         _mockMediaManager.Raise(
             m => m.MediaItemChanged += null,
-            new MediaItemEventArgs(new MediaItem(songs[0].StreamUrl!)));
+            new PlaybackMediaItemEventArgs(new PlaybackMediaItem(songs[0].StreamUrl!)));
 
-        _mediaManagerState = MediaPlayerState.Failed;
-        _mockMediaManager.Raise(m => m.StateChanged += null, new StateChangedEventArgs(MediaPlayerState.Failed));
+        _mediaManagerState = PlaybackRuntimeState.Failed;
+        _mockMediaManager.Raise(m => m.StateChanged += null, new PlaybackRuntimeStateChangedEventArgs(PlaybackRuntimeState.Failed));
 
         await Task.Delay(125);
 
@@ -2126,8 +2229,8 @@ public class PlaybackServiceTests
             Assert.That(service.CurrentTrackIndex, Is.EqualTo(4));
             Assert.That(service.CurrentSong, Is.SameAs(songs[4]));
         });
-        _mockMediaManager.Verify(m => m.PlayQueueItem(0), Times.Never);
-        _mockMediaManager.Verify(m => m.PlayQueueItem(4), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(0), Times.Never);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(4), Times.Once);
     }
 
     [Test]
@@ -2138,14 +2241,14 @@ public class PlaybackServiceTests
         _service.PlayTrackAtIndex(1);
         _mockMediaManager.Invocations.Clear();
 
-        _mediaManagerState = MediaPlayerState.Failed;
-        _mockMediaManager.Raise(m => m.StateChanged += null, new StateChangedEventArgs(MediaPlayerState.Failed));
+        _mediaManagerState = PlaybackRuntimeState.Failed;
+        _mockMediaManager.Raise(m => m.StateChanged += null, new PlaybackRuntimeStateChangedEventArgs(PlaybackRuntimeState.Failed));
 
         _service.TogglePlayPause();
 
         Assert.That(_service.CurrentTrackIndex, Is.EqualTo(1));
-        _mockMediaManager.Verify(m => m.Play(), Times.Never);
-        _mockMediaManager.Verify(m => m.Play(It.IsAny<IEnumerable<IMediaItem>>()), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayAsync(), Times.Never);
+        _mockMediaManager.Verify(m => m.PlayAsync(It.IsAny<IEnumerable<PlaybackMediaItem>>()), Times.Once);
     }
 
     [Test]
@@ -2160,7 +2263,7 @@ public class PlaybackServiceTests
         _service.PlaySong(song);
 
         _mockMediaManager.Verify(
-            m => m.Play(It.Is<IMediaItem>(item => item.MediaUri == localPlaybackPath && item.MediaLocation == MediaLocation.FileSystem)),
+            m => m.PlayAsync(It.Is<PlaybackMediaItem>(item => item.MediaUri == localPlaybackPath && item.MediaLocation == PlaybackMediaLocation.FileSystem)),
             Times.Once);
     }
 
@@ -2187,7 +2290,7 @@ public class PlaybackServiceTests
         await cacheWarmStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
 
         _mockMediaManager.Verify(
-            m => m.Play(It.Is<IMediaItem>(item => item.MediaUri == song.StreamUrl && item.MediaLocation == MediaLocation.Remote)),
+            m => m.PlayAsync(It.Is<PlaybackMediaItem>(item => item.MediaUri == song.StreamUrl && item.MediaLocation == PlaybackMediaLocation.Remote)),
             Times.Once);
     }
 
@@ -2196,11 +2299,11 @@ public class PlaybackServiceTests
     {
         var songs = CreateTestPlaylist(3);
         const string localPlaybackPath = "/data/user/0/com.streamtunes/cache/song2.mp3";
-        var queuedItemsSource = new TaskCompletionSource<IReadOnlyList<IMediaItem>>();
+        var queuedItemsSource = new TaskCompletionSource<IReadOnlyList<PlaybackMediaItem>>();
         _mockMediaManager
-            .Setup(m => m.Play(It.IsAny<IEnumerable<IMediaItem>>()))
-            .Callback<IEnumerable<IMediaItem>>(items => queuedItemsSource.TrySetResult(items.ToList()))
-            .ReturnsAsync(Mock.Of<IMediaItem>());
+            .Setup(m => m.PlayAsync(It.IsAny<IEnumerable<PlaybackMediaItem>>()))
+            .Callback<IEnumerable<PlaybackMediaItem>>(items => queuedItemsSource.TrySetResult(items.ToList()))
+            .ReturnsAsync((PlaybackMediaItem?)null);
         _mockAudioCacheService
             .Setup(s => s.GetImmediatePlaybackUri(songs[1]))
             .Returns(localPlaybackPath);
@@ -2210,8 +2313,45 @@ public class PlaybackServiceTests
         var queuedItems = await queuedItemsSource.Task.WaitAsync(TimeSpan.FromSeconds(1));
 
         Assert.That(queuedItems[1].MediaUri, Is.EqualTo(localPlaybackPath));
-        Assert.That(queuedItems[1].MediaLocation, Is.EqualTo(MediaLocation.FileSystem));
+        Assert.That(queuedItems[1].MediaLocation, Is.EqualTo(PlaybackMediaLocation.FileSystem));
         Assert.That(queuedItems[0].MediaUri, Is.EqualTo(songs[0].StreamUrl));
+    }
+
+    [Test]
+    public async Task SetPlaylist_WhenRuntimeSupportsIndexedQueueStart_PassesStartIndexWithoutSeparateSeek()
+    {
+        var songs = CreateTestPlaylist(4);
+        var playbackRuntime = new Mock<IPlatformPlaybackRuntime>();
+        var indexedRuntime = playbackRuntime.As<IIndexedQueuePlaybackRuntime>();
+        var queueStartSource = new TaskCompletionSource<(IReadOnlyList<PlaybackMediaItem> Items, int StartIndex)>();
+        playbackRuntime.Setup(m => m.PlayQueueItemAsync(It.IsAny<int>())).Returns(Task.FromResult(false));
+        playbackRuntime.SetupProperty(m => m.RepeatMode);
+        playbackRuntime.SetupProperty(m => m.ShuffleMode);
+        playbackRuntime.Setup(m => m.State).Returns(() => _mediaManagerState);
+        playbackRuntime.Setup(m => m.Position).Returns(TimeSpan.Zero);
+        playbackRuntime.Setup(m => m.Duration).Returns(TimeSpan.Zero);
+        playbackRuntime.Setup(m => m.Queue).Returns(_mockMediaQueue.Object);
+        indexedRuntime
+            .Setup(m => m.PlayAsync(It.IsAny<IEnumerable<PlaybackMediaItem>>(), It.IsAny<int>()))
+            .Callback<IEnumerable<PlaybackMediaItem>, int>((items, startIndex) =>
+                queueStartSource.TrySetResult((items.ToList(), startIndex)))
+            .ReturnsAsync((PlaybackMediaItem?)null);
+        var service = new PlaybackService(
+            _mockAuthService.Object,
+            _mockMusicService.Object,
+            playbackRuntime.Object,
+            _mockAudioCacheService.Object,
+            _mockQueuePreparationService.Object,
+            _mockPlaybackKeepAliveService.Object,
+            NullLogger<PlaybackService>.Instance);
+
+        service.SetPlaylist(songs, 2);
+
+        var (queuedItems, startIndex) = await queueStartSource.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.That(startIndex, Is.EqualTo(2));
+        Assert.That(queuedItems.Select(item => item.MediaUri), Is.EqualTo(songs.Select(song => song.StreamUrl)));
+        playbackRuntime.Verify(m => m.PlayQueueItemAsync(2), Times.Never);
     }
 
     [Test]
@@ -2220,11 +2360,11 @@ public class PlaybackServiceTests
         var songs = CreateTestPlaylist(3);
         const string localCurrentPath = "/data/user/0/com.streamtunes/cache/song1.mp3";
         const string localNextPath = "/data/user/0/com.streamtunes/cache/song2.mp3";
-        var queuedItemsSource = new TaskCompletionSource<IReadOnlyList<IMediaItem>>();
+        var queuedItemsSource = new TaskCompletionSource<IReadOnlyList<PlaybackMediaItem>>();
         _mockMediaManager
-            .Setup(m => m.Play(It.IsAny<IEnumerable<IMediaItem>>()))
-            .Callback<IEnumerable<IMediaItem>>(items => queuedItemsSource.TrySetResult(items.ToList()))
-            .ReturnsAsync(Mock.Of<IMediaItem>());
+            .Setup(m => m.PlayAsync(It.IsAny<IEnumerable<PlaybackMediaItem>>()))
+            .Callback<IEnumerable<PlaybackMediaItem>>(items => queuedItemsSource.TrySetResult(items.ToList()))
+            .ReturnsAsync((PlaybackMediaItem?)null);
         _mockAudioCacheService
             .Setup(s => s.GetImmediatePlaybackUri(songs[0]))
             .Returns(localCurrentPath);
@@ -2237,9 +2377,9 @@ public class PlaybackServiceTests
         var queuedItems = await queuedItemsSource.Task.WaitAsync(TimeSpan.FromSeconds(1));
 
         Assert.That(queuedItems[0].MediaUri, Is.EqualTo(localCurrentPath));
-        Assert.That(queuedItems[0].MediaLocation, Is.EqualTo(MediaLocation.FileSystem));
+        Assert.That(queuedItems[0].MediaLocation, Is.EqualTo(PlaybackMediaLocation.FileSystem));
         Assert.That(queuedItems[1].MediaUri, Is.EqualTo(localNextPath));
-        Assert.That(queuedItems[1].MediaLocation, Is.EqualTo(MediaLocation.FileSystem));
+        Assert.That(queuedItems[1].MediaLocation, Is.EqualTo(PlaybackMediaLocation.FileSystem));
         Assert.That(queuedItems[2].MediaUri, Is.EqualTo(songs[2].StreamUrl));
     }
 
@@ -2247,13 +2387,13 @@ public class PlaybackServiceTests
     public async Task SetPlaylist_WhenCacheWarmIsStillRunning_StartsQueueImmediatelyFromAvailableUris()
     {
         var songs = CreateTestPlaylist(3);
-        var queueStarted = new TaskCompletionSource<IReadOnlyList<IMediaItem>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var queueStarted = new TaskCompletionSource<IReadOnlyList<PlaybackMediaItem>>(TaskCreationOptions.RunContinuationsAsynchronously);
         var cacheWarmCompletion = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         _mockMediaManager
-            .Setup(m => m.Play(It.IsAny<IEnumerable<IMediaItem>>()))
-            .Callback<IEnumerable<IMediaItem>>(items => queueStarted.TrySetResult(items.ToList()))
-            .ReturnsAsync(Mock.Of<IMediaItem>());
+            .Setup(m => m.PlayAsync(It.IsAny<IEnumerable<PlaybackMediaItem>>()))
+            .Callback<IEnumerable<PlaybackMediaItem>>(items => queueStarted.TrySetResult(items.ToList()))
+            .ReturnsAsync((PlaybackMediaItem?)null);
         _mockAudioCacheService
             .Setup(s => s.ResolvePlaybackUriAsync(It.IsAny<SongDto>(), It.IsAny<CancellationToken>()))
             .Returns(() => cacheWarmCompletion.Task);
@@ -2270,12 +2410,12 @@ public class PlaybackServiceTests
     {
         var songs = CreateTestPlaylist(4);
         _mockMediaManager
-            .Setup(m => m.Play(It.IsAny<IEnumerable<IMediaItem>>()))
-            .Callback<IEnumerable<IMediaItem>>(_ =>
+            .Setup(m => m.PlayAsync(It.IsAny<IEnumerable<PlaybackMediaItem>>()))
+            .Callback<IEnumerable<PlaybackMediaItem>>(_ =>
                 _mockMediaManager.Raise(
                     m => m.MediaItemChanged += null,
-                    new MediaItemEventArgs(new MediaItem(songs[0].StreamUrl!))))
-            .ReturnsAsync(Mock.Of<IMediaItem>());
+                    new PlaybackMediaItemEventArgs(new PlaybackMediaItem(songs[0].StreamUrl!))))
+            .ReturnsAsync((PlaybackMediaItem?)null);
 
         _service.SetPlaylist(songs, 2);
 
@@ -2287,7 +2427,7 @@ public class PlaybackServiceTests
             Assert.That(_service.CurrentSong, Is.SameAs(songs[2]));
             Assert.That(_service.IsPlaying, Is.True);
         });
-        _mockMediaManager.Verify(m => m.PlayQueueItem(2), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(2), Times.Once);
     }
 
     [Test]
@@ -2296,12 +2436,12 @@ public class PlaybackServiceTests
         var songs = CreateTestPlaylist(4);
         var startSelected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _mockMediaManager
-            .Setup(m => m.PlayQueueItem(2))
+            .Setup(m => m.PlayQueueItemAsync(2))
             .Callback<int>(_ =>
             {
                 _mockMediaManager.Raise(
                     m => m.MediaItemChanged += null,
-                    new MediaItemEventArgs(new MediaItem(songs[2].StreamUrl!)));
+                    new PlaybackMediaItemEventArgs(new PlaybackMediaItem(songs[2].StreamUrl!)));
                 startSelected.TrySetResult();
             })
             .ReturnsAsync(true);
@@ -2313,7 +2453,7 @@ public class PlaybackServiceTests
 
         _mockMediaManager.Raise(
             m => m.MediaItemChanged += null,
-            new MediaItemEventArgs(new MediaItem(songs[0].StreamUrl!)));
+            new PlaybackMediaItemEventArgs(new PlaybackMediaItem(songs[0].StreamUrl!)));
 
         Assert.Multiple(() =>
         {
@@ -2331,12 +2471,12 @@ public class PlaybackServiceTests
         _mockMediaQueue.Setup(q => q.HasCurrent).Returns(true);
         _mockMediaQueue.Setup(q => q.CurrentIndex).Returns(1);
 
-        _mockMediaManager.Raise(m => m.MediaItemChanged += null, new MediaItemEventArgs(new MediaItem("https://test.com/normalized-or-renewed-url.mp3")));
+        _mockMediaManager.Raise(m => m.MediaItemChanged += null, new PlaybackMediaItemEventArgs(new PlaybackMediaItem("https://test.com/normalized-or-renewed-url.mp3")));
 
         Assert.That(_service.CurrentTrackIndex, Is.EqualTo(1));
         Assert.That(_service.CurrentSong, Is.SameAs(songs[1]));
         Assert.That(_service.IsPlaying, Is.True);
-        _mockMediaManager.Verify(m => m.PlayQueueItem(It.IsAny<int>()), Times.Never);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(It.IsAny<int>()), Times.Never);
     }
 
     [Test]
@@ -2346,11 +2486,11 @@ public class PlaybackServiceTests
         var songs = CreateTestPlaylist(3);
 
         _mockMediaManager
-            .Setup(m => m.PlayNext())
+            .Setup(m => m.PlayNextAsync())
             .Returns(() =>
             {
-                var shuffledItem = new MediaItem(songs[2].StreamUrl!);
-                _mockMediaManager.Raise(m => m.MediaItemChanged += null, new MediaItemEventArgs(shuffledItem));
+                var shuffledItem = new PlaybackMediaItem(songs[2].StreamUrl!);
+                _mockMediaManager.Raise(m => m.MediaItemChanged += null, new PlaybackMediaItemEventArgs(shuffledItem));
                 return Task.FromResult(true);
             });
 
@@ -2365,8 +2505,8 @@ public class PlaybackServiceTests
         Assert.That(service.Playlist, Is.Not.Null);
         Assert.That(service.CurrentTrackIndex, Is.EqualTo(service.Playlist!.FindIndex(song => song.Id == songs[2].Id)));
         Assert.That(service.IsPlaying, Is.True);
-        _mockMediaManager.Verify(m => m.PlayNext(), Times.Once);
-        _mockMediaManager.Verify(m => m.PlayQueueItem(It.IsAny<int>()), Times.Never);
+        _mockMediaManager.Verify(m => m.PlayNextAsync(), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(It.IsAny<int>()), Times.Never);
     }
 
     [Test]
@@ -2383,7 +2523,7 @@ public class PlaybackServiceTests
         Assert.That(service.CurrentTrackIndex, Is.EqualTo(1));
         Assert.That(service.CurrentSong, Is.SameAs(songs[1]));
         Assert.That(service.IsPlaying, Is.False);
-        _mockMediaManager.Verify(m => m.PlayQueueItem(0), Times.Never);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(0), Times.Never);
     }
 
     [Test]
@@ -2401,7 +2541,7 @@ public class PlaybackServiceTests
         Assert.That(service.CurrentTrackIndex, Is.EqualTo(0));
         Assert.That(service.CurrentSong, Is.SameAs(songs[0]));
         Assert.That(service.IsPlaying, Is.True);
-        _mockMediaManager.Verify(m => m.PlayQueueItem(0), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(0), Times.Once);
     }
 
     [Test]
@@ -2424,8 +2564,8 @@ public class PlaybackServiceTests
 
         _service.OnMediaEnded();
 
-        _mockMediaManager.Verify(m => m.SeekTo(TimeSpan.Zero), Times.Once);
-        _mockMediaManager.Verify(m => m.Play(), Times.Once);
+        _mockMediaManager.Verify(m => m.SeekToAsync(TimeSpan.Zero), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayAsync(), Times.Once);
         Assert.That(_service.IsPlaying, Is.True);
     }
 
@@ -2460,6 +2600,17 @@ public class PlaybackServiceTests
                 StreamUrl = $"https://test.com/song{i}.mp3"
             })
             .ToList();
+    }
+
+    private void SetupCachedSong(SongDto song, string? localPlaybackPath = null)
+    {
+        localPlaybackPath ??= $"/data/user/0/com.streamtunes/cache/song{song.Id}.mp3";
+        _mockAudioCacheService
+            .Setup(s => s.GetImmediatePlaybackUri(It.Is<SongDto>(candidate => candidate.Id == song.Id)))
+            .Returns(localPlaybackPath);
+        _mockAudioCacheService
+            .Setup(s => s.GetCacheStatus(It.Is<SongDto>(candidate => candidate.Id == song.Id)))
+            .Returns(new TrackCacheStatus(song.Id, $"song-{song.Id}", localPlaybackPath, true, true));
     }
 
     private static async Task WaitForAsync(Func<bool> condition)

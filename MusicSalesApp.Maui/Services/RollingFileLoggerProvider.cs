@@ -26,11 +26,19 @@ public sealed class RollingFileLoggerProvider : ILoggerProvider
         _loggers.Clear();
     }
 
-    internal bool IsEnabled(LogLevel logLevel) => logLevel >= _options.MinimumLevel && logLevel != LogLevel.None;
+    internal bool IsEnabled(string categoryName, LogLevel logLevel)
+    {
+        if (logLevel < _options.MinimumLevel || logLevel == LogLevel.None)
+        {
+            return false;
+        }
+
+        return _options.CategoryFilter?.Invoke(categoryName, logLevel) ?? true;
+    }
 
     internal void Write(LogLevel logLevel, string categoryName, EventId eventId, string message, Exception? exception)
     {
-        if (!IsEnabled(logLevel))
+        if (!IsEnabled(categoryName, logLevel))
         {
             return;
         }

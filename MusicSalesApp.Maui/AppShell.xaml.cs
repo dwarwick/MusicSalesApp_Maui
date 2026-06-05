@@ -40,6 +40,7 @@ public partial class AppShell : Shell
 		Routing.RegisterRoute(NavigationRoutes.Persona, typeof(PersonaPage));
 		Routing.RegisterRoute(NavigationRoutes.PlaylistPlayer, typeof(PlaylistPlayerPage));
 		Routing.RegisterRoute(NavigationRoutes.AccountSettings, typeof(AccountSettingsPage));
+		Routing.RegisterRoute(NavigationRoutes.Config, typeof(ConfigPage));
 		Routing.RegisterRoute(NavigationRoutes.Policy, typeof(PolicyPage));
 		Routing.RegisterRoute(NavigationRoutes.MyPlaylists, typeof(MyPlaylistsPage));
 		Routing.RegisterRoute(NavigationRoutes.ContactUs, typeof(ContactUsPage));
@@ -123,6 +124,12 @@ public partial class AppShell : Shell
 	{
 		Shell.Current.FlyoutIsPresented = false;
 		await GoToAsync(NavigationRoutes.AccountSettings);
+	}
+
+	private async void OnConfigClicked(object? sender, EventArgs e)
+	{
+		Shell.Current.FlyoutIsPresented = false;
+		await GoToAsync(NavigationRoutes.Config);
 	}
 
 	private async void OnMyPlaylistsClicked(object? sender, EventArgs e)

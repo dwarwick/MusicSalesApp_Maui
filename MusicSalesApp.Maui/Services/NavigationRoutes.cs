@@ -16,6 +16,7 @@ public static class NavigationRoutes
     public const string Persona = "persona";
     public const string PlaylistPlayer = "playlist-player";
     public const string AccountSettings = "account-settings";
+    public const string Config = "config";
     public const string Policy = "policy";
     public const string MyPlaylists = "my-playlists";
     public const string ContactUs = "contact-us";

@@ -15,7 +15,7 @@ internal sealed class RollingFileLogger : ILogger
 
     public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
-    public bool IsEnabled(LogLevel logLevel) => _provider.IsEnabled(logLevel);
+    public bool IsEnabled(LogLevel logLevel) => _provider.IsEnabled(_categoryName, logLevel);
 
     public void Log<TState>(
         LogLevel logLevel,

@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:MusicSalesApp.Maui.ViewModels"
+             x:Class="MusicSalesApp.Maui.Views.ConfigPage"
+             x:DataType="vm:ConfigViewModel"
+             Title="Config"
+             SafeAreaEdges="All"
+             BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="24,24" Spacing="24">
+            <VerticalStackLayout Spacing="4">
+                <Label Text="Config"
+                       FontSize="22"
+                       FontAttributes="Bold"
+                       TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+                <Label Text="Offline cache"
+                       FontSize="15"
+                       TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+            </VerticalStackLayout>
+
+            <BoxView HeightRequest="1"
+                     Color="{AppThemeBinding Light=#E0E0E0, Dark=#333333}" />
+
+            <VerticalStackLayout Spacing="16">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                    <VerticalStackLayout Grid.Column="0" Spacing="4">
+                        <Label Text="Cache size"
+                               FontSize="18"
+                               FontAttributes="Bold"
+                               TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+                        <Label Text="Max potential storage for prepared audio on this device."
+                               FontSize="14"
+                               TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+                    </VerticalStackLayout>
+
+                    <Label Grid.Column="1"
+                           Text="{Binding OfflineCacheLimitDisplay}"
+                           FontSize="18"
+                           FontAttributes="Bold"
+                           VerticalOptions="Center"
+                           TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+                </Grid>
+
+                <Slider Minimum="{Binding MinimumCacheLimitMb}"
+                        Maximum="{Binding MaximumCacheLimitMb}"
+                        Value="{Binding OfflineCacheLimitMb, Mode=TwoWay}"
+                        MinimumTrackColor="#1db954"
+                        MaximumTrackColor="{AppThemeBinding Light=#E0E0E0, Dark=#333333}"
+                        ThumbColor="#1db954" />
+
+                <Grid ColumnDefinitions="*,Auto">
+                    <Label Grid.Column="0"
+                           Text="{Binding MinimumCacheLimitDisplay}"
+                           FontSize="12"
+                           TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+                    <Label Grid.Column="1"
+                           Text="{Binding MaximumCacheLimitDisplay}"
+                           FontSize="12"
+                           TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+                </Grid>
+
+                <Label FontSize="13"
+                       TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}">
+                    <Label.FormattedText>
+                        <FormattedString>
+                            <Span Text="StreamTunes may use less than this limit when device free space reaches the " />
+                            <Span Text="{Binding DeviceFreeSpaceReserveDisplay}" />
+                            <Span Text=" reserve." />
+                        </FormattedString>
+                    </Label.FormattedText>
+                </Label>
+
+                <Button Text="Reset to 1 GB"
+                        Command="{Binding ResetOfflineCacheLimitCommand}"
+                        BackgroundColor="{AppThemeBinding Light=#E0E0E0, Dark=#333333}"
+                        TextColor="{AppThemeBinding Light=#333333, Dark=#e0e0e0}"
+                        FontAttributes="Bold"
+                        CornerRadius="8"
+                        HeightRequest="44"
+                        HorizontalOptions="Start"
+                        Padding="20,0" />
+            </VerticalStackLayout>
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

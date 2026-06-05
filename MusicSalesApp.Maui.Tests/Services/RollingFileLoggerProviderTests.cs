@@ -83,4 +83,26 @@ public class RollingFileLoggerProviderTests
         Assert.That(contents, Does.Not.Contain("ignored"));
         Assert.That(contents, Does.Contain("written"));
     }
+
+    [Test]
+    public void Log_UsesCategoryFilterWhenProvided()
+    {
+        using var provider = new RollingFileLoggerProvider(new RollingFileLoggerOptions
+        {
+            DirectoryPath = _logDirectory,
+            RetentionDays = 30,
+            MinimumLevel = LogLevel.Information,
+            CategoryFilter = (categoryName, _) => categoryName == "AllowedCategory"
+        });
+        var allowedLogger = provider.CreateLogger("AllowedCategory");
+        var ignoredLogger = provider.CreateLogger("IgnoredCategory");
+
+        allowedLogger.LogInformation("written");
+        ignoredLogger.LogInformation("ignored");
+
+        var logFile = Directory.GetFiles(_logDirectory, "streamtunes-*.log").Single();
+        var contents = File.ReadAllText(logFile);
+        Assert.That(contents, Does.Contain("written"));
+        Assert.That(contents, Does.Not.Contain("ignored"));
+    }
 }

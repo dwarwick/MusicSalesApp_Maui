@@ -105,6 +105,11 @@
               Shell.FlyoutItemIsVisible="False"
               Clicked="OnAccountSettingsClicked" />
 
+    <MenuItem x:Name="ConfigMenuItem"
+              Text="Config"
+              IconImageSource="{FontImageSource FontFamily=OpenSansRegular, Glyph='&#x2699;', Size=20}"
+              Clicked="OnConfigClicked" />
+
     <MenuItem x:Name="ContactUsMenuItem"
               Text="Contact Us"
               IconImageSource="{FontImageSource FontFamily=OpenSansRegular, Glyph='&#x2709;', Size=20}"

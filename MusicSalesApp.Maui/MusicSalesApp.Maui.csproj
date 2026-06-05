@@ -41,6 +41,8 @@
 		<!-- Versions -->
 		<ApplicationDisplayVersion>1.0.69</ApplicationDisplayVersion>
 		<ApplicationVersion>80</ApplicationVersion>
+		<AndroidXMedia3Version>1.10.1</AndroidXMedia3Version>
+		<AndroidXWorkVersion>2.11.2</AndroidXWorkVersion>
 
 		<!-- To develop, package, and publish an app to the Microsoft Store, see: https://aka.ms/MauiTemplateUnpackaged -->
 		<WindowsPackageType>None</WindowsPackageType>
@@ -147,6 +149,14 @@
 	<ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
 		<PackageReference Include="Xamarin.AndroidX.Biometric" Version="1.1.0.32" />
 		<PackageReference Include="Xamarin.Android.Google.BillingClient" Version="8.3.0.2" />
+		<PackageReference Include="Xamarin.AndroidX.Media3.Common" Version="$(AndroidXMedia3Version)" />
+		<PackageReference Include="Xamarin.AndroidX.Media3.DataSource" Version="$(AndroidXMedia3Version)" />
+		<PackageReference Include="Xamarin.AndroidX.Media3.Database" Version="$(AndroidXMedia3Version)" />
+		<PackageReference Include="Xamarin.AndroidX.Media3.Extractor" Version="$(AndroidXMedia3Version)" />
+		<PackageReference Include="Xamarin.AndroidX.Media3.ExoPlayer" Version="$(AndroidXMedia3Version)" />
+		<PackageReference Include="Xamarin.AndroidX.Media3.ExoPlayer.WorkManager" Version="$(AndroidXMedia3Version)" />
+		<PackageReference Include="Xamarin.AndroidX.Media3.Session" Version="$(AndroidXMedia3Version)" />
+		<PackageReference Include="Xamarin.AndroidX.Work.Runtime" Version="$(AndroidXWorkVersion)" />
 	</ItemGroup>
 
 </Project>

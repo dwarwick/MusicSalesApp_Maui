@@ -160,8 +160,15 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IAuthService, AuthService>();
 		builder.Services.AddSingleton<IWebAuthenticatorService, WebAuthenticatorService>();
 		builder.Services.AddSingleton<IAppSettingsService, AppSettingsService>();
+		builder.Services.AddSingleton<IOfflineCacheSettingsService, OfflineCacheSettingsService>();
 		builder.Services.AddSingleton<IMusicService, MusicService>();
+	#if ANDROID
+		builder.Services.AddSingleton<IAudioCacheService, MusicSalesApp.Maui.Platforms.Android.AndroidMedia3AudioCacheService>();
+	#else
 		builder.Services.AddSingleton<IAudioCacheService, AudioCacheService>();
+	#endif
+		builder.Services.AddSingleton<ITrackCacheService>(services => services.GetRequiredService<IAudioCacheService>());
+		builder.Services.AddSingleton<IQueuePreparationService, QueuePreparationService>();
 		builder.Services.AddSingleton<IAlertService, AlertService>();
 		builder.Services.AddSingleton<ISignalRService, SignalRService>();
 		builder.Services.AddSingleton<ISignalRConnectionManager, SignalRConnectionManager>();
@@ -170,6 +177,11 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IAdminMessageCoordinator, AdminMessageCoordinator>();
 		builder.Services.AddSingleton<INavigationService, NavigationService>();
 		builder.Services.AddSingleton<IMediaManager>(CrossMediaManager.Current);
+	#if ANDROID
+		builder.Services.AddSingleton<IPlatformPlaybackRuntime, MusicSalesApp.Maui.Platforms.Android.AndroidMedia3PlaybackRuntime>();
+	#else
+		builder.Services.AddSingleton<IPlatformPlaybackRuntime, MediaManagerPlaybackRuntime>();
+	#endif
 	#if ANDROID
 		builder.Services.AddSingleton<IPlaybackKeepAliveService, MusicSalesApp.Maui.Platforms.Android.PlaybackKeepAliveService>();
 	#else
@@ -267,6 +279,8 @@ public static class MauiProgram
 		builder.Services.AddTransient<PersonaPage>();
 		builder.Services.AddTransient<AccountSettingsViewModel>();
 		builder.Services.AddTransient<AccountSettingsPage>();
+		builder.Services.AddTransient<ConfigViewModel>();
+		builder.Services.AddTransient<ConfigPage>();
 		builder.Services.AddTransient<PolicyViewModel>();
 		builder.Services.AddTransient<PolicyPage>();
 		builder.Services.AddTransient<PlaylistPlayerViewModel>();
@@ -277,6 +291,10 @@ public static class MauiProgram
 		builder.Services.AddTransient<ContactUsPage>();
 
 		builder.Logging.AddProvider(new RollingFileLoggerProvider(RollingFileLoggerOptions.CreateDefault()));
+
+#if ANDROID
+		builder.Logging.AddProvider(new MusicSalesApp.Maui.Platforms.Android.AndroidLogcatLoggerProvider(LogLevel.Information));
+#endif
 
 #if DEBUG
 		builder.Logging.AddDebug();

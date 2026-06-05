@@ -1,5 +1,4 @@
 using Android.Media.Audiofx;
-using MediaManager;
 using Microsoft.Maui.ApplicationModel;
 using MusicSalesApp.Maui.Services;
 
@@ -10,6 +9,7 @@ public sealed class AudioVisualizerService : IAudioVisualizerService, IDisposabl
     private const int ReleaseDelayMilliseconds = 500;
 
     private readonly IPlaybackService _playbackService;
+    private readonly IPlatformPlaybackRuntime _playbackRuntime;
     private readonly IMediaPlaybackOnboardingService _mediaPlaybackOnboardingService;
     private readonly AudioEqualizerBarProcessor _barProcessor = new();
     private readonly SemaphoreSlim _bindLock = new(1, 1);
@@ -21,9 +21,13 @@ public sealed class AudioVisualizerService : IAudioVisualizerService, IDisposabl
     private int _boundSessionId;
     private int _captureGeneration;
 
-    public AudioVisualizerService(IPlaybackService playbackService, IMediaPlaybackOnboardingService mediaPlaybackOnboardingService)
+    public AudioVisualizerService(
+        IPlaybackService playbackService,
+        IPlatformPlaybackRuntime playbackRuntime,
+        IMediaPlaybackOnboardingService mediaPlaybackOnboardingService)
     {
         _playbackService = playbackService;
+        _playbackRuntime = playbackRuntime;
         _mediaPlaybackOnboardingService = mediaPlaybackOnboardingService;
         _playbackService.StateChanged += OnPlaybackStateChanged;
     }
@@ -247,9 +251,9 @@ public sealed class AudioVisualizerService : IAudioVisualizerService, IDisposabl
         }
     }
 
-    private static int GetCurrentAudioSessionId()
+    private int GetCurrentAudioSessionId()
     {
-        return CrossMediaManager.Android?.Player?.AudioSessionId ?? 0;
+        return _playbackRuntime.AudioSessionId;
     }
 
     private sealed class DataCaptureListener(AudioVisualizerService owner, int captureGeneration)
