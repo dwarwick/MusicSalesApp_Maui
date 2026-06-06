@@ -42,7 +42,6 @@ public partial class HomeViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferPrimaryButtonText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferPrimaryCommand))]
     [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferSecondaryButton))]
-    [NotifyPropertyChangedFor(nameof(ShowArtistUploadHero))]
     public partial bool IsAuthenticated { get; set; }
 
     [ObservableProperty]
@@ -71,15 +70,9 @@ public partial class HomeViewModel : ObservableObject
     public partial bool IsEmailVerified { get; set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowArtistUploadHero))]
-    public partial bool IsCreator { get; set; }
-
-    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SubscribeButtonText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionPriceDisplay))]
     [NotifyPropertyChangedFor(nameof(ShowSubscriptionPriceDisplay))]
-    [NotifyPropertyChangedFor(nameof(SubscriptionHeroDescriptionText))]
-    [NotifyPropertyChangedFor(nameof(SubscriptionCardDescriptionText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferPriceText))]
@@ -112,8 +105,6 @@ public partial class HomeViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SubscribeButtonText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionPriceDisplay))]
     [NotifyPropertyChangedFor(nameof(ShowSubscriptionPriceDisplay))]
-    [NotifyPropertyChangedFor(nameof(SubscriptionHeroDescriptionText))]
-    [NotifyPropertyChangedFor(nameof(SubscriptionCardDescriptionText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferPriceText))]
@@ -150,19 +141,12 @@ public partial class HomeViewModel : ObservableObject
         && (!HasPreviousSubscriptionHistory || HasEligibleAndroidFreeTrial || !HasResolvedAndroidSubscriptionOffer);
     public bool ShowBrowseMusic => true;
     public bool ShowFeaturedMusic => FeaturedSongs.Count > 0;
-    public bool ShowArtistUploadHero => !(IsAuthenticated && IsCreator);
 
     public string SubscriptionPriceDisplay => SubscriptionOfferDisplayBuilder.FormatMonthlyPriceOrEmpty(
         SubscriptionPriceForDisplay,
         "3.99",
         AllowConfiguredSubscriptionPriceFallback);
     public bool ShowSubscriptionPriceDisplay => !string.IsNullOrWhiteSpace(SubscriptionPriceDisplay);
-    public string SubscriptionHeroDescriptionText => ShowSubscriptionPriceDisplay
-        ? $"Stream all songs, discover new artists, and create the perfect playlist for every moment. All for {SubscriptionPriceDisplay} per month."
-        : "Stream all songs, discover new artists, and create the perfect playlist for every moment.";
-    public string SubscriptionCardDescriptionText => ShowSubscriptionPriceDisplay
-        ? $"Stream all songs with no limits. Access our entire catalog for {SubscriptionPriceDisplay} per month."
-        : "Stream all songs with no limits. Access our entire catalog with a monthly subscription.";
     public string SubscribeButtonText => ShowSubscriptionPriceDisplay
         ? $"Subscribe Now - {SubscriptionPriceDisplay}/mo"
         : "Subscribe Now";
@@ -187,9 +171,6 @@ public partial class HomeViewModel : ObservableObject
     public string ManageSubscriptionText => ShouldUseAppleSubscriptionManagement
         ? "Manage subscription with Apple ›"
         : "Manage subscription in Google Play ›";
-    public string SubscriptionAutoRenewalText => ShouldUseAppleSubscriptionManagement
-        ? "Subscription automatically renews monthly. Cancel anytime from your Apple Account subscription settings."
-        : "Subscription automatically renews monthly. Cancel anytime from your Google Play subscription settings.";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowPlaylists))]
@@ -694,10 +675,6 @@ public partial class HomeViewModel : ObservableObject
     private Task OpenSubscriptionManagementAsync()
         => _browserService.OpenExternalAsync(GetSubscriptionManagementUrl());
 
-    [RelayCommand]
-    private Task OpenArtistUploadAsync()
-        => _browserService.OpenExternalAsync(_appConfig.ApiBaseUrl);
-
     private void RefreshAuthState()
     {
         IsAuthenticated = _authService.IsLoggedIn;
@@ -707,10 +684,8 @@ public partial class HomeViewModel : ObservableObject
             _authService.SubscriptionEndDate,
             _authService.TrialEndDate);
         IsEmailVerified = _authService.EmailConfirmed;
-        IsCreator = _authService.IsCreator;
         OnPropertyChanged(nameof(ShowPlaylists));
         OnPropertyChanged(nameof(ManageSubscriptionText));
-        OnPropertyChanged(nameof(SubscriptionAutoRenewalText));
         OnPropertyChanged(nameof(SubscriptionOfferPrimaryButtonText));
         OnPropertyChanged(nameof(SubscriptionOfferPrimaryCommand));
         OnPropertyChanged(nameof(ShowSubscriptionOfferSecondaryButton));
@@ -762,8 +737,6 @@ public partial class HomeViewModel : ObservableObject
         OnPropertyChanged(nameof(SubscribeButtonText));
         OnPropertyChanged(nameof(SubscriptionPriceDisplay));
         OnPropertyChanged(nameof(ShowSubscriptionPriceDisplay));
-        OnPropertyChanged(nameof(SubscriptionHeroDescriptionText));
-        OnPropertyChanged(nameof(SubscriptionCardDescriptionText));
         OnPropertyChanged(nameof(SubscriptionOfferTitleText));
         OnPropertyChanged(nameof(SubscriptionOfferBodyText));
         OnPropertyChanged(nameof(SubscriptionOfferPriceText));

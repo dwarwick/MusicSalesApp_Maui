@@ -45,8 +45,7 @@
                            <Border HorizontalOptions="Center"
                                 StrokeShape="RoundRectangle 12"
                                 StrokeThickness="0">
-                            <Image Source="{Binding CurrentSong.AlbumArtUrl}"
-                                Aspect="AspectFill"
+                            <views:SongArtworkView AlbumArtUrl="{Binding CurrentSong.AlbumArtUrl}"
                                           HeightRequest="{StaticResource PlayerHeroArtSize}"
                                           WidthRequest="{StaticResource PlayerHeroArtSize}" />
                            </Border>
@@ -320,8 +319,7 @@
                                             StrokeThickness="0"
                                             HeightRequest="48"
                                             WidthRequest="48">
-                                        <Image Source="{Binding AlbumArtUrl}"
-                                               Aspect="AspectFill"
+                                        <views:SongArtworkView AlbumArtUrl="{Binding AlbumArtUrl}"
                                                HeightRequest="48"
                                                WidthRequest="48" />
                                     </Border>

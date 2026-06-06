@@ -16,35 +16,30 @@
             <VerticalStackLayout Spacing="0" Padding="0">
 
             <!-- ========== HERO SECTION ========== -->
-            <VerticalStackLayout Padding="24,32,24,24" Spacing="12"
+            <VerticalStackLayout Padding="24,4,24,4" Spacing="2"
                   BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
 
                 <!-- Title row: text + Lottie, wraps like flex-row -->
                 <FlexLayout Direction="Row" Wrap="Wrap" JustifyContent="SpaceBetween" AlignItems="Center">
                     <VerticalStackLayout Spacing="0" VerticalOptions="Center">
-                        <Label Text="Your Music."
-                               FontSize="36"
-                               FontAttributes="Bold"
-                               LineBreakMode="NoWrap"
-                               TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
-                        <Label Text="Unlimited."
-                               FontSize="36"
+                        <Label Text="Discover your"
+                               FontSize="24"
                                FontAttributes="Bold"
                                LineBreakMode="NoWrap"
                                TextColor="{StaticResource Primary}" />
+                        <Label Text="next favorite artist!"
+                               FontSize="20"
+                               FontAttributes="Bold"
+                               LineBreakMode="NoWrap"
+                               TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
                     </VerticalStackLayout>
 
                     <skia:SKLottieView Source="hero_animation.json"
                                        RepeatCount="-1"
                                        RepeatMode="Restart"
-                                       HeightRequest="140"
-                                       WidthRequest="140" />
+                                       HeightRequest="135"
+                                       WidthRequest="135" />
                 </FlexLayout>
-
-                  <Label Text="{Binding SubscriptionHeroDescriptionText}"
-                       FontSize="15"
-                       LineBreakMode="WordWrap"
-                       TextColor="{AppThemeBinding Light=#4a4a6a, Dark=#b3b3b3}" />
 
                 <!-- CTA: Not logged in -->
                 <HorizontalStackLayout Spacing="12"
@@ -229,8 +224,8 @@
 
             <!-- ========== FEATURED MUSIC ========== -->
             <VerticalStackLayout IsVisible="{Binding ShowFeaturedMusic}"
-                                 Padding="20,24,20,0"
-                                 Spacing="12">
+                                 Padding="20,0,20,0"
+                                 Spacing="0">
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" VerticalOptions="Center">
                     <Label Text="Featured Music"
                            FontSize="22"
@@ -275,147 +270,6 @@
                         </DataTemplate>
                     </CollectionView.ItemTemplate>
                 </CollectionView>
-            </VerticalStackLayout>
-
-            <!-- ========== SUBSCRIBER CTA CARD ========== -->
-            <VerticalStackLayout IsVisible="{Binding ShowSubscriptionContent}" Padding="20,16,20,0" Spacing="0">
-                <Border StrokeShape="RoundRectangle 24"
-                        Stroke="Transparent"
-                        BackgroundColor="{AppThemeBinding Light=White, Dark=#2a2a2a}"
-                        Padding="24">
-                    <Border.Shadow>
-                        <Shadow Brush="{AppThemeBinding Light=#b3b3b3, Dark=#00000066}"
-                                Offset="0,4"
-                                Radius="20" />
-                    </Border.Shadow>
-                    <VerticalStackLayout Spacing="16" HorizontalOptions="Center">
-
-                        <!-- Green icon circle with Material Design music note -->
-                        <Border WidthRequest="80" HeightRequest="80"
-                                StrokeShape="RoundRectangle 40"
-                                BackgroundColor="{StaticResource Primary}"
-                                Stroke="Transparent"
-                                HorizontalOptions="Center">
-                            <Path Data="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                                  Fill="White"
-                                  Aspect="Uniform"
-                                  HeightRequest="40"
-                                  WidthRequest="40"
-                                  HorizontalOptions="Center"
-                                  VerticalOptions="Center" />
-                        </Border>
-
-                        <Label Text="Unlimited Music Streaming"
-                               FontSize="22"
-                               FontAttributes="Bold"
-                               HorizontalTextAlignment="Center"
-                               TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
-
-                           <Label Text="{Binding SubscriptionCardDescriptionText}"
-                               FontSize="14"
-                               HorizontalTextAlignment="Center"
-                               TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
-
-                        <!-- Benefits list -->
-                        <VerticalStackLayout Spacing="12" Padding="0,8,0,0">
-                            <HorizontalStackLayout Spacing="10">
-                                <Label Text="✓" TextColor="{StaticResource Primary}" FontAttributes="Bold" FontSize="18" VerticalTextAlignment="Center" />
-                                <Label Text="Full-length streaming of all songs" FontSize="14"
-                                       TextColor="{AppThemeBinding Light=#333333, Dark=#e0e0e0}" VerticalTextAlignment="Center" />
-                            </HorizontalStackLayout>
-                            <HorizontalStackLayout Spacing="10">
-                                <Label Text="✓" TextColor="{StaticResource Primary}" FontAttributes="Bold" FontSize="18" VerticalTextAlignment="Center" />
-                                <Label Text="Create unlimited playlists" FontSize="14"
-                                       TextColor="{AppThemeBinding Light=#333333, Dark=#e0e0e0}" VerticalTextAlignment="Center" />
-                            </HorizontalStackLayout>
-                            <HorizontalStackLayout Spacing="10">
-                                <Label Text="✓" TextColor="{StaticResource Primary}" FontAttributes="Bold" FontSize="18" VerticalTextAlignment="Center" />
-                                <Label Text="Personalized recommendations" FontSize="14"
-                                       TextColor="{AppThemeBinding Light=#333333, Dark=#e0e0e0}" VerticalTextAlignment="Center" />
-                            </HorizontalStackLayout>
-                            <HorizontalStackLayout Spacing="10">
-                                <Label Text="✓" TextColor="{StaticResource Primary}" FontAttributes="Bold" FontSize="18" VerticalTextAlignment="Center" />
-                                <Label Text="No ads, no interruptions" FontSize="14"
-                                       TextColor="{AppThemeBinding Light=#333333, Dark=#e0e0e0}" VerticalTextAlignment="Center" />
-                            </HorizontalStackLayout>
-                        </VerticalStackLayout>
-
-                        <!-- Price highlight -->
-                        <Label HorizontalTextAlignment="Center"
-                               Padding="0,8,0,0"
-                               IsVisible="{Binding ShowSubscriptionPriceDisplay}">
-                            <Label.FormattedText>
-                                <FormattedString>
-                                    <Span Text="Just " FontSize="16"
-                                          TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
-                                    <Span Text="{Binding SubscriptionPriceDisplay}"
-                                          FontSize="24" FontAttributes="Bold"
-                                          TextColor="{StaticResource Primary}" />
-                                    <Span Text=" per month" FontSize="16"
-                                          TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
-                                </FormattedString>
-                            </Label.FormattedText>
-                        </Label>
-
-                        <!-- Auto-renewal disclosure -->
-                           <Label Text="{Binding SubscriptionAutoRenewalText}"
-                               FontSize="12"
-                               HorizontalTextAlignment="Center"
-                               TextColor="{AppThemeBinding Light=#888888, Dark=#999999}" />
-
-                        <!-- Card CTA buttons -->
-                        <VerticalStackLayout Spacing="8" Padding="0,8,0,0"
-                                             IsVisible="{Binding ShowLoginRegister}">
-                            <Label Text="Log In or Register to Get Started"
-                                   FontSize="13"
-                                   HorizontalTextAlignment="Center"
-                                   TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
-                            <HorizontalStackLayout Spacing="12" HorizontalOptions="Center">
-                                <Button Text="Log In"
-                                        Command="{Binding NavigateToLoginCommand}"
-                                        BackgroundColor="#8e44ad"
-                                        TextColor="White"
-                                        FontAttributes="Bold"
-                                        CornerRadius="24"
-                                        HeightRequest="44"
-                                        MinimumWidthRequest="110"
-                                        Padding="20,0" />
-                                <Button Text="Register"
-                                        Command="{Binding NavigateToRegisterCommand}"
-                                        BackgroundColor="{StaticResource Primary}"
-                                        TextColor="White"
-                                        FontAttributes="Bold"
-                                        CornerRadius="24"
-                                        HeightRequest="44"
-                                        MinimumWidthRequest="110"
-                                        Padding="20,0" />
-                            </HorizontalStackLayout>
-                        </VerticalStackLayout>
-
-                        <Button Text="Validate Your Email"
-                                Command="{Binding NavigateToValidateEmailCommand}"
-                                IsVisible="{Binding ShowValidateEmail}"
-                                BackgroundColor="{StaticResource Primary}"
-                                TextColor="White"
-                                FontAttributes="Bold"
-                                CornerRadius="24"
-                                HeightRequest="44"
-                                HorizontalOptions="Center"
-                                Padding="20,0" />
-
-                        <Button Text="{Binding SubscribeButtonText}"
-                                Command="{Binding SubscribeCommand}"
-                                IsVisible="{Binding ShowSubscribeNow}"
-                                BackgroundColor="{StaticResource Primary}"
-                                TextColor="White"
-                                FontAttributes="Bold"
-                                CornerRadius="24"
-                                HeightRequest="44"
-                                HorizontalOptions="Center"
-                                Padding="20,0" />
-
-                    </VerticalStackLayout>
-                </Border>
             </VerticalStackLayout>
 
             <!-- ========== WHY STREAMTUNES SECTION ========== -->
@@ -523,43 +377,6 @@
                     </VerticalStackLayout>
                 </Border>
 
-            </VerticalStackLayout>
-
-            <!-- ========== ARTIST UPLOAD HERO ========== -->
-            <VerticalStackLayout Padding="20,0,20,32"
-                                 IsVisible="{Binding ShowArtistUploadHero}">
-                <Border StrokeShape="RoundRectangle 16"
-                        Stroke="{StaticResource Primary}"
-                        StrokeThickness="1"
-                        BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource CardBackgroundDark}}"
-                        Padding="20">
-                    <Border.Shadow>
-                        <Shadow Brush="{AppThemeBinding Light=#00000014, Dark=#00000066}"
-                                Offset="0,4"
-                                Radius="16" />
-                    </Border.Shadow>
-                    <VerticalStackLayout Spacing="10">
-                        <Label Text="Artists, bring your sound to StreamTunes"
-                               FontSize="19"
-                               FontAttributes="Bold"
-                               TextColor="{AppThemeBinding Light={StaticResource Gray950}, Dark={StaticResource White}}" />
-                        <Label Text="Upload your music and make it available for listeners to stream on our platform."
-                               FontSize="14"
-                               LineBreakMode="WordWrap"
-                               TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray200}}" />
-                        <Label Text="Upload your music ›"
-                               FontSize="14"
-                               FontAttributes="Bold"
-                               HorizontalOptions="Start"
-                               TextColor="{StaticResource Primary}"
-                               TextDecorations="Underline"
-                               SemanticProperties.Hint="Opens the artist upload page in your browser">
-                            <Label.GestureRecognizers>
-                                <TapGestureRecognizer Command="{Binding OpenArtistUploadCommand}" />
-                            </Label.GestureRecognizers>
-                        </Label>
-                    </VerticalStackLayout>
-                </Border>
             </VerticalStackLayout>
 
             </VerticalStackLayout>

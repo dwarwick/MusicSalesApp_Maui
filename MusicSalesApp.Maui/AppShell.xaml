@@ -69,13 +69,15 @@
         </Grid>
     </Shell.FlyoutHeader>
 
-    <FlyoutItem Title="Home" Icon="{FontImageSource FontFamily=OpenSansRegular, Glyph='&#x2302;', Size=20}">
+    <FlyoutItem Title="Home"
+                Icon="{AppThemeBinding Light=flyout_home_black.svg, Dark=flyout_home_white.svg}">
         <ShellContent
             ContentTemplate="{DataTemplate views:HomePage}"
             Route="Home" />
     </FlyoutItem>
 
-    <FlyoutItem Title="Music Library" Icon="{FontImageSource FontFamily=OpenSansRegular, Glyph='&#x266B;', Size=20}">
+    <FlyoutItem Title="Music Library"
+                Icon="{AppThemeBinding Light=flyout_music_black.svg, Dark=flyout_music_white.svg}">
         <ShellContent
             ContentTemplate="{DataTemplate views:MusicLibraryPage}"
             Route="MusicLibrary" />
@@ -83,49 +85,73 @@
 
     <MenuItem x:Name="MyPlaylistsMenuItem"
               Text="My Playlists"
-              IconImageSource="{FontImageSource FontFamily=OpenSansRegular, Glyph='&#x2630;', Size=20}"
+              IconImageSource="{AppThemeBinding Light=flyout_playlists_black.svg, Dark=flyout_playlists_white.svg}"
               Shell.FlyoutItemIsVisible="False"
               Clicked="OnMyPlaylistsClicked" />
 
     <MenuItem x:Name="LoginMenuItem"
               Text="Login"
+              IconImageSource="{AppThemeBinding Light=flyout_login_black.svg, Dark=flyout_login_white.svg}"
               Clicked="OnLoginClicked" />
 
     <MenuItem x:Name="RegisterMenuItem"
               Text="Register"
+              IconImageSource="{AppThemeBinding Light=flyout_register_black.svg, Dark=flyout_register_white.svg}"
               Clicked="OnRegisterClicked" />
 
     <MenuItem x:Name="ValidateEmailMenuItem"
               Text="Validate my Email"
+              IconImageSource="{AppThemeBinding Light=flyout_verify_email_black.svg, Dark=flyout_verify_email_white.svg}"
               Shell.FlyoutItemIsVisible="False"
               Clicked="OnValidateEmailClicked" />
 
     <MenuItem x:Name="AccountSettingsMenuItem"
               Text="Account Settings"
-              IconImageSource="{AppThemeBinding Light=account_settings_black.svg, Dark=account_settings_white.svg}"
+              IconImageSource="{AppThemeBinding Light=flyout_account_black.svg, Dark=flyout_account_white.svg}"
               Shell.FlyoutItemIsVisible="False"
               Clicked="OnAccountSettingsClicked" />
 
     <MenuItem x:Name="ConfigMenuItem"
               Text="Config"
-              IconImageSource="{FontImageSource FontFamily=OpenSansRegular, Glyph='&#x2699;', Size=20}"
+              IconImageSource="{AppThemeBinding Light=flyout_config_black.svg, Dark=flyout_config_white.svg}"
               Clicked="OnConfigClicked" />
 
     <MenuItem x:Name="ContactUsMenuItem"
               Text="Contact Us"
-              IconImageSource="{FontImageSource FontFamily=OpenSansRegular, Glyph='&#x2709;', Size=20}"
+              IconImageSource="{AppThemeBinding Light=flyout_contact_black.svg, Dark=flyout_contact_white.svg}"
               Shell.FlyoutItemIsVisible="False"
               Clicked="OnContactUsClicked" />
 
     <MenuItem x:Name="LogoutMenuItem"
               Text="Logout"
-              IconImageSource="{FontImageSource FontFamily=OpenSansRegular, Glyph='&#x21AA;', Size=20, Color={AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}}"
+              IconImageSource="{AppThemeBinding Light=flyout_logout_black.svg, Dark=flyout_logout_white.svg}"
               Shell.FlyoutItemIsVisible="False"
               Clicked="OnLogoutClicked" />
 
     <Shell.FlyoutFooter>
         <VerticalStackLayout Padding="16,8" Spacing="6"
                              BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
+
+            <Grid x:Name="UploadYourOwnMusicFooterRow"
+                  ColumnDefinitions="24,*"
+                  ColumnSpacing="12"
+                  Padding="0,4,0,8">
+                <Grid.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnUploadYourOwnMusicClicked" />
+                </Grid.GestureRecognizers>
+                <Image Grid.Column="0"
+                       Source="{AppThemeBinding Light=flyout_upload_black.svg, Dark=flyout_upload_white.svg}"
+                       HeightRequest="24"
+                       WidthRequest="24"
+                       Aspect="AspectFit"
+                       VerticalOptions="Center" />
+                <Label Grid.Column="1"
+                       Text="Upload Your Own Music"
+                       FontSize="14"
+                       FontAttributes="Bold"
+                       VerticalOptions="Center"
+                       TextColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}" />
+            </Grid>
 
             <BoxView HeightRequest="1" Color="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray600}}" Margin="0,0,0,4" />
 

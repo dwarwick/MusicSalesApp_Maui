@@ -158,15 +158,13 @@ public partial class NowPlayingView : ContentView
         {
             SongTitleLabel.Text = song!.SongTitle;
             ArtistNameLabel.Text = song.ArtistName;
-            AlbumArtImage.Source = string.IsNullOrEmpty(song.AlbumArtUrl)
-                ? null
-                : ImageSource.FromUri(new Uri(song.AlbumArtUrl));
+            AlbumArtworkView.AlbumArtUrl = song.AlbumArtUrl;
         }
         else
         {
             SongTitleLabel.Text = string.Empty;
             ArtistNameLabel.Text = string.Empty;
-            AlbumArtImage.Source = null;
+            AlbumArtworkView.AlbumArtUrl = null;
             UpdateEmptyStateText();
         }
     }

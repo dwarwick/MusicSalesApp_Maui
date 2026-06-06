@@ -87,8 +87,6 @@ public class HomeViewModelTests
             Assert.That(_viewModel.IsAuthenticated, Is.False);
             Assert.That(_viewModel.HasActiveSubscription, Is.False);
             Assert.That(_viewModel.IsEmailVerified, Is.False);
-            Assert.That(_viewModel.IsCreator, Is.False);
-            Assert.That(_viewModel.ShowArtistUploadHero, Is.True);
             Assert.That(_viewModel.SubscriptionPrice, Is.EqualTo("3.99"));
             Assert.That(_viewModel.IsLoading, Is.True);
         });
@@ -176,33 +174,6 @@ public class HomeViewModelTests
         _viewModel.IsEmailVerified = true;
         _viewModel.HasActiveSubscription = true;
         Assert.That(_viewModel.ShowSubscribeNow, Is.False);
-    }
-
-    [Test]
-    public void ShowArtistUploadHero_TrueWhenNotAuthenticated()
-    {
-        _viewModel.IsAuthenticated = false;
-        _viewModel.IsCreator = false;
-
-        Assert.That(_viewModel.ShowArtistUploadHero, Is.True);
-    }
-
-    [Test]
-    public void ShowArtistUploadHero_TrueWhenAuthenticatedNonCreator()
-    {
-        _viewModel.IsAuthenticated = true;
-        _viewModel.IsCreator = false;
-
-        Assert.That(_viewModel.ShowArtistUploadHero, Is.True);
-    }
-
-    [Test]
-    public void ShowArtistUploadHero_FalseWhenAuthenticatedCreator()
-    {
-        _viewModel.IsAuthenticated = true;
-        _viewModel.IsCreator = true;
-
-        Assert.That(_viewModel.ShowArtistUploadHero, Is.False);
     }
 
     [Test]
@@ -342,7 +313,6 @@ public class HomeViewModelTests
         {
             Assert.That(_viewModel.HasActiveSubscription, Is.True);
             Assert.That(_viewModel.SubscriptionPriceDisplay, Is.EqualTo("\u20B1205.00"));
-            Assert.That(_viewModel.SubscriptionHeroDescriptionText, Does.Contain("\u20B1205.00"));
             Assert.That(_viewModel.ShowSubscriptionContent, Is.False);
         });
         _mockBillingService.Verify(b => b.GetSubscriptionOfferAsync(), Times.Once);
@@ -377,7 +347,7 @@ public class HomeViewModelTests
         Assert.Multiple(() =>
         {
             Assert.That(_viewModel.SubscriptionPriceDisplay, Is.EqualTo("\u20B1205.00"));
-            Assert.That(_viewModel.SubscriptionHeroDescriptionText, Does.Contain("\u20B1205.00"));
+            Assert.That(_viewModel.SubscribeButtonText, Does.Contain("\u20B1205.00"));
         });
     }
 
@@ -560,7 +530,6 @@ public class HomeViewModelTests
             Assert.That(_viewModel.IsAuthenticated, Is.False);
             Assert.That(_viewModel.ShowSubscriptionOfferCard, Is.True);
             Assert.That(_viewModel.SubscriptionPriceDisplay, Is.Empty);
-            Assert.That(_viewModel.SubscriptionHeroDescriptionText, Does.Not.Contain("$4.99"));
             Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Contain("monthly price shown in Google Play"));
             Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Not.Contain("$4.99"));
             Assert.That(_viewModel.SubscriptionOfferPriceText, Is.Empty);
@@ -812,7 +781,6 @@ public class HomeViewModelTests
         _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
         _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(true);
         _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
-        _mockAuthService.Setup(a => a.IsCreator).Returns(true);
 
         await _viewModel.LoadCommand.ExecuteAsync(null);
 
@@ -821,8 +789,6 @@ public class HomeViewModelTests
             Assert.That(_viewModel.IsAuthenticated, Is.True);
             Assert.That(_viewModel.HasActiveSubscription, Is.True);
             Assert.That(_viewModel.IsEmailVerified, Is.True);
-            Assert.That(_viewModel.IsCreator, Is.True);
-            Assert.That(_viewModel.ShowArtistUploadHero, Is.False);
         });
     }
 
@@ -1050,16 +1016,6 @@ public class HomeViewModelTests
     }
 
     [Test]
-    public async Task OpenArtistUpload_UsesConfiguredApiBaseUrl()
-    {
-        _mockAppConfig.Setup(c => c.ApiBaseUrl).Returns("https://artists.streamtunes.net");
-
-        await _viewModel.OpenArtistUploadCommand.ExecuteAsync(null);
-
-        _mockBrowserService.Verify(b => b.OpenExternalAsync("https://artists.streamtunes.net"), Times.Once);
-    }
-
-    [Test]
     public void ManageSubscriptionText_UsesGenericAppleLabel()
     {
         _mockAuthService.SetupGet(a => a.BillingSource).Returns(BillingProviders.Apple);
@@ -1067,24 +1023,6 @@ public class HomeViewModelTests
         var viewModel = CreateViewModel();
 
         Assert.That(viewModel.ManageSubscriptionText, Is.EqualTo("Manage subscription with Apple ›"));
-    }
-
-    [Test]
-    public void SubscriptionAutoRenewalText_UsesGooglePlayLabelByDefault()
-    {
-        var viewModel = CreateViewModel();
-
-        Assert.That(viewModel.SubscriptionAutoRenewalText, Does.Contain("Google Play subscription settings"));
-    }
-
-    [Test]
-    public void SubscriptionAutoRenewalText_UsesAppleLabelForAppleBillingSource()
-    {
-        _mockAuthService.SetupGet(a => a.BillingSource).Returns(BillingProviders.Apple);
-
-        var viewModel = CreateViewModel();
-
-        Assert.That(viewModel.SubscriptionAutoRenewalText, Does.Contain("Apple Account subscription settings"));
     }
 
     [Test]

@@ -26,8 +26,7 @@
                       <Border HorizontalOptions="Center"
                         StrokeShape="RoundRectangle 12"
                         StrokeThickness="0">
-                       <Image Source="{Binding Song.AlbumArtUrl}"
-                           Aspect="AspectFill"
+                       <views:SongArtworkView AlbumArtUrl="{Binding Song.AlbumArtUrl}"
                                     HeightRequest="{StaticResource PlayerHeroArtSize}"
                                     WidthRequest="{StaticResource PlayerHeroArtSize}" />
                       </Border>

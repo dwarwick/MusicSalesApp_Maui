@@ -85,6 +85,8 @@ public partial class AppShell : Shell
 		Shell.SetFlyoutItemIsVisible(LogoutMenuItem, _authService.IsLoggedIn);
 		Shell.SetFlyoutItemIsVisible(MyPlaylistsMenuItem, _authService.IsLoggedIn && _authService.EmailConfirmed);
 		Shell.SetFlyoutItemIsVisible(ContactUsMenuItem, _authService.IsLoggedIn && _authService.EmailConfirmed);
+		UploadYourOwnMusicFooterRow.IsVisible =
+			FlyoutMenuVisibilityPolicy.ShouldShowUploadYourOwnMusic(_authService.IsLoggedIn, _authService.IsCreator);
 	}
 
 	protected override void OnNavigated(ShellNavigatedEventArgs args)
@@ -136,6 +138,12 @@ public partial class AppShell : Shell
 	{
 		Shell.Current.FlyoutIsPresented = false;
 		await GoToAsync(NavigationRoutes.MyPlaylists);
+	}
+
+	private async void OnUploadYourOwnMusicClicked(object? sender, EventArgs e)
+	{
+		Shell.Current.FlyoutIsPresented = false;
+		await _browserService.OpenExternalAsync(ExternalWebLinks.UploadYourOwnMusicUrl);
 	}
 
 	private async void OnContactUsClicked(object? sender, EventArgs e)

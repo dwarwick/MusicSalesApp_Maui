@@ -35,10 +35,9 @@
                         StrokeThickness="0"
                         HeightRequest="150"
                         WidthRequest="150">
-                    <Image Source="{Binding AlbumArtUrl}"
-                           Aspect="AspectFill"
-                           HeightRequest="150"
-                           WidthRequest="150" />
+                    <views:SongArtworkView AlbumArtUrl="{Binding AlbumArtUrl}"
+                                           HeightRequest="150"
+                                           WidthRequest="150" />
                 </Border>
                 <Image Source="ai_generated_badge.png"
                                              HeightRequest="40"
