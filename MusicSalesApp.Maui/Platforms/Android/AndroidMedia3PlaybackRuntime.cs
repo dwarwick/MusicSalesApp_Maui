@@ -18,6 +18,10 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
     private const int PlayerStateEnded = 4;
     private const int RepeatModeOff = 0;
     private const int RepeatModeAll = 2;
+    private const int PlayWhenReadyChangeReasonUserRequest = 1;
+    private const int PlayWhenReadyChangeReasonRemote = 4;
+    private static readonly TimeSpan UserTerminalStateReasonWindow = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan AppCommandUserReasonSuppressionWindow = TimeSpan.FromSeconds(1);
 
     private readonly Context _context;
     private readonly IExoPlayer _player;
@@ -29,6 +33,8 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
     private int _lastKnownIndex = -1;
     private int _lastFinishedIndex = -1;
     private long _lastFinishedUtcTicks;
+    private long _lastUserTerminalStateRequestUtcTicks;
+    private long _ignoreUserTerminalStateReasonUntilUtcTicks;
     private string? _lastFinishedStableCacheKey;
     private bool _currentItemBecamePlayable;
     private bool _lastIsPlaying;
@@ -94,6 +100,7 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
                 "Media3 PlayAsync(single) requested. Item={MediaItem}; {Snapshot}",
                 DescribeMediaItem(mediaItem),
                 CreatePlayerSnapshot());
+            SuppressAppCommandUserReason();
             _player.Stop();
             _player.ClearMediaItems();
             _logger.LogInformation("Media3 PlayAsync(single) reset previous player queue. {Snapshot}", CreatePlayerSnapshot());
@@ -130,6 +137,7 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
                 DescribeMediaItem(items.FirstOrDefault()),
                 CreatePlayerSnapshot());
 
+            SuppressAppCommandUserReason();
             _player.Stop();
             _player.ClearMediaItems();
             _logger.LogInformation("Media3 PlayAsync(queue) reset previous player queue. {Snapshot}", CreatePlayerSnapshot());
@@ -156,6 +164,7 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
         RunOnPlayerThreadAsync(() =>
         {
             _logger.LogInformation("Media3 PauseAsync requested. {Snapshot}", CreatePlayerSnapshot());
+            SuppressAppCommandUserReason();
             _player.Pause();
             PublishStateChanged();
         });
@@ -164,12 +173,14 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
         RunOnPlayerThreadAsync(() =>
         {
             _logger.LogInformation("Media3 StopAsync requested. {Snapshot}", CreatePlayerSnapshot());
+            SuppressAppCommandUserReason();
             _player.Stop();
             _player.ClearMediaItems();
             _queue.SetItems([]);
             _lastKnownIndex = -1;
             ResetCurrentItemPlaybackObservation("stop");
             PublishStateChanged();
+            StopPlaybackService("StopAsync");
         });
 
     public Task<bool> PlayNextAsync() =>
@@ -285,6 +296,19 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
         _logger.LogInformation("Media3 playback service/session ensured. {Snapshot}", CreatePlayerSnapshot());
     }
 
+    private void StopPlaybackService(string reason)
+    {
+        try
+        {
+            PlaybackMediaSessionService.RequestStop(_context);
+            _logger.LogInformation("Media3 playback service stop requested. Reason={Reason}; {Snapshot}", reason, CreatePlayerSnapshot());
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Media3 playback service stop request failed. Reason={Reason}; {Snapshot}", reason, CreatePlayerSnapshot());
+        }
+    }
+
     private async Task PublishPositionUpdatesAsync()
     {
         while (!_positionUpdatesCancellation.IsCancellationRequested)
@@ -376,7 +400,31 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
     private void PublishStateChanged() => PublishStateChanged(State);
 
     private void PublishStateChanged(PlaybackRuntimeState state) =>
-        StateChanged?.Invoke(this, new PlaybackRuntimeStateChangedEventArgs(state));
+        StateChanged?.Invoke(this, new PlaybackRuntimeStateChangedEventArgs(state, ResolveStateChangeReason(state)));
+
+    private PlaybackRuntimeStateChangeReason ResolveStateChangeReason(PlaybackRuntimeState state)
+    {
+        if (state != PlaybackRuntimeState.Paused && state != PlaybackRuntimeState.Stopped)
+        {
+            return PlaybackRuntimeStateChangeReason.Unknown;
+        }
+
+        if (ShouldSuppressUserTerminalReason())
+        {
+            return PlaybackRuntimeStateChangeReason.Unknown;
+        }
+
+        var lastUserRequestTicks = Volatile.Read(ref _lastUserTerminalStateRequestUtcTicks);
+        if (lastUserRequestTicks <= 0)
+        {
+            return PlaybackRuntimeStateChangeReason.Unknown;
+        }
+
+        var elapsedTicks = DateTime.UtcNow.Ticks - lastUserRequestTicks;
+        return elapsedTicks >= 0 && elapsedTicks <= UserTerminalStateReasonWindow.Ticks
+            ? PlaybackRuntimeStateChangeReason.UserRequest
+            : PlaybackRuntimeStateChangeReason.Unknown;
+    }
 
     private void PublishMediaItemChanged()
     {
@@ -403,13 +451,42 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
 
     private void OnPlayWhenReadyChanged(bool playWhenReady, int reason)
     {
+        var userTerminalReason = !playWhenReady && IsUserControlledPlayWhenReadyReason(reason);
+        if (userTerminalReason)
+        {
+            if (ShouldSuppressUserTerminalReason())
+            {
+                _logger.LogInformation(
+                    "Media3 play-when-ready user terminal reason suppressed for app command. PlayWhenReady={PlayWhenReady}; Reason={Reason}; {Snapshot}",
+                    playWhenReady,
+                    reason,
+                    CreatePlayerSnapshot());
+            }
+            else
+            {
+                Interlocked.Exchange(ref _lastUserTerminalStateRequestUtcTicks, DateTime.UtcNow.Ticks);
+            }
+        }
+
         _logger.LogInformation(
-            "Media3 play-when-ready changed. PlayWhenReady={PlayWhenReady}; Reason={Reason}; {Snapshot}",
+            "Media3 play-when-ready changed. PlayWhenReady={PlayWhenReady}; Reason={Reason}; UserTerminalReason={UserTerminalReason}; {Snapshot}",
             playWhenReady,
             reason,
+            userTerminalReason,
             CreatePlayerSnapshot());
         PublishStateChanged();
     }
+
+    private static bool IsUserControlledPlayWhenReadyReason(int reason) =>
+        reason == PlayWhenReadyChangeReasonUserRequest || reason == PlayWhenReadyChangeReasonRemote;
+
+    private void SuppressAppCommandUserReason() =>
+        Interlocked.Exchange(
+            ref _ignoreUserTerminalStateReasonUntilUtcTicks,
+            DateTime.UtcNow.Ticks + AppCommandUserReasonSuppressionWindow.Ticks);
+
+    private bool ShouldSuppressUserTerminalReason() =>
+        DateTime.UtcNow.Ticks <= Volatile.Read(ref _ignoreUserTerminalStateReasonUntilUtcTicks);
 
     private void OnPlaybackSuppressionReasonChanged(int playbackSuppressionReason)
     {

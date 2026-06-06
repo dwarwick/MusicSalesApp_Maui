@@ -9,6 +9,12 @@ public enum PlaybackRuntimeState
     Failed
 }
 
+public enum PlaybackRuntimeStateChangeReason
+{
+    Unknown,
+    UserRequest
+}
+
 public enum PlaybackRepeatMode
 {
     Off,
@@ -63,9 +69,15 @@ public sealed record PlaybackMediaItem(
         : PlaybackMediaLocation.Remote;
 }
 
-public sealed class PlaybackRuntimeStateChangedEventArgs(PlaybackRuntimeState state) : EventArgs
+public sealed class PlaybackRuntimeStateChangedEventArgs(
+    PlaybackRuntimeState state,
+    PlaybackRuntimeStateChangeReason reason = PlaybackRuntimeStateChangeReason.Unknown) : EventArgs
 {
     public PlaybackRuntimeState State { get; } = state;
+
+    public PlaybackRuntimeStateChangeReason Reason { get; } = reason;
+
+    public bool IsUserRequest => Reason == PlaybackRuntimeStateChangeReason.UserRequest;
 }
 
 public sealed class PlaybackMediaItemEventArgs(PlaybackMediaItem? mediaItem) : EventArgs

@@ -932,6 +932,79 @@ public class PlaybackServiceTests
         _mockMediaManager.Verify(m => m.PlayQueueItemAsync(1), Times.Once);
     }
 
+    [TestCase(PlaybackRuntimeState.Paused)]
+    [TestCase(PlaybackRuntimeState.Stopped)]
+    public async Task MediaManagerTerminalState_UserRequest_WithActivePlaylist_DoesNotRecover(PlaybackRuntimeState terminalState)
+    {
+        var service = CreateService(transientStopConfirmationDelay: TimeSpan.FromMilliseconds(40));
+        var songs = CreateTestPlaylist(3);
+
+        service.SetPlaylist(songs, 1);
+        _mockMediaManager.Invocations.Clear();
+        _mockPlaybackKeepAliveService.Invocations.Clear();
+
+        _mediaManagerState = terminalState;
+        _mockMediaManager.Raise(
+            m => m.StateChanged += null,
+            new PlaybackRuntimeStateChangedEventArgs(terminalState, PlaybackRuntimeStateChangeReason.UserRequest));
+
+        await Task.Delay(120);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(service.CurrentTrackIndex, Is.EqualTo(1));
+            Assert.That(service.CurrentSong, Is.SameAs(songs[1]));
+            Assert.That(service.IsPlaying, Is.False);
+        });
+        _mockPlaybackKeepAliveService.Verify(s => s.SetPlaybackActive(false), Times.Once);
+        _mockMediaManager.Verify(m => m.StopAsync(), terminalState == PlaybackRuntimeState.Stopped ? Times.Once : Times.Never);
+        _mockMediaManager.Verify(m => m.PlayAsync(It.IsAny<IEnumerable<PlaybackMediaItem>>()), Times.Never);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(It.IsAny<int>()), Times.Never);
+    }
+
+    [Test]
+    public async Task MediaManagerStopped_UserRequest_StopCleanupDoesNotReenterFromRuntimeStopEvent()
+    {
+        var service = CreateService(transientStopConfirmationDelay: TimeSpan.FromMilliseconds(40));
+        var songs = CreateTestPlaylist(3);
+
+        service.SetPlaylist(songs, 1);
+        _mockMediaManager.Invocations.Clear();
+        _mockPlaybackKeepAliveService.Invocations.Clear();
+
+        _mockMediaManager
+            .Setup(m => m.StopAsync())
+            .Callback(() =>
+            {
+                _mediaManagerState = PlaybackRuntimeState.Stopped;
+                _mockMediaManager.Raise(
+                    m => m.StateChanged += null,
+                    new PlaybackRuntimeStateChangedEventArgs(
+                        PlaybackRuntimeState.Stopped,
+                        PlaybackRuntimeStateChangeReason.UserRequest));
+            })
+            .Returns(Task.CompletedTask);
+
+        _mediaManagerState = PlaybackRuntimeState.Stopped;
+        _mockMediaManager.Raise(
+            m => m.StateChanged += null,
+            new PlaybackRuntimeStateChangedEventArgs(
+                PlaybackRuntimeState.Stopped,
+                PlaybackRuntimeStateChangeReason.UserRequest));
+
+        await Task.Delay(120);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(service.CurrentTrackIndex, Is.EqualTo(1));
+            Assert.That(service.CurrentSong, Is.SameAs(songs[1]));
+            Assert.That(service.IsPlaying, Is.False);
+        });
+        _mockMediaManager.Verify(m => m.StopAsync(), Times.Once);
+        _mockMediaManager.Verify(m => m.PlayAsync(It.IsAny<IEnumerable<PlaybackMediaItem>>()), Times.Never);
+        _mockMediaManager.Verify(m => m.PlayQueueItemAsync(It.IsAny<int>()), Times.Never);
+    }
+
     [Test]
     public async Task MediaManagerStopped_WithStaleBackwardNativeIndex_RecoversCurrentPlaylistIndex()
     {

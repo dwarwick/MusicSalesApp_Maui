@@ -33,6 +33,7 @@ public class PlaybackService : IPlaybackService
     private static readonly TimeSpan PositionSamplerDelayedTickLogThreshold = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan TerminalZeroPositionRecoveryWindow = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan StaleHighPositionAfterTrackResetSuppression = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan UserRequestedStopCleanupSuppressionWindow = TimeSpan.FromSeconds(2);
     private const int MaxTerminalZeroPositionRecoveryAttempts = 1;
     private const int QueueCacheResolutionConcurrency = 3;
     private const int BackgroundWarmAheadTrackCount = 12;
@@ -65,6 +66,8 @@ public class PlaybackService : IPlaybackService
     private int _subscribeCtaRequestInProgress;
     private int _terminalZeroPositionRecoveryAttemptCount;
     private int _terminalZeroPositionRecoverySongId;
+    private int _userRequestedStopCleanupInProgress;
+    private long _userRequestedStopCleanupSuppressUntilUtcTicks;
 
     // Stream tracking state
     private int _streamQualifyingSeconds = 30;
@@ -1459,9 +1462,10 @@ public class PlaybackService : IPlaybackService
         var previousIsPlaying = IsPlaying;
 
         _logger.LogInformation(
-            "Playback runtime state change received. PreviousObservedState={PreviousObservedState}; NewState={State}; PreviousIsPlaying={PreviousIsPlaying}; {Snapshot}",
+            "Playback runtime state change received. PreviousObservedState={PreviousObservedState}; NewState={State}; Reason={Reason}; PreviousIsPlaying={PreviousIsPlaying}; {Snapshot}",
             previousObservedState,
             e.State,
+            e.Reason,
             previousIsPlaying,
             CreatePlaybackSnapshot(CurrentSong, null));
 
@@ -1470,6 +1474,7 @@ public class PlaybackService : IPlaybackService
             case PlaybackRuntimeState.Playing:
                 CancelPendingBufferingStallRecovery();
                 CancelPendingTerminalPlaybackStateConfirmation();
+                ClearUserRequestedStopCleanupSuppression();
                 if (!IsPlaying) IsPlaying = true;
                 break;
             case PlaybackRuntimeState.Buffering:
@@ -1479,6 +1484,12 @@ public class PlaybackService : IPlaybackService
             case PlaybackRuntimeState.Paused:
             case PlaybackRuntimeState.Stopped:
                 CancelPendingBufferingStallRecovery();
+                if (e.IsUserRequest)
+                {
+                    ApplyUserRequestedTerminalPlaybackState(e.State);
+                    break;
+                }
+
                 if (IsPlaying && CurrentSong != null)
                 {
                     ScheduleTerminalPlaybackStateConfirmation(e.State);
@@ -1515,12 +1526,79 @@ public class PlaybackService : IPlaybackService
 
         _lastObservedPlaybackRuntimeState = e.State;
         _logger.LogInformation(
-            "Playback runtime state change applied. PreviousObservedState={PreviousObservedState}; NewState={State}; PreviousIsPlaying={PreviousIsPlaying}; CurrentIsPlaying={CurrentIsPlaying}; {Snapshot}",
+            "Playback runtime state change applied. PreviousObservedState={PreviousObservedState}; NewState={State}; Reason={Reason}; PreviousIsPlaying={PreviousIsPlaying}; CurrentIsPlaying={CurrentIsPlaying}; {Snapshot}",
             previousObservedState,
             e.State,
+            e.Reason,
             previousIsPlaying,
             IsPlaying,
             CreatePlaybackSnapshot(CurrentSong, null));
+    }
+
+    private void ApplyUserRequestedTerminalPlaybackState(PlaybackRuntimeState state)
+    {
+        CancelPendingPlaylistAdvance();
+        CancelPendingPlaybackRequest();
+        CancelPendingTerminalPlaybackStateConfirmation();
+
+        if (IsPlaying)
+        {
+            _logger.LogInformation(
+                "Playback runtime terminal state was requested by user/media controls; recovery will not restart playback. State={State}; {Snapshot}",
+                state,
+                CreatePlaybackSnapshot(CurrentSong, null));
+            IsPlaying = false;
+        }
+
+        if (state == PlaybackRuntimeState.Stopped && CurrentSong != null)
+        {
+            CancelQueuePreparation();
+            if (TryBeginUserRequestedStopCleanup())
+            {
+                ObserveMediaCommand(
+                    "Playback runtime.Stop from user-requested terminal state",
+                    StopRuntimeAfterUserRequestedTerminalStateAsync(),
+                    CurrentSong,
+                    null);
+            }
+        }
+    }
+
+    private bool TryBeginUserRequestedStopCleanup()
+    {
+        var nowTicks = DateTime.UtcNow.Ticks;
+        if (nowTicks <= Volatile.Read(ref _userRequestedStopCleanupSuppressUntilUtcTicks))
+        {
+            return false;
+        }
+
+        if (Interlocked.CompareExchange(ref _userRequestedStopCleanupInProgress, 1, 0) != 0)
+        {
+            return false;
+        }
+
+        Volatile.Write(
+            ref _userRequestedStopCleanupSuppressUntilUtcTicks,
+            nowTicks + UserRequestedStopCleanupSuppressionWindow.Ticks);
+        return true;
+    }
+
+    private async Task StopRuntimeAfterUserRequestedTerminalStateAsync()
+    {
+        try
+        {
+            await _playbackRuntime.StopAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _userRequestedStopCleanupInProgress, 0);
+        }
+    }
+
+    private void ClearUserRequestedStopCleanupSuppression()
+    {
+        Interlocked.Exchange(ref _userRequestedStopCleanupInProgress, 0);
+        Volatile.Write(ref _userRequestedStopCleanupSuppressUntilUtcTicks, 0);
     }
 
     private void OnMediaItemChanged(object? sender, PlaybackMediaItemEventArgs e)
