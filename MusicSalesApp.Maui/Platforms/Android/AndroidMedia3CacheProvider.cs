@@ -113,11 +113,6 @@ internal static class AndroidMedia3CacheProvider
             AndroidMedia3Constants.PlaybackNotificationChannelId,
             "Playback",
             NotificationImportance.Low));
-
-        notificationManager.CreateNotificationChannel(new NotificationChannel(
-            AndroidMedia3Constants.DownloadNotificationChannelId,
-            "Playback preparation",
-            NotificationImportance.Low));
     }
 
     public static void RemoveDownload(Context context, string stableCacheKey)

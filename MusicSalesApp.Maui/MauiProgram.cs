@@ -1,6 +1,8 @@
 ﻿using System.Reflection;
 using CommunityToolkit.Maui;
+#if !ANDROID
 using MediaManager;
+#endif
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Maui.LifecycleEvents;
@@ -176,10 +178,10 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IAdminMessageApiService, AdminMessageApiService>();
 		builder.Services.AddSingleton<IAdminMessageCoordinator, AdminMessageCoordinator>();
 		builder.Services.AddSingleton<INavigationService, NavigationService>();
-		builder.Services.AddSingleton<IMediaManager>(CrossMediaManager.Current);
 	#if ANDROID
 		builder.Services.AddSingleton<IPlatformPlaybackRuntime, MusicSalesApp.Maui.Platforms.Android.AndroidMedia3PlaybackRuntime>();
 	#else
+		builder.Services.AddSingleton<IMediaManager>(CrossMediaManager.Current);
 		builder.Services.AddSingleton<IPlatformPlaybackRuntime, MediaManagerPlaybackRuntime>();
 	#endif
 	#if ANDROID
@@ -202,13 +204,12 @@ public static class MauiProgram
 		builder.Services.AddSingleton<ITipAmountPicker, TipAmountPicker>();
 		builder.Services.AddSingleton<ITipFlowHandler, TipFlowHandler>();
 		builder.Services.AddSingleton<IAddToPlaylistHandler, AddToPlaylistHandler>();
-			// Initialize Plugin.MediaManager with the platform context
+			// Configure platform lifecycle hooks.
 			builder.ConfigureLifecycleEvents(events =>
 			{
 #if ANDROID
 				events.AddAndroid(android =>
 				{
-					android.OnCreate((activity, _) => CrossMediaManager.Current.Init(activity));
 					android.OnStop(activity =>
 					{
 						if (IPlatformApplication.Current?.Services.GetService(typeof(IAudioVisualizerService)) is IAudioVisualizerService audioVisualizerService)
