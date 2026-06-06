@@ -8,7 +8,6 @@ public static class PlaybackDiagnosticsLoggerFilter
     public const string QueuePreparationServiceCategoryPrefix = "MusicSalesApp.Maui.Services.QueuePreparationService";
     public const string AndroidMedia3CategoryPrefix = "MusicSalesApp.Maui.Platforms.Android.AndroidMedia3";
     public const string AndroidPlaybackSessionCategoryPrefix = "MusicSalesApp.Maui.Platforms.Android.PlaybackMediaSessionService";
-    public const string AndroidDownloadServiceCategoryPrefix = "MusicSalesApp.Maui.Platforms.Android.MusicDownloadService";
     public const string AndroidAudioVisualizerCategoryPrefix = "MusicSalesApp.Maui.Platforms.Android.AudioVisualizerService";
 
     private static readonly string[] DiagnosticCategoryPrefixes =
@@ -17,7 +16,6 @@ public static class PlaybackDiagnosticsLoggerFilter
         QueuePreparationServiceCategoryPrefix,
         AndroidMedia3CategoryPrefix,
         AndroidPlaybackSessionCategoryPrefix,
-        AndroidDownloadServiceCategoryPrefix,
         AndroidAudioVisualizerCategoryPrefix
     ];
 

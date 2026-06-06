@@ -1,4 +1,5 @@
 using Android.Content;
+using AndroidX.Media3.Common;
 using AndroidX.Media3.ExoPlayer.Offline;
 using Microsoft.Extensions.Logging;
 using MusicSalesApp.Maui.Services;
@@ -34,14 +35,27 @@ public sealed class AndroidMedia3AudioCacheService : IAudioCacheService
     {
         var stableCacheKey = GetStableCacheKey(song);
         var download = TryGetDownload(stableCacheKey);
-        var isReady = download?.State == Download.StateCompleted;
+        var downloadCompleted = download?.State == Download.StateCompleted;
+        var isReady = downloadCompleted && IsCacheFullyLocal(stableCacheKey, download);
+        if (downloadCompleted && !isReady)
+        {
+            _logger.LogWarning(
+                "Media3 download index reports completed content, but local cache spans are incomplete. SongId={SongId}; StableCacheKey={StableCacheKey}; BytesDownloaded={BytesDownloaded}; ContentLength={ContentLength}",
+                song.Id,
+                stableCacheKey,
+                download?.BytesDownloaded,
+                download?.ContentLength);
+        }
+
         _logger.LogDebug(
-            "Media3 cache status checked. SongId={SongId}; StableCacheKey={StableCacheKey}; State={State}; IsReady={IsReady}; IsPinned={IsPinned}",
+            "Media3 cache status checked. SongId={SongId}; StableCacheKey={StableCacheKey}; State={State}; IsReady={IsReady}; IsPinned={IsPinned}; BytesDownloaded={BytesDownloaded}; ContentLength={ContentLength}",
             song.Id,
             stableCacheKey,
             DownloadStateName(download?.State),
             isReady,
-            _pins.ContainsKey(stableCacheKey));
+            _pins.ContainsKey(stableCacheKey),
+            download?.BytesDownloaded,
+            download?.ContentLength);
 
         return new TrackCacheStatus(
             song.Id,
@@ -88,6 +102,8 @@ public sealed class AndroidMedia3AudioCacheService : IAudioCacheService
                 SanitizeMediaUri(status.LocalPlaybackUri));
             return status;
         }
+
+        await RemoveStaleCompletedDownloadAsync(stableCacheKey, cancellationToken).ConfigureAwait(false);
 
         if (!CanQueueDownload(song.Id, stableCacheKey))
         {
@@ -237,6 +253,53 @@ public sealed class AndroidMedia3AudioCacheService : IAudioCacheService
         {
             _logger.LogDebug(ex, "Unable to read Media3 download status. StableCacheKey={StableCacheKey}", stableCacheKey);
             return null;
+        }
+    }
+
+    private bool IsCacheFullyLocal(string stableCacheKey, Download? download)
+    {
+        try
+        {
+            var cache = AndroidMedia3CacheProvider.GetCache(_context);
+            var contentLength = download?.ContentLength ?? C.LengthUnset;
+
+            return contentLength > 0
+                && contentLength != C.LengthUnset
+                && cache.IsCached(stableCacheKey, 0, contentLength);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Unable to verify Media3 cache spans. StableCacheKey={StableCacheKey}", stableCacheKey);
+            return false;
+        }
+    }
+
+    private async Task RemoveStaleCompletedDownloadAsync(string stableCacheKey, CancellationToken cancellationToken)
+    {
+        var download = TryGetDownload(stableCacheKey);
+        if (download?.State != Download.StateCompleted || IsCacheFullyLocal(stableCacheKey, download))
+        {
+            return;
+        }
+
+        _logger.LogWarning(
+            "Removing stale Media3 completed download because cache files are missing or incomplete. StableCacheKey={StableCacheKey}; BytesDownloaded={BytesDownloaded}; ContentLength={ContentLength}",
+            stableCacheKey,
+            download.BytesDownloaded,
+            download.ContentLength);
+
+        AndroidMedia3CacheProvider.RemoveDownload(_context, stableCacheKey);
+
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var current = TryGetDownload(stableCacheKey);
+            if (current == null || current.State != Download.StateCompleted)
+            {
+                return;
+            }
+
+            await Task.Delay(DownloadPollInterval, cancellationToken).ConfigureAwait(false);
         }
     }
 

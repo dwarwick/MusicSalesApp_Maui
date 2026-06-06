@@ -6,7 +6,6 @@ using Android.Graphics;
 using Android.OS;
 using Android.Views;
 using Android.Views.InputMethods;
-using MediaManager;
 
 namespace MusicSalesApp.Maui;
 
@@ -70,8 +69,6 @@ public class MainActivity : MauiAppCompatActivity
         SetTheme(Resource.Style.MainThemeEdgeToEdge);
 
         base.OnCreate(savedInstanceState);
-
-        CrossMediaManager.Current.Init(this);
 
         // Register a fallback back-pressed callback so the system back button
         // moves the app to background instead of finishing the activity.

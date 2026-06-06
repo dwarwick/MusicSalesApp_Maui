@@ -1,3 +1,4 @@
+#if !ANDROID
 using System.Collections;
 using MediaManager;
 using MediaManager.Library;
@@ -224,3 +225,4 @@ public sealed class MediaManagerPlaybackRuntime : IPlatformPlaybackRuntime
         }
     }
 }
+#endif

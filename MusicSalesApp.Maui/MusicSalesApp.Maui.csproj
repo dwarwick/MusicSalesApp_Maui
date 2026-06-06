@@ -39,10 +39,9 @@
 		<ApplicationId>net.streamtunes.musicsalesapp.maui</ApplicationId>
 
 		<!-- Versions -->
-		<ApplicationDisplayVersion>1.0.69</ApplicationDisplayVersion>
-		<ApplicationVersion>80</ApplicationVersion>
+		<ApplicationDisplayVersion>1.0.71</ApplicationDisplayVersion>
+		<ApplicationVersion>82</ApplicationVersion>
 		<AndroidXMedia3Version>1.10.1</AndroidXMedia3Version>
-		<AndroidXWorkVersion>2.11.2</AndroidXWorkVersion>
 
 		<!-- To develop, package, and publish an app to the Microsoft Store, see: https://aka.ms/MauiTemplateUnpackaged -->
 		<WindowsPackageType>None</WindowsPackageType>
@@ -132,7 +131,6 @@
 	<ItemGroup>
 		<PackageReference Include="Azure.Storage.Blobs" Version="12.27.0" />
 		<PackageReference Include="CommunityToolkit.Maui" Version="14.0.1" />
-		<PackageReference Include="Plugin.MediaManager" Version="1.2.2" />
 		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.5" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.5" />
@@ -145,6 +143,10 @@
 		<PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.8.0" />
 	</ItemGroup>
 
+	<ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) != 'android'">
+		<PackageReference Include="Plugin.MediaManager" Version="1.2.2" />
+	</ItemGroup>
+
 	<!-- Android-only packages -->
 	<ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
 		<PackageReference Include="Xamarin.AndroidX.Biometric" Version="1.1.0.32" />
@@ -154,9 +156,7 @@
 		<PackageReference Include="Xamarin.AndroidX.Media3.Database" Version="$(AndroidXMedia3Version)" />
 		<PackageReference Include="Xamarin.AndroidX.Media3.Extractor" Version="$(AndroidXMedia3Version)" />
 		<PackageReference Include="Xamarin.AndroidX.Media3.ExoPlayer" Version="$(AndroidXMedia3Version)" />
-		<PackageReference Include="Xamarin.AndroidX.Media3.ExoPlayer.WorkManager" Version="$(AndroidXMedia3Version)" />
 		<PackageReference Include="Xamarin.AndroidX.Media3.Session" Version="$(AndroidXMedia3Version)" />
-		<PackageReference Include="Xamarin.AndroidX.Work.Runtime" Version="$(AndroidXWorkVersion)" />
 	</ItemGroup>
 
 </Project>

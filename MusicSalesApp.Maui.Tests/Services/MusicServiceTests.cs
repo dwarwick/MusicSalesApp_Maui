@@ -62,6 +62,22 @@ public class MusicServiceTests
         _mockLogger.Object,
         pendingStreamRetryInterval);
 
+    private static async Task WaitForAsync(Func<bool> condition)
+    {
+        var timeoutAt = DateTime.UtcNow.AddSeconds(2);
+        while (DateTime.UtcNow < timeoutAt)
+        {
+            if (condition())
+            {
+                return;
+            }
+
+            await Task.Delay(10);
+        }
+
+        Assert.Fail("Timed out waiting for the expected async test condition.");
+    }
+
     [Test]
     public async Task GetSongsAsync_ReturnsSongsFromApi()
     {
@@ -372,7 +388,9 @@ public class MusicServiceTests
         await service.RecordStreamAsync(42);
 
         _connectivity.NetworkAccess = NetworkAccess.Internet;
-        await Task.WhenAny(secondAttemptObserved.Task, Task.Delay(TimeSpan.FromSeconds(2)));
+        await WaitForAsync(() =>
+            secondAttemptObserved.Task.IsCompleted
+            && _preferenceStore.GetString(PendingStreamRecordsPreferenceKey) is null);
 
         Assert.Multiple(() =>
         {
