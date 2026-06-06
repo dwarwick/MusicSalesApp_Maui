@@ -13,6 +13,8 @@ Android playback was moved away from `Plugin.MediaManager` and onto a Media3 bas
 - Android sleep-safe playback is defined as local-ready playback. The app must not depend on fresh DNS/network access to advance into an item it has represented as sleep-safe.
 - Android now prepares the full active queue for sleep-safe playback, subject to the user cache limit and device free-space reserve.
 - If a remote item fails during a network/DNS constrained period, the app preserves queue position unless the next item is already local-ready.
+- Android now distinguishes user-requested media-control pause/stop from unexpected terminal playback states. Notification stop clears the native Media3 queue, releases the MediaSession, and removes the foreground playback notification.
+- Swiping the app from Android recents while audio is playing is expected to keep playback alive through the foreground media notification. The user stops background playback through the app or notification controls.
 - iOS/Mac/Windows still use the non-Android runtime for now, but should reuse the shared abstractions and readiness contract.
 
 ## Why This Work Was Done
@@ -78,6 +80,18 @@ Files:
 - Runtime events: state changed, media item changed, position changed, item finished, item failed.
 - `AudioSessionId`, used by the Android visualizer.
 - Repeat and shuffle modes.
+
+`PlaybackRuntimeStateChangedEventArgs` carries both:
+
+- `State`
+- `Reason`
+
+Current reasons:
+
+- `Unknown`
+- `UserRequest`
+
+This distinction matters. A terminal state caused by a notification/media-control stop is intentional and must not trigger playlist recovery. A terminal state with `Unknown` reason may still be treated as a transient platform stall and confirmed/recovered by `PlaybackService`.
 
 `IIndexedQueuePlaybackRuntime` is an optional extension used by runtimes that can start a native queue at a specific index without first starting item 0 and seeking later. Android Media3 implements this.
 
@@ -192,6 +206,9 @@ Responsibilities:
 - Expose `AudioSessionId` for `AudioVisualizerService`.
 - Suppress duplicate or startup false-positive finish events.
 - Map Media3 errors into `MediaItemFailed` events.
+- Translate Media3 `PlayWhenReady` user/remote stop reasons into `PlaybackRuntimeStateChangeReason.UserRequest`.
+- Suppress user-request markers around app-driven commands such as queue rebuilds and internal stop cleanup.
+- Clear the native queue and request MediaSession service teardown from `StopAsync`.
 
 `AndroidMedia3PlaybackRegistry` owns the singleton `ExoPlayer` and `MediaSession`.
 
@@ -207,6 +224,41 @@ Important design choice:
 - intent action `androidx.media3.session.MediaSessionService`
 
 It releases the MediaSession in `OnDestroy`.
+
+It also exposes an internal explicit stop path used by `AndroidMedia3PlaybackRuntime.StopAsync`:
+
+1. Remove the current MediaSession from the service.
+2. Release the singleton MediaSession through `AndroidMedia3PlaybackRegistry`.
+3. Stop foreground mode with notification removal.
+4. Stop the service.
+
+That explicit path is what prevents a stopped notification from disappearing briefly and then being recreated by SystemUI with stale queue metadata.
+
+### Android Notification And Recents Lifecycle
+
+Android foreground media playback has a different lifecycle than a normal foreground app screen.
+
+Expected behavior:
+
+- If audio is playing and the user swipes StreamTunes from recents, playback should continue and the media notification should remain. This is normal for a background music app.
+- If audio is not playing and the user swipes StreamTunes from recents, the app can disappear without a playback notification.
+- If the user pauses from the notification, `PlaybackService` treats the terminal state as intentional and does not run playlist recovery. The session may remain resumable.
+- If the user stops from the notification, `PlaybackService` treats the terminal state as intentional, disables recovery, calls runtime stop cleanup, clears the native Media3 queue, and tears down the foreground MediaSession service.
+
+The hard lifecycle invariant is:
+
+```text
+User-requested pause/stop must never be interpreted as an unexpected playback failure that should restart the queue.
+```
+
+Implementation notes:
+
+- Media3 reports user and remote media-control stops through `OnPlayWhenReadyChanged`.
+- Android runtime maps Media3 user/remote terminal reasons to `PlaybackRuntimeStateChangeReason.UserRequest`.
+- `PlaybackService.ApplyUserRequestedTerminalPlaybackState` cancels pending recovery and sets `IsPlaying=false`.
+- For `Stopped`, `PlaybackService` calls `_playbackRuntime.StopAsync()` once and suppresses duplicate cleanup for a short window.
+- Android runtime suppresses stale user-request markers during app-driven stop cleanup, so its own `StopAsync` event does not reenter the user-stop path.
+- `PlaybackMediaSessionService.RequestStop` removes foreground notification state and releases the MediaSession.
 
 ### Media3 Cache
 
@@ -344,6 +396,27 @@ Do not advance from a failed remote item into another remote-only item during co
 
 This prevents the old bad behavior where the player could burn through a queue with repeated host-resolution errors.
 
+### User-Requested Stop Is Not Failure Recovery
+
+Android notification and media-button controls can produce terminal runtime states while the shared service still has a current playlist. Those states are not failures when their reason is `UserRequest`.
+
+For user-requested terminal states:
+
+- Cancel pending playlist advance.
+- Cancel pending playback requests.
+- Cancel pending terminal-state confirmation.
+- Set `IsPlaying=false`.
+- Do not call terminal playlist recovery.
+- If the state is `Stopped`, cancel queue preparation and call runtime stop cleanup.
+
+For unknown terminal states:
+
+- Keep the existing transient stop confirmation behavior.
+- If playback position advances, ignore the transient terminal state.
+- If a playlist is active and the state appears to be an unexpected stop/stall, recovery can still reload the queue.
+
+This preserves both requirements: real stalls can recover, while explicit user stops stay stopped.
+
 ## User Cache Settings
 
 Files:
@@ -402,6 +475,13 @@ The Android release validation in this migration included:
   - no StreamTunes playback/DNS errors
   - no new downloads after readiness
   - no failed downloads
+- Notification/recents lifecycle validation:
+  - swiping the app from recents while audio was playing kept playback alive
+  - notification stop did not restart playback
+  - native Media3 queue was cleared after stop
+  - `dumpsys media_session` no longer listed a StreamTunes MediaSession after stop cleanup
+  - `dumpsys activity services net.streamtunes.musicsalesapp.maui` no longer listed `PlaybackMediaSessionService` after stop cleanup
+  - duplicate internal stop-cleanup events were suppressed
 
 There were DNS errors from other apps on the device during the test. Those were not StreamTunes playback failures.
 
@@ -418,6 +498,8 @@ Key tests added or updated during this work include:
 - `SetPlaylist_WhenCachedPlaybackUriIsAvailableForCurrentSong_UsesLocalQueueItemForStartTrack`
 - `SetPlaylist_WhenCachedPlaybackUrisAreAvailableForUpcomingTracks_UsesLocalQueueItemsForNativeHandoff`
 - `SetPlaylist_WhenRuntimeSupportsIndexedQueueStart_PassesStartIndexWithoutSeparateSeek`
+- `MediaManagerTerminalState_UserRequest_WithActivePlaylist_DoesNotRecover`
+- `MediaManagerStopped_UserRequest_StopCleanupDoesNotReenterFromRuntimeStopEvent`
 - shuffle/repeat/native-queue recovery tests in `PlaybackServiceTests`
 
 When extending iOS, add tests before relying on manual device results.
@@ -473,6 +555,7 @@ For production-quality iOS parity, implement an iOS native runtime behind `IPlat
 - interruption handling
 - route-change handling
 - lock-screen metadata and controls
+- remote-command pause and stop semantics
 - explicit queue index reporting
 - failure events mapped into `PlaybackMediaItemFailedEventArgs`
 
@@ -521,11 +604,14 @@ Use a real iPhone if possible. Simulators do not perfectly represent background 
 7. Confirm local-ready tracks advance without network.
 8. Confirm a remote-only successor does not get skipped into repeatedly. It should wait at the correct queue position.
 9. Confirm lock-screen metadata and controls update.
-10. Confirm preview-limit behavior while logged out still advances at 60 seconds without locking up the UI.
-11. Confirm repeat does not wrap early before queue exhaustion.
-12. Confirm shuffle prepares actual shuffled playback order, not library sort order.
-13. Confirm cache limit and free-space reserve are respected.
-14. Confirm app relaunch does not falsely claim readiness if files were removed.
+10. Confirm notification/remote-control pause does not trigger recovery/restart.
+11. Confirm notification/remote-control stop releases playback resources and does not resurrect playback.
+12. Confirm swiping/closing the foreground app while audio is playing follows the intended iOS background-audio behavior.
+13. Confirm preview-limit behavior while logged out still advances at 60 seconds without locking up the UI.
+14. Confirm repeat does not wrap early before queue exhaustion.
+15. Confirm shuffle prepares actual shuffled playback order, not library sort order.
+16. Confirm cache limit and free-space reserve are respected.
+17. Confirm app relaunch does not falsely claim readiness if files were removed.
 
 ### iOS Tests To Add
 
@@ -541,6 +627,8 @@ Add iOS/runtime-neutral tests mirroring Android behavior:
 - iOS repeat does not wrap before queue exhaustion.
 - iOS runtime updates metadata for lock screen.
 - iOS runtime releases player/session resources.
+- iOS user-requested pause/stop does not trigger playlist recovery.
+- iOS stop command tears down notification/remote-command state according to platform expectations.
 
 ## Important Log Lines
 
@@ -557,6 +645,10 @@ MediaItemFailed received
 Automatic recovery preserved queue position
 WaitingForNetwork
 Media3 player error
+Playback runtime state change received
+Reason=UserRequest
+Playback runtime.Stop from user-requested terminal state
+Media3 playback service stop requested
 ```
 
 Useful adb checks:

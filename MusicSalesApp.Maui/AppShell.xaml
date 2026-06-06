@@ -102,6 +102,7 @@
 
     <MenuItem x:Name="AccountSettingsMenuItem"
               Text="Account Settings"
+              IconImageSource="{AppThemeBinding Light=account_settings_black.svg, Dark=account_settings_white.svg}"
               Shell.FlyoutItemIsVisible="False"
               Clicked="OnAccountSettingsClicked" />
 
@@ -118,6 +119,7 @@
 
     <MenuItem x:Name="LogoutMenuItem"
               Text="Logout"
+              IconImageSource="{FontImageSource FontFamily=OpenSansRegular, Glyph='&#x21AA;', Size=20, Color={AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}}"
               Shell.FlyoutItemIsVisible="False"
               Clicked="OnLogoutClicked" />
 
