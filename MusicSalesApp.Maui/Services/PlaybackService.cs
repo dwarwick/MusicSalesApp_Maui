@@ -39,6 +39,7 @@ public class PlaybackService : IPlaybackService
     private const int BackgroundWarmAheadTrackCount = 12;
     private const int MaxLoggedPlaylistItems = 10;
     private const int MaxLoggedNativeQueueItems = 5;
+    private const string UnspecifiedQueueSourceDescription = "Unspecified queue source";
 
     private readonly IAuthService _authService;
     private readonly IMusicService _musicService;
@@ -46,6 +47,7 @@ public class PlaybackService : IPlaybackService
     private readonly IAudioCacheService _audioCacheService;
     private readonly IQueuePreparationService _queuePreparationService;
     private readonly IPlaybackKeepAliveService _playbackKeepAliveService;
+    private readonly IAnonymousFeaturedStreamStore? _anonymousFeaturedStreamStore;
     private readonly ILogger<PlaybackService> _logger;
     private readonly TimeSpan _playlistAdvanceFallbackDelay;
     private readonly TimeSpan _positionSamplerInterval;
@@ -121,7 +123,8 @@ public class PlaybackService : IPlaybackService
         TimeSpan? positionEventStaleThreshold = null,
         TimeSpan? transientStopConfirmationDelay = null,
         TimeSpan? subscriptionStatusRefreshInterval = null,
-        TimeSpan? bufferingStallRecoveryDelay = null)
+        TimeSpan? bufferingStallRecoveryDelay = null,
+        IAnonymousFeaturedStreamStore? anonymousFeaturedStreamStore = null)
     {
         _authService = authService;
         _musicService = musicService;
@@ -129,6 +132,7 @@ public class PlaybackService : IPlaybackService
         _audioCacheService = audioCacheService;
         _queuePreparationService = queuePreparationService;
         _playbackKeepAliveService = playbackKeepAliveService;
+        _anonymousFeaturedStreamStore = anonymousFeaturedStreamStore;
         _logger = logger;
         _playlistAdvanceFallbackDelay = playlistAdvanceFallbackDelay ?? DefaultPlaylistAdvanceFallbackDelay;
         _positionSamplerInterval = positionSamplerInterval ?? DefaultPositionSamplerInterval;
@@ -484,17 +488,51 @@ public class PlaybackService : IPlaybackService
 
     public void SetPlaylist(List<SongDto> songs, int startIndex)
     {
-        if (songs.Count == 0) return;
+        SetPlaylist(songs, startIndex, PlaybackQueueStartBehavior.RestartAtRequestedIndex, UnspecifiedQueueSourceDescription);
+    }
+
+    public void SetPlaylist(List<SongDto> songs, int startIndex, string queueSourceDescription)
+    {
+        SetPlaylist(songs, startIndex, PlaybackQueueStartBehavior.RestartAtRequestedIndex, queueSourceDescription);
+    }
+
+    public void SetPlaylist(List<SongDto> songs, int startIndex, PlaybackQueueStartBehavior startBehavior)
+    {
+        SetPlaylist(songs, startIndex, startBehavior, UnspecifiedQueueSourceDescription);
+    }
+
+    public void SetPlaylist(List<SongDto> songs, int startIndex, PlaybackQueueStartBehavior startBehavior, string queueSourceDescription)
+    {
+        var normalizedQueueSource = NormalizeQueueSourceDescription(queueSourceDescription);
+        if (songs.Count == 0)
+        {
+            _logger.LogInformation(
+                "SetPlaylist ignored because requested queue is empty. QueueSource={QueueSource}; SongCount=0; StartIndex={StartIndex}; StartBehavior={StartBehavior}",
+                normalizedQueueSource,
+                startIndex,
+                startBehavior);
+            return;
+        }
 
         CancelPendingPlaylistAdvance();
         _logger.LogInformation(
-            "SetPlaylist requested. SongCount={SongCount}; StartIndex={StartIndex}; SongIds={SongIds}",
+            "SetPlaylist requested. QueueSource={QueueSource}; SongCount={SongCount}; StartIndex={StartIndex}; StartBehavior={StartBehavior}; QueueItems={QueueItems}; SongIds={SongIds}",
+            normalizedQueueSource,
             songs.Count,
             startIndex,
+            startBehavior,
+            DescribeQueueItems(songs),
             string.Join(",", songs.Select(song => song.Id)));
 
         _playlistSourceOrder = new List<SongDto>(songs);
-        var selectedIndex = Math.Clamp(startIndex, 0, songs.Count - 1);
+        var currentSongIndex = CurrentSong == null
+            ? -1
+            : _playlistSourceOrder.FindIndex(song => song.Id == CurrentSong.Id);
+        var shouldPreserveCurrentSong = startBehavior == PlaybackQueueStartBehavior.PreserveCurrentSongIfPresent &&
+                                        currentSongIndex >= 0;
+        var selectedIndex = shouldPreserveCurrentSong
+            ? currentSongIndex
+            : Math.Clamp(startIndex, 0, songs.Count - 1);
         var selectedSong = _playlistSourceOrder[selectedIndex];
         _playlist = BuildPlaybackPlaylist(_playlistSourceOrder, selectedSong.Id);
         _currentTrackIndex = ResolveRequiredPlaylistIndex(_playlist, selectedSong.Id);
@@ -504,6 +542,31 @@ public class PlaybackService : IPlaybackService
         RaiseStateChanged(nameof(CurrentTrackIndex));
 
         var song = _playlist[_currentTrackIndex];
+        if (shouldPreserveCurrentSong)
+        {
+            var wasPlaying = IsPlaying;
+            var currentPosition = ResolveCurrentPlaybackPosition();
+            var preserveRequestGeneration = BeginPlaybackRequest();
+            CurrentSong = song;
+            if (!ShouldLimitPreviewForSong(song))
+            {
+                PreviewLimitReached = false;
+            }
+
+            _playbackRuntime.RepeatMode = PlaybackRepeatMode.All;
+            _playbackRuntime.ShuffleMode = PlaybackShuffleMode.Off;
+            ReplaceNativeQueuePreservingCurrentPlayback(
+                _playlist,
+                _currentTrackIndex,
+                preserveRequestGeneration,
+                currentPosition,
+                wasPlaying);
+            StartQueuePreparation(_playlist, _currentTrackIndex, QueuePreparationMode.SleepSafe);
+            WarmPlaybackCacheInBackground(_playlist, _currentTrackIndex);
+            LogPlaybackSnapshot("SetPlaylist preserved current playback", song, null);
+            return;
+        }
+
         ResetStreamTracking(song.Id);
         ResetPlaybackState();
         CurrentSong = song;
@@ -535,24 +598,34 @@ public class PlaybackService : IPlaybackService
 
     public void PlayNext()
     {
-        if (!HasPlaylist) return;
+        if (!HasPlaylist || _playlist == null) return;
+
+        var nextIndex = ResolveSequentialNextTrackIndex(_currentTrackIndex);
+        if (!nextIndex.HasValue)
+        {
+            LogPlaybackSnapshot("PlayNext ignored because there is no next track", CurrentSong, null);
+            return;
+        }
 
         ClearQueueSelectionSuppression();
-        CancelPendingPlaylistAdvance();
         LogPlaybackSnapshot("PlayNext requested", CurrentSong, null);
-        ObserveMediaCommand("Playback runtime.PlayNext", _playbackRuntime.PlayNextAsync(), DescribeBooleanResult, CurrentSong, null);
-        // State updated via OnMediaItemChanged when platform playback runtime advances
+        PlayTrackAtIndex(nextIndex.Value);
     }
 
     public void PlayPrevious()
     {
-        if (!HasPlaylist) return;
+        if (!HasPlaylist || _playlist == null) return;
+
+        var previousIndex = ResolveSequentialPreviousTrackIndex(_currentTrackIndex);
+        if (!previousIndex.HasValue)
+        {
+            LogPlaybackSnapshot("PlayPrevious ignored because there is no previous track", CurrentSong, null);
+            return;
+        }
 
         ClearQueueSelectionSuppression();
-        CancelPendingPlaylistAdvance();
         LogPlaybackSnapshot("PlayPrevious requested", CurrentSong, null);
-        ObserveMediaCommand("Playback runtime.PlayPrevious", _playbackRuntime.PlayPreviousAsync(), DescribeBooleanResult, CurrentSong, null);
-        // State updated via OnMediaItemChanged when platform playback runtime goes back
+        PlayTrackAtIndex(previousIndex.Value);
     }
 
     public void PlayTrackAtIndex(int index)
@@ -589,7 +662,7 @@ public class PlaybackService : IPlaybackService
 
         var song = _playlist[index];
         ResetStreamTracking(song.Id);
-        PreviewLimitReached = false;
+        ResetPlaybackState();
         CurrentSong = song;
         IsPlaying = true;
         QueueImmediateSubscriptionStatusRefreshForPlayback(TimeSpan.Zero);
@@ -744,6 +817,12 @@ public class PlaybackService : IPlaybackService
             return;
         }
 
+        if (IsAnonymousFeaturedStreamAlreadyRecorded(CurrentSong))
+        {
+            _streamRecordedForCurrentSong = true;
+            return;
+        }
+
         if (CurrentSong.Id != _streamTrackingSongId)
         {
             ResetStreamTracking(CurrentSong.Id);
@@ -771,8 +850,30 @@ public class PlaybackService : IPlaybackService
         if (_continuousPlaybackSeconds >= GetCurrentStreamQualifyingSeconds())
         {
             _streamRecordedForCurrentSong = true;
+            MarkAnonymousFeaturedStreamRecorded(CurrentSong);
             _ = RecordQualifiedStreamAsync(CurrentSong.Id);
         }
+    }
+
+    private bool IsAnonymousFeaturedStreamAlreadyRecorded(SongDto song)
+    {
+        return IsAnonymousFeaturedStream(song) &&
+               _anonymousFeaturedStreamStore?.HasRecordedFeaturedStream(song.Id) == true;
+    }
+
+    private void MarkAnonymousFeaturedStreamRecorded(SongDto song)
+    {
+        if (IsAnonymousFeaturedStream(song))
+        {
+            _anonymousFeaturedStreamStore?.MarkFeaturedStreamRecorded(song.Id);
+        }
+    }
+
+    private bool IsAnonymousFeaturedStream(SongDto song)
+    {
+        return song.DisplayOnHomePage &&
+               !_authService.IsLoggedIn &&
+               !_authService.HasActiveSubscription;
     }
 
     private async Task RecordQualifiedStreamAsync(int songMetadataId)
@@ -1165,9 +1266,16 @@ public class PlaybackService : IPlaybackService
     {
         if (CurrentSong == null || !IsPlaying)
             return false;
+        return ShouldLimitPreviewForSong(CurrentSong);
+    }
+
+    private bool ShouldLimitPreviewForSong(SongDto song)
+    {
+        if (song.DisplayOnHomePage)
+            return false;
         if (HasPlaybackEntitlement())
             return false;
-        if (_authService.IsCreator && CurrentSong.CreatorUserId == _authService.UserId)
+        if (_authService.IsCreator && song.CreatorUserId == _authService.UserId)
             return false;
         return true;
     }
@@ -2566,6 +2674,98 @@ public class PlaybackService : IPlaybackService
         }
     }
 
+    private void ReplaceNativeQueuePreservingCurrentPlayback(
+        List<SongDto> playlistSnapshot,
+        int currentTrackIndex,
+        int requestGeneration,
+        TimeSpan currentPosition,
+        bool playWhenReady)
+    {
+        if (_playbackRuntime is not IQueueReplacementPlaybackRuntime queueReplacementRuntime)
+        {
+            _logger.LogInformation(
+                "Playback runtime does not support native queue replacement during preserved queue sync. {Snapshot}",
+                CreatePlaybackSnapshot(CurrentSong, null));
+            return;
+        }
+
+        _ = ReplaceNativeQueuePreservingCurrentPlaybackAsync(
+            queueReplacementRuntime,
+            playlistSnapshot,
+            currentTrackIndex,
+            requestGeneration,
+            currentPosition,
+            playWhenReady);
+    }
+
+    private async Task ReplaceNativeQueuePreservingCurrentPlaybackAsync(
+        IQueueReplacementPlaybackRuntime queueReplacementRuntime,
+        List<SongDto> playlistSnapshot,
+        int currentTrackIndex,
+        int requestGeneration,
+        TimeSpan currentPosition,
+        bool playWhenReady)
+    {
+        if (playlistSnapshot.Count == 0 || currentTrackIndex < 0 || currentTrackIndex >= playlistSnapshot.Count)
+        {
+            return;
+        }
+
+        var currentSong = playlistSnapshot[currentTrackIndex];
+        var playbackUris = ResolveImmediateQueuePlaybackUris(playlistSnapshot);
+        if (!IsPlaybackRequestCurrent(requestGeneration) ||
+            !ReferenceEquals(_playlist, playlistSnapshot) ||
+            _currentTrackIndex != currentTrackIndex ||
+            CurrentSong?.Id != currentSong.Id)
+        {
+            _logger.LogInformation(
+                "Preserved native queue replacement skipped because a newer playback request superseded it. CurrentIndex={CurrentIndex}; RequestGeneration={RequestGeneration}; CurrentGeneration={CurrentGeneration}; {Snapshot}",
+                currentTrackIndex,
+                requestGeneration,
+                Volatile.Read(ref _playbackRequestGeneration),
+                CreatePlaybackSnapshot(CurrentSong, null));
+            return;
+        }
+
+        _urlToSong.Clear();
+        var items = playlistSnapshot.Select((song, index) => CreateMediaItem(song, playbackUris[index])).ToArray();
+
+        _logger.LogInformation(
+            "Replacing native playback queue while preserving current song. CurrentIndex={CurrentIndex}; QueueCount={QueueCount}; CurrentPosition={CurrentPosition}; PlayWhenReady={PlayWhenReady}; QueueItems={QueueItems}; {Snapshot}",
+            currentTrackIndex,
+            items.Length,
+            currentPosition,
+            playWhenReady,
+            DescribeMediaItems(items),
+            CreatePlaybackSnapshot(CurrentSong, null));
+
+        var replaceQueueTask = queueReplacementRuntime.ReplaceQueueAsync(
+            items,
+            currentTrackIndex,
+            currentPosition,
+            playWhenReady);
+        ObserveMediaCommand(
+            "Playback runtime.ReplaceQueue preserving current song",
+            replaceQueueTask,
+            DescribeMediaItem,
+            CurrentSong,
+            null);
+
+        try
+        {
+            await replaceQueueTask.ConfigureAwait(false);
+        }
+        catch
+        {
+            return;
+        }
+
+        if (playWhenReady)
+        {
+            ScheduleBufferingStallRecoveryAfterQueueRebuild(requestGeneration, playlistSnapshot, currentTrackIndex);
+        }
+    }
+
     private void ScheduleBufferingStallRecoveryAfterQueueRebuild(int requestGeneration, List<SongDto> playlistSnapshot, int trackIndex)
     {
         if (!IsPlaybackRequestCurrent(requestGeneration) ||
@@ -2797,6 +2997,19 @@ public class PlaybackService : IPlaybackService
             (Path.IsPathRooted(mediaUri) || mediaUri.StartsWith("file://", StringComparison.OrdinalIgnoreCase));
     }
 
+    private TimeSpan ResolveCurrentPlaybackPosition()
+    {
+        try
+        {
+            return _playbackRuntime.Position;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Unable to read playback runtime position while preserving queue; using last observed position.");
+            return _playbackPosition;
+        }
+    }
+
     private string? TryGetNativeCurrentMediaUri()
     {
         try
@@ -2875,6 +3088,19 @@ public class PlaybackService : IPlaybackService
             return finishedTrackIndex + 1;
 
         return IsRepeatEnabled ? 0 : null;
+    }
+
+    private int? ResolveSequentialPreviousTrackIndex(int currentTrackIndex)
+    {
+        if (_playlist == null || _playlist.Count == 0)
+            return null;
+
+        if (currentTrackIndex > 0 && currentTrackIndex < _playlist.Count)
+            return currentTrackIndex - 1;
+
+        return currentTrackIndex == 0 && IsRepeatEnabled
+            ? _playlist.Count - 1
+            : null;
     }
 
     private bool ShouldRecoverAdvancedPlaylistTrack()
@@ -3388,6 +3614,30 @@ public class PlaybackService : IPlaybackService
         }
 
         return value.Replace(";", ",", StringComparison.Ordinal).Replace("|", "/", StringComparison.Ordinal);
+    }
+
+    private static string NormalizeQueueSourceDescription(string? description)
+    {
+        return string.IsNullOrWhiteSpace(description)
+            ? UnspecifiedQueueSourceDescription
+            : SanitizeLogText(description.Trim());
+    }
+
+    private static string DescribeQueueItems(IReadOnlyList<SongDto> songs)
+    {
+        if (songs.Count == 0)
+        {
+            return "[]";
+        }
+
+        var items = songs
+            .Take(MaxLoggedPlaylistItems)
+            .Select(song => $"{song.Id}:{SanitizeLogText(song.SongTitle)} by {SanitizeLogText(song.ArtistName)}");
+        var description = string.Join(" | ", items);
+
+        return songs.Count > MaxLoggedPlaylistItems
+            ? $"{description} | ... +{songs.Count - MaxLoggedPlaylistItems} more"
+            : description;
     }
 
     // --- Helpers ---

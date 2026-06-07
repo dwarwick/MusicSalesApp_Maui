@@ -393,23 +393,62 @@ public partial class MusicLibraryViewModel : ObservableObject
         {
             Songs.Add(song);
         }
+
+        SynchronizeVisibleQueue();
     }
 
     private void SynchronizeVisibleQueue()
     {
-        if (!_playbackService.HasPlaylist || !_playbackService.IsPlaying || Songs.Count == 0)
+        if (!_playbackService.HasPlaylist || Songs.Count == 0)
         {
             return;
         }
 
         var visibleSongs = Songs.ToList();
-        if (PlaybackQueueSelection.HasEquivalentActiveQueue(_playbackService, visibleSongs))
+        var currentSongOutsideVisibleQueue = PlaybackQueueSelection.HasCurrentSongOutsideQueue(_playbackService, visibleSongs);
+        if (PlaybackQueueSelection.HasEquivalentActiveQueue(_playbackService, visibleSongs) && !currentSongOutsideVisibleQueue)
         {
             return;
         }
 
         var startIndex = PlaybackQueueSelection.ResolveCurrentSongIndex(_playbackService, visibleSongs);
-        _playbackService.SetPlaylist(visibleSongs, startIndex);
+        _playbackService.SetPlaylist(
+            visibleSongs,
+            startIndex,
+            currentSongOutsideVisibleQueue
+                ? PlaybackQueueStartBehavior.RestartAtRequestedIndex
+                : PlaybackQueueStartBehavior.PreserveCurrentSongIfPresent,
+            BuildVisibleQueueDescription());
+    }
+
+    private string BuildVisibleQueueDescription()
+    {
+        var filters = new List<string>();
+
+        if (SelectedGenres.Count > 0)
+        {
+            filters.Add($"Genres: {string.Join(", ", SelectedGenres.OrderBy(genre => genre, StringComparer.OrdinalIgnoreCase))}");
+        }
+
+        if (SelectedArtists.Count > 0)
+        {
+            filters.Add($"Artists: {string.Join(", ", SelectedArtists.OrderBy(artist => artist, StringComparer.OrdinalIgnoreCase))}");
+        }
+
+        var musicTypeFilter = _selectedAiFilter switch
+        {
+            AiFilterAiOnly => "Music Type: AI Music",
+            AiFilterNonAiOnly => "Music Type: Non-AI Music",
+            _ => null
+        };
+        if (musicTypeFilter != null)
+        {
+            filters.Add(musicTypeFilter);
+        }
+
+        return filters.Count == 0
+            ? PlaybackQueueDescriptions.UnfilteredMediaLibrary
+            : PlaybackQueueDescriptions.FilteredMediaLibrary(filters);
     }
 
     private IEnumerable<SongDto> FilterSongsByAiSelection(IEnumerable<SongDto> songs)
@@ -672,7 +711,6 @@ public partial class MusicLibraryViewModel : ObservableObject
             RefreshAvailableGenres();
             RefreshAvailableArtists();
             ApplyFilters();
-            SynchronizeVisibleQueue();
 
             // Load like counts and user like status in parallel
             await Task.WhenAll(
@@ -794,7 +832,8 @@ public partial class MusicLibraryViewModel : ObservableObject
             Songs,
             _mediaPlaybackOnboardingService,
             _playbackService,
-            startSong);
+            startSong,
+            BuildVisibleQueueDescription());
 
     [RelayCommand]
     private void TogglePlayPause() => _playbackService.TogglePlayPause();

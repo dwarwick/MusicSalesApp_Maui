@@ -34,6 +34,12 @@ internal static class PlaybackQueueSelection
         return songs.FirstOrDefault(song => song.Id == currentSongId.Value);
     }
 
+    public static bool HasCurrentSongOutsideQueue(IPlaybackService playbackService, IReadOnlyList<SongDto> songs)
+    {
+        var currentSongId = playbackService.CurrentSong?.Id;
+        return currentSongId.HasValue && !songs.Any(song => song.Id == currentSongId.Value);
+    }
+
     public static int ResolveCurrentSongIndex(IPlaybackService playbackService, IReadOnlyList<SongDto> songs)
     {
         var currentSongId = playbackService.CurrentSong?.Id;

@@ -239,14 +239,20 @@ public partial class NowPlayingView : ContentView
 
     private void UpdatePreviewMarker()
     {
-        var hasSubscription = _authService?.HasActiveSubscription == true;
-        if (hasSubscription || _playbackService?.CurrentSong == null)
+        var playbackService = _playbackService;
+        var authService = _authService;
+        var hasSubscription = authService?.HasActiveSubscription == true;
+        var currentSong = playbackService?.CurrentSong;
+        var isFeatured = currentSong?.DisplayOnHomePage == true;
+        var isCreatorOwnSong = authService?.IsCreator == true &&
+                               currentSong?.CreatorUserId == authService.UserId;
+        if (hasSubscription || isFeatured || isCreatorOwnSong || currentSong == null || playbackService == null)
         {
             PreviewMarker.IsVisible = false;
             return;
         }
 
-        var durationText = _playbackService.FormattedDuration;
+        var durationText = playbackService.FormattedDuration;
         if (durationText == "0:00")
         {
             PreviewMarker.IsVisible = false;

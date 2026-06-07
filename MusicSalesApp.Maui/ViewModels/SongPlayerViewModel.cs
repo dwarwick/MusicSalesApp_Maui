@@ -67,9 +67,11 @@ public partial class SongPlayerViewModel : ObservableObject
     public IPlaybackService PlaybackService => _playbackService;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsCurrentSongPreviewLimited))]
     public partial SongDto? Song { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsCurrentSongPreviewLimited))]
     public partial bool HasActiveSubscription { get; set; }
 
     [ObservableProperty]
@@ -128,6 +130,12 @@ public partial class SongPlayerViewModel : ObservableObject
 
     public string ShareUrl => Song?.ShareUrl ?? string.Empty;
 
+    public bool IsCurrentSongPreviewLimited =>
+        Song != null &&
+        !HasActiveSubscription &&
+        !Song.DisplayOnHomePage &&
+        !(_authService.IsCreator && Song.CreatorUserId == _authService.UserId);
+
     partial void OnSongChanged(SongDto? value)
     {
         if (value != null)
@@ -168,13 +176,18 @@ public partial class SongPlayerViewModel : ObservableObject
         // Preserve current playback state when navigation lands on the active song.
         if (isCurrentSong)
         {
+            _playbackService.SetPlaylist(
+                [song],
+                0,
+                PlaybackQueueStartBehavior.PreserveCurrentSongIfPresent,
+                PlaybackQueueDescriptions.SongPage(song));
             return;
         }
 
         await _mediaPlaybackOnboardingService.EnsureBackgroundPlaybackExplainedAsync();
 
-        // Start playback for a different song.
-        _playbackService.PlaySong(song);
+        // Start playback for a different song and shrink the active queue to this page.
+        _playbackService.SetPlaylist([song], 0, PlaybackQueueDescriptions.SongPage(song));
     }
 
     [RelayCommand]
@@ -201,7 +214,8 @@ public partial class SongPlayerViewModel : ObservableObject
             [Song],
             _mediaPlaybackOnboardingService,
             _playbackService,
-            Song);
+            Song,
+            PlaybackQueueDescriptions.SongPage(Song));
     }
 
     [RelayCommand]

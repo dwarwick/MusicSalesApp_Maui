@@ -157,6 +157,7 @@ public static class MauiProgram
 		// Register services
 		builder.Services.AddSingleton<IConnectivity>(Connectivity.Current);
 		builder.Services.AddSingleton<IAppPreferenceStore, AppPreferenceStore>();
+		builder.Services.AddSingleton<IAnonymousFeaturedStreamStore, AnonymousFeaturedStreamStore>();
 		builder.Services.AddSingleton<IPermissionExplainerService, PermissionExplainerService>();
 		builder.Services.AddSingleton<IMicrophonePermissionService, MicrophonePermissionService>();
 		builder.Services.AddSingleton<IAuthService, AuthService>();

@@ -50,8 +50,11 @@ public class SongPlayerViewModelTests
 
         _viewModel.Song = song;
 
-        // PlaySong is called from LoadSongDetailsAsync
-        _mockPlaybackService.Verify(p => p.PlaySong(song), Times.Once);
+        _mockPlaybackService.Verify(p => p.SetPlaylist(
+            It.Is<List<SongDto>>(songs => songs.Count == 1 && songs[0] == song),
+            0,
+            "Song page: Test Song"), Times.Once);
+        _mockPlaybackService.Verify(p => p.PlaySong(It.IsAny<SongDto>()), Times.Never);
     }
 
     [Test]
@@ -63,6 +66,11 @@ public class SongPlayerViewModelTests
 
         _viewModel.Song = song;
 
+        _mockPlaybackService.Verify(p => p.SetPlaylist(
+            It.Is<List<SongDto>>(songs => songs.Count == 1 && songs[0] == song),
+            0,
+            PlaybackQueueStartBehavior.PreserveCurrentSongIfPresent,
+            "Song page: Test Song"), Times.Once);
         _mockPlaybackService.Verify(p => p.PlaySong(It.IsAny<SongDto>()), Times.Never);
         _mockMediaPlaybackOnboardingService.Verify(s => s.EnsureBackgroundPlaybackExplainedAsync(), Times.Never);
     }
@@ -84,13 +92,16 @@ public class SongPlayerViewModelTests
     {
         var song = new SongDto { Id = 1, SongTitle = "Test" };
         _viewModel.Song = song;
+        _mockPlaybackService.Invocations.Clear();
+        _mockMediaPlaybackOnboardingService.Invocations.Clear();
 
         await _viewModel.PlaySongCommand.ExecuteAsync(null);
 
         _mockPlaybackService.Verify(p => p.SetPlaylist(
             It.Is<List<SongDto>>(songs => songs.Count == 1 && songs[0].Id == 1),
-            0), Times.Once);
-        _mockMediaPlaybackOnboardingService.Verify(s => s.EnsureBackgroundPlaybackExplainedAsync(), Times.Exactly(2));
+            0,
+            "Song page: Test"), Times.Once);
+        _mockMediaPlaybackOnboardingService.Verify(s => s.EnsureBackgroundPlaybackExplainedAsync(), Times.Once);
     }
 
     [Test]
@@ -115,13 +126,15 @@ public class SongPlayerViewModelTests
     {
         var song = new SongDto { Id = 9, SongTitle = "Queued Song" };
         _viewModel.Song = song;
+        _mockPlaybackService.Invocations.Clear();
 
         var started = await _viewModel.PlayDisplayedSongQueueAsync();
 
         Assert.That(started, Is.True);
         _mockPlaybackService.Verify(p => p.SetPlaylist(
             It.Is<List<SongDto>>(songs => songs.Count == 1 && songs[0].Id == 9),
-            0), Times.Once);
+            0,
+            "Song page: Queued Song"), Times.Once);
     }
 
     [Test]
@@ -334,6 +347,26 @@ public class SongPlayerViewModelTests
         _viewModel.Song = song;
 
         Assert.That(_viewModel.HasActiveSubscription, Is.True);
+    }
+
+    [Test]
+    public void IsCurrentSongPreviewLimited_FeaturedSong_ReturnsFalseForNonSubscriber()
+    {
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+
+        _viewModel.Song = new SongDto { Id = 1, SongTitle = "Featured", DisplayOnHomePage = true };
+
+        Assert.That(_viewModel.IsCurrentSongPreviewLimited, Is.False);
+    }
+
+    [Test]
+    public void IsCurrentSongPreviewLimited_NonFeaturedSong_ReturnsTrueForNonSubscriber()
+    {
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+
+        _viewModel.Song = new SongDto { Id = 1, SongTitle = "Preview", DisplayOnHomePage = false };
+
+        Assert.That(_viewModel.IsCurrentSongPreviewLimited, Is.True);
     }
 
     [Test]

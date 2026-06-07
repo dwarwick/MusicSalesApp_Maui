@@ -904,7 +904,8 @@ public class HomeViewModelTests
 
         _mockPlaybackService.Verify(p => p.SetPlaylist(
             It.Is<List<SongDto>>(songs => songs.Count == 2 && songs[0] == firstSong && songs[1] == secondSong),
-            1), Times.Once);
+            1,
+            "Featured Songs"), Times.Once);
         _mockMediaPlaybackOnboardingService.Verify(service => service.EnsureBackgroundPlaybackExplainedAsync(), Times.Once);
     }
 
@@ -935,7 +936,31 @@ public class HomeViewModelTests
         Assert.That(started, Is.True);
         _mockPlaybackService.Verify(p => p.SetPlaylist(
             It.Is<List<SongDto>>(songs => songs.Select(song => song.Id).SequenceEqual(new[] { 1, 2 })),
-            0), Times.Once);
+            0,
+            "Featured Songs"), Times.Once);
+    }
+
+    [Test]
+    public void Activate_WithDifferentActivePlaylist_SyncsQueueToFeaturedSongs()
+    {
+        var firstSong = new SongDto { Id = 1, SongTitle = "First" };
+        var secondSong = new SongDto { Id = 2, SongTitle = "Second" };
+        _viewModel.FeaturedSongs = new ObservableCollection<SongDto> { firstSong, secondSong };
+        _mockPlaybackService.SetupGet(p => p.HasPlaylist).Returns(true);
+        _mockPlaybackService.SetupGet(p => p.CurrentSong).Returns(secondSong);
+        _mockPlaybackService.SetupGet(p => p.Playlist).Returns(new List<SongDto>
+        {
+            secondSong,
+            new() { Id = 99, SongTitle = "Library Song" }
+        });
+
+        _viewModel.Activate();
+
+        _mockPlaybackService.Verify(p => p.SetPlaylist(
+            It.Is<List<SongDto>>(songs => songs.Select(song => song.Id).SequenceEqual(new[] { 1, 2 })),
+            1,
+            PlaybackQueueStartBehavior.PreserveCurrentSongIfPresent,
+            "Featured Songs"), Times.Once);
     }
 
     [Test]

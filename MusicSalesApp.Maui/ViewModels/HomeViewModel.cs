@@ -240,6 +240,7 @@ public partial class HomeViewModel : ObservableObject
     public void Activate()
     {
         AttachSignalRSubscriptions();
+        SynchronizeFeaturedQueue();
     }
 
     public Task StartSignalRAsync() => _signalRService.StartAsync();
@@ -337,6 +338,7 @@ public partial class HomeViewModel : ObservableObject
             LoadUserLikeStatusAsync(featuredSongs));
 
         FeaturedSongs = new ObservableCollection<SongDto>(featuredSongs);
+        SynchronizeFeaturedQueue();
     }
 
     private async Task LoadStreamQualifyingSecondsAsync()
@@ -419,7 +421,32 @@ public partial class HomeViewModel : ObservableObject
             FeaturedSongs,
             _mediaPlaybackOnboardingService,
             _playbackService,
-            startSong);
+            startSong,
+            PlaybackQueueDescriptions.FeaturedSongs);
+
+    private void SynchronizeFeaturedQueue()
+    {
+        if (!_playbackService.HasPlaylist || FeaturedSongs.Count == 0)
+        {
+            return;
+        }
+
+        var visibleSongs = FeaturedSongs.ToList();
+        var currentSongOutsideVisibleQueue = PlaybackQueueSelection.HasCurrentSongOutsideQueue(_playbackService, visibleSongs);
+        if (PlaybackQueueSelection.HasEquivalentActiveQueue(_playbackService, visibleSongs) && !currentSongOutsideVisibleQueue)
+        {
+            return;
+        }
+
+        var startIndex = PlaybackQueueSelection.ResolveCurrentSongIndex(_playbackService, visibleSongs);
+        _playbackService.SetPlaylist(
+            visibleSongs,
+            startIndex,
+            currentSongOutsideVisibleQueue
+                ? PlaybackQueueStartBehavior.RestartAtRequestedIndex
+                : PlaybackQueueStartBehavior.PreserveCurrentSongIfPresent,
+            PlaybackQueueDescriptions.FeaturedSongs);
+    }
 
     [RelayCommand]
     private Task OpenSongAsync(SongDto? song)

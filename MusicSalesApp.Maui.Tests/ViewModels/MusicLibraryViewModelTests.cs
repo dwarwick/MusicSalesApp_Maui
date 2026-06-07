@@ -285,7 +285,10 @@ public class MusicLibraryViewModelTests
         await _viewModel.PlaySongCommand.ExecuteAsync(song);
 
         // Assert — now uses SetPlaylist instead of PlaySong
-        _mockPlaybackService.Verify(p => p.SetPlaylist(It.Is<List<SongDto>>(l => l.Count == 1 && l[0] == song), 0), Times.Once);
+        _mockPlaybackService.Verify(p => p.SetPlaylist(
+            It.Is<List<SongDto>>(l => l.Count == 1 && l[0] == song),
+            0,
+            "Unfiltered media library"), Times.Once);
         _mockMediaPlaybackOnboardingService.Verify(s => s.EnsureBackgroundPlaybackExplainedAsync(), Times.Once);
     }
 
@@ -324,7 +327,8 @@ public class MusicLibraryViewModelTests
         Assert.That(started, Is.True);
         _mockPlaybackService.Verify(service => service.SetPlaylist(
             It.Is<List<SongDto>>(playlist => playlist.Select(song => song.Id).SequenceEqual(new[] { 3, 1 })),
-            0), Times.Once);
+            0,
+            "Filtered media library (Genres: Rock)"), Times.Once);
     }
 
     [Test]
@@ -1063,7 +1067,7 @@ public class MusicLibraryViewModelTests
     // --- Play as Playlist ---
 
     [Test]
-    public async Task PlaySong_SetsPlaylistWithFilteredSongs()
+    public async Task PlaySong_SetsPlaylistWithUnfilteredLibrarySongs()
     {
         var songs = new List<SongDto>
         {
@@ -1081,7 +1085,39 @@ public class MusicLibraryViewModelTests
         await _viewModel.PlaySongCommand.ExecuteAsync(songs[1]);
 
         _mockPlaybackService.Verify(p =>
-            p.SetPlaylist(It.Is<List<SongDto>>(l => l.Count == 3), 1), Times.Once);
+            p.SetPlaylist(
+                It.Is<List<SongDto>>(l => l.Count == 3),
+                1,
+                "Unfiltered media library"), Times.Once);
+        _mockMediaPlaybackOnboardingService.Verify(s => s.EnsureBackgroundPlaybackExplainedAsync(), Times.Once);
+    }
+
+    [Test]
+    public async Task PlaySong_WithActiveGenreFilter_SetsPlaylistWithOnlyFilteredSongs()
+    {
+        var songs = new List<SongDto>
+        {
+            new() { Id = 1, SongTitle = "Song A", Genre = "Rock", ArtistName = "A" },
+            new() { Id = 2, SongTitle = "Song B", Genre = "Pop", ArtistName = "B" },
+            new() { Id = 3, SongTitle = "Song C", Genre = "Rock", ArtistName = "C" },
+        };
+
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+        _viewModel.ToggleGenreFilterCommand.Execute("Rock");
+
+        await _viewModel.PlaySongCommand.ExecuteAsync(songs[0]);
+
+        _mockPlaybackService.Verify(p =>
+            p.SetPlaylist(
+                It.Is<List<SongDto>>(l => l.Select(song => song.Id).SequenceEqual(new[] { 3, 1 })),
+                1,
+                "Filtered media library (Genres: Rock)"), Times.Once);
+        _mockPlaybackService.Verify(p =>
+            p.SetPlaylist(
+                It.Is<List<SongDto>>(l => l.Any(song => song.Id == 2)),
+                It.IsAny<int>(),
+                It.IsAny<string>()), Times.Never);
         _mockMediaPlaybackOnboardingService.Verify(s => s.EnsureBackgroundPlaybackExplainedAsync(), Times.Once);
     }
 
@@ -1110,7 +1146,9 @@ public class MusicLibraryViewModelTests
         _mockPlaybackService.Verify(p =>
             p.SetPlaylist(
                 It.Is<List<SongDto>>(l => l.Select(song => song.Id).SequenceEqual(new[] { 3, 2, 1 })),
-                1),
+                1,
+                PlaybackQueueStartBehavior.PreserveCurrentSongIfPresent,
+                "Unfiltered media library"),
             Times.Once);
     }
 
@@ -1144,7 +1182,9 @@ public class MusicLibraryViewModelTests
         _mockPlaybackService.Verify(p =>
             p.SetPlaylist(
                 It.Is<List<SongDto>>(l => l.Select(song => song.Id).SequenceEqual(new[] { 3, 1 })),
-                0),
+                0,
+                PlaybackQueueStartBehavior.PreserveCurrentSongIfPresent,
+                "Filtered media library (Genres: Rock)"),
             Times.Once);
     }
 
@@ -1173,5 +1213,9 @@ public class MusicLibraryViewModelTests
         _viewModel.Activate();
 
         _mockPlaybackService.Verify(p => p.SetPlaylist(It.IsAny<List<SongDto>>(), It.IsAny<int>()), Times.Never);
+        _mockPlaybackService.Verify(p => p.SetPlaylist(
+            It.IsAny<List<SongDto>>(),
+            It.IsAny<int>(),
+            It.IsAny<PlaybackQueueStartBehavior>()), Times.Never);
     }
 }
