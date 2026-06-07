@@ -8,7 +8,8 @@ internal static class PlaybackQueueBootstrapper
         IReadOnlyList<SongDto> songs,
         IMediaPlaybackOnboardingService mediaPlaybackOnboardingService,
         IPlaybackService playbackService,
-        SongDto? startSong = null)
+        SongDto? startSong = null,
+        string? queueSourceDescription = null)
     {
         if (songs.Count == 0)
         {
@@ -18,7 +19,16 @@ internal static class PlaybackQueueBootstrapper
         await mediaPlaybackOnboardingService.EnsureBackgroundPlaybackExplainedAsync();
 
         var startIndex = ResolveStartIndex(songs, startSong);
-        playbackService.SetPlaylist(songs.ToList(), startIndex);
+        var queue = songs.ToList();
+        if (string.IsNullOrWhiteSpace(queueSourceDescription))
+        {
+            playbackService.SetPlaylist(queue, startIndex);
+        }
+        else
+        {
+            playbackService.SetPlaylist(queue, startIndex, queueSourceDescription);
+        }
+
         return true;
     }
 

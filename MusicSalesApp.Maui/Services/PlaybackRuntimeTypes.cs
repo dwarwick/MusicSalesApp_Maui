@@ -42,6 +42,12 @@ public enum PlaybackMediaLocation
     FileSystem
 }
 
+public enum PlaybackQueueStartBehavior
+{
+    RestartAtRequestedIndex,
+    PreserveCurrentSongIfPresent
+}
+
 public sealed record PlaybackMediaItem(
     string MediaUri,
     int SongId,

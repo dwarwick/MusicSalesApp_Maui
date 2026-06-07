@@ -83,7 +83,11 @@ public class PlaylistPlayerViewModelTests
         await Task.Delay(100);
 
         _mockPlaybackService.Verify(p =>
-            p.SetPlaylist(It.Is<List<SongDto>>(l => l.Count == 3), 0), Times.Once);
+            p.SetPlaylist(
+                It.Is<List<SongDto>>(l => l.Count == 3),
+                0,
+                PlaybackQueueStartBehavior.PreserveCurrentSongIfPresent,
+                "Genre Rock"), Times.Once);
     }
 
     [Test]
@@ -101,8 +105,43 @@ public class PlaylistPlayerViewModelTests
         await Task.Delay(100);
 
         _mockPlaybackService.Verify(p => p.SetPlaylist(It.IsAny<List<SongDto>>(), It.IsAny<int>()), Times.Never);
+        _mockPlaybackService.Verify(p => p.SetPlaylist(
+            It.IsAny<List<SongDto>>(),
+            It.IsAny<int>(),
+            It.IsAny<PlaybackQueueStartBehavior>()), Times.Never);
         Assert.That(_viewModel.CurrentSong, Is.SameAs(_viewModel.Songs[1]));
         Assert.That(_viewModel.CurrentSong?.Id, Is.EqualTo(2));
+    }
+
+    [Test]
+    public async Task ArtistName_WhenActiveQueueMatchesButCurrentSongIsOutsideArtistSongs_RestartsArtistQueue()
+    {
+        var songs = CreateTestSongs();
+        var artistQueue = songs.Where(s => s.ArtistName == "Band A").ToList();
+        var featuredSongFromAnotherArtist = new SongDto
+        {
+            Id = 99,
+            SongTitle = "Featured Song",
+            ArtistName = "Other Artist",
+            DisplayOnHomePage = true
+        };
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+        _mockPlaybackService.SetupGet(p => p.Playlist).Returns(artistQueue);
+        _mockPlaybackService.SetupGet(p => p.CurrentSong).Returns(featuredSongFromAnotherArtist);
+
+        _viewModel.ArtistName = "Band A";
+        await Task.Delay(100);
+
+        _mockPlaybackService.Verify(p =>
+            p.SetPlaylist(
+                It.Is<List<SongDto>>(l => l.Select(song => song.Id).SequenceEqual(new[] { 1, 4 })),
+                0,
+                PlaybackQueueStartBehavior.RestartAtRequestedIndex,
+                "Artist Band A"), Times.Once);
+        Assert.That(_viewModel.Songs.Select(song => song.Id), Is.EqualTo(new[] { 1, 4 }));
+        Assert.That(_viewModel.CurrentSong, Is.Null);
     }
 
     [Test]
@@ -124,7 +163,11 @@ public class PlaylistPlayerViewModelTests
         await Task.Delay(100);
 
         _mockPlaybackService.Verify(p =>
-            p.SetPlaylist(It.Is<List<SongDto>>(l => l.Select(song => song.Id).SequenceEqual(new[] { 1, 2, 4 })), 0), Times.Once);
+            p.SetPlaylist(
+                It.Is<List<SongDto>>(l => l.Select(song => song.Id).SequenceEqual(new[] { 1, 2, 4 })),
+                0,
+                PlaybackQueueStartBehavior.PreserveCurrentSongIfPresent,
+                "Genre Rock"), Times.Once);
     }
 
     [Test]
@@ -161,6 +204,11 @@ public class PlaylistPlayerViewModelTests
         Assert.That(_viewModel.ErrorMessage, Does.Contain("Jazz"));
         _mockPlaybackService.Verify(p =>
             p.SetPlaylist(It.IsAny<List<SongDto>>(), It.IsAny<int>()), Times.Never);
+        _mockPlaybackService.Verify(p =>
+            p.SetPlaylist(
+                It.IsAny<List<SongDto>>(),
+                It.IsAny<int>(),
+                It.IsAny<PlaybackQueueStartBehavior>()), Times.Never);
     }
 
     [Test]
@@ -241,7 +289,11 @@ public class PlaylistPlayerViewModelTests
         await Task.Delay(100);
 
         _mockPlaybackService.Verify(p =>
-            p.SetPlaylist(It.Is<List<SongDto>>(l => l.Count == 2), 0), Times.Once);
+            p.SetPlaylist(
+                It.Is<List<SongDto>>(l => l.Count == 2),
+                0,
+                PlaybackQueueStartBehavior.PreserveCurrentSongIfPresent,
+                "Artist Band A"), Times.Once);
     }
 
     [Test]
@@ -263,8 +315,12 @@ public class PlaylistPlayerViewModelTests
         SongDto? currentSong = null;
         _mockPlaybackService.SetupGet(s => s.CurrentSong).Returns(() => currentSong);
         _mockPlaybackService
-            .Setup(s => s.SetPlaylist(It.IsAny<List<SongDto>>(), 0))
-            .Callback<List<SongDto>, int>((songs, _) => currentSong = songs.FirstOrDefault());
+            .Setup(s => s.SetPlaylist(
+                It.IsAny<List<SongDto>>(),
+                0,
+                PlaybackQueueStartBehavior.PreserveCurrentSongIfPresent,
+                "Playlist AI Mix"))
+            .Callback<List<SongDto>, int, PlaybackQueueStartBehavior, string>((songs, _, _, _) => currentSong = songs.FirstOrDefault());
         _mockPlaylistService.Setup(s => s.GetPlaylistSongsAsync(7)).ReturnsAsync(new PlaylistSongsDto
         {
             PlaylistId = 7,
@@ -300,8 +356,12 @@ public class PlaylistPlayerViewModelTests
         SongDto? currentSong = null;
         _mockPlaybackService.SetupGet(s => s.CurrentSong).Returns(() => currentSong);
         _mockPlaybackService
-            .Setup(s => s.SetPlaylist(It.IsAny<List<SongDto>>(), 0))
-            .Callback<List<SongDto>, int>((songs, _) => currentSong = songs.FirstOrDefault());
+            .Setup(s => s.SetPlaylist(
+                It.IsAny<List<SongDto>>(),
+                0,
+                PlaybackQueueStartBehavior.PreserveCurrentSongIfPresent,
+                "Playlist Threshold Mix"))
+            .Callback<List<SongDto>, int, PlaybackQueueStartBehavior, string>((songs, _, _, _) => currentSong = songs.FirstOrDefault());
         _mockPlaylistService.Setup(s => s.GetPlaylistSongsAsync(7)).ReturnsAsync(new PlaylistSongsDto
         {
             PlaylistId = 7,
@@ -374,7 +434,8 @@ public class PlaylistPlayerViewModelTests
 
         _mockPlaybackService.Verify(p => p.SetPlaylist(
             It.Is<List<SongDto>>(playlist => playlist.Select(song => song.Id).SequenceEqual(new[] { 1, 2, 4 })),
-            1), Times.Once);
+            1,
+            "Genre Rock"), Times.Once);
     }
 
     [Test]
@@ -428,7 +489,8 @@ public class PlaylistPlayerViewModelTests
         Assert.That(started, Is.True);
         _mockPlaybackService.Verify(p => p.SetPlaylist(
             It.Is<List<SongDto>>(playlist => playlist.Select(song => song.Id).SequenceEqual(new[] { 1, 2, 4 })),
-            0), Times.Once);
+            0,
+            "Genre Rock"), Times.Once);
     }
 
     // --- Like/Dislike ---
@@ -644,16 +706,36 @@ public class PlaylistPlayerViewModelTests
         _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
             .ReturnsAsync(new List<LikeCountDto>());
 
-        var newSong = new SongDto { Id = 99, SongTitle = "New Track" };
-        _mockPlaybackService.Setup(p => p.CurrentSong).Returns(newSong);
-
         _viewModel.GenreName = "Rock";
         await Task.Delay(100);
+        var newSong = _viewModel.Songs[1];
+        _mockPlaybackService.Setup(p => p.CurrentSong).Returns(newSong);
 
         // Raise PlaybackService.StateChanged for CurrentSong
         _mockPlaybackService.Raise(p => p.StateChanged += null, nameof(IPlaybackService.CurrentSong));
 
         Assert.That(_viewModel.CurrentSong, Is.SameAs(newSong));
+    }
+
+    [Test]
+    public async Task StateChanged_CurrentSongOutsideVisibleSongs_ClearsCurrentSong()
+    {
+        var songs = CreateTestSongs();
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+
+        _viewModel.GenreName = "Rock";
+        await Task.Delay(100);
+
+        var offPageSong = new SongDto { Id = 99, SongTitle = "Featured Song", ArtistName = "Other Artist" };
+        _mockPlaybackService.Setup(p => p.CurrentSong).Returns(offPageSong);
+
+        _mockPlaybackService.Raise(p => p.StateChanged += null, nameof(IPlaybackService.CurrentSong));
+
+        Assert.That(_viewModel.CurrentSong, Is.Null);
+        Assert.That(_viewModel.ShareUrl, Is.EqualTo(string.Empty));
+        Assert.That(_viewModel.ShowTracksHeader, Is.True);
     }
 
     // --- Subscription badge ---

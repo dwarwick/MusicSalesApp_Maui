@@ -52,6 +52,8 @@ public class PlaylistSongDto
     public string StreamUrl { get; set; } = string.Empty;
     public int StreamQualifyingSeconds { get; set; }
     public double? TrackLengthSeconds { get; set; }
+    public bool DisplayOnHomePage { get; set; }
+    public int? DisplayOrder { get; set; }
     public int StreamCount { get; set; }
     public bool IsAiGenerated { get; set; }
     public int? CreatorId { get; set; }

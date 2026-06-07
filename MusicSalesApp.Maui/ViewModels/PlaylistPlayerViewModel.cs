@@ -90,6 +90,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowTracksHeader))]
+    [NotifyPropertyChangedFor(nameof(IsCurrentTrackPreviewLimited))]
     public partial SongDto? CurrentSong { get; set; }
 
     [ObservableProperty]
@@ -97,6 +98,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     public partial bool IsLoading { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsCurrentTrackPreviewLimited))]
     public partial bool HasActiveSubscription { get; set; }
 
     [ObservableProperty]
@@ -129,13 +131,20 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     /// <summary>Tracks Songs.Count changes so computed properties refresh.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowEmptyPlaylistPrompt))]
+    [NotifyPropertyChangedFor(nameof(ShowTracksHeader))]
     public partial bool HasSongs { get; set; }
 
     /// <summary>Show the "Tracks" header + Add Songs button whenever a playlist is loaded for the user, or there's a current song.</summary>
-    public bool ShowTracksHeader => IsUserPlaylist || CurrentSong is not null;
+    public bool ShowTracksHeader => IsUserPlaylist || HasSongs || CurrentSong is not null;
 
     /// <summary>Show the empty-custom-playlist call-to-action when we've finished loading a user playlist that has no songs.</summary>
     public bool ShowEmptyPlaylistPrompt => IsUserPlaylist && !HasSongs && !IsLoading;
+
+    public bool IsCurrentTrackPreviewLimited =>
+        CurrentSong != null &&
+        !HasActiveSubscription &&
+        !CurrentSong.DisplayOnHomePage &&
+        !(_authService.IsCreator && CurrentSong.CreatorUserId == _authService.UserId);
 
     partial void OnGenreNameChanged(string? value)
     {
@@ -337,7 +346,8 @@ public partial class PlaylistPlayerViewModel : ObservableObject
 
         HasActiveSubscription = _authService.HasActiveSubscription;
 
-        if (PlaybackQueueSelection.HasEquivalentActiveQueue(_playbackService, list))
+        var currentSongOutsideVisibleQueue = PlaybackQueueSelection.HasCurrentSongOutsideQueue(_playbackService, list);
+        if (PlaybackQueueSelection.HasEquivalentActiveQueue(_playbackService, list) && !currentSongOutsideVisibleQueue)
         {
             CurrentSong = PlaybackQueueSelection.ResolveCurrentSong(_playbackService, list);
             OnPropertyChanged(nameof(ShareUrl));
@@ -345,9 +355,32 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         }
 
         await _mediaPlaybackOnboardingService.EnsureBackgroundPlaybackExplainedAsync();
-        _playbackService.SetPlaylist(list, 0);
-        CurrentSong = _playbackService.CurrentSong;
+        _playbackService.SetPlaylist(
+            list,
+            0,
+            currentSongOutsideVisibleQueue
+                ? PlaybackQueueStartBehavior.RestartAtRequestedIndex
+                : PlaybackQueueStartBehavior.PreserveCurrentSongIfPresent,
+            BuildVisibleQueueDescription());
+        CurrentSong = PlaybackQueueSelection.ResolveCurrentSong(_playbackService, list);
         OnPropertyChanged(nameof(ShareUrl));
+    }
+
+    private string BuildVisibleQueueDescription()
+    {
+        if (!string.IsNullOrWhiteSpace(GenreName))
+        {
+            return PlaybackQueueDescriptions.Genre(Uri.UnescapeDataString(GenreName));
+        }
+
+        if (!string.IsNullOrWhiteSpace(ArtistName))
+        {
+            return PlaybackQueueDescriptions.Artist(Uri.UnescapeDataString(ArtistName));
+        }
+
+        return string.IsNullOrWhiteSpace(PlaylistTitle)
+            ? "Playlist player"
+            : PlaybackQueueDescriptions.Playlist(PlaylistTitle);
     }
 
     private static SongDto MapToSongDto(PlaylistSongDto ps) => new()
@@ -364,6 +397,8 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         TrackLengthSeconds = ps.TrackLengthSeconds,
         StreamCount = ps.StreamCount,
         IsAiGenerated = ps.IsAiGenerated,
+        DisplayOnHomePage = ps.DisplayOnHomePage,
+        DisplayOrder = ps.DisplayOrder,
         CreatorId = ps.CreatorId,
         CreatorUserId = ps.CreatorUserId,
     };
@@ -470,7 +505,8 @@ public partial class PlaylistPlayerViewModel : ObservableObject
             Songs,
             _mediaPlaybackOnboardingService,
             _playbackService,
-            startSong);
+            startSong,
+            BuildVisibleQueueDescription());
 
     // --- Like/Dislike ---
 
@@ -623,7 +659,9 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     {
         if (propertyName == nameof(IPlaybackService.CurrentSong))
         {
-            CurrentSong = _playbackService.CurrentSong;
+            CurrentSong = Songs.Count == 0
+                ? _playbackService.CurrentSong
+                : PlaybackQueueSelection.ResolveCurrentSong(_playbackService, Songs);
             OnPropertyChanged(nameof(ShareUrl));
         }
     }

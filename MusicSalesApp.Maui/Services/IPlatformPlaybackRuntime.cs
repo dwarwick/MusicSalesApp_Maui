@@ -49,3 +49,12 @@ public interface IIndexedQueuePlaybackRuntime
 {
     Task<PlaybackMediaItem?> PlayAsync(IEnumerable<PlaybackMediaItem> mediaItems, int startIndex);
 }
+
+public interface IQueueReplacementPlaybackRuntime
+{
+    Task<PlaybackMediaItem?> ReplaceQueueAsync(
+        IEnumerable<PlaybackMediaItem> mediaItems,
+        int currentIndex,
+        TimeSpan currentPosition,
+        bool playWhenReady);
+}

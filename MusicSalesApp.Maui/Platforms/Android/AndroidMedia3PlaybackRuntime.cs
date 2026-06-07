@@ -10,7 +10,7 @@ using MauiMediaItem = MusicSalesApp.Maui.Services.PlaybackMediaItem;
 
 namespace MusicSalesApp.Maui.Platforms.Android;
 
-public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIndexedQueuePlaybackRuntime, IDisposable
+public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIndexedQueuePlaybackRuntime, IQueueReplacementPlaybackRuntime, IDisposable
 {
     private const int PlayerStateIdle = 1;
     private const int PlayerStateBuffering = 2;
@@ -38,6 +38,7 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
     private string? _lastFinishedStableCacheKey;
     private bool _currentItemBecamePlayable;
     private bool _lastIsPlaying;
+    private bool _suppressMediaItemTransitionPublishing;
     private bool _disposed;
 
     public AndroidMedia3PlaybackRuntime(ILogger<AndroidMedia3PlaybackRuntime> logger)
@@ -147,6 +148,75 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
             _player.Prepare();
             _player.Play();
             _logger.LogInformation("Media3 PlayAsync(queue) submitted to player. {Snapshot}", CreatePlayerSnapshot());
+            PublishMediaItemChanged();
+            return _queue.Current;
+        });
+
+    public Task<MauiMediaItem?> ReplaceQueueAsync(
+        IEnumerable<MauiMediaItem> mediaItems,
+        int currentIndex,
+        TimeSpan currentPosition,
+        bool playWhenReady) =>
+        RunOnPlayerThreadAsync(() =>
+        {
+            EnsurePlaybackServiceStarted();
+            var items = mediaItems.ToList();
+            if (items.Count == 0)
+            {
+                _logger.LogWarning("Media3 ReplaceQueueAsync ignored because the queue is empty. {Snapshot}", CreatePlayerSnapshot());
+                return null;
+            }
+
+            var safeCurrentIndex = Math.Clamp(currentIndex, 0, items.Count - 1);
+            var safePositionMs = currentPosition <= TimeSpan.Zero
+                ? 0L
+                : (long)currentPosition.TotalMilliseconds;
+
+            ResetCurrentItemPlaybackObservation("queue replacement");
+            _logger.LogInformation(
+                "Media3 ReplaceQueueAsync requested. QueueCount={QueueCount}; CurrentIndex={CurrentIndex}; SafeCurrentIndex={SafeCurrentIndex}; CurrentPosition={CurrentPosition}; PlayWhenReady={PlayWhenReady}; CurrentItem={CurrentItem}; {Snapshot}",
+                items.Count,
+                currentIndex,
+                safeCurrentIndex,
+                currentPosition,
+                playWhenReady,
+                DescribeMediaItem(items[safeCurrentIndex]),
+                CreatePlayerSnapshot());
+
+            SuppressAppCommandUserReason();
+            var previousTransitionSuppression = _suppressMediaItemTransitionPublishing;
+            _suppressMediaItemTransitionPublishing = true;
+            try
+            {
+                _queue.SetItems(items);
+                SetPlayerQueueItems(items, safeCurrentIndex, safePositionMs);
+                _player.Prepare();
+                if (_player.CurrentMediaItemIndex != safeCurrentIndex)
+                {
+                    _logger.LogWarning(
+                        "Media3 ReplaceQueueAsync seek correction required. RequestedIndex={RequestedIndex}; ActualIndex={ActualIndex}; RequestedPositionMs={RequestedPositionMs}; {Snapshot}",
+                        safeCurrentIndex,
+                        _player.CurrentMediaItemIndex,
+                        safePositionMs,
+                        CreatePlayerSnapshot());
+                    _player.SeekTo(safeCurrentIndex, safePositionMs);
+                }
+
+                if (playWhenReady)
+                {
+                    _player.Play();
+                }
+                else
+                {
+                    _player.Pause();
+                }
+            }
+            finally
+            {
+                _suppressMediaItemTransitionPublishing = previousTransitionSuppression;
+            }
+
+            _logger.LogInformation("Media3 ReplaceQueueAsync submitted to player. {Snapshot}", CreatePlayerSnapshot());
             PublishMediaItemChanged();
             return _queue.Current;
         });
@@ -370,6 +440,19 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
             mediaItem?.MediaId,
             CreatePlayerSnapshot());
 
+        if (_suppressMediaItemTransitionPublishing)
+        {
+            _lastKnownIndex = currentIndex;
+            ResetCurrentItemPlaybackObservation("suppressed media item transition");
+            _logger.LogInformation(
+                "Media3 media item transition publication suppressed during queue replacement. Reason={Reason}; CurrentIndex={CurrentIndex}; MediaId={MediaId}; {Snapshot}",
+                MediaItemTransitionReasonName(reason),
+                currentIndex,
+                mediaItem?.MediaId,
+                CreatePlayerSnapshot());
+            return;
+        }
+
         if (previousIndex >= 0 && previousIndex != currentIndex && previousIndex < _queue.Count)
         {
             PublishMediaItemFinishedIfAllowed(_queue[previousIndex], previousIndex, "media item transition", suppressStartupEnd: false);
@@ -570,7 +653,7 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
     private string CreatePlayerSnapshotOnPlayerThread()
     {
         var durationMs = _player.Duration == C.TimeUnset ? "TimeUnset" : _player.Duration.ToString();
-        return $"RawState={PlaybackStateName(_player.PlaybackState)}; PlayWhenReady={_player.PlayWhenReady}; IsPlaying={_lastIsPlaying}; CurrentIndex={_player.CurrentMediaItemIndex}; QueueCount={_queue.Count}; PositionMs={Math.Max(0, _player.CurrentPosition)}; DurationMs={durationMs}; AudioSessionId={AudioSessionId}; BecamePlayable={_currentItemBecamePlayable}; CurrentItem={DescribeMediaItem(_queue.Current)}";
+        return $"RawState={PlaybackStateName(_player.PlaybackState)}; PlayWhenReady={_player.PlayWhenReady}; IsPlaying={_lastIsPlaying}; CurrentIndex={_player.CurrentMediaItemIndex}; QueueCount={_queue.Count}; PlayerMediaItemCount={_player.MediaItemCount}; PositionMs={Math.Max(0, _player.CurrentPosition)}; DurationMs={durationMs}; AudioSessionId={AudioSessionId}; BecamePlayable={_currentItemBecamePlayable}; CurrentItem={DescribeMediaItem(_queue.Current)}";
     }
 
     private static string DescribeMediaItem(MauiMediaItem? item)
@@ -648,7 +731,7 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
             ?? throw new InvalidOperationException("Media3 MediaItem.Builder returned null.");
     }
 
-    private void SetPlayerQueueItems(IReadOnlyList<MauiMediaItem> items, int startIndex)
+    private void SetPlayerQueueItems(IReadOnlyList<MauiMediaItem> items, int startIndex, long startPositionMs = 0)
     {
         _player.SetMediaItem(ToMedia3Item(items[0]));
         for (var index = 1; index < items.Count; index++)
@@ -656,9 +739,9 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
             _player.AddMediaItem(ToMedia3Item(items[index]));
         }
 
-        if (startIndex > 0)
+        if (startIndex > 0 || startPositionMs > 0)
         {
-            _player.SeekTo(startIndex, 0);
+            _player.SeekTo(startIndex, Math.Max(0, startPositionMs));
         }
     }
 

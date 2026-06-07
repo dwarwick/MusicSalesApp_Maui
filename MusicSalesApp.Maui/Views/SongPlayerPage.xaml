@@ -137,17 +137,13 @@
                         Padding="12,6"
                         StrokeShape="RoundRectangle 16"
                         StrokeThickness="0"
-                        IsVisible="{Binding HasActiveSubscription, Converter={toolkit:InvertedBoolConverter}}"
-                        BackgroundColor="{Binding HasActiveSubscription, Converter={StaticResource SubBadgeBgConverter}}">
+                        IsVisible="{Binding IsCurrentSongPreviewLimited}"
+                        BackgroundColor="#FFA500">
                     <Label FontSize="12"
                            FontAttributes="Bold"
                            TextColor="White"
-                           HorizontalTextAlignment="Center">
-                        <Label.Text>
-                            <Binding Path="HasActiveSubscription"
-                                     Converter="{StaticResource SubBadgeTextConverter}" />
-                        </Label.Text>
-                    </Label>
+                           HorizontalTextAlignment="Center"
+                           Text="Preview Only (60 seconds)" />
                 </Border>
 
                 <!-- Action Row: Like, Dislike, Share -->

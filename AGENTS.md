@@ -1,5 +1,12 @@
 # Agent Instructions - MusicSalesApp MAUI
 
+## Working Branches
+
+- Before editing files, always check the current branch with `git branch --show-current`.
+- If the current branch is `master`, create and switch to an appropriately named working branch before making changes.
+- Use clear task-based branch names such as `work/featured-playback-queue-rotation`.
+- Do not make code edits on `master` unless the user explicitly asks for that.
+
 ## Original Requirements
 
 The goal is to create an Android app based on the MusicSalesApp web server solution. The Android app will:

@@ -36,6 +36,15 @@ public interface IPlaybackService
     /// <summary>Loads a playlist and starts playing at the given index.</summary>
     void SetPlaylist(List<SongDto> songs, int startIndex);
 
+    /// <summary>Loads a playlist and starts playing at the given index with a log source description.</summary>
+    void SetPlaylist(List<SongDto> songs, int startIndex, string queueSourceDescription);
+
+    /// <summary>Loads a playlist using the requested start behavior.</summary>
+    void SetPlaylist(List<SongDto> songs, int startIndex, PlaybackQueueStartBehavior startBehavior);
+
+    /// <summary>Loads a playlist using the requested start behavior with a log source description.</summary>
+    void SetPlaylist(List<SongDto> songs, int startIndex, PlaybackQueueStartBehavior startBehavior, string queueSourceDescription);
+
     /// <summary>Exits playlist mode without stopping playback.</summary>
     void ClearPlaylist();
 
