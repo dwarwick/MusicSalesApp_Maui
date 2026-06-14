@@ -29,7 +29,7 @@ public static class SubscriptionOfferDisplayBuilder
             var days = freeTrialDays.GetValueOrDefault(DefaultFreeTrialDays);
             return new SubscriptionOfferDisplay(
                 "Support independent music.",
-                "Your subscription directly funds independent creators so they can keep making the music you love. Unlock the full catalog and stream without 60-second limits.",
+                "Your subscription directly funds independent creators so they can keep making the music you love. Unlock the full catalog.",
                 priceText,
                 $"Full subscription benefits are included during the trial. Try it free for {days} days. After your trial, your subscription automatically renews at {monthlyPriceText}. You can cancel anytime in your Google Play subscription settings.");
         }

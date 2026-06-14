@@ -74,7 +74,7 @@ public class SubscriptionOfferDisplayBuilderTests
         {
             Assert.That(display.PriceText, Is.Empty);
             Assert.That(display.Title, Is.EqualTo("Support independent music."));
-            Assert.That(display.Body, Is.EqualTo("Your subscription directly funds independent creators so they can keep making the music you love. Unlock the full catalog and stream without 60-second limits."));
+            Assert.That(display.Body, Is.EqualTo("Your subscription directly funds independent creators so they can keep making the music you love. Unlock the full catalog."));
             Assert.That(display.DisclosureText, Is.EqualTo("Full subscription benefits are included during the trial. Try it free for 3 days. After your trial, your subscription automatically renews at the monthly price shown in Google Play. You can cancel anytime in your Google Play subscription settings."));
             Assert.That(display.DisclosureText, Does.Not.Contain("$3.99"));
         });
