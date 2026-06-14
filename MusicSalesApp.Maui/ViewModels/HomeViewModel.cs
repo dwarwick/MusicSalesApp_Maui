@@ -42,6 +42,9 @@ public partial class HomeViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferPrimaryButtonText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferPrimaryCommand))]
     [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferSecondaryButton))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
     public partial bool IsAuthenticated { get; set; }
 
     [ObservableProperty]
@@ -58,6 +61,7 @@ public partial class HomeViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferPrimaryButtonText))]
     public partial bool HasPreviousSubscriptionHistory { get; set; }
 
     [ObservableProperty]
@@ -87,6 +91,7 @@ public partial class HomeViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferPrimaryButtonText))]
     public partial bool HasEligibleAndroidFreeTrial { get; set; }
 
     [ObservableProperty]
@@ -96,6 +101,7 @@ public partial class HomeViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferPrimaryButtonText))]
     public partial bool ShouldShowFallbackAndroidFreeTrial { get; set; }
 
     [ObservableProperty]
@@ -119,6 +125,7 @@ public partial class HomeViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOfferPrimaryButtonText))]
     public partial bool HasResolvedAndroidSubscriptionOffer { get; set; }
 
     [ObservableProperty]
@@ -159,7 +166,9 @@ public partial class HomeViewModel : ObservableObject
         ? "Create Account"
         : !IsEmailVerified
             ? "Validate Email"
-            : "Subscribe";
+            : ShouldUseTrialTerms
+                ? SubscriptionOfferDisplayBuilder.FreeTrialPrimaryButtonText
+                : "Subscribe";
     public ICommand? SubscriptionOfferPrimaryCommand => !IsAuthenticated
         ? NavigateToRegisterFromOfferCommand
         : !IsEmailVerified
@@ -188,7 +197,8 @@ public partial class HomeViewModel : ObservableObject
     public bool ShowRecommended => RecommendedPlaylist != null;
     public bool ShowLikedSongs => LikedSongsPlaylist != null;
 
-    private bool ShouldUseTrialTerms => HasEligibleAndroidFreeTrial
+    private bool ShouldUseTrialTerms => !IsAuthenticated
+        || HasEligibleAndroidFreeTrial
         || (!HasPreviousSubscriptionHistory && (ShouldShowFallbackAndroidFreeTrial || !HasResolvedAndroidSubscriptionOffer));
 
     private string? SubscriptionPriceForDisplay => IsAndroidSubscriptionPlatform && !_hasBillingDerivedSubscriptionPrice

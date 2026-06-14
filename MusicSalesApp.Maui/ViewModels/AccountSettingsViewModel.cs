@@ -54,6 +54,7 @@ public partial class AccountSettingsViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
+    [NotifyPropertyChangedFor(nameof(SubscribeButtonText))]
     public partial DateTime? TrialEndDate { get; set; }
 
     [ObservableProperty]
@@ -86,6 +87,7 @@ public partial class AccountSettingsViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
+    [NotifyPropertyChangedFor(nameof(SubscribeButtonText))]
     public partial string SubscriptionStatus { get; set; } = string.Empty;
 
     [ObservableProperty]
@@ -129,6 +131,7 @@ public partial class AccountSettingsViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
+    [NotifyPropertyChangedFor(nameof(SubscribeButtonText))]
     public partial bool HasEligibleAndroidFreeTrial { get; set; }
 
     [ObservableProperty]
@@ -137,6 +140,7 @@ public partial class AccountSettingsViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
+    [NotifyPropertyChangedFor(nameof(SubscribeButtonText))]
     public partial bool ShouldShowFallbackAndroidFreeTrial { get; set; }
 
     [ObservableProperty]
@@ -149,6 +153,7 @@ public partial class AccountSettingsViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferPriceText))]
     [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferPriceText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
+    [NotifyPropertyChangedFor(nameof(SubscribeButtonText))]
     public partial bool IsAndroidSubscriptionPlatform { get; set; } = DeviceInfo.Platform == DevicePlatform.Android;
 
     [ObservableProperty]
@@ -157,6 +162,7 @@ public partial class AccountSettingsViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
+    [NotifyPropertyChangedFor(nameof(SubscribeButtonText))]
     public partial bool HasResolvedAndroidSubscriptionOffer { get; set; }
 
     [ObservableProperty]
@@ -225,7 +231,11 @@ public partial class AccountSettingsViewModel : ObservableObject
                 : $"Ended On: {SubscriptionEndDate.Value.ToLocalTime():MMMM dd, yyyy h:mm tt}"
         : string.Empty;
     public string BillingSourceText => $"Billed via: {SubscriptionBillingSource}";
-    public string SubscribeButtonText => SubscriptionEndDate.HasValue ? "Create New Subscription" : "Subscribe Now";
+    public string SubscribeButtonText => ShowSubscriptionOfferCard && ShouldUseTrialTerms
+        ? SubscriptionOfferDisplayBuilder.FreeTrialPrimaryButtonText
+        : SubscriptionEndDate.HasValue
+            ? "Create New Subscription"
+            : "Subscribe Now";
 
     private bool HasPreviousSubscriptionHistory => SubscriptionEndDate.HasValue
         || TrialEndDate.HasValue

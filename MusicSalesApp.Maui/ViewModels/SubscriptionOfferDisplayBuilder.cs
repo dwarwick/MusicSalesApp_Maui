@@ -11,6 +11,7 @@ public sealed record SubscriptionOfferDisplay(
 public static class SubscriptionOfferDisplayBuilder
 {
     public const int DefaultFreeTrialDays = 3;
+    public const string FreeTrialPrimaryButtonText = "Start My Free Trial";
 
     public static SubscriptionOfferDisplay Create(
         bool showFreeTrialTerms,
@@ -27,10 +28,10 @@ public static class SubscriptionOfferDisplayBuilder
         {
             var days = freeTrialDays.GetValueOrDefault(DefaultFreeTrialDays);
             return new SubscriptionOfferDisplay(
-                $"Start your {days} day free trial today!",
-                $"After {days} days, your subscription will automatically renew at {monthlyPriceText}. You can cancel anytime in your Google Play subscription settings.",
+                "Support independent music.",
+                "Your subscription directly funds independent creators so they can keep making the music you love. Unlock the full catalog and stream without 60-second limits.",
                 priceText,
-                "Full subscription benefits are included during the trial.");
+                $"Full subscription benefits are included during the trial. Try it free for {days} days. After your trial, your subscription automatically renews at {monthlyPriceText}. You can cancel anytime in your Google Play subscription settings.");
         }
 
         return new SubscriptionOfferDisplay(

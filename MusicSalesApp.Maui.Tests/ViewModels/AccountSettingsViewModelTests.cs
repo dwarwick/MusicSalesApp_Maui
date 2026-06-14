@@ -276,8 +276,11 @@ public class AccountSettingsViewModelTests
         {
             Assert.That(_viewModel.ShowSubscriptionOfferCard, Is.True);
             Assert.That(_viewModel.ShowPlainSubscribeButton, Is.False);
-            Assert.That(_viewModel.SubscriptionOfferTitleText, Does.Contain("3 day free trial"));
-            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Contain("$4.99/month"));
+            Assert.That(_viewModel.SubscribeButtonText, Is.EqualTo("Start My Free Trial"));
+            Assert.That(_viewModel.SubscriptionOfferTitleText, Is.EqualTo("Support independent music."));
+            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Contain("directly funds independent creators"));
+            Assert.That(_viewModel.SubscriptionOfferDisclosureText, Does.StartWith("Full subscription benefits are included during the trial."));
+            Assert.That(_viewModel.SubscriptionOfferDisclosureText, Does.Contain("$4.99/month"));
         });
     }
 
@@ -392,7 +395,7 @@ public class AccountSettingsViewModelTests
         Assert.Multiple(() =>
         {
             Assert.That(_viewModel.SubscriptionPriceDisplay, Is.EqualTo("\u20B1205.00"));
-            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Contain("\u20B1205.00/month"));
+            Assert.That(_viewModel.SubscriptionOfferDisclosureText, Does.Contain("\u20B1205.00/month"));
         });
     }
 
@@ -426,7 +429,7 @@ public class AccountSettingsViewModelTests
         Assert.Multiple(() =>
         {
             Assert.That(_viewModel.SubscriptionPriceDisplay, Is.EqualTo("\u20B1205.00"));
-            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Contain("\u20B1205.00/month"));
+            Assert.That(_viewModel.SubscriptionOfferDisclosureText, Does.Contain("\u20B1205.00/month"));
         });
     }
 
@@ -445,8 +448,9 @@ public class AccountSettingsViewModelTests
         Assert.Multiple(() =>
         {
             Assert.That(_viewModel.ShowSubscriptionOfferCard, Is.True);
-            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Contain("monthly price shown in Google Play"));
-            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Not.Contain("$4.99"));
+            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Contain("stream without 60-second limits"));
+            Assert.That(_viewModel.SubscriptionOfferDisclosureText, Does.Contain("monthly price shown in Google Play"));
+            Assert.That(_viewModel.SubscriptionOfferDisclosureText, Does.Not.Contain("$4.99"));
             Assert.That(_viewModel.SubscriptionOfferPriceText, Is.Empty);
             Assert.That(_viewModel.ShowSubscriptionOfferPriceText, Is.False);
             Assert.That(_viewModel.SubscriptionPriceDisplay, Is.Empty);
@@ -488,8 +492,10 @@ public class AccountSettingsViewModelTests
             Assert.That(_viewModel.SubscriptionStatusText, Is.EqualTo("Expired"));
             Assert.That(_viewModel.ShowSubscriptionOfferCard, Is.True);
             Assert.That(_viewModel.ShowPlainSubscribeButton, Is.False);
-            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Contain("$2.99/month"));
-            Assert.That(_viewModel.SubscriptionOfferTitleText, Does.Contain("3 day free trial"));
+            Assert.That(_viewModel.SubscribeButtonText, Is.EqualTo("Start My Free Trial"));
+            Assert.That(_viewModel.SubscriptionOfferTitleText, Is.EqualTo("Support independent music."));
+            Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Contain("stream without 60-second limits"));
+            Assert.That(_viewModel.SubscriptionOfferDisclosureText, Does.Contain("$2.99/month"));
         });
         _mockBillingService.Verify(b => b.GetSubscriptionOfferAsync(), Times.Once);
     }
