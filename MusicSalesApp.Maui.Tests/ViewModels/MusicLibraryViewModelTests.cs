@@ -147,7 +147,7 @@ public class MusicLibraryViewModelTests
     }
 
     [Test]
-    public async Task SelectAiFilter_AiOnly_FiltersSongs()
+    public async Task SelectAiFilter_AiMusicOnly_FiltersSongs()
     {
         var songs = new List<SongDto>
         {
@@ -159,10 +159,62 @@ public class MusicLibraryViewModelTests
 
         await _viewModel.LoadSongsCommand.ExecuteAsync(null);
 
-        _viewModel.SelectAiFilterCommand.Execute("AiOnly");
+        _viewModel.SelectAiFilterCommand.Execute("AiMusic");
 
         Assert.That(_viewModel.Songs.Select(s => s.SongTitle), Is.EqualTo(new[] { "Another AI Song", "AI Song" }));
-        Assert.That(_viewModel.IsAiOnlyFilterSelected, Is.True);
+        Assert.That(_viewModel.IsAiMusicFilterSelected, Is.True);
+        Assert.That(_viewModel.IsAllAiFilterSelected, Is.False);
+    }
+
+    [Test]
+    public async Task SelectAiFilter_AnyAndIndividualAiChoices_FilterCorrectly()
+    {
+        var songs = new List<SongDto>
+        {
+            new() { Id = 1, SongTitle = "AI Music", IsAiGenerated = true },
+            new() { Id = 2, SongTitle = "AI Vocals", IsAiVocals = true },
+            new() { Id = 3, SongTitle = "AI Lyrics", IsAiLyrics = true },
+            new() { Id = 4, SongTitle = "Human Song" }
+        };
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
+
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        _viewModel.SelectAiFilterCommand.Execute("AnyAi");
+        Assert.That(_viewModel.Songs.Select(s => s.SongTitle), Is.EqualTo(new[] { "AI Lyrics", "AI Vocals", "AI Music" }));
+        Assert.That(_viewModel.IsAnyAiFilterSelected, Is.True);
+        Assert.That(_viewModel.IsNonAiOnlyFilterSelected, Is.False);
+
+        _viewModel.SelectAiFilterCommand.Execute("AiVocals");
+        Assert.That(_viewModel.Songs.Select(s => s.SongTitle), Is.EqualTo(new[] { "AI Vocals" }));
+        Assert.That(_viewModel.IsAiVocalsFilterSelected, Is.True);
+        Assert.That(_viewModel.IsAnyAiFilterSelected, Is.False);
+
+        _viewModel.SelectAiFilterCommand.Execute("AiLyrics");
+        Assert.That(_viewModel.Songs.Select(s => s.SongTitle), Is.EqualTo(new[] { "AI Lyrics" }));
+        Assert.That(_viewModel.IsAiLyricsFilterSelected, Is.True);
+    }
+
+    [Test]
+    public async Task SelectAiFilter_NonAi_ExcludesAllAiDisclosureTypes()
+    {
+        var songs = new List<SongDto>
+        {
+            new() { Id = 1, SongTitle = "AI Music", IsAiGenerated = true },
+            new() { Id = 2, SongTitle = "AI Vocals", IsAiVocals = true },
+            new() { Id = 3, SongTitle = "AI Lyrics", IsAiLyrics = true },
+            new() { Id = 4, SongTitle = "Human Song" }
+        };
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
+
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        _viewModel.SelectAiFilterCommand.Execute("NonAiOnly");
+
+        Assert.That(_viewModel.Songs.Select(s => s.SongTitle), Is.EqualTo(new[] { "Human Song" }));
+        Assert.That(_viewModel.IsNonAiOnlyFilterSelected, Is.True);
+        Assert.That(_viewModel.IsAnyAiFilterSelected, Is.False);
+        Assert.That(_viewModel.IsAiMusicFilterSelected, Is.False);
     }
 
     [Test]
@@ -176,11 +228,12 @@ public class MusicLibraryViewModelTests
         _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
 
         await _viewModel.LoadSongsCommand.ExecuteAsync(null);
-        _viewModel.SelectAiFilterCommand.Execute("AiOnly");
+        _viewModel.SelectAiFilterCommand.Execute("AiVocals");
 
         _viewModel.ClearFiltersCommand.Execute(null);
 
         Assert.That(_viewModel.IsAllAiFilterSelected, Is.True);
+        Assert.That(_viewModel.IsAiVocalsFilterSelected, Is.False);
         Assert.That(_viewModel.Songs, Has.Count.EqualTo(2));
     }
 
@@ -198,11 +251,20 @@ public class MusicLibraryViewModelTests
         Assert.That(_viewModel.AiPillText, Is.EqualTo("Music Type"));
         Assert.That(_viewModel.HasActiveAiFilter, Is.False);
 
-        _viewModel.SelectAiFilterCommand.Execute("AiOnly");
+        _viewModel.SelectAiFilterCommand.Execute("AnyAi");
+
+        Assert.That(_viewModel.AiPillText, Is.EqualTo("Any AI"));
+        Assert.That(_viewModel.HasActiveAiFilter, Is.True);
+        Assert.That(_viewModel.HasAnyActiveFilters, Is.True);
+        Assert.That(_viewModel.IsAnyAiFilterSelected, Is.True);
+
+        _viewModel.SelectAiFilterCommand.Execute("AiMusic");
 
         Assert.That(_viewModel.AiPillText, Is.EqualTo("AI Music"));
         Assert.That(_viewModel.HasActiveAiFilter, Is.True);
         Assert.That(_viewModel.HasAnyActiveFilters, Is.True);
+        Assert.That(_viewModel.IsAiMusicFilterSelected, Is.True);
+        Assert.That(_viewModel.IsAnyAiFilterSelected, Is.False);
     }
 
     [Test]

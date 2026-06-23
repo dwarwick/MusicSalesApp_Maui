@@ -310,7 +310,7 @@ public class PlaylistPlayerViewModelTests
     }
 
     [Test]
-    public async Task PlaylistServiceLoad_PreservesAiGeneratedFlag()
+    public async Task PlaylistServiceLoad_PreservesAiDisclosureFlags()
     {
         SongDto? currentSong = null;
         _mockPlaybackService.SetupGet(s => s.CurrentSong).Returns(() => currentSong);
@@ -335,7 +335,9 @@ public class PlaylistPlayerViewModelTests
                     ArtistName = "Synth Artist",
                     Genre = "Electronic",
                     StreamUrl = "https://example.com/anthem.mp3",
-                    IsAiGenerated = true
+                    IsAiGenerated = true,
+                    IsAiVocals = true,
+                    IsAiLyrics = true
                 }
             ]
         });
@@ -347,7 +349,11 @@ public class PlaylistPlayerViewModelTests
 
         Assert.That(_viewModel.Songs, Has.Count.EqualTo(1));
         Assert.That(_viewModel.Songs[0].IsAiGenerated, Is.True);
+        Assert.That(_viewModel.Songs[0].IsAiVocals, Is.True);
+        Assert.That(_viewModel.Songs[0].IsAiLyrics, Is.True);
         Assert.That(_viewModel.CurrentSong?.IsAiGenerated, Is.True);
+        Assert.That(_viewModel.CurrentSong?.IsAiVocals, Is.True);
+        Assert.That(_viewModel.CurrentSong?.IsAiLyrics, Is.True);
     }
 
     [Test]

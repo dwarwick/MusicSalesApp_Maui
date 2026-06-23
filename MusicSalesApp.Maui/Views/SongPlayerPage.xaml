@@ -30,17 +30,13 @@
                                     HeightRequest="{StaticResource PlayerHeroArtSize}"
                                     WidthRequest="{StaticResource PlayerHeroArtSize}" />
                       </Border>
-                      <Image Source="ai_generated_badge.png"
-                          HeightRequest="44"
-                          WidthRequest="44"
-                          Margin="0,0,0,10"
-                          Aspect="AspectFit"
-                          HorizontalOptions="End"
-                          VerticalOptions="End"
-                          TranslationX="20"
-                          InputTransparent="True"
-                          IsVisible="{Binding Song.IsAiGenerated}" />
                   </Grid>
+
+                <views:AiContentBadgesView IsAiMusic="{Binding Song.IsAiGenerated}"
+                                            IsAiVocals="{Binding Song.IsAiVocals}"
+                                            IsAiLyrics="{Binding Song.IsAiLyrics}"
+                                            BadgeSize="34"
+                                            HorizontalOptions="Center" />
 
                 <!-- Song Title -->
                 <Label Text="{Binding Song.SongTitle}"

@@ -123,15 +123,87 @@
                     <Grid.GestureRecognizers>
                         <TapGestureRecognizer Command="{Binding SelectAiFilterCommand}"
                                               Tapped="OnFilterOptionTapped"
-                                              CommandParameter="AiOnly" />
+                                              CommandParameter="AnyAi" />
                     </Grid.GestureRecognizers>
                     <CheckBox Grid.Column="0"
-                              IsChecked="{Binding IsAiOnlyFilterSelected, Mode=OneWay}"
+                              IsChecked="{Binding IsAnyAiFilterSelected, Mode=OneWay}"
                               Color="{StaticResource Primary}"
                               InputTransparent="True"
                               VerticalOptions="Center" />
                     <Label Grid.Column="1"
+                           Text="Any AI"
+                           FontSize="14"
+                           TextColor="{AppThemeBinding Light=Black, Dark=White}"
+                           VerticalOptions="Center" />
+                </Grid>
+                <Grid ColumnDefinitions="Auto,Auto,*" Padding="4,8" ColumnSpacing="8">
+                    <Grid.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding SelectAiFilterCommand}"
+                                              Tapped="OnFilterOptionTapped"
+                                              CommandParameter="AiMusic" />
+                    </Grid.GestureRecognizers>
+                    <CheckBox Grid.Column="0"
+                              IsChecked="{Binding IsAiMusicFilterSelected, Mode=OneWay}"
+                              Color="{StaticResource Primary}"
+                              InputTransparent="True"
+                              VerticalOptions="Center" />
+                    <Image Grid.Column="1"
+                           Source="music_icon_24.png"
+                           HeightRequest="24"
+                           WidthRequest="24"
+                           Aspect="AspectFit"
+                           InputTransparent="True"
+                           VerticalOptions="Center" />
+                    <Label Grid.Column="2"
                            Text="AI Music"
+                           FontSize="14"
+                           TextColor="{AppThemeBinding Light=Black, Dark=White}"
+                           VerticalOptions="Center" />
+                </Grid>
+                <Grid ColumnDefinitions="Auto,Auto,*" Padding="4,8" ColumnSpacing="8">
+                    <Grid.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding SelectAiFilterCommand}"
+                                              Tapped="OnFilterOptionTapped"
+                                              CommandParameter="AiVocals" />
+                    </Grid.GestureRecognizers>
+                    <CheckBox Grid.Column="0"
+                              IsChecked="{Binding IsAiVocalsFilterSelected, Mode=OneWay}"
+                              Color="{StaticResource Primary}"
+                              InputTransparent="True"
+                              VerticalOptions="Center" />
+                    <Image Grid.Column="1"
+                           Source="vocals_icon_24.png"
+                           HeightRequest="24"
+                           WidthRequest="24"
+                           Aspect="AspectFit"
+                           InputTransparent="True"
+                           VerticalOptions="Center" />
+                    <Label Grid.Column="2"
+                           Text="AI Vocals"
+                           FontSize="14"
+                           TextColor="{AppThemeBinding Light=Black, Dark=White}"
+                           VerticalOptions="Center" />
+                </Grid>
+                <Grid ColumnDefinitions="Auto,Auto,*" Padding="4,8" ColumnSpacing="8">
+                    <Grid.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding SelectAiFilterCommand}"
+                                              Tapped="OnFilterOptionTapped"
+                                              CommandParameter="AiLyrics" />
+                    </Grid.GestureRecognizers>
+                    <CheckBox Grid.Column="0"
+                              IsChecked="{Binding IsAiLyricsFilterSelected, Mode=OneWay}"
+                              Color="{StaticResource Primary}"
+                              InputTransparent="True"
+                              VerticalOptions="Center" />
+                    <Image Grid.Column="1"
+                           Source="lyrics_icon_24.png"
+                           HeightRequest="24"
+                           WidthRequest="24"
+                           Aspect="AspectFit"
+                           InputTransparent="True"
+                           VerticalOptions="Center" />
+                    <Label Grid.Column="2"
+                           Text="AI Lyrics"
                            FontSize="14"
                            TextColor="{AppThemeBinding Light=Black, Dark=White}"
                            VerticalOptions="Center" />

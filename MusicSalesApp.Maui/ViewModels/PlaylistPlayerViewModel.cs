@@ -397,6 +397,8 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         TrackLengthSeconds = ps.TrackLengthSeconds,
         StreamCount = ps.StreamCount,
         IsAiGenerated = ps.IsAiGenerated,
+        IsAiVocals = ps.IsAiVocals,
+        IsAiLyrics = ps.IsAiLyrics,
         DisplayOnHomePage = ps.DisplayOnHomePage,
         DisplayOrder = ps.DisplayOrder,
         CreatorId = ps.CreatorId,

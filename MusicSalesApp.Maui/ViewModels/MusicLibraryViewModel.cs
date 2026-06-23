@@ -8,7 +8,10 @@ namespace MusicSalesApp.Maui.ViewModels;
 public partial class MusicLibraryViewModel : ObservableObject
 {
     private const string AiFilterAll = "All";
-    private const string AiFilterAiOnly = "AiOnly";
+    private const string AiFilterAny = "AnyAi";
+    private const string AiFilterAiMusic = "AiMusic";
+    private const string AiFilterAiVocals = "AiVocals";
+    private const string AiFilterAiLyrics = "AiLyrics";
     private const string AiFilterNonAiOnly = "NonAiOnly";
 
     private readonly IMusicService _musicService;
@@ -141,7 +144,10 @@ public partial class MusicLibraryViewModel : ObservableObject
     public partial bool HasAnyActiveFilters { get; set; }
 
     public bool IsAllAiFilterSelected => string.Equals(_selectedAiFilter, AiFilterAll, StringComparison.Ordinal);
-    public bool IsAiOnlyFilterSelected => string.Equals(_selectedAiFilter, AiFilterAiOnly, StringComparison.Ordinal);
+    public bool IsAnyAiFilterSelected => string.Equals(_selectedAiFilter, AiFilterAny, StringComparison.Ordinal);
+    public bool IsAiMusicFilterSelected => string.Equals(_selectedAiFilter, AiFilterAiMusic, StringComparison.Ordinal);
+    public bool IsAiVocalsFilterSelected => string.Equals(_selectedAiFilter, AiFilterAiVocals, StringComparison.Ordinal);
+    public bool IsAiLyricsFilterSelected => string.Equals(_selectedAiFilter, AiFilterAiLyrics, StringComparison.Ordinal);
     public bool IsNonAiOnlyFilterSelected => string.Equals(_selectedAiFilter, AiFilterNonAiOnly, StringComparison.Ordinal);
 
     partial void OnGenreSearchTextChanged(string? value) => RefreshGenreFilterItems();
@@ -215,16 +221,17 @@ public partial class MusicLibraryViewModel : ObservableObject
     {
         _selectedAiFilter = filter switch
         {
-            AiFilterAiOnly => AiFilterAiOnly,
+            AiFilterAny => AiFilterAny,
+            AiFilterAiMusic => AiFilterAiMusic,
+            AiFilterAiVocals => AiFilterAiVocals,
+            AiFilterAiLyrics => AiFilterAiLyrics,
             AiFilterNonAiOnly => AiFilterNonAiOnly,
             _ => AiFilterAll
         };
 
         IsAiPanelOpen = false;
 
-        OnPropertyChanged(nameof(IsAllAiFilterSelected));
-        OnPropertyChanged(nameof(IsAiOnlyFilterSelected));
-        OnPropertyChanged(nameof(IsNonAiOnlyFilterSelected));
+        NotifyAiFilterSelectionChanged();
         UpdateAiPillText();
 
         RefreshAvailableGenres();
@@ -257,7 +264,10 @@ public partial class MusicLibraryViewModel : ObservableObject
         HasActiveAiFilter = _selectedAiFilter != AiFilterAll;
         AiPillText = _selectedAiFilter switch
         {
-            AiFilterAiOnly => "AI Music",
+            AiFilterAny => "Any AI",
+            AiFilterAiMusic => "AI Music",
+            AiFilterAiVocals => "AI Vocals",
+            AiFilterAiLyrics => "AI Lyrics",
             AiFilterNonAiOnly => "Non-AI Music",
             _ => "Music Type"
         };
@@ -351,9 +361,7 @@ public partial class MusicLibraryViewModel : ObservableObject
         SelectedGenres.Clear();
         SelectedArtists.Clear();
         _selectedAiFilter = AiFilterAll;
-        OnPropertyChanged(nameof(IsAllAiFilterSelected));
-        OnPropertyChanged(nameof(IsAiOnlyFilterSelected));
-        OnPropertyChanged(nameof(IsNonAiOnlyFilterSelected));
+        NotifyAiFilterSelectionChanged();
         UpdateGenrePillText();
         UpdateArtistPillText();
         UpdateAiPillText();
@@ -437,7 +445,10 @@ public partial class MusicLibraryViewModel : ObservableObject
 
         var musicTypeFilter = _selectedAiFilter switch
         {
-            AiFilterAiOnly => "Music Type: AI Music",
+            AiFilterAny => "Music Type: Any AI",
+            AiFilterAiMusic => "Music Type: AI Music",
+            AiFilterAiVocals => "Music Type: AI Vocals",
+            AiFilterAiLyrics => "Music Type: AI Lyrics",
             AiFilterNonAiOnly => "Music Type: Non-AI Music",
             _ => null
         };
@@ -455,10 +466,28 @@ public partial class MusicLibraryViewModel : ObservableObject
     {
         return _selectedAiFilter switch
         {
-            AiFilterAiOnly => songs.Where(s => s.IsAiGenerated),
-            AiFilterNonAiOnly => songs.Where(s => !s.IsAiGenerated),
+            AiFilterAny => songs.Where(HasAnyAiDisclosure),
+            AiFilterAiMusic => songs.Where(s => s.IsAiGenerated),
+            AiFilterAiVocals => songs.Where(s => s.IsAiVocals),
+            AiFilterAiLyrics => songs.Where(s => s.IsAiLyrics),
+            AiFilterNonAiOnly => songs.Where(s => !HasAnyAiDisclosure(s)),
             _ => songs
         };
+    }
+
+    private static bool HasAnyAiDisclosure(SongDto song)
+    {
+        return song.IsAiGenerated || song.IsAiVocals || song.IsAiLyrics;
+    }
+
+    private void NotifyAiFilterSelectionChanged()
+    {
+        OnPropertyChanged(nameof(IsAllAiFilterSelected));
+        OnPropertyChanged(nameof(IsAnyAiFilterSelected));
+        OnPropertyChanged(nameof(IsAiMusicFilterSelected));
+        OnPropertyChanged(nameof(IsAiVocalsFilterSelected));
+        OnPropertyChanged(nameof(IsAiLyricsFilterSelected));
+        OnPropertyChanged(nameof(IsNonAiOnlyFilterSelected));
     }
 
     /// <summary>
@@ -701,9 +730,7 @@ public partial class MusicLibraryViewModel : ObservableObject
             SelectedGenres.Clear();
             SelectedArtists.Clear();
             _selectedAiFilter = AiFilterAll;
-            OnPropertyChanged(nameof(IsAllAiFilterSelected));
-            OnPropertyChanged(nameof(IsAiOnlyFilterSelected));
-            OnPropertyChanged(nameof(IsNonAiOnlyFilterSelected));
+            NotifyAiFilterSelectionChanged();
             UpdateGenrePillText();
             UpdateArtistPillText();
             IsGenrePanelOpen = false;

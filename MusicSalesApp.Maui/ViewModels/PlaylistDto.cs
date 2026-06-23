@@ -56,6 +56,8 @@ public class PlaylistSongDto
     public int? DisplayOrder { get; set; }
     public int StreamCount { get; set; }
     public bool IsAiGenerated { get; set; }
+    public bool IsAiVocals { get; set; }
+    public bool IsAiLyrics { get; set; }
     public int? CreatorId { get; set; }
     public int? CreatorUserId { get; set; }
 }

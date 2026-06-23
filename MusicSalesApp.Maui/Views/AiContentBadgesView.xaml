@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="MusicSalesApp.Maui.Views.AiContentBadgesView"
+             x:Name="Root">
+    <HorizontalStackLayout Spacing="4"
+                           HorizontalOptions="Center"
+                           InputTransparent="True"
+                           IsVisible="{Binding HasAnyBadge, Source={x:Reference Root}}">
+        <Image Source="music_icon_24.png"
+               HeightRequest="{Binding BadgeSize, Source={x:Reference Root}}"
+               WidthRequest="{Binding BadgeSize, Source={x:Reference Root}}"
+               Aspect="AspectFit"
+               InputTransparent="True"
+               IsVisible="{Binding IsAiMusic, Source={x:Reference Root}}" />
+        <Image Source="vocals_icon_24.png"
+               HeightRequest="{Binding BadgeSize, Source={x:Reference Root}}"
+               WidthRequest="{Binding BadgeSize, Source={x:Reference Root}}"
+               Aspect="AspectFit"
+               InputTransparent="True"
+               IsVisible="{Binding IsAiVocals, Source={x:Reference Root}}" />
+        <Image Source="lyrics_icon_24.png"
+               HeightRequest="{Binding BadgeSize, Source={x:Reference Root}}"
+               WidthRequest="{Binding BadgeSize, Source={x:Reference Root}}"
+               Aspect="AspectFit"
+               InputTransparent="True"
+               IsVisible="{Binding IsAiLyrics, Source={x:Reference Root}}" />
+    </HorizontalStackLayout>
+</ContentView>
