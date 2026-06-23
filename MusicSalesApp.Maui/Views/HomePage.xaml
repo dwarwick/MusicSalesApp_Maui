@@ -15,6 +15,56 @@
         <ScrollView Grid.Row="0">
             <VerticalStackLayout Spacing="0" Padding="0">
 
+            <!-- ========== FEATURED MUSIC ========== -->
+            <VerticalStackLayout IsVisible="{Binding ShowFeaturedMusic}"
+                                 Padding="20,0,20,0"
+                                 Spacing="0">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" VerticalOptions="Center">
+                    <Label Text="Featured Music"
+                           FontSize="22"
+                           FontAttributes="Bold"
+                           VerticalOptions="Center"
+                           TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+                    <Label Grid.Column="1"
+                           Text="View All ›"
+                           FontSize="14"
+                           FontAttributes="Bold"
+                           VerticalOptions="Center"
+                           HorizontalOptions="End"
+                           TextColor="{StaticResource Primary}"
+                           TextDecorations="Underline">
+                        <Label.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding NavigateToMusicLibraryCommand}" />
+                        </Label.GestureRecognizers>
+                    </Label>
+                </Grid>
+
+                <Label Text="Listen to today's featured songs in full. Subscribe for unlimited access to the full library!"
+                       FontSize="14"
+                       TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+
+                <CollectionView ItemsSource="{Binding FeaturedSongs}"
+                                SelectionMode="None"
+                                HeightRequest="400"
+                                HorizontalScrollBarVisibility="Never"
+                                ItemSizingStrategy="MeasureAllItems">
+                    <CollectionView.ItemsLayout>
+                        <LinearItemsLayout Orientation="Horizontal" ItemSpacing="0" />
+                    </CollectionView.ItemsLayout>
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:SongDto">
+                            <views:SongCardView OpenSongCommand="{Binding Source={RelativeSource AncestorType={x:Type vm:HomeViewModel}}, Path=OpenSongCommand}"
+                                                NavigateToArtistCommand="{Binding Source={RelativeSource AncestorType={x:Type vm:HomeViewModel}}, Path=NavigateToArtistCommand}"
+                                                NavigateToGenreCommand="{Binding Source={RelativeSource AncestorType={x:Type vm:HomeViewModel}}, Path=NavigateToGenreCommand}"
+                                                LikeSongCommand="{Binding Source={RelativeSource AncestorType={x:Type vm:HomeViewModel}}, Path=LikeSongCommand}"
+                                                DislikeSongCommand="{Binding Source={RelativeSource AncestorType={x:Type vm:HomeViewModel}}, Path=DislikeSongCommand}"
+                                                ReportSongCommand="{Binding Source={RelativeSource AncestorType={x:Type vm:HomeViewModel}}, Path=ReportSongCommand}"
+                                                PlaySongCommand="{Binding Source={RelativeSource AncestorType={x:Type vm:HomeViewModel}}, Path=PlaySongCommand}" />
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+            </VerticalStackLayout>
+
             <!-- ========== HERO SECTION ========== -->
             <VerticalStackLayout Padding="24,4,24,4" Spacing="2"
                   BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
@@ -220,56 +270,6 @@
                                VerticalTextAlignment="Center" />
                     </Grid>
                 </Border>
-            </VerticalStackLayout>
-
-            <!-- ========== FEATURED MUSIC ========== -->
-            <VerticalStackLayout IsVisible="{Binding ShowFeaturedMusic}"
-                                 Padding="20,0,20,0"
-                                 Spacing="0">
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" VerticalOptions="Center">
-                    <Label Text="Featured Music"
-                           FontSize="22"
-                           FontAttributes="Bold"
-                           VerticalOptions="Center"
-                           TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
-                    <Label Grid.Column="1"
-                           Text="View All ›"
-                           FontSize="14"
-                           FontAttributes="Bold"
-                           VerticalOptions="Center"
-                           HorizontalOptions="End"
-                           TextColor="{StaticResource Primary}"
-                           TextDecorations="Underline">
-                        <Label.GestureRecognizers>
-                            <TapGestureRecognizer Command="{Binding NavigateToMusicLibraryCommand}" />
-                        </Label.GestureRecognizers>
-                    </Label>
-                </Grid>
-
-                <Label Text="Listen to today's featured songs in full. Subscribe for unlimited access to the full library!"
-                       FontSize="14"
-                       TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
-
-                <CollectionView ItemsSource="{Binding FeaturedSongs}"
-                                SelectionMode="None"
-                                HeightRequest="360"
-                                HorizontalScrollBarVisibility="Never"
-                                ItemSizingStrategy="MeasureAllItems">
-                    <CollectionView.ItemsLayout>
-                        <LinearItemsLayout Orientation="Horizontal" ItemSpacing="0" />
-                    </CollectionView.ItemsLayout>
-                    <CollectionView.ItemTemplate>
-                        <DataTemplate x:DataType="vm:SongDto">
-                            <views:SongCardView OpenSongCommand="{Binding Source={RelativeSource AncestorType={x:Type vm:HomeViewModel}}, Path=OpenSongCommand}"
-                                                NavigateToArtistCommand="{Binding Source={RelativeSource AncestorType={x:Type vm:HomeViewModel}}, Path=NavigateToArtistCommand}"
-                                                NavigateToGenreCommand="{Binding Source={RelativeSource AncestorType={x:Type vm:HomeViewModel}}, Path=NavigateToGenreCommand}"
-                                                LikeSongCommand="{Binding Source={RelativeSource AncestorType={x:Type vm:HomeViewModel}}, Path=LikeSongCommand}"
-                                                DislikeSongCommand="{Binding Source={RelativeSource AncestorType={x:Type vm:HomeViewModel}}, Path=DislikeSongCommand}"
-                                                ReportSongCommand="{Binding Source={RelativeSource AncestorType={x:Type vm:HomeViewModel}}, Path=ReportSongCommand}"
-                                                PlaySongCommand="{Binding Source={RelativeSource AncestorType={x:Type vm:HomeViewModel}}, Path=PlaySongCommand}" />
-                        </DataTemplate>
-                    </CollectionView.ItemTemplate>
-                </CollectionView>
             </VerticalStackLayout>
 
             <!-- ========== WHY STREAMTUNES SECTION ========== -->
