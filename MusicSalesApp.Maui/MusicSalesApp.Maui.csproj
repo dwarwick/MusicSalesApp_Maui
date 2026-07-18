@@ -41,7 +41,7 @@
 		<!-- Versions -->
 		<ApplicationDisplayVersion>1.0.90</ApplicationDisplayVersion>
 		<ApplicationVersion>90</ApplicationVersion>
-		<AndroidXMedia3Version>1.10.1</AndroidXMedia3Version>
+		<AndroidXMedia3Version>1.10.1.1</AndroidXMedia3Version>
 
 		<!-- To develop, package, and publish an app to the Microsoft Store, see: https://aka.ms/MauiTemplateUnpackaged -->
 		<WindowsPackageType>None</WindowsPackageType>
@@ -129,18 +129,18 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Azure.Storage.Blobs" Version="12.27.0" />
-		<PackageReference Include="CommunityToolkit.Maui" Version="14.0.1" />
+		<PackageReference Include="Azure.Storage.Blobs" Version="12.29.1" />
+		<PackageReference Include="CommunityToolkit.Maui" Version="14.2.0" />
 		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-		<PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.5" />
-		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.5" />
-		<PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.0" />
-		<PackageReference Include="Microsoft.Extensions.Http" Version="10.0.5" />
-		<PackageReference Include="Microsoft.Maui.Controls" Version="10.0.41" />
-		<PackageReference Include="Microsoft.Maui.Controls.Compatibility" Version="10.0.41" />
-		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.10" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.10" />
+		<PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.10" />
+		<PackageReference Include="Microsoft.Extensions.Http" Version="10.0.10" />
+		<PackageReference Include="Microsoft.Maui.Controls" Version="10.0.80" />
+		<PackageReference Include="Microsoft.Maui.Controls.Compatibility" Version="10.0.80" />
+		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.10" />
 		<PackageReference Include="SkiaSharp.Extended.UI.Maui" Version="3.0.0" />
-		<PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.8.0" />
+		<PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.19.2" />
 	</ItemGroup>
 
 	<ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) != 'android'">
@@ -149,14 +149,14 @@
 
 	<!-- Android-only packages -->
 	<ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
-		<PackageReference Include="Xamarin.AndroidX.Biometric" Version="1.1.0.32" />
-		<PackageReference Include="Xamarin.Android.Google.BillingClient" Version="8.3.0.2" />
+		<PackageReference Include="Xamarin.AndroidX.Biometric" Version="1.1.0.33" />
+		<PackageReference Include="Xamarin.Android.Google.BillingClient" Version="9.1.0.1" />
 		<PackageReference Include="Xamarin.AndroidX.Media3.Common" Version="$(AndroidXMedia3Version)" />
 		<PackageReference Include="Xamarin.AndroidX.Media3.DataSource" Version="$(AndroidXMedia3Version)" />
 		<PackageReference Include="Xamarin.AndroidX.Media3.Database" Version="$(AndroidXMedia3Version)" />
 		<PackageReference Include="Xamarin.AndroidX.Media3.Extractor" Version="$(AndroidXMedia3Version)" />
 		<PackageReference Include="Xamarin.AndroidX.Media3.ExoPlayer" Version="$(AndroidXMedia3Version)" />
-		<PackageReference Include="Xamarin.AndroidX.Media3.Session" Version="$(AndroidXMedia3Version)" />
+		<PackageReference Include="Xamarin.AndroidX.Media3.Session" Version="1.10.1.2" />
 	</ItemGroup>
 
 </Project>

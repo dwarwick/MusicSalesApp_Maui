@@ -110,7 +110,6 @@ public class SubscriptionStatusDto
     public string PaypalSubscriptionId { get; set; } = string.Empty;
     public string BillingSource { get; set; } = string.Empty;
     public bool IsSubscriptionBlocked { get; set; }
-    public string SubscriptionPrice { get; set; } = string.Empty;
 }
 
 public class ForgotPasswordResponseDto

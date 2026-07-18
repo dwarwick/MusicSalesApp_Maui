@@ -9,13 +9,13 @@ namespace MusicSalesApp.Maui.ViewModels;
 public partial class AccountSettingsViewModel : ObservableObject
 {
     private readonly IAuthService _authService;
+    public INetworkStatusService NetworkStatus { get; }
     private readonly IAlertService _alertService;
     private readonly INavigationService _navigationService;
     private readonly IBrowserService _browserService;
     private readonly IConfiguration _configuration;
     private readonly IMusicService _musicService;
     private readonly IBillingService _billingService;
-    private readonly IAppSettingsService _appSettingsService;
     private bool _hasBillingDerivedSubscriptionPrice;
 
     private const string DefaultAppleSubscriptionManagementUrl = "https://account.apple.com/account/manage/section/subscriptions";
@@ -123,7 +123,7 @@ public partial class AccountSettingsViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferPriceText))]
     [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferPriceText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
-    public partial string SubscriptionPrice { get; set; } = "3.99";
+    public partial string SubscriptionPrice { get; set; } = string.Empty;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferCard))]
@@ -189,10 +189,7 @@ public partial class AccountSettingsViewModel : ObservableObject
         && (!HasPreviousSubscriptionHistory || HasEligibleAndroidFreeTrial || !HasResolvedAndroidSubscriptionOffer);
     public bool ShowPlainSubscribeButton => CanCreateSubscription && !ShowSubscriptionOfferCard;
     public bool IsSubscriptionOfferPrimaryButtonEnabled => !IsSubscribing;
-    public string SubscriptionPriceDisplay => SubscriptionOfferDisplayBuilder.FormatMonthlyPriceOrEmpty(
-        SubscriptionPriceForDisplay,
-        "3.99",
-        AllowConfiguredSubscriptionPriceFallback);
+    public string SubscriptionPriceDisplay => SubscriptionOfferDisplayBuilder.FormatMonthlyPrice(SubscriptionPriceForDisplay);
     public bool ShowSubscriptionPriceDisplay => !string.IsNullOrWhiteSpace(SubscriptionPriceDisplay);
     public string SubscriptionOfferTitleText => CurrentSubscriptionOfferDisplay.Title;
     public string SubscriptionOfferBodyText => CurrentSubscriptionOfferDisplay.Body;
@@ -250,14 +247,10 @@ public partial class AccountSettingsViewModel : ObservableObject
         ? null
         : SubscriptionPrice;
 
-    private bool AllowConfiguredSubscriptionPriceFallback => !IsAndroidSubscriptionPlatform;
-
     private SubscriptionOfferDisplay CurrentSubscriptionOfferDisplay => SubscriptionOfferDisplayBuilder.Create(
         ShouldUseTrialTerms,
         AndroidFreeTrialDays,
-        SubscriptionPriceForDisplay,
-        "3.99",
-        AllowConfiguredSubscriptionPriceFallback);
+        SubscriptionPriceForDisplay);
 
     private bool ShouldUseExternalSubscriptionManagement =>
         string.Equals(SubscriptionBillingSource, BillingProviders.Apple, StringComparison.Ordinal) ||
@@ -287,22 +280,22 @@ public partial class AccountSettingsViewModel : ObservableObject
 
     public AccountSettingsViewModel(
         IAuthService authService,
+        INetworkStatusService networkStatus,
         IAlertService alertService,
         INavigationService navigationService,
         IBrowserService browserService,
         IConfiguration configuration,
         IMusicService musicService,
-        IBillingService billingService,
-        IAppSettingsService appSettingsService)
+        IBillingService billingService)
     {
         _authService = authService;
+        NetworkStatus = networkStatus;
         _alertService = alertService;
         _navigationService = navigationService;
         _browserService = browserService;
         _configuration = configuration;
         _musicService = musicService;
         _billingService = billingService;
-        _appSettingsService = appSettingsService;
 
         _authService.AuthStateChanged += OnAuthStateChanged;
         ApplySubscriptionState(null);
@@ -313,7 +306,6 @@ public partial class AccountSettingsViewModel : ObservableObject
         await _authService.RefreshUserStatusAsync();
         ApplySubscriptionState(null);
         await LoadAndroidSubscriptionOfferAsync();
-        await LoadConfiguredSubscriptionPriceAsync();
     }
 
     [RelayCommand]
@@ -322,7 +314,6 @@ public partial class AccountSettingsViewModel : ObservableObject
         var status = await _musicService.GetSubscriptionStatusAsync();
         ApplySubscriptionState(status);
         await LoadAndroidSubscriptionOfferAsync();
-        await LoadConfiguredSubscriptionPriceAsync();
     }
 
     [RelayCommand]
@@ -572,21 +563,6 @@ public partial class AccountSettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(SubscriptionOfferPriceText));
         OnPropertyChanged(nameof(ShowSubscriptionOfferPriceText));
         OnPropertyChanged(nameof(SubscriptionOfferDisclosureText));
-    }
-
-    private async Task LoadConfiguredSubscriptionPriceAsync()
-    {
-        if (IsAndroidSubscriptionPlatform)
-        {
-            return;
-        }
-
-        if (_hasBillingDerivedSubscriptionPrice && !string.IsNullOrWhiteSpace(SubscriptionPrice))
-        {
-            return;
-        }
-
-        SubscriptionPrice = await _appSettingsService.GetSubscriptionPriceAsync();
     }
 
     private void OnAuthStateChanged()

@@ -16,11 +16,9 @@ public static class SubscriptionOfferDisplayBuilder
     public static SubscriptionOfferDisplay Create(
         bool showFreeTrialTerms,
         int? freeTrialDays,
-        string? renewalPrice,
-        string fallbackPrice,
-        bool allowFallbackPrice = true)
+        string? renewalPrice)
     {
-        var priceText = FormatMonthlyPriceOrEmpty(renewalPrice, fallbackPrice, allowFallbackPrice);
+        var priceText = FormatMonthlyPrice(renewalPrice);
         var monthlyPriceText = string.IsNullOrWhiteSpace(priceText)
             ? "the monthly price shown in Google Play"
             : $"{priceText}/month";
@@ -41,16 +39,6 @@ public static class SubscriptionOfferDisplayBuilder
             "Subscription automatically renews monthly. You can cancel anytime in your Google Play subscription settings.");
     }
 
-    public static string FormatMonthlyPrice(string? renewalPrice, string fallbackPrice)
-        => CurrencyDisplayHelper.FormatCurrencyText(renewalPrice, string.IsNullOrWhiteSpace(fallbackPrice) ? "3.99" : fallbackPrice);
-
-    public static string FormatMonthlyPriceOrEmpty(string? renewalPrice, string fallbackPrice, bool allowFallbackPrice)
-    {
-        if (!allowFallbackPrice && string.IsNullOrWhiteSpace(renewalPrice))
-        {
-            return string.Empty;
-        }
-
-        return FormatMonthlyPrice(renewalPrice, fallbackPrice);
-    }
+    public static string FormatMonthlyPrice(string? renewalPrice)
+        => CurrencyDisplayHelper.FormatCurrencyText(renewalPrice, fallbackPriceText: null);
 }

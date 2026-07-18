@@ -60,6 +60,14 @@
     <Color x:Key="TestingBannerDarkText">#FFE082</Color>
     <Color x:Key="TestingBannerDarkLink">#FFECB3</Color>
 
+    <!-- Offline subscription information banner colors -->
+    <Color x:Key="OfflineBannerLightBackground">#FFF3CD</Color>
+    <Color x:Key="OfflineBannerLightBorder">#FFC107</Color>
+    <Color x:Key="OfflineBannerLightText">#856404</Color>
+    <Color x:Key="OfflineBannerDarkBackground">#26FFC107</Color>
+    <Color x:Key="OfflineBannerDarkBorder">#FFC107</Color>
+    <Color x:Key="OfflineBannerDarkText">#FFE082</Color>
+
     <Color x:Key="Gray100">#E1E1E1</Color>
     <Color x:Key="Gray200">#C8C8C8</Color>
     <Color x:Key="Gray300">#ACACAC</Color>

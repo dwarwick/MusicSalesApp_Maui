@@ -91,6 +91,10 @@
                                        WidthRequest="135" />
                 </FlexLayout>
 
+                <views:SubscriptionInfoUnavailableBanner
+                    IsVisible="{Binding NetworkStatus.IsOffline}"
+                    Margin="0,8,0,0" />
+
                 <!-- CTA: Not logged in -->
                 <HorizontalStackLayout Spacing="12"
                                        IsVisible="{Binding ShowLoginRegister}"

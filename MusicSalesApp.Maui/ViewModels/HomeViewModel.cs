@@ -11,7 +11,7 @@ namespace MusicSalesApp.Maui.ViewModels;
 public partial class HomeViewModel : ObservableObject
 {
     private readonly IAuthService _authService;
-    private readonly IAppSettingsService _appSettingsService;
+    public INetworkStatusService NetworkStatus { get; }
     private readonly INavigationService _navigationService;
     private readonly IAlertService _alertService;
     private readonly IAppConfig _appConfig;
@@ -82,7 +82,7 @@ public partial class HomeViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferPriceText))]
     [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferPriceText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
-    public partial string SubscriptionPrice { get; set; } = "3.99";
+    public partial string SubscriptionPrice { get; set; } = string.Empty;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowLoginRegister))]
@@ -149,10 +149,7 @@ public partial class HomeViewModel : ObservableObject
     public bool ShowBrowseMusic => true;
     public bool ShowFeaturedMusic => FeaturedSongs.Count > 0;
 
-    public string SubscriptionPriceDisplay => SubscriptionOfferDisplayBuilder.FormatMonthlyPriceOrEmpty(
-        SubscriptionPriceForDisplay,
-        "3.99",
-        AllowConfiguredSubscriptionPriceFallback);
+    public string SubscriptionPriceDisplay => SubscriptionOfferDisplayBuilder.FormatMonthlyPrice(SubscriptionPriceForDisplay);
     public bool ShowSubscriptionPriceDisplay => !string.IsNullOrWhiteSpace(SubscriptionPriceDisplay);
     public string SubscribeButtonText => ShowSubscriptionPriceDisplay
         ? $"Subscribe Now - {SubscriptionPriceDisplay}/mo"
@@ -205,18 +202,14 @@ public partial class HomeViewModel : ObservableObject
         ? null
         : SubscriptionPrice;
 
-    private bool AllowConfiguredSubscriptionPriceFallback => !IsAndroidSubscriptionPlatform;
-
     private SubscriptionOfferDisplay CurrentSubscriptionOfferDisplay => SubscriptionOfferDisplayBuilder.Create(
         ShouldUseTrialTerms,
         AndroidFreeTrialDays,
-        SubscriptionPriceForDisplay,
-        "3.99",
-        AllowConfiguredSubscriptionPriceFallback);
+        SubscriptionPriceForDisplay);
 
     public HomeViewModel(
         IAuthService authService,
-        IAppSettingsService appSettingsService,
+        INetworkStatusService networkStatus,
         INavigationService navigationService,
         IAlertService alertService,
         IAppConfig appConfig,
@@ -230,7 +223,7 @@ public partial class HomeViewModel : ObservableObject
         IPlaylistService playlistService)
     {
         _authService = authService;
-        _appSettingsService = appSettingsService;
+        NetworkStatus = networkStatus;
         _navigationService = navigationService;
         _alertService = alertService;
         _appConfig = appConfig;
@@ -289,7 +282,6 @@ public partial class HomeViewModel : ObservableObject
         {
             RefreshAuthState();
             await LoadAndroidSubscriptionOfferAsync();
-            await LoadConfiguredSubscriptionPriceAsync();
             await LoadStreamQualifyingSecondsAsync();
             await LoadHomePlaylistsAsync();
             await LoadFeaturedSongsAsync();
@@ -298,21 +290,6 @@ public partial class HomeViewModel : ObservableObject
         {
             IsLoading = false;
         }
-    }
-
-    private async Task LoadConfiguredSubscriptionPriceAsync()
-    {
-        if (IsAndroidSubscriptionPlatform)
-        {
-            return;
-        }
-
-        if (_hasBillingDerivedSubscriptionPrice && !string.IsNullOrWhiteSpace(SubscriptionPrice))
-        {
-            return;
-        }
-
-        SubscriptionPrice = await _appSettingsService.GetSubscriptionPriceAsync();
     }
 
     private async Task LoadHomePlaylistsAsync()

@@ -10,26 +10,26 @@ namespace MusicSalesApp.Maui.Tests.ViewModels;
 public class AccountSettingsViewModelTests
 {
     private Mock<IAuthService> _mockAuthService;
+    private Mock<INetworkStatusService> _mockNetworkStatus;
     private Mock<IAlertService> _mockAlertService;
     private Mock<INavigationService> _mockNavigationService;
     private Mock<IBrowserService> _mockBrowserService;
     private Mock<IConfiguration> _mockConfiguration;
     private Mock<IMusicService> _mockMusicService;
     private Mock<IBillingService> _mockBillingService;
-    private Mock<IAppSettingsService> _mockAppSettingsService;
     private AccountSettingsViewModel _viewModel;
 
     [SetUp]
     public void Setup()
     {
         _mockAuthService = new Mock<IAuthService>();
+        _mockNetworkStatus = new Mock<INetworkStatusService>();
         _mockAlertService = new Mock<IAlertService>();
         _mockNavigationService = new Mock<INavigationService>();
         _mockBrowserService = new Mock<IBrowserService>();
         _mockConfiguration = new Mock<IConfiguration>();
         _mockMusicService = new Mock<IMusicService>();
         _mockBillingService = new Mock<IBillingService>();
-        _mockAppSettingsService = new Mock<IAppSettingsService>();
 
         _mockConfiguration.Setup(c => c["AppleAppStore:SubscriptionManagementUrl"])
             .Returns("https://developer.apple.com/documentation/storekit/testing-disabling-auto-renew");
@@ -37,7 +37,6 @@ public class AccountSettingsViewModelTests
         _mockAuthService.Setup(a => a.Email).Returns("test@example.com");
         _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
         _mockAuthService.Setup(a => a.IsCreator).Returns(false);
-        _mockAppSettingsService.Setup(a => a.GetSubscriptionPriceAsync()).ReturnsAsync("3.99");
         _mockMusicService.Setup(m => m.GetSubscriptionStatusAsync())
             .ReturnsAsync(new SubscriptionStatusDto { HasSubscription = false });
 
@@ -48,13 +47,13 @@ public class AccountSettingsViewModelTests
     {
         return new AccountSettingsViewModel(
             _mockAuthService.Object,
+            _mockNetworkStatus.Object,
             _mockAlertService.Object,
             _mockNavigationService.Object,
             _mockBrowserService.Object,
             _mockConfiguration.Object,
             _mockMusicService.Object,
-                _mockBillingService.Object,
-                _mockAppSettingsService.Object);
+            _mockBillingService.Object);
     }
 
     [Test]
@@ -71,7 +70,33 @@ public class AccountSettingsViewModelTests
             Assert.That(_viewModel.ErrorMessage, Is.EqualTo(string.Empty));
             Assert.That(_viewModel.IsCancelling, Is.False);
             Assert.That(_viewModel.IsDeleting, Is.False);
+            Assert.That(_viewModel.SubscriptionPrice, Is.Empty);
+            Assert.That(_viewModel.SubscriptionPriceDisplay, Is.Empty);
         });
+    }
+
+    [Test]
+    public void NetworkStatus_ExposesOfflineStateForSubscriptionBanner()
+    {
+        _mockNetworkStatus.SetupGet(service => service.IsOffline).Returns(true);
+
+        Assert.That(_viewModel.NetworkStatus.IsOffline, Is.True);
+    }
+
+    [Test]
+    public async Task LoadCommand_OnNonAndroid_DoesNotInventSubscriptionPrice()
+    {
+        _viewModel.IsAndroidSubscriptionPlatform = false;
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.SubscriptionPrice, Is.Empty);
+            Assert.That(_viewModel.SubscriptionPriceDisplay, Is.Empty);
+            Assert.That(_viewModel.ShowSubscriptionPriceDisplay, Is.False);
+        });
+        _mockBillingService.Verify(b => b.GetSubscriptionOfferAsync(), Times.Never);
     }
 
     [Test]
@@ -285,7 +310,7 @@ public class AccountSettingsViewModelTests
     }
 
     [Test]
-    public async Task LoadCommand_DoesNotPublishConfiguredPriceBeforeAndroidStorePrice()
+    public async Task LoadCommand_PublishesAndroidStorePrice()
     {
         var originalCulture = CultureInfo.CurrentCulture;
         var originalUICulture = CultureInfo.CurrentUICulture;
@@ -297,7 +322,6 @@ public class AccountSettingsViewModelTests
             _viewModel.IsAndroidSubscriptionPlatform = true;
             _mockMusicService.Setup(m => m.GetSubscriptionStatusAsync())
                 .ReturnsAsync(new SubscriptionStatusDto { HasSubscription = false });
-            _mockAppSettingsService.Setup(a => a.GetSubscriptionPriceAsync()).ReturnsAsync("4.99");
             _mockBillingService.Setup(b => b.GetSubscriptionOfferAsync())
                 .ReturnsAsync(new SubscriptionOfferInfo
                 {
@@ -322,7 +346,6 @@ public class AccountSettingsViewModelTests
             Assert.Multiple(() =>
             {
                 Assert.That(observedPrices, Does.Contain("\u20B1205.00"));
-                Assert.That(observedPrices, Does.Not.Contain("$4.99"));
                 Assert.That(_viewModel.SubscriptionPriceDisplay, Is.EqualTo("\u20B1205.00"));
             });
         }
@@ -345,7 +368,6 @@ public class AccountSettingsViewModelTests
                 EndDate = DateTime.UtcNow.AddMonths(1),
                 BillingSource = BillingProviders.GooglePlay
             });
-        _mockAppSettingsService.Setup(a => a.GetSubscriptionPriceAsync()).ReturnsAsync("4.99");
         _mockBillingService.Setup(b => b.GetSubscriptionOfferAsync())
             .ReturnsAsync(new SubscriptionOfferInfo
             {
@@ -365,7 +387,6 @@ public class AccountSettingsViewModelTests
             Assert.That(_viewModel.ShowPlainSubscribeButton, Is.False);
         });
         _mockBillingService.Verify(b => b.GetSubscriptionOfferAsync(), Times.Once);
-        _mockAppSettingsService.Verify(a => a.GetSubscriptionPriceAsync(), Times.Never);
     }
 
     [Test]
@@ -439,7 +460,6 @@ public class AccountSettingsViewModelTests
         _viewModel.IsAndroidSubscriptionPlatform = true;
         _mockMusicService.Setup(m => m.GetSubscriptionStatusAsync())
             .ReturnsAsync(new SubscriptionStatusDto { HasSubscription = false });
-        _mockAppSettingsService.Setup(a => a.GetSubscriptionPriceAsync()).ReturnsAsync("$4.99");
         _mockBillingService.Setup(b => b.GetSubscriptionOfferAsync())
             .ReturnsAsync(new SubscriptionOfferInfo { LookupSucceeded = false });
 
@@ -450,12 +470,11 @@ public class AccountSettingsViewModelTests
             Assert.That(_viewModel.ShowSubscriptionOfferCard, Is.True);
             Assert.That(_viewModel.SubscriptionOfferBodyText, Does.Contain("Unlock the full catalog."));
             Assert.That(_viewModel.SubscriptionOfferDisclosureText, Does.Contain("monthly price shown in Google Play"));
-            Assert.That(_viewModel.SubscriptionOfferDisclosureText, Does.Not.Contain("$4.99"));
+            Assert.That(_viewModel.SubscriptionOfferDisclosureText, Does.Not.Contain("$"));
             Assert.That(_viewModel.SubscriptionOfferPriceText, Is.Empty);
             Assert.That(_viewModel.ShowSubscriptionOfferPriceText, Is.False);
             Assert.That(_viewModel.SubscriptionPriceDisplay, Is.Empty);
         });
-        _mockAppSettingsService.Verify(a => a.GetSubscriptionPriceAsync(), Times.Never);
     }
 
     [Test]

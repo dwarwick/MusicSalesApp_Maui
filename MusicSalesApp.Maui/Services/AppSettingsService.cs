@@ -8,7 +8,6 @@ public class AppSettingsService : IAppSettingsService
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<AppSettingsService> _logger;
 
-    private const string DefaultSubscriptionPrice = "3.99";
     private const int DefaultStreamQualifyingSeconds = 30;
 
     private MobileSettingsDto? _cached;
@@ -17,12 +16,6 @@ public class AppSettingsService : IAppSettingsService
     {
         _httpClientFactory = httpClientFactory;
         _logger = logger;
-    }
-
-    public async Task<string> GetSubscriptionPriceAsync()
-    {
-        var settings = await FetchSettingsAsync();
-        return settings?.SubscriptionPrice ?? DefaultSubscriptionPrice;
     }
 
     public async Task<int> GetStreamQualifyingSecondsAsync()
@@ -49,5 +42,5 @@ public class AppSettingsService : IAppSettingsService
         }
     }
 
-    internal sealed record MobileSettingsDto(string SubscriptionPrice, int StreamQualifyingSeconds);
+    internal sealed record MobileSettingsDto(int StreamQualifyingSeconds);
 }

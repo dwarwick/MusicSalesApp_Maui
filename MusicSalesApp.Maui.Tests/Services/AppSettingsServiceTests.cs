@@ -44,39 +44,15 @@ public class AppSettingsServiceTests
     }
 
     [Test]
-    public async Task GetSubscriptionPriceAsync_ReturnsPriceFromApi()
-    {
-        var handler = CreateHandlerWithResponse(HttpStatusCode.OK, new { subscriptionPrice = "9.99", streamQualifyingSeconds = 30 });
-        CreateMockHttpClient(handler.Object);
-        var service = new AppSettingsService(_mockFactory.Object, _mockLogger.Object);
-
-        var result = await service.GetSubscriptionPriceAsync();
-
-        Assert.That(result, Is.EqualTo("9.99"));
-    }
-
-    [Test]
     public async Task GetStreamQualifyingSecondsAsync_ReturnsValueFromApi()
     {
-        var handler = CreateHandlerWithResponse(HttpStatusCode.OK, new { subscriptionPrice = "3.99", streamQualifyingSeconds = 45 });
+        var handler = CreateHandlerWithResponse(HttpStatusCode.OK, new { streamQualifyingSeconds = 45 });
         CreateMockHttpClient(handler.Object);
         var service = new AppSettingsService(_mockFactory.Object, _mockLogger.Object);
 
         var result = await service.GetStreamQualifyingSecondsAsync();
 
         Assert.That(result, Is.EqualTo(45));
-    }
-
-    [Test]
-    public async Task GetSubscriptionPriceAsync_ReturnsDefaultOnHttpError()
-    {
-        var handler = CreateHandlerWithResponse(HttpStatusCode.InternalServerError);
-        CreateMockHttpClient(handler.Object);
-        var service = new AppSettingsService(_mockFactory.Object, _mockLogger.Object);
-
-        var result = await service.GetSubscriptionPriceAsync();
-
-        Assert.That(result, Is.EqualTo("3.99"));
     }
 
     [Test]
@@ -92,7 +68,7 @@ public class AppSettingsServiceTests
     }
 
     [Test]
-    public async Task GetSubscriptionPriceAsync_ReturnsDefaultOnNetworkException()
+    public async Task GetStreamQualifyingSecondsAsync_ReturnsDefaultOnNetworkException()
     {
         var handler = new Mock<HttpMessageHandler>();
         handler.Protected()
@@ -103,27 +79,25 @@ public class AppSettingsServiceTests
         CreateMockHttpClient(handler.Object);
         var service = new AppSettingsService(_mockFactory.Object, _mockLogger.Object);
 
-        var result = await service.GetSubscriptionPriceAsync();
+        var result = await service.GetStreamQualifyingSecondsAsync();
 
-        Assert.That(result, Is.EqualTo("3.99"));
+        Assert.That(result, Is.EqualTo(30));
     }
 
     [Test]
     public async Task CachesResultsAfterFirstFetch()
     {
-        var handler = CreateHandlerWithResponse(HttpStatusCode.OK, new { subscriptionPrice = "9.99", streamQualifyingSeconds = 45 });
+        var handler = CreateHandlerWithResponse(HttpStatusCode.OK, new { streamQualifyingSeconds = 45 });
         CreateMockHttpClient(handler.Object);
         var service = new AppSettingsService(_mockFactory.Object, _mockLogger.Object);
 
-        var price1 = await service.GetSubscriptionPriceAsync();
-        var price2 = await service.GetSubscriptionPriceAsync();
-        var seconds = await service.GetStreamQualifyingSecondsAsync();
+        var seconds1 = await service.GetStreamQualifyingSecondsAsync();
+        var seconds2 = await service.GetStreamQualifyingSecondsAsync();
 
         Assert.Multiple(() =>
         {
-            Assert.That(price1, Is.EqualTo("9.99"));
-            Assert.That(price2, Is.EqualTo("9.99"));
-            Assert.That(seconds, Is.EqualTo(45));
+            Assert.That(seconds1, Is.EqualTo(45));
+            Assert.That(seconds2, Is.EqualTo(45));
         });
 
         // Verify HTTP was called only once (cached after first call)
