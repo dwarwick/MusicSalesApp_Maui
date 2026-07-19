@@ -7,11 +7,17 @@ namespace MusicSalesApp.Maui.ViewModels;
 public partial class ConfigViewModel : ObservableObject
 {
     private readonly IOfflineCacheSettingsService _offlineCacheSettingsService;
+    private readonly IAudioCacheService _audioCacheService;
     private double _offlineCacheLimitMb;
+    private long _cacheUsageBytes;
+    private bool _isCacheUsageLoading;
 
-    public ConfigViewModel(IOfflineCacheSettingsService offlineCacheSettingsService)
+    public ConfigViewModel(
+        IOfflineCacheSettingsService offlineCacheSettingsService,
+        IAudioCacheService audioCacheService)
     {
         _offlineCacheSettingsService = offlineCacheSettingsService;
+        _audioCacheService = audioCacheService;
         _offlineCacheLimitMb = offlineCacheSettingsService.GetOfflineCacheLimitMb();
     }
 
@@ -49,9 +55,42 @@ public partial class ConfigViewModel : ObservableObject
         OfflineCacheLimitMb = _offlineCacheSettingsService.DefaultCacheLimitMb;
     }
 
+    public bool IsCacheUsageLoading
+    {
+        get => _isCacheUsageLoading;
+        private set
+        {
+            if (!SetProperty(ref _isCacheUsageLoading, value))
+            {
+                return;
+            }
+
+            OnPropertyChanged(nameof(CacheUsageDisplay));
+        }
+    }
+
+    public string CacheUsageDisplay => IsCacheUsageLoading
+        ? "Calculating…"
+        : FormatBytes(_cacheUsageBytes);
+
     public void Refresh()
     {
         OfflineCacheLimitMb = _offlineCacheSettingsService.GetOfflineCacheLimitMb();
+    }
+
+    public async Task RefreshCacheUsageAsync(CancellationToken cancellationToken = default)
+    {
+        IsCacheUsageLoading = true;
+        try
+        {
+            _cacheUsageBytes = await _audioCacheService
+                .GetCacheUsageBytesAsync(cancellationToken)
+                .ConfigureAwait(true);
+        }
+        finally
+        {
+            IsCacheUsageLoading = false;
+        }
     }
 
     private static string FormatMegabytes(int megabytes)
@@ -63,5 +102,24 @@ public partial class ConfigViewModel : ObservableObject
         }
 
         return $"{megabytes} MB";
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        const double bytesPerMb = 1024d * 1024d;
+        var megabytes = bytes / bytesPerMb;
+
+        if (megabytes >= 1024)
+        {
+            return $"{megabytes / 1024d:0.#} GB";
+        }
+
+        if (megabytes >= 1)
+        {
+            return $"{megabytes:0.#} MB";
+        }
+
+        var kilobytes = bytes / 1024d;
+        return $"{kilobytes:0.#} KB";
     }
 }

@@ -40,15 +40,15 @@
                      Spacing="8"
                      Padding="8,8,8,4">
 
-            <HorizontalStackLayout Spacing="8">
+            <HorizontalStackLayout Spacing="6">
                 <Button Command="{Binding ToggleAiPanelCommand}"
                         Clicked="OnFilterChromeClicked"
                         Text="{Binding AiPillText}"
-                        FontSize="13"
+                        FontSize="12"
                         FontAttributes="Bold"
-                        HeightRequest="36"
-                        Padding="14,0"
-                        CornerRadius="18"
+                        HeightRequest="32"
+                        Padding="10,0"
+                        CornerRadius="16"
                         BackgroundColor="{Binding HasActiveAiFilter, Converter={StaticResource ActivePillBgConverter}}"
                         TextColor="{Binding HasActiveAiFilter, Converter={StaticResource ActivePillTextConverter}}" />
 
@@ -56,11 +56,11 @@
             <Button Command="{Binding ToggleGenrePanelCommand}"
                     Clicked="OnFilterChromeClicked"
                     Text="{Binding GenrePillText}"
-                    FontSize="13"
+                    FontSize="12"
                     FontAttributes="Bold"
-                    HeightRequest="36"
-                    Padding="14,0"
-                    CornerRadius="18"
+                    HeightRequest="32"
+                    Padding="10,0"
+                    CornerRadius="16"
                     BackgroundColor="{Binding HasActiveGenreFilters, Converter={StaticResource ActivePillBgConverter}}"
                     TextColor="{Binding HasActiveGenreFilters, Converter={StaticResource ActivePillTextConverter}}" />
 
@@ -68,23 +68,35 @@
             <Button Command="{Binding ToggleArtistPanelCommand}"
                     Clicked="OnFilterChromeClicked"
                     Text="{Binding ArtistPillText}"
-                    FontSize="13"
+                    FontSize="12"
                     FontAttributes="Bold"
-                    HeightRequest="36"
-                    Padding="14,0"
-                    CornerRadius="18"
+                    HeightRequest="32"
+                    Padding="10,0"
+                    CornerRadius="16"
                     BackgroundColor="{Binding HasActiveArtistFilters, Converter={StaticResource ActivePillBgConverter}}"
                     TextColor="{Binding HasActiveArtistFilters, Converter={StaticResource ActivePillTextConverter}}" />
+
+            <!-- Downloaded-only filter -->
+            <Button Command="{Binding ToggleDownloadedFilterCommand}"
+                    Clicked="OnFilterChromeClicked"
+                    Text="Downloaded"
+                    FontSize="12"
+                    FontAttributes="Bold"
+                    HeightRequest="32"
+                    Padding="10,0"
+                    CornerRadius="16"
+                    BackgroundColor="{Binding IsDownloadedFilterActive, Converter={StaticResource ActivePillBgConverter}}"
+                    TextColor="{Binding IsDownloadedFilterActive, Converter={StaticResource ActivePillTextConverter}}" />
 
             <!-- Clear Filters Button -->
             <Button Command="{Binding ClearFiltersCommand}"
                     Clicked="OnFilterChromeClicked"
                     Text="✕"
-                    FontSize="14"
-                    HeightRequest="36"
-                    WidthRequest="36"
+                    FontSize="13"
+                    HeightRequest="32"
+                    WidthRequest="32"
                     Padding="0"
-                    CornerRadius="18"
+                    CornerRadius="16"
                     IsVisible="{Binding HasAnyActiveFilters}"
                     BackgroundColor="{Binding HasAnyActiveFilters, Converter={StaticResource ActivePillBgConverter}}"
                     TextColor="{Binding HasAnyActiveFilters, Converter={StaticResource ActivePillTextConverter}}"
@@ -336,6 +348,7 @@
                      Command="{Binding LoadSongsCommand}"
                      IsRefreshing="{Binding IsLoading, Mode=OneWay}">
             <CollectionView ItemsSource="{Binding Songs}"
+                            ItemSizingStrategy="MeasureFirstItem"
                             SelectionMode="None">
                 <CollectionView.EmptyView>
                     <VerticalStackLayout HorizontalOptions="Center"

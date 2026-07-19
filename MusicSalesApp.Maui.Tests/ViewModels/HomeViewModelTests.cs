@@ -809,6 +809,22 @@ public class HomeViewModelTests
     }
 
     [Test]
+    public async Task AuthSubscription_IsDetachedByCleanupAndReattachedByActivate()
+    {
+        _viewModel.Cleanup();
+
+        _mockAuthService.Raise(service => service.AuthStateChanged += null);
+        await Task.Delay(25);
+        _mockMusicService.Verify(service => service.GetSongsAsync(), Times.Never);
+
+        _viewModel.Activate();
+        _mockAuthService.Raise(service => service.AuthStateChanged += null);
+        await Task.Delay(25);
+
+        _mockMusicService.Verify(service => service.GetSongsAsync(), Times.Once);
+    }
+
+    [Test]
     public void MusicService_StreamCountRecorded_UpdatesFeaturedSong()
     {
         var song = new SongDto { Id = 42, SongTitle = "Featured", StreamCount = 5 };

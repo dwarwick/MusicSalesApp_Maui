@@ -16,6 +16,9 @@ public class LoginViewModelTests
     public void Setup()
     {
         _mockAuthService = new Mock<IAuthService>();
+        _mockAuthService
+            .Setup(a => a.HasBiometricCredentialsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
         _mockAlertService = new Mock<IAlertService>();
         _mockNavigationService = new Mock<INavigationService>();
         _viewModel = new LoginViewModel(_mockAuthService.Object, _mockAlertService.Object, _mockNavigationService.Object);
@@ -85,19 +88,27 @@ public class LoginViewModelTests
     }
 
     [Test]
-    public void BiometricVisible_ReflectsAuthServiceState()
+    public async Task InitializeAsync_WhenCredentialsExist_ShowsBiometricLogin()
     {
-        _mockAuthService.Setup(a => a.IsBiometricEnabled).Returns(true);
+        _mockAuthService
+            .Setup(a => a.HasBiometricCredentialsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
         var vm = new LoginViewModel(_mockAuthService.Object, _mockAlertService.Object, _mockNavigationService.Object);
+
+        await vm.InitializeAsync();
 
         Assert.That(vm.BiometricVisible, Is.True);
     }
 
     [Test]
-    public void BiometricVisible_FalseWhenNotEnabled()
+    public async Task InitializeAsync_WhenCredentialsAreMissing_HidesBiometricLogin()
     {
-        _mockAuthService.Setup(a => a.IsBiometricEnabled).Returns(false);
+        _mockAuthService
+            .Setup(a => a.HasBiometricCredentialsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
         var vm = new LoginViewModel(_mockAuthService.Object, _mockAlertService.Object, _mockNavigationService.Object);
+
+        await vm.InitializeAsync();
 
         Assert.That(vm.BiometricVisible, Is.False);
     }

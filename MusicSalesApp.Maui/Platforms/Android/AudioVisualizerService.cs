@@ -11,6 +11,7 @@ public sealed class AudioVisualizerService : IAudioVisualizerService, IDisposabl
     private readonly IPlaybackService _playbackService;
     private readonly IPlatformPlaybackRuntime _playbackRuntime;
     private readonly IMediaPlaybackOnboardingService _mediaPlaybackOnboardingService;
+    private readonly IAudioVisualizerLifecycleCoordinator _lifecycleCoordinator;
     private readonly AudioEqualizerBarProcessor _barProcessor = new();
     private readonly SemaphoreSlim _bindLock = new(1, 1);
 
@@ -24,12 +25,15 @@ public sealed class AudioVisualizerService : IAudioVisualizerService, IDisposabl
     public AudioVisualizerService(
         IPlaybackService playbackService,
         IPlatformPlaybackRuntime playbackRuntime,
-        IMediaPlaybackOnboardingService mediaPlaybackOnboardingService)
+        IMediaPlaybackOnboardingService mediaPlaybackOnboardingService,
+        IAudioVisualizerLifecycleCoordinator lifecycleCoordinator)
     {
         _playbackService = playbackService;
         _playbackRuntime = playbackRuntime;
         _mediaPlaybackOnboardingService = mediaPlaybackOnboardingService;
+        _lifecycleCoordinator = lifecycleCoordinator;
         _playbackService.StateChanged += OnPlaybackStateChanged;
+        _lifecycleCoordinator.Register(this);
     }
 
     public IReadOnlyList<float> Levels { get; private set; } = [];
@@ -82,6 +86,7 @@ public sealed class AudioVisualizerService : IAudioVisualizerService, IDisposabl
     public void Dispose()
     {
         _playbackService.StateChanged -= OnPlaybackStateChanged;
+        _lifecycleCoordinator.Unregister(this);
         ReleaseVisualizer(clearLevels: true);
         _bindLock.Dispose();
     }

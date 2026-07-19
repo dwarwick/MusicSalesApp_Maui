@@ -32,7 +32,11 @@ public partial class LoginViewModel : ObservableObject
         _authService = authService;
         _alertService = alertService;
         _navigationService = navigationService;
-        BiometricVisible = _authService.IsBiometricEnabled;
+    }
+
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
+    {
+        BiometricVisible = await _authService.HasBiometricCredentialsAsync(cancellationToken);
     }
 
     [RelayCommand]
@@ -190,7 +194,7 @@ public partial class LoginViewModel : ObservableObject
 
     private async Task PromptBiometricAsync()
     {
-        if (_authService.IsBiometricEnabled)
+        if (await _authService.HasBiometricCredentialsAsync())
             return;
 
         bool enable = await _alertService.ShowConfirmAsync(
@@ -201,6 +205,7 @@ public partial class LoginViewModel : ObservableObject
         if (enable)
         {
             await _authService.EnableBiometricLoginAsync(Email.Trim(), Password);
+            BiometricVisible = true;
         }
     }
 

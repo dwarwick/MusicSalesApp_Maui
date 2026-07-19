@@ -23,8 +23,8 @@ public interface IAuthService
     IReadOnlyList<string> Roles { get; }
     string? Token { get; }
 
-    /// <summary>Whether biometric credentials have been saved previously.</summary>
-    bool IsBiometricEnabled { get; }
+    /// <summary>Whether both biometric login credentials have been saved previously.</summary>
+    Task<bool> HasBiometricCredentialsAsync(CancellationToken cancellationToken = default);
 
     Task<(bool Success, string Error)> LoginAsync(string email, string password);
     Task<GoogleAuthResultDto> AuthenticateWithGoogleAsync();

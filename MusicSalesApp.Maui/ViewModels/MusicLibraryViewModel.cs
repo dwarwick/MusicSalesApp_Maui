@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MusicSalesApp.Maui.Services;
@@ -23,7 +22,9 @@ public partial class MusicLibraryViewModel : ObservableObject
     private readonly IMediaPlaybackOnboardingService _mediaPlaybackOnboardingService;
     private readonly IAppConfig _appConfig;
     private readonly IBillingService _billingService;
+    private readonly IAudioCacheService? _audioCacheService;
     private readonly Dictionary<int, (int likes, int dislikes)> _likeCounts = new();
+    private readonly HashSet<int> _downloadedSongIds = [];
     private bool _subscriptionsAttached;
 
     // All songs (unfiltered source of truth)
@@ -38,7 +39,8 @@ public partial class MusicLibraryViewModel : ObservableObject
         IPlaybackService playbackService,
         IMediaPlaybackOnboardingService mediaPlaybackOnboardingService,
         IAppConfig appConfig,
-        IBillingService billingService)
+        IBillingService billingService,
+        IAudioCacheService? audioCacheService = null)
     {
         _musicService = musicService;
         _alertService = alertService;
@@ -49,6 +51,7 @@ public partial class MusicLibraryViewModel : ObservableObject
         _mediaPlaybackOnboardingService = mediaPlaybackOnboardingService;
         _appConfig = appConfig;
         _billingService = billingService;
+        _audioCacheService = audioCacheService;
 
         UpdateAiPillText();
         UpdateGenrePillText();
@@ -93,19 +96,22 @@ public partial class MusicLibraryViewModel : ObservableObject
     /// <summary>Web base URL for share links.</summary>
     public string WebBaseUrl => _appConfig.WebBaseUrl;
 
-    public ObservableCollection<SongDto> Songs { get; } = [];
+    public ObservableRangeCollection<SongDto> Songs { get; } = [];
 
     // --- Filter state ---
 
-    public ObservableCollection<string> AvailableGenres { get; } = [];
-    public ObservableCollection<string> AvailableArtists { get; } = [];
+    public ObservableRangeCollection<string> AvailableGenres { get; } = [];
+    public ObservableRangeCollection<string> AvailableArtists { get; } = [];
 
     public HashSet<string> SelectedGenres { get; } = new(StringComparer.OrdinalIgnoreCase);
     public HashSet<string> SelectedArtists { get; } = new(StringComparer.OrdinalIgnoreCase);
     private string _selectedAiFilter = AiFilterAll;
 
-    public ObservableCollection<FilterItem> GenreFilterItems { get; } = [];
-    public ObservableCollection<FilterItem> ArtistFilterItems { get; } = [];
+    public ObservableRangeCollection<FilterItem> GenreFilterItems { get; } = [];
+    public ObservableRangeCollection<FilterItem> ArtistFilterItems { get; } = [];
+
+    [ObservableProperty]
+    public partial bool IsDownloadedFilterActive { get; set; }
 
     [ObservableProperty]
     public partial bool IsAiPanelOpen { get; set; }
@@ -149,6 +155,22 @@ public partial class MusicLibraryViewModel : ObservableObject
     public bool IsAiVocalsFilterSelected => string.Equals(_selectedAiFilter, AiFilterAiVocals, StringComparison.Ordinal);
     public bool IsAiLyricsFilterSelected => string.Equals(_selectedAiFilter, AiFilterAiLyrics, StringComparison.Ordinal);
     public bool IsNonAiOnlyFilterSelected => string.Equals(_selectedAiFilter, AiFilterNonAiOnly, StringComparison.Ordinal);
+
+    [RelayCommand]
+    private async Task ToggleDownloadedFilterAsync()
+    {
+        await RefreshDownloadedSongIdsAsync();
+        IsDownloadedFilterActive = !IsDownloadedFilterActive;
+        IsAiPanelOpen = false;
+        IsGenrePanelOpen = false;
+        IsArtistPanelOpen = false;
+        UpdateHasAnyActiveFilters();
+        RefreshAvailableGenres();
+        RefreshAvailableArtists();
+        RefreshGenreFilterItems();
+        RefreshArtistFilterItems();
+        ApplyFilters();
+    }
 
     partial void OnGenreSearchTextChanged(string? value) => RefreshGenreFilterItems();
     partial void OnArtistSearchTextChanged(string? value) => RefreshArtistFilterItems();
@@ -276,7 +298,7 @@ public partial class MusicLibraryViewModel : ObservableObject
 
     private void UpdateHasAnyActiveFilters()
     {
-        HasAnyActiveFilters = HasActiveAiFilter || HasActiveGenreFilters || HasActiveArtistFilters;
+        HasAnyActiveFilters = HasActiveAiFilter || HasActiveGenreFilters || HasActiveArtistFilters || IsDownloadedFilterActive;
     }
 
     private void RefreshGenreFilterItems()
@@ -298,9 +320,7 @@ public partial class MusicLibraryViewModel : ObservableObject
             .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        GenreFilterItems.Clear();
-        foreach (var item in items)
-            GenreFilterItems.Add(item);
+        GenreFilterItems.ReplaceAll(items);
     }
 
     private void RefreshArtistFilterItems()
@@ -322,9 +342,7 @@ public partial class MusicLibraryViewModel : ObservableObject
             .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        ArtistFilterItems.Clear();
-        foreach (var item in items)
-            ArtistFilterItems.Add(item);
+        ArtistFilterItems.ReplaceAll(items);
     }
 
     private void RefreshGenreFilterItemSelections()
@@ -341,7 +359,7 @@ public partial class MusicLibraryViewModel : ObservableObject
 
     private IEnumerable<SongDto> CrossFilterSongsByArtist()
     {
-        IEnumerable<SongDto> songs = FilterSongsByAiSelection(_allSongs);
+        IEnumerable<SongDto> songs = FilterSongsByActiveTypeSelections(_allSongs);
         if (SelectedArtists.Count > 0)
             songs = songs.Where(s => SelectedArtists.Contains(s.ArtistName));
         return songs;
@@ -349,7 +367,7 @@ public partial class MusicLibraryViewModel : ObservableObject
 
     private IEnumerable<SongDto> CrossFilterSongsByGenre()
     {
-        IEnumerable<SongDto> songs = FilterSongsByAiSelection(_allSongs);
+        IEnumerable<SongDto> songs = FilterSongsByActiveTypeSelections(_allSongs);
         if (SelectedGenres.Count > 0)
             songs = songs.Where(s => SelectedGenres.Contains(s.Genre));
         return songs;
@@ -361,6 +379,7 @@ public partial class MusicLibraryViewModel : ObservableObject
         SelectedGenres.Clear();
         SelectedArtists.Clear();
         _selectedAiFilter = AiFilterAll;
+        IsDownloadedFilterActive = false;
         NotifyAiFilterSelectionChanged();
         UpdateGenrePillText();
         UpdateArtistPillText();
@@ -382,7 +401,7 @@ public partial class MusicLibraryViewModel : ObservableObject
     /// </summary>
     internal void ApplyFilters()
     {
-        IEnumerable<SongDto> filtered = FilterSongsByAiSelection(_allSongs);
+        IEnumerable<SongDto> filtered = FilterSongsByActiveTypeSelections(_allSongs);
 
         if (SelectedGenres.Count > 0)
         {
@@ -396,11 +415,7 @@ public partial class MusicLibraryViewModel : ObservableObject
                 SelectedArtists.Contains(s.ArtistName));
         }
 
-        Songs.Clear();
-        foreach (var song in filtered)
-        {
-            Songs.Add(song);
-        }
+        Songs.ReplaceAll(filtered);
 
         SynchronizeVisibleQueue();
     }
@@ -457,6 +472,11 @@ public partial class MusicLibraryViewModel : ObservableObject
             filters.Add(musicTypeFilter);
         }
 
+        if (IsDownloadedFilterActive)
+        {
+            filters.Add("Downloaded");
+        }
+
         return filters.Count == 0
             ? PlaybackQueueDescriptions.UnfilteredMediaLibrary
             : PlaybackQueueDescriptions.FilteredMediaLibrary(filters);
@@ -473,6 +493,16 @@ public partial class MusicLibraryViewModel : ObservableObject
             AiFilterNonAiOnly => songs.Where(s => !HasAnyAiDisclosure(s)),
             _ => songs
         };
+    }
+
+    private IEnumerable<SongDto> FilterSongsByActiveTypeSelections(IEnumerable<SongDto> songs)
+    {
+        if (IsDownloadedFilterActive)
+        {
+            songs = songs.Where(song => _downloadedSongIds.Contains(song.Id));
+        }
+
+        return FilterSongsByAiSelection(songs);
     }
 
     private static bool HasAnyAiDisclosure(SongDto song)
@@ -504,11 +534,7 @@ public partial class MusicLibraryViewModel : ObservableObject
             .OrderBy(g => g, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        AvailableGenres.Clear();
-        foreach (var g in genres)
-        {
-            AvailableGenres.Add(g);
-        }
+        AvailableGenres.ReplaceAll(genres);
     }
 
     /// <summary>
@@ -525,11 +551,7 @@ public partial class MusicLibraryViewModel : ObservableObject
             .OrderBy(a => a, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        AvailableArtists.Clear();
-        foreach (var a in artists)
-        {
-            AvailableArtists.Add(a);
-        }
+        AvailableArtists.ReplaceAll(artists);
     }
 
     [ObservableProperty]
@@ -712,24 +734,25 @@ public partial class MusicLibraryViewModel : ObservableObject
                 ErrorMessage = _musicService.LastSongsError;
             }
 
-            System.Diagnostics.Debug.WriteLine($"[MusicLibrary] WebBaseUrl = '{_appConfig.WebBaseUrl}'");
-            Console.WriteLine($"[MusicLibrary] WebBaseUrl = '{_appConfig.WebBaseUrl}'");
-            foreach (var song in songs)
+            var orderedSongs = await Task.Run(() =>
             {
-                song.ShareUrl = SongDto.BuildShareUrl(song.Id, _appConfig.WebBaseUrl);
-                System.Diagnostics.Debug.WriteLine($"[MusicLibrary] Song '{song.SongTitle}' → ShareUrl = '{song.ShareUrl}'");
-                Console.WriteLine($"[MusicLibrary] Song '{song.SongTitle}' → ShareUrl = '{song.ShareUrl}'");
-            }
+                foreach (var song in songs)
+                {
+                    song.ShareUrl = SongDto.BuildShareUrl(song.Id, _appConfig.WebBaseUrl);
+                }
 
-            var orderedSongs = SongDisplayOrderSorter.OrderForLibrary(songs);
+                return SongDisplayOrderSorter.OrderForLibrary(songs);
+            });
 
             _allSongs.Clear();
             _allSongs.AddRange(orderedSongs);
+            await RefreshDownloadedSongIdsAsync();
 
             // Reset filters when reloading
             SelectedGenres.Clear();
             SelectedArtists.Clear();
             _selectedAiFilter = AiFilterAll;
+            IsDownloadedFilterActive = false;
             NotifyAiFilterSelectionChanged();
             UpdateGenrePillText();
             UpdateArtistPillText();
@@ -763,12 +786,12 @@ public partial class MusicLibraryViewModel : ObservableObject
 
             var likeCounts = await _musicService.GetBulkLikeCountsAsync(ids);
             _likeCounts.Clear();
+            var songsById = songs.ToDictionary(song => song.Id);
             foreach (var lc in likeCounts)
             {
                 _likeCounts[lc.SongMetadataId] = (lc.LikeCount, lc.DislikeCount);
 
-                var song = songs.FirstOrDefault(s => s.Id == lc.SongMetadataId);
-                if (song != null)
+                if (songsById.TryGetValue(lc.SongMetadataId, out var song))
                 {
                     song.LikeCount = lc.LikeCount;
                     song.DislikeCount = lc.DislikeCount;
@@ -791,10 +814,10 @@ public partial class MusicLibraryViewModel : ObservableObject
             if (ids.Count == 0) return;
 
             var statuses = await _musicService.GetBulkUserLikeStatusAsync(ids);
+            var songsById = songs.ToDictionary(song => song.Id);
             foreach (var (songId, status) in statuses)
             {
-                var song = songs.FirstOrDefault(s => s.Id == songId);
-                if (song != null)
+                if (songsById.TryGetValue(songId, out var song))
                 {
                     song.UserLikeStatus = status;
                 }
@@ -803,6 +826,24 @@ public partial class MusicLibraryViewModel : ObservableObject
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Failed to load user like status: {ex.Message}");
+        }
+    }
+
+    private async Task RefreshDownloadedSongIdsAsync()
+    {
+        if (_audioCacheService == null)
+        {
+            return;
+        }
+
+        var statuses = await _audioCacheService.GetCacheStatusesAsync(_allSongs.ToList());
+        _downloadedSongIds.Clear();
+        foreach (var status in statuses.Values)
+        {
+            if (status.IsLocalReady)
+            {
+                _downloadedSongIds.Add(status.SongId);
+            }
         }
     }
 

@@ -13,6 +13,7 @@ public class MusicService : IMusicService
     private const string PendingStreamRecordsPreferenceKey = "pending_stream_records_v1";
     private const int MaxPendingStreamRecords = 1000;
     private static readonly TimeSpan DefaultPendingStreamRetryInterval = TimeSpan.FromSeconds(15);
+    private static readonly JsonSerializerOptions SongsSerializerOptions = new(JsonSerializerDefaults.Web);
     private static readonly JsonSerializerOptions PendingStreamRecordsSerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IAppSettingsService _appSettingsService;
@@ -45,24 +46,30 @@ public class MusicService : IMusicService
 
         _connectivity.ConnectivityChanged += OnConnectivityChanged;
 
-        if (HasPendingStreamRecords())
-        {
-            EnsurePendingStreamRetryLoopStarted();
-        }
+        _ = InitializePendingStreamRetryLoopAsync();
     }
 
-    public async Task<List<SongDto>> GetSongsAsync()
+    public Task<List<SongDto>> GetSongsAsync()
+        => GetSongsAsync(CancellationToken.None);
+
+    public async Task<List<SongDto>> GetSongsAsync(CancellationToken cancellationToken)
     {
         var client = _httpClientFactory.CreateClient("MusicSalesApi");
         LastSongsError = null;
 
         try
         {
-            var response = await client.GetAsync(SongsRequestPath);
-            var responseBody = await response.Content.ReadAsStringAsync();
+            using var response = await client.GetAsync(
+                    SongsRequestPath,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    cancellationToken)
+                .ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {
+                var responseBody = await response.Content
+                    .ReadAsStringAsync(cancellationToken)
+                    .ConfigureAwait(false);
                 LastSongsError = ApiErrorMessageFormatter.FormatRequestFailure(
                     client.BaseAddress,
                     SongsRequestPath,
@@ -80,15 +87,33 @@ public class MusicService : IMusicService
 
             try
             {
-                return JsonSerializer.Deserialize<List<SongDto>>(responseBody, new JsonSerializerOptions(JsonSerializerDefaults.Web)) ?? [];
+                await using var responseStream = await response.Content
+                    .ReadAsStreamAsync(cancellationToken)
+                    .ConfigureAwait(false);
+
+                // Even an in-memory/cached response must not deserialize a large catalog on the UI thread.
+                return await Task.Run(
+                        async () => await JsonSerializer.DeserializeAsync<List<SongDto>>(
+                                responseStream,
+                                SongsSerializerOptions,
+                                cancellationToken)
+                            .ConfigureAwait(false) ?? [],
+                        cancellationToken)
+                    .ConfigureAwait(false);
             }
             catch (JsonException ex)
             {
                 LastSongsError = ApiErrorMessageFormatter.FormatException(client.BaseAddress, SongsRequestPath, ex);
-                _logger.LogError(ex, "Failed to deserialize songs response from {RequestUri}. Body: {ResponseBody}",
-                    new Uri(client.BaseAddress ?? new Uri("https://localhost/"), SongsRequestPath), responseBody);
+                _logger.LogError(
+                    ex,
+                    "Failed to deserialize songs response from {RequestUri}",
+                    new Uri(client.BaseAddress ?? new Uri("https://localhost/"), SongsRequestPath));
                 return [];
             }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -147,7 +172,7 @@ public class MusicService : IMusicService
         await _pendingStreamFlushLock.WaitAsync().ConfigureAwait(false);
         try
         {
-            var pendingStreamRecords = LoadPendingStreamRecords();
+            var pendingStreamRecords = await LoadPendingStreamRecordsAsync().ConfigureAwait(false);
             for (var index = 0; index < pendingStreamRecords.Count; index++)
             {
                 var pendingStreamRecord = pendingStreamRecords[index];
@@ -157,7 +182,7 @@ public class MusicService : IMusicService
                 {
                     pendingStreamRecords.RemoveAt(index);
                     index--;
-                    SavePendingStreamRecords(pendingStreamRecords);
+                    await SavePendingStreamRecordsAsync(pendingStreamRecords).ConfigureAwait(false);
                     continue;
                 }
 
@@ -168,7 +193,7 @@ public class MusicService : IMusicService
                         pendingStreamRecord.SongMetadataId);
                     pendingStreamRecords.RemoveAt(index);
                     index--;
-                    SavePendingStreamRecords(pendingStreamRecords);
+                    await SavePendingStreamRecordsAsync(pendingStreamRecords).ConfigureAwait(false);
                     continue;
                 }
 
@@ -186,11 +211,8 @@ public class MusicService : IMusicService
         }
     }
 
-    public Task ClearPendingStreamRecordsAsync()
-    {
-        _appPreferenceStore.Remove(PendingStreamRecordsPreferenceKey);
-        return Task.CompletedTask;
-    }
+    public Task ClearPendingStreamRecordsAsync() =>
+        Task.Run(() => _appPreferenceStore.Remove(PendingStreamRecordsPreferenceKey));
 
     public async Task<List<LikeCountDto>> GetBulkLikeCountsAsync(IEnumerable<int> songIds)
     {
@@ -280,13 +302,26 @@ public class MusicService : IMusicService
 
     private void TriggerPendingStreamFlush(string reason)
     {
-        if (!HasPendingStreamRecords())
+        _ = TriggerPendingStreamFlushAsync(reason);
+    }
+
+    private async Task TriggerPendingStreamFlushAsync(string reason)
+    {
+        if (!await HasPendingStreamRecordsAsync().ConfigureAwait(false))
         {
             return;
         }
 
         _logger.LogInformation("Triggering pending stream flush because {Reason}", reason);
-        _ = FlushPendingStreamRecordsAsync();
+        await FlushPendingStreamRecordsAsync().ConfigureAwait(false);
+    }
+
+    private async Task InitializePendingStreamRetryLoopAsync()
+    {
+        if (await HasPendingStreamRecordsAsync().ConfigureAwait(false))
+        {
+            EnsurePendingStreamRetryLoopStarted();
+        }
     }
 
     private void EnsurePendingStreamRetryLoopStarted()
@@ -306,11 +341,11 @@ public class MusicService : IMusicService
     {
         try
         {
-            while (HasPendingStreamRecords())
+            while (await HasPendingStreamRecordsAsync().ConfigureAwait(false))
             {
                 await Task.Delay(_pendingStreamRetryInterval).ConfigureAwait(false);
 
-                if (!HasPendingStreamRecords())
+                if (!await HasPendingStreamRecordsAsync().ConfigureAwait(false))
                 {
                     break;
                 }
@@ -372,7 +407,7 @@ public class MusicService : IMusicService
         await _pendingStreamFlushLock.WaitAsync().ConfigureAwait(false);
         try
         {
-            var pendingStreamRecords = LoadPendingStreamRecords();
+            var pendingStreamRecords = await LoadPendingStreamRecordsAsync().ConfigureAwait(false);
             pendingStreamRecords.Add(new PendingStreamRecord(songMetadataId, DateTime.UtcNow));
             if (pendingStreamRecords.Count > MaxPendingStreamRecords)
             {
@@ -383,7 +418,7 @@ public class MusicService : IMusicService
                     overflowCount);
             }
 
-            SavePendingStreamRecords(pendingStreamRecords);
+            await SavePendingStreamRecordsAsync(pendingStreamRecords).ConfigureAwait(false);
         }
         finally
         {
@@ -391,8 +426,11 @@ public class MusicService : IMusicService
         }
     }
 
-    private bool HasPendingStreamRecords()
-        => LoadPendingStreamRecords().Count > 0;
+    private async Task<bool> HasPendingStreamRecordsAsync()
+        => (await LoadPendingStreamRecordsAsync().ConfigureAwait(false)).Count > 0;
+
+    private Task<List<PendingStreamRecord>> LoadPendingStreamRecordsAsync() =>
+        Task.Run(LoadPendingStreamRecords);
 
     private List<PendingStreamRecord> LoadPendingStreamRecords()
     {
@@ -429,6 +467,9 @@ public class MusicService : IMusicService
             PendingStreamRecordsPreferenceKey,
             JsonSerializer.Serialize(pendingStreamRecords, PendingStreamRecordsSerializerOptions));
     }
+
+    private Task SavePendingStreamRecordsAsync(List<PendingStreamRecord> pendingStreamRecords) =>
+        Task.Run(() => SavePendingStreamRecords(pendingStreamRecords));
 
     private bool ShouldQueueStreamRecordRetry(HttpRequestException exception)
     {

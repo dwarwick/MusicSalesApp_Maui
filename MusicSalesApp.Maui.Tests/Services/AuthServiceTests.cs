@@ -4,6 +4,7 @@ using System.Text;
 using System.Reflection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Maui.Authentication;
+using Microsoft.Maui.Storage;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Moq.Protected;
@@ -22,6 +23,7 @@ public class AuthServiceTests
     private Mock<IWebAuthenticatorService> _mockWebAuthenticatorService;
     private Mock<IBillingService> _mockBillingService;
     private Mock<IMusicService> _mockMusicService;
+    private Mock<ISecureStorage> _mockSecureStorage;
     private AuthService _authService;
 
     [SetUp]
@@ -33,6 +35,11 @@ public class AuthServiceTests
         _mockWebAuthenticatorService = new Mock<IWebAuthenticatorService>();
         _mockBillingService = new Mock<IBillingService>();
         _mockMusicService = new Mock<IMusicService>();
+        _mockSecureStorage = new Mock<ISecureStorage>();
+        _mockSecureStorage.Setup(storage => storage.GetAsync(It.IsAny<string>())).ReturnsAsync((string?)null);
+        _mockSecureStorage.Setup(storage => storage.SetAsync(It.IsAny<string>(), It.IsAny<string>()))
+            .Returns(Task.CompletedTask);
+        _mockSecureStorage.Setup(storage => storage.Remove(It.IsAny<string>())).Returns(true);
         _mockConfiguration.Setup(c => c["MobileExternalAuth:CallbackUrl"]).Returns("streamtunes://auth");
 
         _authService = new AuthService(
@@ -41,7 +48,74 @@ public class AuthServiceTests
             _mockLogger.Object,
             _mockWebAuthenticatorService.Object,
             _mockBillingService.Object,
-            _mockMusicService.Object);
+            _mockMusicService.Object,
+            _mockSecureStorage.Object);
+    }
+
+    [Test]
+    public async Task HasBiometricCredentialsAsync_WhenBothValuesExist_ReturnsTrueAndCachesResult()
+    {
+        _mockSecureStorage.Setup(storage => storage.GetAsync("bio_email")).ReturnsAsync("user@test.com");
+        _mockSecureStorage.Setup(storage => storage.GetAsync("bio_password")).ReturnsAsync("secret");
+
+        var firstResult = await _authService.HasBiometricCredentialsAsync();
+        var cachedResult = await _authService.HasBiometricCredentialsAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(firstResult, Is.True);
+            Assert.That(cachedResult, Is.True);
+        });
+        _mockSecureStorage.Verify(storage => storage.GetAsync("bio_email"), Times.Once);
+        _mockSecureStorage.Verify(storage => storage.GetAsync("bio_password"), Times.Once);
+    }
+
+    [Test]
+    public async Task HasBiometricCredentialsAsync_WhenAValueIsMissing_ReturnsFalse()
+    {
+        _mockSecureStorage.Setup(storage => storage.GetAsync("bio_email")).ReturnsAsync("user@test.com");
+        _mockSecureStorage.Setup(storage => storage.GetAsync("bio_password")).ReturnsAsync((string?)null);
+
+        var result = await _authService.HasBiometricCredentialsAsync();
+
+        Assert.That(result, Is.False);
+    }
+
+    [Test]
+    public async Task HasBiometricCredentialsAsync_WhenSecureStorageFails_ReturnsFalseWithoutCachingFailure()
+    {
+        _mockSecureStorage.SetupSequence(storage => storage.GetAsync("bio_email"))
+            .ThrowsAsync(new InvalidOperationException("Secure storage unavailable"))
+            .ReturnsAsync("user@test.com");
+        _mockSecureStorage.Setup(storage => storage.GetAsync("bio_password")).ReturnsAsync("secret");
+
+        var failedResult = await _authService.HasBiometricCredentialsAsync();
+        var recoveredResult = await _authService.HasBiometricCredentialsAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(failedResult, Is.False);
+            Assert.That(recoveredResult, Is.True);
+        });
+    }
+
+    [Test]
+    public async Task EnableAndDisableBiometricLogin_UpdateCachedState()
+    {
+        await _authService.EnableBiometricLoginAsync("user@test.com", "secret");
+        var enabled = await _authService.HasBiometricCredentialsAsync();
+
+        await _authService.DisableBiometricLoginAsync();
+        var disabled = await _authService.HasBiometricCredentialsAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(enabled, Is.True);
+            Assert.That(disabled, Is.False);
+        });
+        _mockSecureStorage.Verify(storage => storage.GetAsync(It.IsAny<string>()), Times.Never);
+        _mockSecureStorage.Verify(storage => storage.Remove("bio_email"), Times.Once);
+        _mockSecureStorage.Verify(storage => storage.Remove("bio_password"), Times.Once);
     }
 
     [Test]

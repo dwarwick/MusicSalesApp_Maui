@@ -3,6 +3,15 @@ using MusicSalesApp.Maui.ViewModels;
 
 namespace MusicSalesApp.Maui.Services;
 
+public enum PlaybackRequestFailureReason
+{
+    UnavailableOffline
+}
+
+public sealed record PlaybackRequestFailedEventArgs(
+    int SongId,
+    PlaybackRequestFailureReason Reason);
+
 /// <summary>
 /// Singleton service managing all audio playback state, shared between
 /// MusicLibraryPage and SongPlayerPage. Does NOT own the MediaElement —
@@ -79,6 +88,9 @@ public interface IPlaybackService
 
     /// <summary>Fired when any observable property changes.</summary>
     event Action<string>? StateChanged;
+
+    /// <summary>Fired when a requested song cannot be started without an internet connection.</summary>
+    event EventHandler<PlaybackRequestFailedEventArgs>? PlaybackRequestFailed;
 
     /// <summary>Formats seconds to m:ss or h:mm:ss.</summary>
     string FormatDuration(double? seconds);

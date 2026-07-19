@@ -13,6 +13,7 @@ public partial class App : Application
 	private readonly IAppConfig _appConfig;
 	private readonly ITipFlowHandler _tipFlowHandler;
 	private readonly ISignalRConnectionManager _signalRConnectionManager;
+	private readonly PlaybackFailureNotificationCoordinator _playbackFailureNotificationCoordinator;
 
 	public App(
 		IAuthService authService,
@@ -23,7 +24,8 @@ public partial class App : Application
 		IBrowserService browserService,
 		IAppConfig appConfig,
 		ITipFlowHandler tipFlowHandler,
-		ISignalRConnectionManager signalRConnectionManager)
+		ISignalRConnectionManager signalRConnectionManager,
+		PlaybackFailureNotificationCoordinator playbackFailureNotificationCoordinator)
 	{
 		InitializeComponent();
 		_authService = authService;
@@ -35,6 +37,7 @@ public partial class App : Application
 		_appConfig = appConfig;
 		_tipFlowHandler = tipFlowHandler;
 		_signalRConnectionManager = signalRConnectionManager;
+		_playbackFailureNotificationCoordinator = playbackFailureNotificationCoordinator;
 
 		// Sync the Android system theme to MAUI at startup.
 		// Application.Current is now set (we're in the constructor), so this is safe.

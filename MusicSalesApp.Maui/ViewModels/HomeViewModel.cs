@@ -24,6 +24,7 @@ public partial class HomeViewModel : ObservableObject
     private readonly IConfiguration _configuration;
     private readonly IPlaylistService _playlistService;
     private bool _signalRSubscriptionsAttached;
+    private bool _authSubscriptionAttached;
     private bool _hasBillingDerivedSubscriptionPrice;
 
     private const string DefaultAppleSubscriptionManagementUrl = "https://account.apple.com/account/manage/section/subscriptions";
@@ -236,12 +237,13 @@ public partial class HomeViewModel : ObservableObject
         _configuration = configuration;
         _playlistService = playlistService;
 
-        _authService.AuthStateChanged += OnAuthStateChanged;
+        AttachAuthSubscription();
         AttachSignalRSubscriptions();
     }
 
     public void Activate()
     {
+        AttachAuthSubscription();
         AttachSignalRSubscriptions();
         SynchronizeFeaturedQueue();
     }
@@ -250,15 +252,19 @@ public partial class HomeViewModel : ObservableObject
 
     public void Cleanup()
     {
-        if (!_signalRSubscriptionsAttached)
+        if (_signalRSubscriptionsAttached)
         {
-            return;
+            _musicService.OnStreamCountRecorded -= HandleStreamCountUpdated;
+            _signalRService.OnStreamCountUpdated -= HandleStreamCountUpdated;
+            _signalRService.OnLikeCountUpdated -= HandleLikeCountUpdated;
+            _signalRSubscriptionsAttached = false;
         }
 
-        _musicService.OnStreamCountRecorded -= HandleStreamCountUpdated;
-        _signalRService.OnStreamCountUpdated -= HandleStreamCountUpdated;
-        _signalRService.OnLikeCountUpdated -= HandleLikeCountUpdated;
-        _signalRSubscriptionsAttached = false;
+        if (_authSubscriptionAttached)
+        {
+            _authService.AuthStateChanged -= OnAuthStateChanged;
+            _authSubscriptionAttached = false;
+        }
     }
 
     private void AttachSignalRSubscriptions()
@@ -272,6 +278,17 @@ public partial class HomeViewModel : ObservableObject
         _signalRService.OnStreamCountUpdated += HandleStreamCountUpdated;
         _signalRService.OnLikeCountUpdated += HandleLikeCountUpdated;
         _signalRSubscriptionsAttached = true;
+    }
+
+    private void AttachAuthSubscription()
+    {
+        if (_authSubscriptionAttached)
+        {
+            return;
+        }
+
+        _authService.AuthStateChanged += OnAuthStateChanged;
+        _authSubscriptionAttached = true;
     }
 
     [RelayCommand]
@@ -778,9 +795,6 @@ public partial class HomeViewModel : ObservableObject
 
     private void OnAuthStateChanged()
     {
-        RefreshAuthState();
-        _ = LoadAndroidSubscriptionOfferAsync();
-        _ = LoadHomePlaylistsAsync();
-        _ = LoadFeaturedSongsAsync();
+        _ = LoadCommand.ExecuteAsync(null);
     }
 }

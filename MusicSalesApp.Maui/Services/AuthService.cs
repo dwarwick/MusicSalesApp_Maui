@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Authentication;
+using Microsoft.Maui.Storage;
 using MusicSalesApp.Common.Helpers;
 using MusicSalesApp.Maui.ViewModels;
 
@@ -18,6 +19,9 @@ public class AuthService : IAuthService
     private readonly IWebAuthenticatorService _webAuthenticatorService;
     private readonly IBillingService _billingService;
     private readonly IMusicService _musicService;
+    private readonly ISecureStorage _secureStorage;
+    private readonly SemaphoreSlim _biometricStateLock = new(1, 1);
+    private int _biometricCredentialsState = -1;
 
     private const string TokenStorageKey = "auth_token";
     private const string EmailStorageKey = "auth_email";
@@ -42,11 +46,10 @@ public class AuthService : IAuthService
     public int? CreatorId { get; private set; }
     public IReadOnlyList<string> Roles { get; private set; } = [];
     public string? Token { get; private set; }
-    public bool IsBiometricEnabled => SecureStorage.Default.GetAsync(BioEmailKey).GetAwaiter().GetResult() != null;
 
     public AuthService(IHttpClientFactory httpClientFactory, IConfiguration configuration,
         ILogger<AuthService> logger, IWebAuthenticatorService webAuthenticatorService,
-        IBillingService billingService, IMusicService musicService)
+        IBillingService billingService, IMusicService musicService, ISecureStorage secureStorage)
     {
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
@@ -54,6 +57,49 @@ public class AuthService : IAuthService
         _webAuthenticatorService = webAuthenticatorService;
         _billingService = billingService;
         _musicService = musicService;
+        _secureStorage = secureStorage;
+    }
+
+    public async Task<bool> HasBiometricCredentialsAsync(CancellationToken cancellationToken = default)
+    {
+        var cachedState = Volatile.Read(ref _biometricCredentialsState);
+        if (cachedState >= 0)
+        {
+            return cachedState == 1;
+        }
+
+        await _biometricStateLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            cachedState = Volatile.Read(ref _biometricCredentialsState);
+            if (cachedState >= 0)
+            {
+                return cachedState == 1;
+            }
+
+            var email = await _secureStorage.GetAsync(BioEmailKey)
+                .WaitAsync(cancellationToken)
+                .ConfigureAwait(false);
+            var password = await _secureStorage.GetAsync(BioPasswordKey)
+                .WaitAsync(cancellationToken)
+                .ConfigureAwait(false);
+            var hasCredentials = !string.IsNullOrWhiteSpace(email) && !string.IsNullOrEmpty(password);
+            Volatile.Write(ref _biometricCredentialsState, hasCredentials ? 1 : 0);
+            return hasCredentials;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not read biometric login state from secure storage");
+            return false;
+        }
+        finally
+        {
+            _biometricStateLock.Release();
+        }
     }
 
     public async Task<(bool Success, string Error)> LoginAsync(string email, string password)
@@ -274,7 +320,7 @@ public class AuthService : IAuthService
 
             // Update locally stored email
             Email = newEmail;
-            await SecureStorage.Default.SetAsync(EmailStorageKey, newEmail);
+            await _secureStorage.SetAsync(EmailStorageKey, newEmail);
             NotifyAuthStateChanged();
 
             return (true, string.Empty);
@@ -332,10 +378,10 @@ public class AuthService : IAuthService
     public async Task LogoutAsync()
     {
         await _musicService.ClearPendingStreamRecordsAsync();
-        SecureStorage.Default.Remove(TokenStorageKey);
-        SecureStorage.Default.Remove(AuthStorageKeys.UserId);
-        SecureStorage.Default.Remove(EmailStorageKey);
-        SecureStorage.Default.Remove(EmailConfirmedStorageKey);
+        _secureStorage.Remove(TokenStorageKey);
+        _secureStorage.Remove(AuthStorageKeys.UserId);
+        _secureStorage.Remove(EmailStorageKey);
+        _secureStorage.Remove(EmailConfirmedStorageKey);
         ClearState();
         NotifyAuthStateChanged();
     }
@@ -344,7 +390,7 @@ public class AuthService : IAuthService
     {
         try
         {
-            var token = await SecureStorage.Default.GetAsync(TokenStorageKey);
+            var token = await _secureStorage.GetAsync(TokenStorageKey);
             if (string.IsNullOrEmpty(token))
                 return;
 
@@ -373,7 +419,7 @@ public class AuthService : IAuthService
             IsLoggedIn = true;
 
             // Restore EmailConfirmed from SecureStorage (defaults to false if not stored)
-            var storedEmailConfirmed = await SecureStorage.Default.GetAsync(EmailConfirmedStorageKey);
+            var storedEmailConfirmed = await _secureStorage.GetAsync(EmailConfirmedStorageKey);
             EmailConfirmed = string.Equals(storedEmailConfirmed, "true", StringComparison.OrdinalIgnoreCase);
 
             // Refresh subscription/creator status from server
@@ -395,24 +441,67 @@ public class AuthService : IAuthService
 
     public async Task EnableBiometricLoginAsync(string email, string password)
     {
-        await SecureStorage.Default.SetAsync(BioEmailKey, email);
-        await SecureStorage.Default.SetAsync(BioPasswordKey, password);
+        await _biometricStateLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            Volatile.Write(ref _biometricCredentialsState, -1);
+            try
+            {
+                await _secureStorage.SetAsync(BioEmailKey, email).ConfigureAwait(false);
+                await _secureStorage.SetAsync(BioPasswordKey, password).ConfigureAwait(false);
+                Volatile.Write(ref _biometricCredentialsState, 1);
+            }
+            catch
+            {
+                _secureStorage.Remove(BioEmailKey);
+                _secureStorage.Remove(BioPasswordKey);
+                Volatile.Write(ref _biometricCredentialsState, 0);
+                throw;
+            }
+        }
+        finally
+        {
+            _biometricStateLock.Release();
+        }
     }
 
     public async Task DisableBiometricLoginAsync()
     {
-        SecureStorage.Default.Remove(BioEmailKey);
-        SecureStorage.Default.Remove(BioPasswordKey);
-        await Task.CompletedTask;
+        await _biometricStateLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            _secureStorage.Remove(BioEmailKey);
+            _secureStorage.Remove(BioPasswordKey);
+            Volatile.Write(ref _biometricCredentialsState, 0);
+        }
+        finally
+        {
+            _biometricStateLock.Release();
+        }
     }
 
     public async Task<(bool Success, string Error)> BiometricLoginAsync()
     {
-        var email = await SecureStorage.Default.GetAsync(BioEmailKey);
-        var password = await SecureStorage.Default.GetAsync(BioPasswordKey);
+        string? email;
+        string? password;
+        await _biometricStateLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            email = await _secureStorage.GetAsync(BioEmailKey).ConfigureAwait(false);
+            password = await _secureStorage.GetAsync(BioPasswordKey).ConfigureAwait(false);
+            Volatile.Write(
+                ref _biometricCredentialsState,
+                !string.IsNullOrWhiteSpace(email) && !string.IsNullOrEmpty(password) ? 1 : 0);
+        }
+        finally
+        {
+            _biometricStateLock.Release();
+        }
 
         if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password))
+        {
             return (false, "No saved credentials. Please log in with your password first.");
+        }
 
         // Prompt for biometric authentication before using stored credentials
         var biometricResult = await PromptBiometricAsync();
@@ -438,10 +527,10 @@ public class AuthService : IAuthService
     {
         ApplyLoginResponse(data);
 
-        await SecureStorage.Default.SetAsync(TokenStorageKey, data.Token);
-        await SecureStorage.Default.SetAsync(AuthStorageKeys.UserId, data.UserId.ToString());
-        await SecureStorage.Default.SetAsync(EmailStorageKey, data.Email);
-        await SecureStorage.Default.SetAsync(EmailConfirmedStorageKey, data.EmailConfirmed.ToString());
+        await _secureStorage.SetAsync(TokenStorageKey, data.Token);
+        await _secureStorage.SetAsync(AuthStorageKeys.UserId, data.UserId.ToString());
+        await _secureStorage.SetAsync(EmailStorageKey, data.Email);
+        await _secureStorage.SetAsync(EmailConfirmedStorageKey, data.EmailConfirmed.ToString());
 
         // Restore any unverified Google Play purchases after login
         if (!HasActiveSubscription)

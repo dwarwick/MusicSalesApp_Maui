@@ -23,6 +23,28 @@
             <BoxView HeightRequest="1"
                      Color="{AppThemeBinding Light=#E0E0E0, Dark=#333333}" />
 
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                <VerticalStackLayout Grid.Column="0" Spacing="4">
+                    <Label Text="Space used"
+                           FontSize="18"
+                           FontAttributes="Bold"
+                           TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+                    <Label Text="Storage currently used by downloaded songs on this device."
+                           FontSize="14"
+                           TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+                </VerticalStackLayout>
+
+                <Label Grid.Column="1"
+                       Text="{Binding CacheUsageDisplay}"
+                       FontSize="18"
+                       FontAttributes="Bold"
+                       VerticalOptions="Center"
+                       TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+            </Grid>
+
+            <BoxView HeightRequest="1"
+                     Color="{AppThemeBinding Light=#E0E0E0, Dark=#333333}" />
+
             <VerticalStackLayout Spacing="16">
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
                     <VerticalStackLayout Grid.Column="0" Spacing="4">

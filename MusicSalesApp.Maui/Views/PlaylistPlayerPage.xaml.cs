@@ -34,6 +34,7 @@ public partial class PlaylistPlayerPage : ContentPage
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        NowPlayingBar.Activate();
         _viewModel.Activate();
         await _viewModel.StartSignalRAsync();
     }
@@ -41,6 +42,7 @@ public partial class PlaylistPlayerPage : ContentPage
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
+        NowPlayingBar.Deactivate();
         _viewModel.Cleanup();
     }
 

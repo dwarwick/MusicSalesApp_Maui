@@ -17,6 +17,7 @@ public partial class AccountSettingsViewModel : ObservableObject
     private readonly IMusicService _musicService;
     private readonly IBillingService _billingService;
     private bool _hasBillingDerivedSubscriptionPrice;
+    private bool _authSubscriptionAttached;
 
     private const string DefaultAppleSubscriptionManagementUrl = "https://account.apple.com/account/manage/section/subscriptions";
 
@@ -297,12 +298,13 @@ public partial class AccountSettingsViewModel : ObservableObject
         _musicService = musicService;
         _billingService = billingService;
 
-        _authService.AuthStateChanged += OnAuthStateChanged;
+        AttachAuthSubscription();
         ApplySubscriptionState(null);
     }
 
     public async Task OnAppearingAsync()
     {
+        Activate();
         await _authService.RefreshUserStatusAsync();
         ApplySubscriptionState(null);
         await LoadAndroidSubscriptionOfferAsync();
@@ -567,7 +569,31 @@ public partial class AccountSettingsViewModel : ObservableObject
 
     private void OnAuthStateChanged()
     {
-        _ = LoadAsync();
+        _ = LoadCommand.ExecuteAsync(null);
+    }
+
+    public void Activate() => AttachAuthSubscription();
+
+    public void Cleanup()
+    {
+        if (!_authSubscriptionAttached)
+        {
+            return;
+        }
+
+        _authService.AuthStateChanged -= OnAuthStateChanged;
+        _authSubscriptionAttached = false;
+    }
+
+    private void AttachAuthSubscription()
+    {
+        if (_authSubscriptionAttached)
+        {
+            return;
+        }
+
+        _authService.AuthStateChanged += OnAuthStateChanged;
+        _authSubscriptionAttached = true;
     }
 
     private DateTime GetTrialEndDateForDisplay()

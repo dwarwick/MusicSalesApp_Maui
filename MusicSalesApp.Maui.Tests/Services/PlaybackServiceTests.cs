@@ -18,8 +18,10 @@ public class PlaybackServiceTests
     private Mock<IQueuePreparationService> _mockQueuePreparationService;
     private Mock<IPlaybackKeepAliveService> _mockPlaybackKeepAliveService;
     private Mock<IAnonymousFeaturedStreamStore> _mockAnonymousFeaturedStreamStore;
+    private Mock<INetworkStatusService> _mockNetworkStatusService;
     private PlaybackService _service;
     private PlaybackRuntimeState _mediaManagerState;
+    private bool _isOffline;
 
     [SetUp]
     public void Setup()
@@ -32,7 +34,10 @@ public class PlaybackServiceTests
         _mockQueuePreparationService = new Mock<IQueuePreparationService>();
         _mockPlaybackKeepAliveService = new Mock<IPlaybackKeepAliveService>();
         _mockAnonymousFeaturedStreamStore = new Mock<IAnonymousFeaturedStreamStore>();
+        _mockNetworkStatusService = new Mock<INetworkStatusService>();
         _mediaManagerState = PlaybackRuntimeState.Stopped;
+        _isOffline = false;
+        _mockNetworkStatusService.SetupGet(service => service.IsOffline).Returns(() => _isOffline);
 
         // Set up async methods to return completed tasks
         _mockMediaManager.Setup(m => m.PlayAsync(It.IsAny<PlaybackMediaItem>())).ReturnsAsync((PlaybackMediaItem?)null);
@@ -52,17 +57,28 @@ public class PlaybackServiceTests
         _mockMediaManager.Setup(m => m.Queue).Returns(_mockMediaQueue.Object);
         _mockMusicService.Setup(s => s.RecordStreamAsync(It.IsAny<int>())).ReturnsAsync((int?)null);
         _mockAudioCacheService
-            .Setup(s => s.GetImmediatePlaybackUri(It.IsAny<SongDto>()))
-            .Returns((SongDto song) => song.StreamUrl ?? string.Empty);
-        _mockAudioCacheService
             .Setup(s => s.GetStableCacheKey(It.IsAny<SongDto>()))
             .Returns((SongDto song) => $"song-{song.Id}");
         _mockAudioCacheService
             .Setup(s => s.ResolvePlaybackUriAsync(It.IsAny<SongDto>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((SongDto song, CancellationToken _) => song.StreamUrl);
         _mockAudioCacheService
-            .Setup(s => s.GetCacheStatus(It.IsAny<SongDto>()))
-            .Returns((SongDto song) => new TrackCacheStatus(song.Id, $"song-{song.Id}", null, false, false));
+            .Setup(s => s.GetCacheStatusAsync(It.IsAny<SongDto>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SongDto song, CancellationToken _) =>
+                new TrackCacheStatus(song.Id, $"song-{song.Id}", null, false, false));
+        _mockAudioCacheService
+            .Setup(s => s.GetCacheStatusesAsync(It.IsAny<IReadOnlyList<SongDto>>(), It.IsAny<CancellationToken>()))
+            .Returns(async (IReadOnlyList<SongDto> songs, CancellationToken cancellationToken) =>
+            {
+                var statuses = new Dictionary<int, TrackCacheStatus>(songs.Count);
+                foreach (var song in songs)
+                {
+                    statuses[song.Id] = await _mockAudioCacheService.Object
+                        .GetCacheStatusAsync(song, cancellationToken);
+                }
+
+                return statuses;
+            });
         _mockQueuePreparationService
             .Setup(s => s.PrepareAsync(
                 It.IsAny<IReadOnlyList<SongDto>>(),
@@ -99,7 +115,8 @@ public class PlaybackServiceTests
             transientStopConfirmationDelay,
             subscriptionStatusRefreshInterval,
             bufferingStallRecoveryDelay,
-            _mockAnonymousFeaturedStreamStore.Object);
+            _mockAnonymousFeaturedStreamStore.Object,
+            _mockNetworkStatusService.Object);
     }
 
     [Test]
@@ -2177,8 +2194,13 @@ public class PlaybackServiceTests
         var queuedItemsSource = new TaskCompletionSource<IReadOnlyList<PlaybackMediaItem>>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         _mockAudioCacheService
-            .Setup(s => s.GetImmediatePlaybackUri(songs[0]))
-            .Returns(() => useCachedPlaybackUri ? cachedPlaybackUri : songs[0].StreamUrl!);
+            .Setup(s => s.GetCacheStatusAsync(songs[0], It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => new TrackCacheStatus(
+                songs[0].Id,
+                $"song-{songs[0].Id}",
+                useCachedPlaybackUri ? cachedPlaybackUri : null,
+                useCachedPlaybackUri,
+                useCachedPlaybackUri));
         _mockMediaManager
             .Setup(m => m.PlayAsync(It.IsAny<IEnumerable<PlaybackMediaItem>>()))
             .Callback<IEnumerable<PlaybackMediaItem>>(items => queuedItemsSource.TrySetResult(items.ToList()))
@@ -2539,13 +2561,68 @@ public class PlaybackServiceTests
         var song = new SongDto { Id = 31, SongTitle = "Cached Song", StreamUrl = "https://test.com/song31.mp3" };
         const string localPlaybackPath = "/data/user/0/com.streamtunes/cache/song31.mp3";
         _mockAudioCacheService
-            .Setup(s => s.GetImmediatePlaybackUri(song))
-            .Returns(localPlaybackPath);
+            .Setup(s => s.GetCacheStatusAsync(song, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TrackCacheStatus(song.Id, $"song-{song.Id}", localPlaybackPath, true, true));
 
         _service.PlaySong(song);
 
         _mockMediaManager.Verify(
             m => m.PlayAsync(It.Is<PlaybackMediaItem>(item => item.MediaUri == localPlaybackPath && item.MediaLocation == PlaybackMediaLocation.FileSystem)),
+            Times.Once);
+    }
+
+    [Test]
+    public void PlaySong_WhenCachedAndOffline_StartsCachedPlayback()
+    {
+        var song = new SongDto { Id = 331, SongTitle = "Offline Cached", StreamUrl = "https://test.com/song331.mp3" };
+        const string localPlaybackPath = "/data/user/0/com.streamtunes/cache/song331.mp3";
+        SetupCachedSong(song, localPlaybackPath);
+        _isOffline = true;
+
+        _service.PlaySong(song);
+
+        _mockMediaManager.Verify(
+            runtime => runtime.PlayAsync(It.Is<PlaybackMediaItem>(item =>
+                item.MediaUri == localPlaybackPath &&
+                item.MediaLocation == PlaybackMediaLocation.FileSystem)),
+            Times.Once);
+    }
+
+    [Test]
+    public void PlaySong_WhenUncachedAndOffline_RejectsWithoutReplacingCurrentPlayback()
+    {
+        var currentSong = new SongDto { Id = 332, SongTitle = "Current", StreamUrl = "https://test.com/song332.mp3" };
+        var requestedSong = new SongDto { Id = 333, SongTitle = "Unavailable", StreamUrl = "https://test.com/song333.mp3" };
+        _service.PlaySong(currentSong);
+        _mockMediaManager.Invocations.Clear();
+        PlaybackRequestFailedEventArgs? failure = null;
+        _service.PlaybackRequestFailed += (_, args) => failure = args;
+        _isOffline = true;
+
+        _service.PlaySong(requestedSong);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_service.CurrentSong, Is.SameAs(currentSong));
+            Assert.That(_service.IsPlaying, Is.True);
+            Assert.That(failure?.SongId, Is.EqualTo(requestedSong.Id));
+            Assert.That(failure?.Reason, Is.EqualTo(PlaybackRequestFailureReason.UnavailableOffline));
+        });
+        _mockMediaManager.Verify(runtime => runtime.PlayAsync(It.IsAny<PlaybackMediaItem>()), Times.Never);
+        _mockMediaManager.Verify(runtime => runtime.StopAsync(), Times.Never);
+    }
+
+    [Test]
+    public void PlaySong_WhenUncachedAndOnline_StartsRemotePlayback()
+    {
+        var song = new SongDto { Id = 334, SongTitle = "Online", StreamUrl = "https://test.com/song334.mp3" };
+
+        _service.PlaySong(song);
+
+        _mockMediaManager.Verify(
+            runtime => runtime.PlayAsync(It.Is<PlaybackMediaItem>(item =>
+                item.MediaUri == song.StreamUrl &&
+                item.MediaLocation == PlaybackMediaLocation.Remote)),
             Times.Once);
     }
 
@@ -2556,9 +2633,6 @@ public class PlaybackServiceTests
         var cacheWarmStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var cacheWarmCompletion = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        _mockAudioCacheService
-            .Setup(s => s.GetImmediatePlaybackUri(song))
-            .Returns(song.StreamUrl!);
         _mockAudioCacheService
             .Setup(s => s.ResolvePlaybackUriAsync(song, It.IsAny<CancellationToken>()))
             .Returns(() =>
@@ -2587,8 +2661,8 @@ public class PlaybackServiceTests
             .Callback<IEnumerable<PlaybackMediaItem>>(items => queuedItemsSource.TrySetResult(items.ToList()))
             .ReturnsAsync((PlaybackMediaItem?)null);
         _mockAudioCacheService
-            .Setup(s => s.GetImmediatePlaybackUri(songs[1]))
-            .Returns(localPlaybackPath);
+            .Setup(s => s.GetCacheStatusAsync(songs[1], It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TrackCacheStatus(songs[1].Id, $"song-{songs[1].Id}", localPlaybackPath, true, true));
 
         _service.SetPlaylist(songs, 1);
 
@@ -2648,11 +2722,11 @@ public class PlaybackServiceTests
             .Callback<IEnumerable<PlaybackMediaItem>>(items => queuedItemsSource.TrySetResult(items.ToList()))
             .ReturnsAsync((PlaybackMediaItem?)null);
         _mockAudioCacheService
-            .Setup(s => s.GetImmediatePlaybackUri(songs[0]))
-            .Returns(localCurrentPath);
+            .Setup(s => s.GetCacheStatusAsync(songs[0], It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TrackCacheStatus(songs[0].Id, $"song-{songs[0].Id}", localCurrentPath, true, true));
         _mockAudioCacheService
-            .Setup(s => s.GetImmediatePlaybackUri(songs[1]))
-            .Returns(localNextPath);
+            .Setup(s => s.GetCacheStatusAsync(songs[1], It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TrackCacheStatus(songs[1].Id, $"song-{songs[1].Id}", localNextPath, true, true));
 
         _service.SetPlaylist(songs, 0);
 
@@ -2888,11 +2962,10 @@ public class PlaybackServiceTests
     {
         localPlaybackPath ??= $"/data/user/0/com.streamtunes/cache/song{song.Id}.mp3";
         _mockAudioCacheService
-            .Setup(s => s.GetImmediatePlaybackUri(It.Is<SongDto>(candidate => candidate.Id == song.Id)))
-            .Returns(localPlaybackPath);
-        _mockAudioCacheService
-            .Setup(s => s.GetCacheStatus(It.Is<SongDto>(candidate => candidate.Id == song.Id)))
-            .Returns(new TrackCacheStatus(song.Id, $"song-{song.Id}", localPlaybackPath, true, true));
+            .Setup(s => s.GetCacheStatusAsync(
+                It.Is<SongDto>(candidate => candidate.Id == song.Id),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TrackCacheStatus(song.Id, $"song-{song.Id}", localPlaybackPath, true, true));
     }
 
     private static async Task WaitForAsync(Func<bool> condition)

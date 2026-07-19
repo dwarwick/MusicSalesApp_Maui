@@ -47,6 +47,7 @@ public partial class MusicLibraryPage : ContentPage
     {
         base.OnAppearing();
 
+        NowPlayingBar.Activate();
         _viewModel.Activate();
 
         if (_viewModel.Songs.Count == 0)
@@ -61,6 +62,7 @@ public partial class MusicLibraryPage : ContentPage
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
+        NowPlayingBar.Deactivate();
         _viewModel.Cleanup();
         // Don't stop playback when navigating away — it keeps playing in background
     }

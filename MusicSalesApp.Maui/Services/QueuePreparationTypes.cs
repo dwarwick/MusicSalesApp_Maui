@@ -50,7 +50,13 @@ public interface ITrackCacheService
 {
     string GetStableCacheKey(SongDto song);
 
-    TrackCacheStatus GetCacheStatus(SongDto song);
+    Task<TrackCacheStatus> GetCacheStatusAsync(
+        SongDto song,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyDictionary<int, TrackCacheStatus>> GetCacheStatusesAsync(
+        IReadOnlyList<SongDto> songs,
+        CancellationToken cancellationToken = default);
 
     Task<TrackCacheStatus> EnsureCachedAsync(
         SongDto song,

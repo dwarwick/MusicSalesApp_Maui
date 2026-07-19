@@ -181,6 +181,22 @@ public class MusicServiceTests
     }
 
     [Test]
+    public async Task GetSongsAsync_WhenCancelled_PropagatesCancellation()
+    {
+        var handler = new CancellationAwareHandler();
+        CreateMockHttpClient(handler);
+        var service = CreateService();
+        using var cancellationSource = new CancellationTokenSource();
+
+        var requestTask = service.GetSongsAsync(cancellationSource.Token);
+        await handler.RequestStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await cancellationSource.CancelAsync();
+
+        Assert.CatchAsync<OperationCanceledException>(async () => await requestTask);
+        Assert.That(service.LastSongsError, Is.Null);
+    }
+
+    [Test]
     public async Task RecordStreamAsync_CallsCorrectEndpoint()
     {
         // Arrange
@@ -936,6 +952,20 @@ public class MusicServiceTests
         var result = await service.ReportSongAsync(42, "Copyright Violation");
 
         Assert.That(result, Is.False);
+    }
+}
+
+sealed class CancellationAwareHandler : HttpMessageHandler
+{
+    public TaskCompletionSource RequestStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    protected override async Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        RequestStarted.TrySetResult();
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        return new HttpResponseMessage(HttpStatusCode.OK);
     }
 }
 

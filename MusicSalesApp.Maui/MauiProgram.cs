@@ -7,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Maui.LifecycleEvents;
 using Microsoft.Maui.Networking;
+using Microsoft.Maui.Storage;
 using MusicSalesApp.Maui.Services;
 using MusicSalesApp.Maui.ViewModels;
 using MusicSalesApp.Maui.Views;
@@ -158,6 +159,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IConnectivity>(Connectivity.Current);
 		builder.Services.AddSingleton<INetworkStatusService, NetworkStatusService>();
 		builder.Services.AddSingleton<IAppPreferenceStore, AppPreferenceStore>();
+		builder.Services.AddSingleton<ISecureStorage>(SecureStorage.Default);
 		builder.Services.AddSingleton<IAnonymousFeaturedStreamStore, AnonymousFeaturedStreamStore>();
 		builder.Services.AddSingleton<IPermissionExplainerService, PermissionExplainerService>();
 		builder.Services.AddSingleton<IMicrophonePermissionService, MicrophonePermissionService>();
@@ -192,6 +194,9 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IPlaybackKeepAliveService, NoOpPlaybackKeepAliveService>();
 	#endif
 		builder.Services.AddSingleton<IPlaybackService, PlaybackService>();
+		builder.Services.AddSingleton<IToastService, MusicSalesApp.Maui.Notifications.ToolkitToastService>();
+		builder.Services.AddSingleton<PlaybackFailureNotificationCoordinator>();
+		builder.Services.AddSingleton<IAudioVisualizerLifecycleCoordinator, AudioVisualizerLifecycleCoordinator>();
 	#if ANDROID
 		builder.Services.AddSingleton<IMediaPlaybackOnboardingService, MediaPlaybackOnboardingService>();
 		builder.Services.AddSingleton<IAudioVisualizerService, MusicSalesApp.Maui.Platforms.Android.AudioVisualizerService>();
@@ -214,16 +219,16 @@ public static class MauiProgram
 				{
 					android.OnStop(activity =>
 					{
-						if (IPlatformApplication.Current?.Services.GetService(typeof(IAudioVisualizerService)) is IAudioVisualizerService audioVisualizerService)
+						if (IPlatformApplication.Current?.Services.GetService(typeof(IAudioVisualizerLifecycleCoordinator)) is IAudioVisualizerLifecycleCoordinator lifecycleCoordinator)
 						{
-							audioVisualizerService.Suspend();
+							lifecycleCoordinator.OnApplicationStopped();
 						}
 					});
 					android.OnResume(activity =>
 					{
-						if (IPlatformApplication.Current?.Services.GetService(typeof(IAudioVisualizerService)) is IAudioVisualizerService audioVisualizerService)
+						if (IPlatformApplication.Current?.Services.GetService(typeof(IAudioVisualizerLifecycleCoordinator)) is IAudioVisualizerLifecycleCoordinator lifecycleCoordinator)
 						{
-							_ = audioVisualizerService.EnsureInitializedAsync();
+							lifecycleCoordinator.OnApplicationResumed();
 						}
 
 						if (IPlatformApplication.Current?.Services.GetService(typeof(IAppActivationCoordinator)) is IAppActivationCoordinator appActivationCoordinator)
@@ -296,7 +301,12 @@ public static class MauiProgram
 		builder.Logging.AddProvider(new RollingFileLoggerProvider(RollingFileLoggerOptions.CreateDefault()));
 
 #if ANDROID
-		builder.Logging.AddProvider(new MusicSalesApp.Maui.Platforms.Android.AndroidLogcatLoggerProvider(LogLevel.Information));
+		builder.Logging.AddProvider(new MusicSalesApp.Maui.Platforms.Android.AndroidLogcatLoggerProvider(
+#if DEBUG
+			LogLevel.Information));
+#else
+			LogLevel.Warning));
+#endif
 #endif
 
 #if DEBUG

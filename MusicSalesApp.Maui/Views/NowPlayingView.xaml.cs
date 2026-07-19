@@ -11,14 +11,26 @@ public partial class NowPlayingView : ContentView
 {
     private const string PlayIconPathData = "M8 5v14l11-7z";
     private const string PauseIconPathData = "M6 19h4V5H6zm8-14v14h4V5z";
+    private const int SongInfoUpdate = 1 << 0;
+    private const int PlayPauseUpdate = 1 << 1;
+    private const int RepeatUpdate = 1 << 2;
+    private const int ProgressUpdate = 1 << 3;
+    private const int TimeUpdate = 1 << 4;
+    private const int PlaylistUpdate = 1 << 5;
+    private const int ShuffleUpdate = 1 << 6;
+    private const int PreviewUpdate = 1 << 7;
+    private const int AllUpdates = SongInfoUpdate | PlayPauseUpdate | RepeatUpdate | ProgressUpdate |
+                                   TimeUpdate | PlaylistUpdate | ShuffleUpdate | PreviewUpdate;
     private static readonly Microsoft.Maui.Controls.Shapes.Geometry? PlayIconGeometry = CreateGeometry(PlayIconPathData);
     private static readonly Microsoft.Maui.Controls.Shapes.Geometry? PauseIconGeometry = CreateGeometry(PauseIconPathData);
 
     private readonly NowPlayingEmptyStateActionRunner _emptyStateActionRunner = new();
+    private readonly CoalescedUiUpdateScheduler _updateScheduler;
     private IPlaybackService? _playbackService;
     private IAuthService? _authService;
     private Func<Task<bool>>? _playFromEmptyStateAsync;
     private string? _emptyStateHint;
+    private bool _isActive;
 
     /// <summary>
     /// Legacy property kept for XAML compatibility. The player now stays visible
@@ -29,6 +41,17 @@ public partial class NowPlayingView : ContentView
     public NowPlayingView()
     {
         InitializeComponent();
+        _updateScheduler = new CoalescedUiUpdateScheduler(
+            action => MainThread.BeginInvokeOnMainThread(action),
+            ApplyScheduledPlaybackUpdates);
+
+        PlayPauseTap.Tapped += OnPlayPauseClicked;
+        RepeatTap.Tapped += OnRepeatClicked;
+        ShuffleTap.Tapped += OnShuffleClicked;
+        PrevTap.Tapped += OnPrevClicked;
+        NextTap.Tapped += OnNextClicked;
+        ProgressSlider.DragStarted += OnSliderDragStarted;
+        ProgressSlider.DragCompleted += OnSliderDragCompleted;
     }
 
     public void Initialize(
@@ -37,29 +60,52 @@ public partial class NowPlayingView : ContentView
         Func<Task<bool>>? playFromEmptyStateAsync = null,
         string? emptyStateHint = null)
     {
+        if (_isActive && _playbackService != null)
+        {
+            _playbackService.StateChanged -= OnPlaybackStateChanged;
+        }
+
         _playbackService = playbackService;
         _authService = authService;
         _playFromEmptyStateAsync = playFromEmptyStateAsync;
         _emptyStateHint = emptyStateHint;
 
-        PlayPauseTap.Tapped += OnPlayPauseClicked;
-        RepeatTap.Tapped += OnRepeatClicked;
-        ShuffleTap.Tapped += OnShuffleClicked;
-        PrevTap.Tapped += OnPrevClicked;
-        NextTap.Tapped += OnNextClicked;
+        if (_isActive)
+        {
+            _playbackService.StateChanged += OnPlaybackStateChanged;
+        }
 
-        _playbackService.StateChanged += OnPlaybackStateChanged;
+        ApplyPlaybackUpdates(AllUpdates);
+    }
 
-        ProgressSlider.DragStarted += OnSliderDragStarted;
-        ProgressSlider.DragCompleted += OnSliderDragCompleted;
+    public void Activate()
+    {
+        if (_isActive)
+        {
+            return;
+        }
 
-        // Set initial state
-        UpdateSongInfo();
-        UpdatePlayPauseIcon();
-        UpdateRepeatVisual();
-        UpdateTimeLabels();
-        UpdatePlaylistControls();
-        UpdateEmptyStateText();
+        _isActive = true;
+        if (_playbackService != null)
+        {
+            _playbackService.StateChanged += OnPlaybackStateChanged;
+        }
+
+        ApplyPlaybackUpdates(AllUpdates);
+    }
+
+    public void Deactivate()
+    {
+        if (!_isActive)
+        {
+            return;
+        }
+
+        _isActive = false;
+        if (_playbackService != null)
+        {
+            _playbackService.StateChanged -= OnPlaybackStateChanged;
+        }
     }
 
     private bool _isSeeking;
@@ -108,40 +154,42 @@ public partial class NowPlayingView : ContentView
 
     private void OnPlaybackStateChanged(string propertyName)
     {
-        MainThread.BeginInvokeOnMainThread(() =>
+        var update = propertyName switch
         {
-            switch (propertyName)
-            {
-                case nameof(IPlaybackService.CurrentSong):
-                    UpdateSongInfo();
-                    UpdatePreviewMarker();
-                    break;
-                case nameof(IPlaybackService.IsPlaying):
-                    UpdatePlayPauseIcon();
-                    break;
-                case nameof(IPlaybackService.IsRepeatEnabled):
-                    UpdateRepeatVisual();
-                    break;
-                case nameof(IPlaybackService.PlaybackProgress):
-                    if (!_isSeeking)
-                        ProgressSlider.Value = _playbackService?.PlaybackProgress ?? 0;
-                    break;
-                case nameof(IPlaybackService.FormattedPosition):
-                case nameof(IPlaybackService.FormattedDuration):
-                    UpdateTimeLabels();
-                    UpdatePreviewMarker();
-                    break;
-                case nameof(IPlaybackService.PreviewLimitReached):
-                    UpdatePreviewMarker();
-                    break;
-                case nameof(IPlaybackService.HasPlaylist):
-                    UpdatePlaylistControls();
-                    break;
-                case nameof(IPlaybackService.IsShuffleEnabled):
-                    UpdateShuffleVisual();
-                    break;
-            }
-        });
+            nameof(IPlaybackService.CurrentSong) => SongInfoUpdate | PreviewUpdate,
+            nameof(IPlaybackService.IsPlaying) => PlayPauseUpdate,
+            nameof(IPlaybackService.IsRepeatEnabled) => RepeatUpdate,
+            nameof(IPlaybackService.PlaybackProgress) => ProgressUpdate,
+            nameof(IPlaybackService.FormattedPosition) or nameof(IPlaybackService.FormattedDuration) => TimeUpdate | PreviewUpdate,
+            nameof(IPlaybackService.PreviewLimitReached) => PreviewUpdate,
+            nameof(IPlaybackService.HasPlaylist) => PlaylistUpdate,
+            nameof(IPlaybackService.IsShuffleEnabled) => ShuffleUpdate,
+            _ => 0
+        };
+
+        _updateScheduler.Request(update);
+    }
+
+    private void ApplyPlaybackUpdates(int updates)
+    {
+        if ((updates & SongInfoUpdate) != 0) UpdateSongInfo();
+        if ((updates & PlayPauseUpdate) != 0) UpdatePlayPauseIcon();
+        if ((updates & RepeatUpdate) != 0) UpdateRepeatVisual();
+        if ((updates & ProgressUpdate) != 0 && !_isSeeking)
+            ProgressSlider.Value = _playbackService?.PlaybackProgress ?? 0;
+        if ((updates & TimeUpdate) != 0) UpdateTimeLabels();
+        if ((updates & PlaylistUpdate) != 0) UpdatePlaylistControls();
+        if ((updates & ShuffleUpdate) != 0) UpdateShuffleVisual();
+        if ((updates & PreviewUpdate) != 0) UpdatePreviewMarker();
+        UpdateEmptyStateText();
+    }
+
+    private void ApplyScheduledPlaybackUpdates(int updates)
+    {
+        if (_isActive)
+        {
+            ApplyPlaybackUpdates(updates);
+        }
     }
 
     private void UpdateSongInfo()

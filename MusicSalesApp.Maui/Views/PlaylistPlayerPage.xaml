@@ -15,7 +15,10 @@
         <RefreshView Grid.Row="0"
                      Command="{Binding RefreshCommand}"
                      IsRefreshing="{Binding IsLoading, Mode=OneWay}">
-            <ScrollView Padding="0">
+            <CollectionView ItemsSource="{Binding Songs}"
+                            SelectionMode="None"
+                            ItemSizingStrategy="MeasureFirstItem">
+                <CollectionView.Header>
                 <VerticalStackLayout Spacing="0">
 
                 <!-- Loading indicator -->
@@ -260,13 +263,12 @@
                             Command="{Binding GoToMusicLibraryCommand}" />
                 </VerticalStackLayout>
 
-                <!-- Track List (inside ScrollView so we use BindableLayout instead of nested CollectionView) -->
-                <VerticalStackLayout BindableLayout.ItemsSource="{Binding Songs}"
-                                     Padding="8,0"
-                                     Spacing="0">
-                    <BindableLayout.ItemTemplate>
+                </VerticalStackLayout>
+                </CollectionView.Header>
+
+                <CollectionView.ItemTemplate>
                         <DataTemplate x:DataType="vm:SongDto">
-                            <Border Margin="0,2"
+                            <Border Margin="8,2"
                                     Padding="12,10"
                                     StrokeShape="RoundRectangle 6"
                                     Stroke="Transparent"
@@ -363,11 +365,8 @@
                                             CommandParameter="{Binding .}" />
                                 </Grid>                            </Border>
                         </DataTemplate>
-                    </BindableLayout.ItemTemplate>
-                </VerticalStackLayout>
-
-            </VerticalStackLayout>
-        </ScrollView>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
         </RefreshView>
 
         <!-- Now Playing Bar at bottom -->

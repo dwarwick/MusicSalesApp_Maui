@@ -8,6 +8,7 @@ public interface IMusicService
 
     string? LastSongsError { get; }
     Task<List<SongDto>> GetSongsAsync();
+    Task<List<SongDto>> GetSongsAsync(CancellationToken cancellationToken);
     Task<SongDto?> GetSongByTitleAsync(string title);
     Task<int> GetStreamQualifyingSecondsAsync();
     Task<int?> RecordStreamAsync(int songMetadataId);

@@ -8,6 +8,7 @@ namespace MusicSalesApp.Maui.Tests.ViewModels;
 public class ConfigViewModelTests
 {
     private Mock<IOfflineCacheSettingsService> _settings = null!;
+    private Mock<IAudioCacheService> _audioCacheService = null!;
     private ConfigViewModel _viewModel = null!;
 
     [SetUp]
@@ -22,7 +23,11 @@ public class ConfigViewModelTests
             .Returns((int limitMb) => Math.Clamp(limitMb, 100, 5120));
         _settings.Setup(s => s.GetOfflineCacheLimitMb()).Returns(1024);
 
-        _viewModel = new ConfigViewModel(_settings.Object);
+        _audioCacheService = new Mock<IAudioCacheService>();
+        _audioCacheService.Setup(s => s.GetCacheUsageBytesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0L);
+
+        _viewModel = new ConfigViewModel(_settings.Object, _audioCacheService.Object);
     }
 
     [Test]
@@ -54,5 +59,32 @@ public class ConfigViewModelTests
 
         Assert.That(_viewModel.OfflineCacheLimitMb, Is.EqualTo(1024));
         _settings.Verify(s => s.SetOfflineCacheLimitMb(1024), Times.AtLeastOnce);
+    }
+
+    [Test]
+    public async Task RefreshCacheUsageAsync_FormatsBytesFromAudioCacheService()
+    {
+        _audioCacheService.Setup(s => s.GetCacheUsageBytesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(6L * 1024 * 1024);
+
+        await _viewModel.RefreshCacheUsageAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.IsCacheUsageLoading, Is.False);
+            Assert.That(_viewModel.CacheUsageDisplay, Is.EqualTo("6 MB"));
+        });
+    }
+
+    [Test]
+    public async Task RefreshCacheUsageAsync_WhenAudioCacheServiceThrows_ClearsLoadingFlagAndPropagates()
+    {
+        _audioCacheService.Setup(s => s.GetCacheUsageBytesAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("boom"));
+
+        Assert.That(
+            async () => await _viewModel.RefreshCacheUsageAsync(),
+            Throws.InstanceOf<InvalidOperationException>());
+        Assert.That(_viewModel.IsCacheUsageLoading, Is.False);
     }
 }

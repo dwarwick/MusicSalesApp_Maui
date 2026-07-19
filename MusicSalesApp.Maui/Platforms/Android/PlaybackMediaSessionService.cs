@@ -1,6 +1,7 @@
 using Android.App;
 using Android.Content.PM;
 using AndroidX.Media3.Session;
+using Microsoft.Maui.ApplicationModel;
 
 namespace MusicSalesApp.Maui.Platforms.Android;
 
@@ -14,6 +15,7 @@ public sealed class PlaybackMediaSessionService : MediaSessionService
     private static WeakReference<PlaybackMediaSessionService>? _activeService;
 
     private MediaSession? _mediaSession;
+    private bool _isStoppingOrDestroyed;
 
     internal static void RequestStop(global::Android.Content.Context context)
     {
@@ -36,24 +38,23 @@ public sealed class PlaybackMediaSessionService : MediaSessionService
     public override void OnCreate()
     {
         base.OnCreate();
+        _isStoppingOrDestroyed = false;
         lock (ActiveServiceSync)
         {
             _activeService = new WeakReference<PlaybackMediaSessionService>(this);
         }
 
-        AndroidMedia3CacheProvider.EnsureNotificationChannels(this);
-        _mediaSession = AndroidMedia3PlaybackRegistry.GetOrCreateMediaSession(this);
-        AddSession(_mediaSession);
+        _ = AttachMediaSessionAsync();
     }
 
     public override MediaSession? OnGetSession(MediaSession.ControllerInfo? controllerInfo)
     {
-        _mediaSession ??= AndroidMedia3PlaybackRegistry.GetOrCreateMediaSession(this);
-        return _mediaSession;
+        return _mediaSession ?? AndroidMedia3PlaybackRegistry.TryGetMediaSession();
     }
 
     public override void OnDestroy()
     {
+        _isStoppingOrDestroyed = true;
         ReleaseCurrentSession();
         lock (ActiveServiceSync)
         {
@@ -70,9 +71,34 @@ public sealed class PlaybackMediaSessionService : MediaSessionService
 
     private void StopPlaybackService()
     {
+        _isStoppingOrDestroyed = true;
         ReleaseCurrentSession();
         StopForeground(StopForegroundFlags.Remove);
         StopSelf();
+    }
+
+    private async Task AttachMediaSessionAsync()
+    {
+        try
+        {
+            var mediaSession = await AndroidMedia3PlaybackRegistry
+                .GetOrCreateMediaSessionAsync(this)
+                .ConfigureAwait(false);
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                if (_isStoppingOrDestroyed || _mediaSession != null)
+                {
+                    return;
+                }
+
+                _mediaSession = mediaSession;
+                AddSession(mediaSession);
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Unable to initialize Media3 playback session: {ex}");
+        }
     }
 
     private void ReleaseCurrentSession()

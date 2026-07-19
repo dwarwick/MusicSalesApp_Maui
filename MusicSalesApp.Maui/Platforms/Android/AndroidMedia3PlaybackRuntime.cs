@@ -24,7 +24,8 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
     private static readonly TimeSpan AppCommandUserReasonSuppressionWindow = TimeSpan.FromSeconds(1);
 
     private readonly Context _context;
-    private readonly IExoPlayer _player;
+    private readonly object _initializationSync = new();
+    private IExoPlayer _player = null!;
     private readonly PlayerListener _listener;
     private readonly AndroidMedia3RuntimeQueue _queue;
     private readonly ILogger<AndroidMedia3PlaybackRuntime> _logger;
@@ -39,23 +40,19 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
     private bool _currentItemBecamePlayable;
     private bool _lastIsPlaying;
     private bool _suppressMediaItemTransitionPublishing;
+    private Task? _initializationTask;
+    private PlaybackRepeatMode _repeatMode;
+    private PlaybackShuffleMode _shuffleMode;
+    private int _positionUpdatesStarted;
     private bool _disposed;
 
     public AndroidMedia3PlaybackRuntime(ILogger<AndroidMedia3PlaybackRuntime> logger)
     {
         _logger = logger;
         _context = global::Android.App.Application.Context;
-        _player = RunOnPlayerThread(() => AndroidMedia3PlaybackRegistry.GetOrCreatePlayer(_context));
         _queue = new AndroidMedia3RuntimeQueue(this);
         _listener = new PlayerListener(this);
-        RunOnPlayerThread(() =>
-        {
-            _player.AddListener(_listener);
-            _lastKnownIndex = _player.CurrentMediaItemIndex;
-            _lastIsPlaying = MapState(_player.PlaybackState, _player.PlayWhenReady) == PlaybackRuntimeState.Playing;
-        });
-        _logger.LogInformation("Media3 playback runtime initialized. {Snapshot}", CreatePlayerSnapshot());
-        _ = Task.Run(PublishPositionUpdatesAsync);
+        _logger.LogInformation("Media3 playback runtime created; native player initialization is deferred until playback is requested.");
     }
 
     public event EventHandler<PlaybackRuntimeStateChangedEventArgs>? StateChanged;
@@ -68,32 +65,47 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
 
     public event EventHandler<PlaybackMediaItemFailedEventArgs>? MediaItemFailed;
 
-    public PlaybackRuntimeState State => RunOnPlayerThread(() => MapState(_player.PlaybackState, _player.PlayWhenReady));
+    public PlaybackRuntimeState State => ReadPlayer(
+        player => MapState(player.PlaybackState, player.PlayWhenReady),
+        PlaybackRuntimeState.Stopped);
 
-    public TimeSpan Position => RunOnPlayerThread(() => TimeSpan.FromMilliseconds(Math.Max(0, _player.CurrentPosition)));
+    public TimeSpan Position => ReadPlayer(
+        player => TimeSpan.FromMilliseconds(Math.Max(0, player.CurrentPosition)),
+        TimeSpan.Zero);
 
-    public TimeSpan Duration => RunOnPlayerThread(() => _player.Duration <= 0 || _player.Duration == C.TimeUnset
+    public TimeSpan Duration => ReadPlayer(player => player.Duration <= 0 || player.Duration == C.TimeUnset
         ? TimeSpan.Zero
-        : TimeSpan.FromMilliseconds(_player.Duration));
+        : TimeSpan.FromMilliseconds(player.Duration), TimeSpan.Zero);
 
     public IPlaybackRuntimeQueue? Queue => _queue;
 
     public PlaybackRepeatMode RepeatMode
     {
-        get => RunOnPlayerThread(() => _player.RepeatMode == RepeatModeAll ? PlaybackRepeatMode.All : PlaybackRepeatMode.Off);
-        set => RunOnPlayerThread(() => _player.RepeatMode = value == PlaybackRepeatMode.All ? RepeatModeAll : RepeatModeOff);
+        get => _repeatMode;
+        set
+        {
+            _repeatMode = value;
+            ApplyToInitializedPlayer(player =>
+                player.RepeatMode = value == PlaybackRepeatMode.All ? RepeatModeAll : RepeatModeOff);
+        }
     }
 
     public PlaybackShuffleMode ShuffleMode
     {
-        get => RunOnPlayerThread(() => _player.ShuffleModeEnabled ? PlaybackShuffleMode.All : PlaybackShuffleMode.Off);
-        set => RunOnPlayerThread(() => _player.ShuffleModeEnabled = value == PlaybackShuffleMode.All);
+        get => _shuffleMode;
+        set
+        {
+            _shuffleMode = value;
+            ApplyToInitializedPlayer(player => player.ShuffleModeEnabled = value == PlaybackShuffleMode.All);
+        }
     }
 
-    public int AudioSessionId => RunOnPlayerThread(() => _audioSessionId == 0 ? _player.AudioSessionId : _audioSessionId);
+    public int AudioSessionId => ReadPlayer(
+        player => _audioSessionId == 0 ? player.AudioSessionId : _audioSessionId,
+        _audioSessionId);
 
     public Task<MauiMediaItem?> PlayAsync(MauiMediaItem mediaItem) =>
-        RunOnPlayerThreadAsync(() =>
+        RunOnInitializedPlayerThreadAsync(() =>
         {
             EnsurePlaybackServiceStarted();
             ResetCurrentItemPlaybackObservation("single item play");
@@ -117,7 +129,7 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
     public Task<MauiMediaItem?> PlayAsync(IEnumerable<MauiMediaItem> mediaItems) => PlayAsync(mediaItems, 0);
 
     public Task<MauiMediaItem?> PlayAsync(IEnumerable<MauiMediaItem> mediaItems, int startIndex) =>
-        RunOnPlayerThreadAsync(() =>
+        RunOnInitializedPlayerThreadAsync(() =>
         {
             EnsurePlaybackServiceStarted();
             var items = mediaItems.ToList();
@@ -157,7 +169,7 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
         int currentIndex,
         TimeSpan currentPosition,
         bool playWhenReady) =>
-        RunOnPlayerThreadAsync(() =>
+        RunOnInitializedPlayerThreadAsync(() =>
         {
             EnsurePlaybackServiceStarted();
             var items = mediaItems.ToList();
@@ -222,7 +234,7 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
         });
 
     public Task PlayAsync() =>
-        RunOnPlayerThreadAsync(() =>
+        RunOnInitializedPlayerThreadAsync(() =>
         {
             EnsurePlaybackServiceStarted();
             _logger.LogInformation("Media3 PlayAsync(resume) requested. {Snapshot}", CreatePlayerSnapshot());
@@ -231,7 +243,7 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
         });
 
     public Task PauseAsync() =>
-        RunOnPlayerThreadAsync(() =>
+        RunOnInitializedPlayerThreadAsync(() =>
         {
             _logger.LogInformation("Media3 PauseAsync requested. {Snapshot}", CreatePlayerSnapshot());
             SuppressAppCommandUserReason();
@@ -240,7 +252,7 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
         });
 
     public Task StopAsync() =>
-        RunOnPlayerThreadAsync(() =>
+        RunOnInitializedPlayerThreadAsync(() =>
         {
             _logger.LogInformation("Media3 StopAsync requested. {Snapshot}", CreatePlayerSnapshot());
             SuppressAppCommandUserReason();
@@ -254,7 +266,7 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
         });
 
     public Task<bool> PlayNextAsync() =>
-        RunOnPlayerThreadAsync(() =>
+        RunOnInitializedPlayerThreadAsync(() =>
         {
             if (!_player.HasNextMediaItem)
             {
@@ -270,7 +282,7 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
         });
 
     public Task<bool> PlayPreviousAsync() =>
-        RunOnPlayerThreadAsync(() =>
+        RunOnInitializedPlayerThreadAsync(() =>
         {
             if (!_player.HasPreviousMediaItem)
             {
@@ -286,7 +298,7 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
         });
 
     public Task<bool> PlayQueueItemAsync(int index) =>
-        RunOnPlayerThreadAsync(() =>
+        RunOnInitializedPlayerThreadAsync(() =>
         {
             if (index < 0 || index >= _queue.Count)
             {
@@ -302,7 +314,7 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
         });
 
     public Task SeekToAsync(TimeSpan position) =>
-        RunOnPlayerThreadAsync(() =>
+        RunOnInitializedPlayerThreadAsync(() =>
         {
             _logger.LogInformation("Media3 SeekToAsync requested. Position={Position}; {Snapshot}", position, CreatePlayerSnapshot());
             _player.SeekTo((long)position.TotalMilliseconds);
@@ -317,8 +329,75 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
 
         _disposed = true;
         _positionUpdatesCancellation.Cancel();
-        RunOnPlayerThread(() => _player.RemoveListener(_listener));
+        var player = Volatile.Read(ref _player);
+        if (player != null)
+        {
+            RunOnPlayerThread(() => player.RemoveListener(_listener));
+        }
+
         _listener.Dispose();
+    }
+
+    private Task EnsureInitializedAsync()
+    {
+        lock (_initializationSync)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
+            // A faulted first initialization (e.g. a transient failure) must not brick playback
+            // for the rest of the process lifetime — retry on the next playback request.
+            if (_initializationTask is null or { IsFaulted: true } or { IsCanceled: true })
+            {
+                _initializationTask = InitializeAsync();
+            }
+
+            return _initializationTask;
+        }
+    }
+
+    private async Task InitializeAsync()
+    {
+        var player = await AndroidMedia3PlaybackRegistry
+            .GetOrCreatePlayerAsync(_context)
+            .ConfigureAwait(false);
+        await AndroidMedia3PlaybackRegistry
+            .GetOrCreateMediaSessionAsync(_context)
+            .ConfigureAwait(false);
+
+        await RunOnPlayerThreadCoreAsync(() =>
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            _player = player;
+            _player.AddListener(_listener);
+            _player.RepeatMode = _repeatMode == PlaybackRepeatMode.All ? RepeatModeAll : RepeatModeOff;
+            _player.ShuffleModeEnabled = _shuffleMode == PlaybackShuffleMode.All;
+            _lastKnownIndex = _player.CurrentMediaItemIndex;
+            _lastIsPlaying = MapState(_player.PlaybackState, _player.PlayWhenReady) == PlaybackRuntimeState.Playing;
+        }).ConfigureAwait(false);
+
+        if (Interlocked.Exchange(ref _positionUpdatesStarted, 1) == 0)
+        {
+            _ = Task.Run(PublishPositionUpdatesAsync);
+        }
+
+        _logger.LogInformation("Media3 playback runtime initialized on first playback request. {Snapshot}", CreatePlayerSnapshot());
+    }
+
+    private T ReadPlayer<T>(Func<IExoPlayer, T> read, T fallback)
+    {
+        var player = Volatile.Read(ref _player);
+        return player == null
+            ? fallback
+            : RunOnPlayerThread(() => read(player));
+    }
+
+    private void ApplyToInitializedPlayer(Action<IExoPlayer> action)
+    {
+        var player = Volatile.Read(ref _player);
+        if (player != null)
+        {
+            RunOnPlayerThread(() => action(player));
+        }
     }
 
     private static void RunOnPlayerThread(Action action)
@@ -339,7 +418,7 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
             : MainThread.InvokeOnMainThreadAsync(action).GetAwaiter().GetResult();
     }
 
-    private static Task RunOnPlayerThreadAsync(Action action)
+    private static Task RunOnPlayerThreadCoreAsync(Action action)
     {
         if (MainThread.IsMainThread)
         {
@@ -350,11 +429,23 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
         return MainThread.InvokeOnMainThreadAsync(action);
     }
 
-    private static Task<T> RunOnPlayerThreadAsync<T>(Func<T> action)
+    private static Task<T> RunOnPlayerThreadCoreAsync<T>(Func<T> action)
     {
         return MainThread.IsMainThread
             ? Task.FromResult(action())
             : MainThread.InvokeOnMainThreadAsync(action);
+    }
+
+    private async Task RunOnInitializedPlayerThreadAsync(Action action)
+    {
+        await EnsureInitializedAsync().ConfigureAwait(false);
+        await RunOnPlayerThreadCoreAsync(action).ConfigureAwait(false);
+    }
+
+    private async Task<T> RunOnInitializedPlayerThreadAsync<T>(Func<T> action)
+    {
+        await EnsureInitializedAsync().ConfigureAwait(false);
+        return await RunOnPlayerThreadCoreAsync(action).ConfigureAwait(false);
     }
 
     private void EnsurePlaybackServiceStarted()
@@ -362,7 +453,6 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
         AndroidMedia3CacheProvider.EnsureNotificationChannels(_context);
         var intent = new Intent(_context, typeof(PlaybackMediaSessionService));
         _context.StartService(intent);
-        AndroidMedia3PlaybackRegistry.GetOrCreateMediaSession(_context);
         _logger.LogInformation("Media3 playback service/session ensured. {Snapshot}", CreatePlayerSnapshot());
     }
 
@@ -648,7 +738,17 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
         _ => PlaybackRuntimeState.Stopped
     };
 
-    private string CreatePlayerSnapshot() => RunOnPlayerThread(CreatePlayerSnapshotOnPlayerThread);
+    private string CreatePlayerSnapshot()
+    {
+        if (Volatile.Read(ref _player) == null)
+        {
+            return _initializationTask == null
+                ? "InitializationState=NotStarted"
+                : "InitializationState=InProgress";
+        }
+
+        return RunOnPlayerThread(CreatePlayerSnapshotOnPlayerThread);
+    }
 
     private string CreatePlayerSnapshotOnPlayerThread()
     {
@@ -733,16 +833,43 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
 
     private void SetPlayerQueueItems(IReadOnlyList<MauiMediaItem> items, int startIndex, long startPositionMs = 0)
     {
-        _player.SetMediaItem(ToMedia3Item(items[0]));
-        for (var index = 1; index < items.Count; index++)
+        var media3Items = items.Select(ToMedia3Item).ToList();
+        var safeStartPositionMs = Math.Max(0, startPositionMs);
+        _player.SetMediaItems(media3Items, startIndex, safeStartPositionMs);
+
+        // Observed on-device (Galaxy S25, Media3 bulk-submit): SetMediaItems can return with the
+        // native playlist still empty, so the follow-up Prepare() immediately ends playback.
+        // Verify the applied count and fall back to the per-item submission path production used
+        // before this call was batched.
+        var appliedCount = _player.MediaItemCount;
+        if (appliedCount == media3Items.Count)
         {
-            _player.AddMediaItem(ToMedia3Item(items[index]));
+            return;
         }
 
-        if (startIndex > 0 || startPositionMs > 0)
+        _logger.LogWarning(
+            "Media3 bulk SetMediaItems applied {AppliedCount} of {RequestedCount} items; falling back to per-item queue submission. StartIndex={StartIndex}; StartPositionMs={StartPositionMs}",
+            appliedCount,
+            media3Items.Count,
+            startIndex,
+            safeStartPositionMs);
+
+        _player.ClearMediaItems();
+        _player.SetMediaItem(media3Items[0]);
+        for (var index = 1; index < media3Items.Count; index++)
         {
-            _player.SeekTo(startIndex, Math.Max(0, startPositionMs));
+            _player.AddMediaItem(media3Items[index]);
         }
+
+        if (startIndex > 0 || safeStartPositionMs > 0)
+        {
+            _player.SeekTo(startIndex, safeStartPositionMs);
+        }
+
+        _logger.LogInformation(
+            "Media3 per-item queue submission completed. PlayerMediaItemCount={PlayerMediaItemCount}; RequestedCount={RequestedCount}",
+            _player.MediaItemCount,
+            media3Items.Count);
     }
 
     private sealed class AndroidMedia3RuntimeQueue(AndroidMedia3PlaybackRuntime owner) : IPlaybackRuntimeQueue
@@ -751,15 +878,17 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
 
         public bool HasCurrent => CurrentIndex >= 0 && CurrentIndex < _items.Count;
 
-        public int CurrentIndex => RunOnPlayerThread(() => owner._player.CurrentMediaItemIndex);
+        public int CurrentIndex => owner.ReadPlayer(player => player.CurrentMediaItemIndex, -1);
 
         public MauiMediaItem? Current => this[CurrentIndex];
 
-        public MauiMediaItem? Next => RunOnPlayerThread(() =>
-            owner._player.HasNextMediaItem ? this[owner._player.NextMediaItemIndex] : null);
+        public MauiMediaItem? Next => owner.ReadPlayer(
+            player => player.HasNextMediaItem ? this[player.NextMediaItemIndex] : null,
+            null);
 
-        public MauiMediaItem? Previous => RunOnPlayerThread(() =>
-            owner._player.HasPreviousMediaItem ? this[owner._player.PreviousMediaItemIndex] : null);
+        public MauiMediaItem? Previous => owner.ReadPlayer(
+            player => player.HasPreviousMediaItem ? this[player.PreviousMediaItemIndex] : null,
+            null);
 
         public int Count => _items.Count;
 

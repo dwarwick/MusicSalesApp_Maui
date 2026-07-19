@@ -16,6 +16,7 @@ public class MusicLibraryViewModelTests
     private Mock<IMediaPlaybackOnboardingService> _mockMediaPlaybackOnboardingService;
     private Mock<IAppConfig> _mockAppConfig;
     private Mock<IBillingService> _mockBillingService;
+    private Mock<IAudioCacheService> _mockAudioCacheService;
     private MusicLibraryViewModel _viewModel;
 
     [SetUp]
@@ -30,13 +31,20 @@ public class MusicLibraryViewModelTests
         _mockMediaPlaybackOnboardingService = new Mock<IMediaPlaybackOnboardingService>();
         _mockAppConfig = new Mock<IAppConfig>();
         _mockBillingService = new Mock<IBillingService>();
+        _mockAudioCacheService = new Mock<IAudioCacheService>();
         _mockAppConfig.Setup(c => c.WebBaseUrl).Returns("https://streamtunes.net");
         _mockAppConfig.Setup(c => c.ApiBaseUrl).Returns("https://streamtunes.net");
         _mockMediaPlaybackOnboardingService.Setup(s => s.EnsureBackgroundPlaybackExplainedAsync()).Returns(Task.CompletedTask);
+        _mockAudioCacheService
+            .Setup(service => service.GetCacheStatusesAsync(
+                It.IsAny<IReadOnlyList<SongDto>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, TrackCacheStatus>());
         _viewModel = new MusicLibraryViewModel(
             _mockMusicService.Object, _mockAlertService.Object, _mockSignalRService.Object,
             _mockAuthService.Object, _mockNavigationService.Object,
-            _mockPlaybackService.Object, _mockMediaPlaybackOnboardingService.Object, _mockAppConfig.Object, _mockBillingService.Object);
+            _mockPlaybackService.Object, _mockMediaPlaybackOnboardingService.Object, _mockAppConfig.Object,
+            _mockBillingService.Object, _mockAudioCacheService.Object);
     }
 
     [Test]
@@ -670,6 +678,53 @@ public class MusicLibraryViewModelTests
         Assert.That(_viewModel.SelectedGenres, Is.Empty);
         Assert.That(_viewModel.SelectedArtists, Is.Empty);
         Assert.That(_viewModel.HasAnyActiveFilters, Is.False);
+    }
+
+    [Test]
+    public async Task DownloadedFilter_IntersectsExistingFiltersAndClearRestoresAllSongs()
+    {
+        var songs = new List<SongDto>
+        {
+            new() { Id = 1, SongTitle = "Downloaded Rock", Genre = "Rock" },
+            new() { Id = 2, SongTitle = "Online Rock", Genre = "Rock" },
+            new() { Id = 3, SongTitle = "Downloaded Pop", Genre = "Pop" }
+        };
+        _mockMusicService.Setup(service => service.GetSongsAsync()).ReturnsAsync(songs);
+        _mockAudioCacheService
+            .Setup(service => service.GetCacheStatusesAsync(
+                It.Is<IReadOnlyList<SongDto>>(items => items.Count == 3),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, TrackCacheStatus>
+            {
+                [1] = new(1, "song-1", "cached-1.mp3", true, false),
+                [2] = new(2, "song-2", null, false, false),
+                [3] = new(3, "song-3", "cached-3.mp3", true, false)
+            });
+
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+        await _viewModel.ToggleDownloadedFilterCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.IsDownloadedFilterActive, Is.True);
+            Assert.That(_viewModel.HasAnyActiveFilters, Is.True);
+            Assert.That(_viewModel.Songs.Select(song => song.Id), Is.EqualTo(new[] { 3, 1 }));
+        });
+
+        _viewModel.ToggleGenreFilterCommand.Execute("Rock");
+        Assert.That(_viewModel.Songs.Select(song => song.Id), Is.EqualTo(new[] { 1 }));
+
+        _viewModel.ClearFiltersCommand.Execute(null);
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.IsDownloadedFilterActive, Is.False);
+            Assert.That(_viewModel.HasAnyActiveFilters, Is.False);
+            Assert.That(_viewModel.Songs.Select(song => song.Id), Is.EqualTo(new[] { 3, 2, 1 }));
+        });
+
+        _mockAudioCacheService.Verify(service => service.GetCacheStatusesAsync(
+            It.Is<IReadOnlyList<SongDto>>(items => items.Select(song => song.Id).Order().SequenceEqual(new[] { 1, 2, 3 })),
+            It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     [Test]

@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using MusicSalesApp.Common.Helpers;
 using MusicSalesApp.Maui.ViewModels;
@@ -48,6 +49,7 @@ public class PlaybackService : IPlaybackService
     private readonly IQueuePreparationService _queuePreparationService;
     private readonly IPlaybackKeepAliveService _playbackKeepAliveService;
     private readonly IAnonymousFeaturedStreamStore? _anonymousFeaturedStreamStore;
+    private readonly INetworkStatusService? _networkStatusService;
     private readonly ILogger<PlaybackService> _logger;
     private readonly TimeSpan _playlistAdvanceFallbackDelay;
     private readonly TimeSpan _positionSamplerInterval;
@@ -55,10 +57,12 @@ public class PlaybackService : IPlaybackService
     private readonly TimeSpan _transientStopConfirmationDelay;
     private readonly TimeSpan _subscriptionStatusRefreshInterval;
     private readonly TimeSpan _bufferingStallRecoveryDelay;
+    private readonly object _playbackRequestSync = new();
     private readonly object _positionSync = new();
     private CancellationTokenSource? _positionSamplerCancellation;
     private CancellationTokenSource? _terminalStateConfirmationCancellation;
     private CancellationTokenSource? _queuePreparationCancellation;
+    private CancellationTokenSource? _queueBuildCancellation;
     private long _lastPositionChangedUtcTicks;
     private long _lastPositionSamplerTickUtcTicks;
     private long _lastSubscriptionStatusRefreshUtcTicks;
@@ -109,6 +113,7 @@ public class PlaybackService : IPlaybackService
 
     // Map MediaItem URL -> SongDto for auto-advance detection via MediaItemChanged
     private readonly Dictionary<string, SongDto> _urlToSong = new();
+    private readonly ConcurrentDictionary<int, TrackCacheStatus> _cacheStatusSnapshot = new();
 
     public PlaybackService(
         IAuthService authService,
@@ -124,7 +129,8 @@ public class PlaybackService : IPlaybackService
         TimeSpan? transientStopConfirmationDelay = null,
         TimeSpan? subscriptionStatusRefreshInterval = null,
         TimeSpan? bufferingStallRecoveryDelay = null,
-        IAnonymousFeaturedStreamStore? anonymousFeaturedStreamStore = null)
+        IAnonymousFeaturedStreamStore? anonymousFeaturedStreamStore = null,
+        INetworkStatusService? networkStatusService = null)
     {
         _authService = authService;
         _musicService = musicService;
@@ -133,6 +139,7 @@ public class PlaybackService : IPlaybackService
         _queuePreparationService = queuePreparationService;
         _playbackKeepAliveService = playbackKeepAliveService;
         _anonymousFeaturedStreamStore = anonymousFeaturedStreamStore;
+        _networkStatusService = networkStatusService;
         _logger = logger;
         _playlistAdvanceFallbackDelay = playlistAdvanceFallbackDelay ?? DefaultPlaylistAdvanceFallbackDelay;
         _positionSamplerInterval = positionSamplerInterval ?? DefaultPositionSamplerInterval;
@@ -264,17 +271,23 @@ public class PlaybackService : IPlaybackService
 
     public event Func<Task>? ShowSubscribeCtaRequested;
     public event Action<string>? StateChanged;
+    public event EventHandler<PlaybackRequestFailedEventArgs>? PlaybackRequestFailed;
 
     // --- Actions ---
 
     public void PlaySong(SongDto song)
     {
-        CancelPendingPlaylistAdvance();
+        _ = PlaySongAsync(song);
+    }
+
+    private async Task PlaySongAsync(SongDto song)
+    {
         LogPlaybackSnapshot("PlaySong requested", song, null);
 
         if (CurrentSong?.Id == song.Id && IsPlaying)
         {
             // Tapping the same song that's playing — pause it
+            CancelPendingPlaylistAdvance();
             CancelPendingPlaybackRequest();
             IsPlaying = false;
             ObserveMediaCommand("Playback runtime.Pause from PlaySong current-song toggle", _playbackRuntime.PauseAsync(), song, null);
@@ -283,6 +296,40 @@ public class PlaybackService : IPlaybackService
         }
 
         var isSameSong = CurrentSong?.Id == song.Id;
+        var requestGeneration = BeginPlaybackRequest();
+        if (!TryBeginQueueBuild(requestGeneration, out var queueBuildCancellation))
+        {
+            return;
+        }
+        TrackCacheStatus cacheStatus;
+        try
+        {
+            cacheStatus = await _audioCacheService
+                .GetCacheStatusAsync(song, queueBuildCancellation.Token)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (queueBuildCancellation.IsCancellationRequested)
+        {
+            return;
+        }
+        finally
+        {
+            CompleteQueueBuild(queueBuildCancellation);
+        }
+
+        if (!IsPlaybackRequestCurrent(requestGeneration))
+        {
+            return;
+        }
+
+        _cacheStatusSnapshot[song.Id] = cacheStatus;
+        if (!CanStartRequestedSong(song, cacheStatus))
+        {
+            PublishUnavailableOffline(song);
+            return;
+        }
+
+        CancelPendingPlaylistAdvance();
 
         // Reset stream tracking for the new song
         ResetStreamTracking(song.Id);
@@ -300,8 +347,7 @@ public class PlaybackService : IPlaybackService
         }
         else
         {
-            var requestGeneration = BeginPlaybackRequest();
-            StartSingleSongPlayback(song, requestGeneration);
+            StartSingleSongPlayback(song, requestGeneration, cacheStatus);
         }
 
         LogPlaybackSnapshot("PlaySong started", song, null);
@@ -503,6 +549,15 @@ public class PlaybackService : IPlaybackService
 
     public void SetPlaylist(List<SongDto> songs, int startIndex, PlaybackQueueStartBehavior startBehavior, string queueSourceDescription)
     {
+        _ = SetPlaylistAsync(songs, startIndex, startBehavior, queueSourceDescription);
+    }
+
+    private async Task SetPlaylistAsync(
+        List<SongDto> songs,
+        int startIndex,
+        PlaybackQueueStartBehavior startBehavior,
+        string queueSourceDescription)
+    {
         var normalizedQueueSource = NormalizeQueueSourceDescription(queueSourceDescription);
         if (songs.Count == 0)
         {
@@ -522,18 +577,52 @@ public class PlaybackService : IPlaybackService
             startIndex,
             startBehavior,
             DescribeQueueItems(songs),
-            string.Join(",", songs.Select(song => song.Id)));
+            DescribeSongIds(songs));
 
-        _playlistSourceOrder = new List<SongDto>(songs);
+        var requestedSourceOrder = new List<SongDto>(songs);
         var currentSongIndex = CurrentSong == null
             ? -1
-            : _playlistSourceOrder.FindIndex(song => song.Id == CurrentSong.Id);
+            : requestedSourceOrder.FindIndex(song => song.Id == CurrentSong.Id);
         var shouldPreserveCurrentSong = startBehavior == PlaybackQueueStartBehavior.PreserveCurrentSongIfPresent &&
                                         currentSongIndex >= 0;
         var selectedIndex = shouldPreserveCurrentSong
             ? currentSongIndex
             : Math.Clamp(startIndex, 0, songs.Count - 1);
-        var selectedSong = _playlistSourceOrder[selectedIndex];
+        var selectedSong = requestedSourceOrder[selectedIndex];
+        var requestGeneration = BeginPlaybackRequest();
+        if (!TryBeginQueueBuild(requestGeneration, out var queueBuildCancellation))
+        {
+            return;
+        }
+        TrackCacheStatus selectedCacheStatus;
+        try
+        {
+            selectedCacheStatus = await _audioCacheService
+                .GetCacheStatusAsync(selectedSong, queueBuildCancellation.Token)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (queueBuildCancellation.IsCancellationRequested)
+        {
+            return;
+        }
+        finally
+        {
+            CompleteQueueBuild(queueBuildCancellation);
+        }
+
+        if (!IsPlaybackRequestCurrent(requestGeneration))
+        {
+            return;
+        }
+
+        _cacheStatusSnapshot[selectedSong.Id] = selectedCacheStatus;
+        if (!CanStartRequestedSong(selectedSong, selectedCacheStatus))
+        {
+            PublishUnavailableOffline(selectedSong);
+            return;
+        }
+
+        _playlistSourceOrder = requestedSourceOrder;
         _playlist = BuildPlaybackPlaylist(_playlistSourceOrder, selectedSong.Id);
         _currentTrackIndex = ResolveRequiredPlaylistIndex(_playlist, selectedSong.Id);
 
@@ -546,7 +635,6 @@ public class PlaybackService : IPlaybackService
         {
             var wasPlaying = IsPlaying;
             var currentPosition = ResolveCurrentPlaybackPosition();
-            var preserveRequestGeneration = BeginPlaybackRequest();
             CurrentSong = song;
             if (!ShouldLimitPreviewForSong(song))
             {
@@ -558,7 +646,7 @@ public class PlaybackService : IPlaybackService
             ReplaceNativeQueuePreservingCurrentPlayback(
                 _playlist,
                 _currentTrackIndex,
-                preserveRequestGeneration,
+                requestGeneration,
                 currentPosition,
                 wasPlaying);
             StartQueuePreparation(_playlist, _currentTrackIndex, QueuePreparationMode.SleepSafe);
@@ -576,7 +664,6 @@ public class PlaybackService : IPlaybackService
         _playbackRuntime.RepeatMode = PlaybackRepeatMode.All;
         _playbackRuntime.ShuffleMode = PlaybackShuffleMode.Off;
 
-        var requestGeneration = BeginPlaybackRequest();
         BuildAndStartQueue(_currentTrackIndex, requestGeneration);
         StartQueuePreparation(_playlist, _currentTrackIndex, QueuePreparationMode.SleepSafe);
         LogPlaybackSnapshot("SetPlaylist completed", song, null);
@@ -2027,7 +2114,8 @@ public class PlaybackService : IPlaybackService
         int failedTrackIndex,
         int generation,
         string reason,
-        PlaybackMediaItem? failedMediaItem = null)
+        PlaybackMediaItem? failedMediaItem = null,
+        bool cacheStatusIsFresh = false)
     {
         if (!HasPlaylist || _playlist == null)
         {
@@ -2057,6 +2145,17 @@ public class PlaybackService : IPlaybackService
 
         if (TryRecoverFailedTrackFromCachedPlaybackUri(failedSongId, failedTrackIndex, failedMediaItem, reason))
         {
+            return true;
+        }
+
+        if (!cacheStatusIsFresh)
+        {
+            _ = RefreshCacheStatusAndRetryFailureRecoveryAsync(
+                failedSongId,
+                failedTrackIndex,
+                generation,
+                reason,
+                failedMediaItem);
             return true;
         }
 
@@ -2102,6 +2201,45 @@ public class PlaybackService : IPlaybackService
         return true;
     }
 
+    private async Task RefreshCacheStatusAndRetryFailureRecoveryAsync(
+        int failedSongId,
+        int failedTrackIndex,
+        int generation,
+        string reason,
+        PlaybackMediaItem? failedMediaItem)
+    {
+        var playlistSnapshot = _playlist;
+        if (playlistSnapshot == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await ResolveQueueCacheStatusesAsync(playlistSnapshot, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Unable to refresh cache status during playback failure recovery.");
+        }
+
+        if (generation != _playlistAdvanceGeneration ||
+            !ReferenceEquals(_playlist, playlistSnapshot) ||
+            CurrentSong?.Id != failedSongId ||
+            _currentTrackIndex != failedTrackIndex)
+        {
+            return;
+        }
+
+        TryRecoverFromMediaItemFailure(
+            failedSongId,
+            failedTrackIndex,
+            generation,
+            reason,
+            failedMediaItem,
+            cacheStatusIsFresh: true);
+    }
+
     private bool IsTrackLocalReady(int trackIndex)
     {
         if (_playlist == null || trackIndex < 0 || trackIndex >= _playlist.Count)
@@ -2110,13 +2248,8 @@ public class PlaybackService : IPlaybackService
         }
 
         var song = _playlist[trackIndex];
-        var status = _audioCacheService.GetCacheStatus(song);
-        if (status.IsLocalReady)
-        {
-            return true;
-        }
-
-        return IsLocalPlaybackUri(_audioCacheService.GetImmediatePlaybackUri(song));
+        return _cacheStatusSnapshot.TryGetValue(song.Id, out var status) &&
+            (status.IsLocalReady || IsLocalPlaybackUri(status.LocalPlaybackUri));
     }
 
     private void EnterWaitingForPreparedMediaState(
@@ -2164,8 +2297,12 @@ public class PlaybackService : IPlaybackService
         }
 
         var song = _playlist[failedTrackIndex];
-        var cacheStatus = _audioCacheService.GetCacheStatus(song);
-        if (cacheStatus.IsLocalReady)
+        if (!_cacheStatusSnapshot.TryGetValue(song.Id, out var cacheStatus))
+        {
+            return false;
+        }
+
+        if (cacheStatus.IsLocalReady || IsLocalPlaybackUri(cacheStatus.LocalPlaybackUri))
         {
             _logger.LogWarning(
                 "Recovering failed remote playlist track from sleep-safe cached media. Reason={Reason}; SongId={SongId}; TrackIndex={TrackIndex}; FailedMediaUri={FailedMediaUri}; StableCacheKey={StableCacheKey}; {Snapshot}",
@@ -2180,7 +2317,7 @@ public class PlaybackService : IPlaybackService
             return true;
         }
 
-        var cachedPlaybackUri = _audioCacheService.GetImmediatePlaybackUri(song);
+        var cachedPlaybackUri = cacheStatus.LocalPlaybackUri;
         if (!IsLocalPlaybackUri(cachedPlaybackUri))
         {
             return false;
@@ -2418,14 +2555,68 @@ public class PlaybackService : IPlaybackService
 
     private int BeginPlaybackRequest()
     {
-        CancelPendingBufferingStallRecovery();
-        return Interlocked.Increment(ref _playbackRequestGeneration);
+        lock (_playbackRequestSync)
+        {
+            CancelPendingBufferingStallRecovery();
+            CancelPendingQueueBuildLocked();
+            return ++_playbackRequestGeneration;
+        }
     }
 
     private void CancelPendingPlaybackRequest()
     {
-        CancelPendingBufferingStallRecovery();
-        Interlocked.Increment(ref _playbackRequestGeneration);
+        lock (_playbackRequestSync)
+        {
+            CancelPendingBufferingStallRecovery();
+            CancelPendingQueueBuildLocked();
+            _playbackRequestGeneration++;
+        }
+    }
+
+    private bool TryBeginQueueBuild(int requestGeneration, out CancellationTokenSource cancellationSource)
+    {
+        lock (_playbackRequestSync)
+        {
+            if (_playbackRequestGeneration != requestGeneration)
+            {
+                cancellationSource = null!;
+                return false;
+            }
+
+            cancellationSource = new CancellationTokenSource();
+            CancelPendingQueueBuildLocked();
+            _queueBuildCancellation = cancellationSource;
+            return true;
+        }
+    }
+
+    private void CompleteQueueBuild(CancellationTokenSource cancellationSource)
+    {
+        lock (_playbackRequestSync)
+        {
+            if (ReferenceEquals(_queueBuildCancellation, cancellationSource))
+            {
+                _queueBuildCancellation = null;
+            }
+        }
+
+        cancellationSource.Dispose();
+    }
+
+    private void CancelPendingQueueBuild()
+    {
+        lock (_playbackRequestSync)
+        {
+            CancelPendingQueueBuildLocked();
+        }
+    }
+
+    private void CancelPendingQueueBuildLocked()
+    {
+        var cancellationSource = _queueBuildCancellation;
+        _queueBuildCancellation = null;
+        cancellationSource?.Cancel();
+        cancellationSource?.Dispose();
     }
 
     private void CancelQueuePreparation()
@@ -2573,7 +2764,25 @@ public class PlaybackService : IPlaybackService
 
         var playlistSnapshot = _playlist;
         var currentSong = playlistSnapshot[startIndex];
-        var playbackUris = ResolveImmediateQueuePlaybackUris(playlistSnapshot);
+        if (!TryBeginQueueBuild(requestGeneration, out var queueBuildCancellation))
+        {
+            return;
+        }
+        IReadOnlyDictionary<int, TrackCacheStatus> cacheStatuses;
+        try
+        {
+            cacheStatuses = await ResolveQueueCacheStatusesAsync(
+                playlistSnapshot,
+                queueBuildCancellation.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (queueBuildCancellation.IsCancellationRequested)
+        {
+            return;
+        }
+        finally
+        {
+            CompleteQueueBuild(queueBuildCancellation);
+        }
 
         if (!IsPlaybackRequestCurrent(requestGeneration) ||
             !ReferenceEquals(_playlist, playlistSnapshot) ||
@@ -2591,8 +2800,9 @@ public class PlaybackService : IPlaybackService
         _urlToSong.Clear();
         var items = playlistSnapshot.Select((song, index) =>
         {
-            var mediaUri = playbackUris[index];
-            var item = CreateMediaItem(song, mediaUri);
+            var cacheStatus = cacheStatuses[song.Id];
+            var mediaUri = ResolveImmediatePlaybackUri(song, cacheStatus);
+            var item = CreateMediaItem(song, cacheStatus, mediaUri);
             return item;
         }).ToArray();
 
@@ -2712,7 +2922,25 @@ public class PlaybackService : IPlaybackService
         }
 
         var currentSong = playlistSnapshot[currentTrackIndex];
-        var playbackUris = ResolveImmediateQueuePlaybackUris(playlistSnapshot);
+        if (!TryBeginQueueBuild(requestGeneration, out var queueBuildCancellation))
+        {
+            return;
+        }
+        IReadOnlyDictionary<int, TrackCacheStatus> cacheStatuses;
+        try
+        {
+            cacheStatuses = await ResolveQueueCacheStatusesAsync(
+                playlistSnapshot,
+                queueBuildCancellation.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (queueBuildCancellation.IsCancellationRequested)
+        {
+            return;
+        }
+        finally
+        {
+            CompleteQueueBuild(queueBuildCancellation);
+        }
         if (!IsPlaybackRequestCurrent(requestGeneration) ||
             !ReferenceEquals(_playlist, playlistSnapshot) ||
             _currentTrackIndex != currentTrackIndex ||
@@ -2728,7 +2956,13 @@ public class PlaybackService : IPlaybackService
         }
 
         _urlToSong.Clear();
-        var items = playlistSnapshot.Select((song, index) => CreateMediaItem(song, playbackUris[index])).ToArray();
+        var items = playlistSnapshot
+            .Select(song =>
+            {
+                var cacheStatus = cacheStatuses[song.Id];
+                return CreateMediaItem(song, cacheStatus, ResolveImmediatePlaybackUri(song, cacheStatus));
+            })
+            .ToArray();
 
         _logger.LogInformation(
             "Replacing native playback queue while preserving current song. CurrentIndex={CurrentIndex}; QueueCount={QueueCount}; CurrentPosition={CurrentPosition}; PlayWhenReady={PlayWhenReady}; QueueItems={QueueItems}; {Snapshot}",
@@ -2826,27 +3060,56 @@ public class PlaybackService : IPlaybackService
         Volatile.Write(ref _queueSelectionSuppressionExpiresUtcTicks, 0);
     }
 
-    private string[] ResolveImmediateQueuePlaybackUris(IReadOnlyList<SongDto> playlistSnapshot)
+    private async Task<IReadOnlyDictionary<int, TrackCacheStatus>> ResolveQueueCacheStatusesAsync(
+        IReadOnlyList<SongDto> playlistSnapshot,
+        CancellationToken cancellationToken)
     {
-        var playbackUris = new string[playlistSnapshot.Count];
-
-        for (var index = 0; index < playlistSnapshot.Count; index++)
+        var statuses = await _audioCacheService
+            .GetCacheStatusesAsync(playlistSnapshot, cancellationToken)
+            .ConfigureAwait(false);
+        foreach (var status in statuses.Values)
         {
-            var playbackUri = _audioCacheService.GetImmediatePlaybackUri(playlistSnapshot[index]);
-            playbackUris[index] = string.IsNullOrWhiteSpace(playbackUri)
-                ? playlistSnapshot[index].StreamUrl ?? string.Empty
-                : playbackUri;
+            _cacheStatusSnapshot[status.SongId] = status;
         }
 
-        return playbackUris;
+        return statuses;
     }
 
-    private void StartSingleSongPlayback(SongDto song, int requestGeneration)
+    private static string ResolveImmediatePlaybackUri(SongDto song, TrackCacheStatus status) =>
+        status.IsLocalReady && !string.IsNullOrWhiteSpace(status.LocalPlaybackUri)
+            ? status.LocalPlaybackUri
+            : song.StreamUrl ?? string.Empty;
+
+    private bool CanStartRequestedSong(SongDto song, TrackCacheStatus status)
+    {
+        if (status.IsLocalReady)
+        {
+            return true;
+        }
+
+        return _networkStatusService?.IsOffline != true &&
+            !string.IsNullOrWhiteSpace(song.StreamUrl);
+    }
+
+    private void PublishUnavailableOffline(SongDto song)
+    {
+        _logger.LogInformation(
+            "Playback request rejected because the song is not cached and internet access is unavailable. SongId={SongId}",
+            song.Id);
+        PlaybackRequestFailed?.Invoke(
+            this,
+            new PlaybackRequestFailedEventArgs(song.Id, PlaybackRequestFailureReason.UnavailableOffline));
+    }
+
+    private void StartSingleSongPlayback(
+        SongDto song,
+        int requestGeneration,
+        TrackCacheStatus cacheStatus)
     {
         try
         {
             _urlToSong.Clear();
-            var mediaItem = CreateMediaItem(song, _audioCacheService.GetImmediatePlaybackUri(song));
+            var mediaItem = CreateMediaItem(song, cacheStatus, ResolveImmediatePlaybackUri(song, cacheStatus));
 
             if (!IsPlaybackRequestCurrent(requestGeneration) || CurrentSong?.Id != song.Id)
             {
@@ -2923,14 +3186,15 @@ public class PlaybackService : IPlaybackService
         }
     }
 
-    private PlaybackMediaItem CreateMediaItem(SongDto song, string? playbackUri = null)
+    private PlaybackMediaItem CreateMediaItem(
+        SongDto song,
+        TrackCacheStatus cacheStatus,
+        string? playbackUri = null)
     {
         var mediaUri = string.IsNullOrWhiteSpace(playbackUri)
             ? song.StreamUrl ?? string.Empty
             : playbackUri;
         var artworkUri = ResolveAlbumImageUri(song);
-        var cacheStatus = _audioCacheService.GetCacheStatus(song);
-
         RegisterSongPlaybackUri(song, mediaUri);
 
         var isLocal = IsLocalPlaybackUri(mediaUri);
@@ -3485,9 +3749,33 @@ public class PlaybackService : IPlaybackService
         return $"[{string.Join("|", entries)}]";
     }
 
+    private static string DescribeSongIds(IReadOnlyList<SongDto> songs)
+    {
+        var songIds = songs
+            .Take(MaxLoggedPlaylistItems)
+            .Select(song => song.Id.ToString())
+            .ToList();
+        if (songs.Count > MaxLoggedPlaylistItems)
+        {
+            songIds.Add($"...(+{songs.Count - MaxLoggedPlaylistItems} more)");
+        }
+
+        return string.Join(",", songIds);
+    }
+
     private static string DescribeMediaItems(IEnumerable<PlaybackMediaItem> items)
     {
-        return $"[{string.Join("|", items.Select((item, index) => $"{index}:{DescribeMediaItem(item)}"))}]";
+        var itemList = items as IReadOnlyList<PlaybackMediaItem> ?? items.ToList();
+        var entries = itemList
+            .Take(MaxLoggedPlaylistItems)
+            .Select((item, index) => $"{index}:{DescribeMediaItem(item)}")
+            .ToList();
+        if (itemList.Count > MaxLoggedPlaylistItems)
+        {
+            entries.Add($"...(+{itemList.Count - MaxLoggedPlaylistItems} more)");
+        }
+
+        return $"[{string.Join("|", entries)}]";
     }
 
     private static string DescribeMediaItem(PlaybackMediaItem? mediaItem)

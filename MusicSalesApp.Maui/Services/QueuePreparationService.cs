@@ -39,6 +39,10 @@ public sealed class QueuePreparationService : IQueuePreparationService
 
         _trackCacheService.PinActiveQueue(queue);
 
+        var initialStatuses = await _trackCacheService
+            .GetCacheStatusesAsync(queue, cancellationToken)
+            .ConfigureAwait(false);
+
         var readyThroughIndex = startIndex - 1;
         var readyThroughDuration = TimeSpan.Zero;
         var notReadyItems = new List<PlaybackMediaItem>();
@@ -52,7 +56,9 @@ public sealed class QueuePreparationService : IQueuePreparationService
             cancellationToken.ThrowIfCancellationRequested();
 
             var song = queue[index];
-            var status = _trackCacheService.GetCacheStatus(song);
+            var status = initialStatuses.TryGetValue(song.Id, out var initialStatus)
+                ? initialStatus
+                : await _trackCacheService.GetCacheStatusAsync(song, cancellationToken).ConfigureAwait(false);
 
             if (!status.IsLocalReady)
             {
@@ -134,7 +140,9 @@ public sealed class QueuePreparationService : IQueuePreparationService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Queue preparation failed to cache song {SongId}", song.Id);
-            return _trackCacheService.GetCacheStatus(song);
+            return await _trackCacheService
+                .GetCacheStatusAsync(song, cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 

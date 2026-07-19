@@ -31,10 +31,14 @@ public partial class EqualizerPlayButton : ContentView
     private IAudioVisualizerService? _audioVisualizerService;
     private IDispatcherTimer? _fallbackAnimationTimer;
     private double _fallbackAnimationPhase;
+    private readonly CoalescedUiUpdateScheduler _visualUpdateScheduler;
 
     public EqualizerPlayButton()
     {
         InitializeComponent();
+        _visualUpdateScheduler = new CoalescedUiUpdateScheduler(
+            action => MainThread.BeginInvokeOnMainThread(action),
+            _ => ApplyCoalescedVisualUpdate());
 
         var tapGesture = new TapGestureRecognizer();
         tapGesture.Tapped += OnTapped;
@@ -156,16 +160,33 @@ public partial class EqualizerPlayButton : ContentView
             return;
         }
 
-        MainThread.BeginInvokeOnMainThread(UpdateVisualState);
+        _visualUpdateScheduler.Request(1);
     }
 
     private void OnVisualizationChanged()
     {
-        MainThread.BeginInvokeOnMainThread(() =>
+        if (!IsCurrentSongPlaying())
         {
-            UpdateVisualState();
-            VisualizerCanvas.InvalidateSurface();
-        });
+            return;
+        }
+
+        _visualUpdateScheduler.Request(1);
+    }
+
+    private void ApplyCoalescedVisualUpdate()
+    {
+        if (_playbackService == null)
+        {
+            return;
+        }
+
+        UpdateVisualState();
+    }
+
+    private bool IsCurrentSongPlaying()
+    {
+        return _playbackService?.IsPlaying == true &&
+               PlaybackIndicatorStateResolver.ShouldToggleCurrentSong(SongId, _playbackService.CurrentSong);
     }
 
     private void OnTapped(object? sender, TappedEventArgs e)

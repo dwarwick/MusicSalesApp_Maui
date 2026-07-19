@@ -13,9 +13,10 @@ public partial class ConfigPage : ContentPage
         BindingContext = viewModel;
     }
 
-    protected override void OnAppearing()
+    protected override async void OnAppearing()
     {
         base.OnAppearing();
         _viewModel.Refresh();
+        await _viewModel.RefreshCacheUsageAsync();
     }
 }

@@ -8,6 +8,7 @@ using AndroidX.Media3.ExoPlayer.Offline;
 using AndroidX.Media3.ExoPlayer.Source;
 using Java.IO;
 using Java.Util.Concurrent;
+using Microsoft.Maui.ApplicationModel;
 using Media3DownloadManager = AndroidX.Media3.ExoPlayer.Offline.DownloadManager;
 
 namespace MusicSalesApp.Maui.Platforms.Android;
@@ -22,6 +23,7 @@ internal static class AndroidMedia3CacheProvider
     private static SimpleCache? _cache;
     private static Media3DownloadManager? _downloadManager;
     private static IExecutorService? _downloadExecutor;
+    private static Task<SimpleCache>? _cacheInitializationTask;
 
     public static StandaloneDatabaseProvider GetDatabaseProvider(Context context)
     {
@@ -48,6 +50,19 @@ internal static class AndroidMedia3CacheProvider
                 GetDatabaseProvider(context));
 
             return _cache;
+        }
+    }
+
+    public static Task<SimpleCache> GetCacheAsync(Context context)
+    {
+        lock (Sync)
+        {
+            if (_cache != null)
+            {
+                return Task.FromResult(_cache);
+            }
+
+            return _cacheInitializationTask ??= Task.Run(() => GetCache(context));
         }
     }
 
@@ -96,6 +111,12 @@ internal static class AndroidMedia3CacheProvider
         }
     }
 
+    public static async Task<Media3DownloadManager> GetDownloadManagerAsync(Context context)
+    {
+        await GetCacheAsync(context).ConfigureAwait(false);
+        return await MainThread.InvokeOnMainThreadAsync(() => GetDownloadManager(context));
+    }
+
     public static void EnsureNotificationChannels(Context context)
     {
         if (Build.VERSION.SdkInt < BuildVersionCodes.O)
@@ -126,7 +147,27 @@ internal static class AndroidMedia3CacheProvider
         GetCache(context).RemoveResource(stableCacheKey);
     }
 
+    public static async Task RemoveDownloadAsync(
+        Context context,
+        string stableCacheKey,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(stableCacheKey))
+        {
+            return;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var downloadManager = await GetDownloadManagerAsync(context).ConfigureAwait(false);
+        await MainThread.InvokeOnMainThreadAsync(() => downloadManager.RemoveDownload(stableCacheKey));
+        var cache = await GetCacheAsync(context).ConfigureAwait(false);
+        await Task.Run(() => cache.RemoveResource(stableCacheKey), cancellationToken).ConfigureAwait(false);
+    }
+
     public static long GetCacheSizeBytes(Context context) => GetDirectorySize(GetDownloadDirectory(context));
+
+    public static Task<long> GetCacheSizeBytesAsync(Context context, CancellationToken cancellationToken = default) =>
+        Task.Run(() => GetCacheSizeBytes(context), cancellationToken);
 
     public static long GetAvailableCacheStorageBytes(Context context)
     {
@@ -138,6 +179,11 @@ internal static class AndroidMedia3CacheProvider
 
         return new StatFs(path).AvailableBytes;
     }
+
+    public static Task<long> GetAvailableCacheStorageBytesAsync(
+        Context context,
+        CancellationToken cancellationToken = default) =>
+        Task.Run(() => GetAvailableCacheStorageBytes(context), cancellationToken);
 
     public static void Release()
     {
@@ -151,6 +197,7 @@ internal static class AndroidMedia3CacheProvider
 
             _cache?.Release();
             _cache = null;
+            _cacheInitializationTask = null;
 
             _databaseProvider = null;
         }

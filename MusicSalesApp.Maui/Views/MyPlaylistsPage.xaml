@@ -58,7 +58,7 @@
                 <!-- Playlist cards -->
                 <CollectionView IsVisible="{Binding ShowPlaylists}"
                                 ItemsSource="{Binding Playlists}"
-                                ItemSizingStrategy="MeasureAllItems"
+                                ItemSizingStrategy="MeasureFirstItem"
                                 SelectionMode="None">
                     <CollectionView.ItemTemplate>
                         <DataTemplate x:DataType="vm:PlaylistDto">

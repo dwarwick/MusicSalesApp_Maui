@@ -6,9 +6,9 @@ namespace MusicSalesApp.Maui.Services;
 
 public interface IAudioCacheService : ITrackCacheService
 {
-    string GetImmediatePlaybackUri(SongDto song);
-
     Task<string> ResolvePlaybackUriAsync(SongDto song, CancellationToken cancellationToken = default);
+
+    Task<long> GetCacheUsageBytesAsync(CancellationToken cancellationToken = default);
 }
 
 public class AudioCacheService : IAudioCacheService
@@ -50,14 +50,6 @@ public class AudioCacheService : IAudioCacheService
         _offlineCacheSettingsService = offlineCacheSettingsService;
     }
 
-    public string GetImmediatePlaybackUri(SongDto song)
-    {
-        var status = GetCacheStatus(song);
-        return status.IsLocalReady && !string.IsNullOrWhiteSpace(status.LocalPlaybackUri)
-            ? status.LocalPlaybackUri
-            : song.StreamUrl ?? string.Empty;
-    }
-
     public string GetStableCacheKey(SongDto song)
     {
         if (!AudioCacheKeyHelper.TryGetRemoteUri(song, out var remoteUri))
@@ -68,7 +60,33 @@ public class AudioCacheService : IAudioCacheService
         return AudioCacheKeyHelper.GetStableCacheKey(song);
     }
 
-    public TrackCacheStatus GetCacheStatus(SongDto song)
+    public Task<TrackCacheStatus> GetCacheStatusAsync(
+        SongDto song,
+        CancellationToken cancellationToken = default) =>
+        Task.Run(() => GetCacheStatusCore(song), cancellationToken);
+
+    public async Task<IReadOnlyDictionary<int, TrackCacheStatus>> GetCacheStatusesAsync(
+        IReadOnlyList<SongDto> songs,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(songs);
+
+        return await Task.Run<IReadOnlyDictionary<int, TrackCacheStatus>>(
+            () =>
+            {
+                var statuses = new Dictionary<int, TrackCacheStatus>(songs.Count);
+                foreach (var song in songs)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    statuses[song.Id] = GetCacheStatusCore(song);
+                }
+
+                return statuses;
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private TrackCacheStatus GetCacheStatusCore(SongDto song)
     {
         if (!AudioCacheKeyHelper.TryGetRemoteUri(song, out var remoteUri))
         {
@@ -97,7 +115,7 @@ public class AudioCacheService : IAudioCacheService
         }
 
         var playbackUri = await ResolvePlaybackUriAsync(song, cancellationToken).ConfigureAwait(false);
-        var status = GetCacheStatus(song);
+        var status = await GetCacheStatusAsync(song, cancellationToken).ConfigureAwait(false);
         if (!status.IsLocalReady && IsLocalPlaybackUri(playbackUri))
         {
             return status with { LocalPlaybackUri = playbackUri, IsLocalReady = true };
@@ -123,7 +141,7 @@ public class AudioCacheService : IAudioCacheService
         }
 
         var cachePath = GetCachePath(song, remoteUri);
-        if (HasCachedFile(cachePath))
+        if (await Task.Run(() => HasCachedFile(cachePath), cancellationToken).ConfigureAwait(false))
         {
             return cachePath;
         }
@@ -133,7 +151,7 @@ public class AudioCacheService : IAudioCacheService
 
         try
         {
-            if (HasCachedFile(cachePath))
+            if (await Task.Run(() => HasCachedFile(cachePath), cancellationToken).ConfigureAwait(false))
             {
                 return cachePath;
             }
@@ -245,6 +263,9 @@ public class AudioCacheService : IAudioCacheService
 
         return true;
     }
+
+    public Task<long> GetCacheUsageBytesAsync(CancellationToken cancellationToken = default) =>
+        Task.Run(GetCacheDirectorySizeBytes, cancellationToken);
 
     private long GetCacheDirectorySizeBytes()
     {

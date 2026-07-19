@@ -230,7 +230,7 @@ public partial class VerifyEmailViewModel : ObservableObject
 
     private async Task PromptBiometricAsync()
     {
-        if (string.IsNullOrEmpty(Password) || _authService.IsBiometricEnabled)
+        if (string.IsNullOrEmpty(Password) || await _authService.HasBiometricCredentialsAsync())
             return;
 
         bool enable = await _alertService.ShowConfirmAsync(

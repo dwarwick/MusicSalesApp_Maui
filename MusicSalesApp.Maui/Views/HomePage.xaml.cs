@@ -22,6 +22,7 @@ public partial class HomePage : ContentPage
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        NowPlayingBar.Activate();
         _viewModel.Activate();
         await _viewModel.StartSignalRAsync();
         await _viewModel.LoadCommand.ExecuteAsync(null);
@@ -30,6 +31,7 @@ public partial class HomePage : ContentPage
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
+        NowPlayingBar.Deactivate();
         _viewModel.Cleanup();
     }
 

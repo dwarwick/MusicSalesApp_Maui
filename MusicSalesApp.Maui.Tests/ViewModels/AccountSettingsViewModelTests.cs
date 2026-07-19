@@ -884,6 +884,22 @@ public class AccountSettingsViewModelTests
     }
 
     [Test]
+    public async Task AuthSubscription_IsDetachedByCleanupAndReattachedByActivate()
+    {
+        _viewModel.Cleanup();
+
+        _mockAuthService.Raise(service => service.AuthStateChanged += null);
+        await Task.Delay(25);
+        _mockMusicService.Verify(service => service.GetSubscriptionStatusAsync(), Times.Never);
+
+        _viewModel.Activate();
+        _mockAuthService.Raise(service => service.AuthStateChanged += null);
+        await Task.Delay(25);
+
+        _mockMusicService.Verify(service => service.GetSubscriptionStatusAsync(), Times.Once);
+    }
+
+    [Test]
     public async Task CancelSubscription_PromptsWithCustomPlaylistWarning()
     {
         _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(true);

@@ -19,8 +19,21 @@ public class QueuePreparationServiceTests
             .Setup(s => s.GetStableCacheKey(It.IsAny<SongDto>()))
             .Returns((SongDto song) => $"song-{song.Id}");
         _trackCacheService
-            .Setup(s => s.GetCacheStatus(It.IsAny<SongDto>()))
-            .Returns((SongDto song) => CreateStatus(song, isReady: false));
+            .Setup(s => s.GetCacheStatusAsync(It.IsAny<SongDto>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SongDto song, CancellationToken _) => CreateStatus(song, isReady: false));
+        _trackCacheService
+            .Setup(s => s.GetCacheStatusesAsync(It.IsAny<IReadOnlyList<SongDto>>(), It.IsAny<CancellationToken>()))
+            .Returns(async (IReadOnlyList<SongDto> songs, CancellationToken cancellationToken) =>
+            {
+                var statuses = new Dictionary<int, TrackCacheStatus>(songs.Count);
+                foreach (var song in songs)
+                {
+                    statuses[song.Id] = await _trackCacheService.Object
+                        .GetCacheStatusAsync(song, cancellationToken);
+                }
+
+                return statuses;
+            });
         _trackCacheService
             .Setup(s => s.EnsureCachedAsync(It.IsAny<SongDto>(), It.IsAny<CachePinScope>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((SongDto song, CachePinScope _, CancellationToken _) => CreateStatus(song, isReady: false));
@@ -102,8 +115,10 @@ public class QueuePreparationServiceTests
     private void SetupReady(SongDto song)
     {
         _trackCacheService
-            .Setup(s => s.GetCacheStatus(It.Is<SongDto>(candidate => candidate.Id == song.Id)))
-            .Returns(CreateStatus(song, isReady: true));
+            .Setup(s => s.GetCacheStatusAsync(
+                It.Is<SongDto>(candidate => candidate.Id == song.Id),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CreateStatus(song, isReady: true));
         _trackCacheService
             .Setup(s => s.EnsureCachedAsync(It.Is<SongDto>(candidate => candidate.Id == song.Id), It.IsAny<CachePinScope>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateStatus(song, isReady: true));

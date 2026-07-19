@@ -47,7 +47,7 @@
                                 SelectionMode="None"
                                 HeightRequest="400"
                                 HorizontalScrollBarVisibility="Never"
-                                ItemSizingStrategy="MeasureAllItems">
+                                ItemSizingStrategy="MeasureFirstItem">
                     <CollectionView.ItemsLayout>
                         <LinearItemsLayout Orientation="Horizontal" ItemSpacing="0" />
                     </CollectionView.ItemsLayout>

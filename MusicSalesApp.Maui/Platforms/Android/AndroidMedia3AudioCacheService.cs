@@ -2,6 +2,7 @@ using Android.Content;
 using AndroidX.Media3.Common;
 using AndroidX.Media3.ExoPlayer.Offline;
 using Microsoft.Extensions.Logging;
+using Microsoft.Maui.ApplicationModel;
 using MusicSalesApp.Maui.Services;
 using MusicSalesApp.Maui.ViewModels;
 using AndroidUri = Android.Net.Uri;
@@ -15,7 +16,7 @@ public sealed class AndroidMedia3AudioCacheService : IAudioCacheService
     private readonly Context _context;
     private readonly ILogger<AndroidMedia3AudioCacheService> _logger;
     private readonly IOfflineCacheSettingsService _offlineCacheSettingsService;
-    private readonly Dictionary<string, CachePinScope> _pins = new(StringComparer.Ordinal);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, CachePinScope> _pins = new(StringComparer.Ordinal);
 
     public AndroidMedia3AudioCacheService(
         ILogger<AndroidMedia3AudioCacheService> logger,
@@ -24,19 +25,64 @@ public sealed class AndroidMedia3AudioCacheService : IAudioCacheService
         _context = global::Android.App.Application.Context;
         _logger = logger;
         _offlineCacheSettingsService = offlineCacheSettingsService;
-        AndroidMedia3CacheProvider.EnsureNotificationChannels(_context);
     }
-
-    public string GetImmediatePlaybackUri(SongDto song) => song.StreamUrl ?? string.Empty;
 
     public string GetStableCacheKey(SongDto song) => AudioCacheKeyHelper.GetStableCacheKey(song);
 
-    public TrackCacheStatus GetCacheStatus(SongDto song)
+    public async Task<TrackCacheStatus> GetCacheStatusAsync(
+        SongDto song,
+        CancellationToken cancellationToken = default)
     {
-        var stableCacheKey = GetStableCacheKey(song);
-        var download = TryGetDownload(stableCacheKey);
+        var statuses = await GetCacheStatusesAsync([song], cancellationToken).ConfigureAwait(false);
+        return statuses[song.Id];
+    }
+
+    public async Task<IReadOnlyDictionary<int, TrackCacheStatus>> GetCacheStatusesAsync(
+        IReadOnlyList<SongDto> songs,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(songs);
+
+        var downloadManager = await AndroidMedia3CacheProvider
+            .GetDownloadManagerAsync(_context)
+            .ConfigureAwait(false);
+        var downloadIndex = downloadManager.DownloadIndex;
+        var cache = await AndroidMedia3CacheProvider.GetCacheAsync(_context).ConfigureAwait(false);
+
+        return await Task.Run<IReadOnlyDictionary<int, TrackCacheStatus>>(
+            () =>
+            {
+                var statuses = new Dictionary<int, TrackCacheStatus>(songs.Count);
+                foreach (var song in songs)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var stableCacheKey = GetStableCacheKey(song);
+                    Download? download = null;
+                    try
+                    {
+                        download = downloadIndex?.GetDownload(stableCacheKey);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "Unable to read Media3 download status. StableCacheKey={StableCacheKey}", stableCacheKey);
+                    }
+
+                    statuses[song.Id] = CreateCacheStatus(song, stableCacheKey, download, cache);
+                }
+
+                return statuses;
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private TrackCacheStatus CreateCacheStatus(
+        SongDto song,
+        string stableCacheKey,
+        Download? download,
+        AndroidX.Media3.DataSource.Cache.SimpleCache cache)
+    {
         var downloadCompleted = download?.State == Download.StateCompleted;
-        var isReady = downloadCompleted && IsCacheFullyLocal(stableCacheKey, download);
+        var isReady = downloadCompleted && IsCacheFullyLocal(stableCacheKey, download, cache);
         if (downloadCompleted && !isReady)
         {
             _logger.LogWarning(
@@ -89,10 +135,10 @@ public sealed class AndroidMedia3AudioCacheService : IAudioCacheService
                 "Media3 cache ensure skipped because song has no remote URI. SongId={SongId}; StableCacheKey={StableCacheKey}",
                 song.Id,
                 stableCacheKey);
-            return GetCacheStatus(song);
+            return await GetCacheStatusAsync(song, cancellationToken).ConfigureAwait(false);
         }
 
-        var status = GetCacheStatus(song);
+        var status = await GetCacheStatusAsync(song, cancellationToken).ConfigureAwait(false);
         if (status.IsLocalReady)
         {
             _logger.LogDebug(
@@ -105,20 +151,25 @@ public sealed class AndroidMedia3AudioCacheService : IAudioCacheService
 
         await RemoveStaleCompletedDownloadAsync(stableCacheKey, cancellationToken).ConfigureAwait(false);
 
-        if (!CanQueueDownload(song.Id, stableCacheKey))
+        if (!await CanQueueDownloadAsync(song.Id, stableCacheKey, cancellationToken).ConfigureAwait(false))
         {
-            return GetCacheStatus(song);
+            return await GetCacheStatusAsync(song, cancellationToken).ConfigureAwait(false);
         }
 
         var request = BuildDownloadRequest(stableCacheKey, remoteUri);
-        var downloadManager = AndroidMedia3CacheProvider.GetDownloadManager(_context);
+        var downloadManager = await AndroidMedia3CacheProvider
+            .GetDownloadManagerAsync(_context)
+            .ConfigureAwait(false);
         _logger.LogInformation(
             "Media3 download queued. SongId={SongId}; StableCacheKey={StableCacheKey}; RemoteUri={RemoteUri}",
             song.Id,
             stableCacheKey,
             SanitizeMediaUri(remoteUri.ToString()));
-        downloadManager.AddDownload(request);
-        downloadManager.ResumeDownloads();
+        await MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            downloadManager.AddDownload(request);
+            downloadManager.ResumeDownloads();
+        });
 
         var finalStatus = await WaitForDownloadReadiness(song, stableCacheKey, cancellationToken).ConfigureAwait(false);
         _logger.LogDebug(
@@ -155,6 +206,9 @@ public sealed class AndroidMedia3AudioCacheService : IAudioCacheService
         return song.StreamUrl ?? string.Empty;
     }
 
+    public Task<long> GetCacheUsageBytesAsync(CancellationToken cancellationToken = default) =>
+        AndroidMedia3CacheProvider.GetCacheSizeBytesAsync(_context, cancellationToken);
+
     public void RemoveUnpinnedPreparedContent(IEnumerable<string> stableCacheKeys)
     {
         foreach (var stableCacheKey in stableCacheKeys)
@@ -164,13 +218,18 @@ public sealed class AndroidMedia3AudioCacheService : IAudioCacheService
                 continue;
             }
 
-            AndroidMedia3CacheProvider.RemoveDownload(_context, stableCacheKey);
+            _ = AndroidMedia3CacheProvider.RemoveDownloadAsync(_context, stableCacheKey);
         }
     }
 
-    private bool CanQueueDownload(int songId, string stableCacheKey)
+    private async Task<bool> CanQueueDownloadAsync(
+        int songId,
+        string stableCacheKey,
+        CancellationToken cancellationToken)
     {
-        var cacheSizeBytes = AndroidMedia3CacheProvider.GetCacheSizeBytes(_context);
+        var cacheSizeBytes = await AndroidMedia3CacheProvider
+            .GetCacheSizeBytesAsync(_context, cancellationToken)
+            .ConfigureAwait(false);
         var cacheLimitBytes = _offlineCacheSettingsService.GetOfflineCacheLimitBytes();
         if (cacheSizeBytes >= cacheLimitBytes)
         {
@@ -183,7 +242,9 @@ public sealed class AndroidMedia3AudioCacheService : IAudioCacheService
             return false;
         }
 
-        var availableStorageBytes = AndroidMedia3CacheProvider.GetAvailableCacheStorageBytes(_context);
+        var availableStorageBytes = await AndroidMedia3CacheProvider
+            .GetAvailableCacheStorageBytesAsync(_context, cancellationToken)
+            .ConfigureAwait(false);
         var reserveBytes = _offlineCacheSettingsService.GetDeviceFreeSpaceReserveBytes();
         if (availableStorageBytes <= reserveBytes)
         {
@@ -207,7 +268,7 @@ public sealed class AndroidMedia3AudioCacheService : IAudioCacheService
         int? lastLoggedState = null;
         while (!cancellationToken.IsCancellationRequested)
         {
-            var download = TryGetDownload(stableCacheKey);
+            var download = await TryGetDownloadAsync(stableCacheKey, cancellationToken).ConfigureAwait(false);
             if (download?.State != lastLoggedState)
             {
                 lastLoggedState = download?.State;
@@ -222,7 +283,7 @@ public sealed class AndroidMedia3AudioCacheService : IAudioCacheService
 
             if (download?.State == Download.StateCompleted)
             {
-                return GetCacheStatus(song);
+                return await GetCacheStatusAsync(song, cancellationToken).ConfigureAwait(false);
             }
 
             if (download?.State == Download.StateFailed)
@@ -232,22 +293,28 @@ public sealed class AndroidMedia3AudioCacheService : IAudioCacheService
                     song.Id,
                     stableCacheKey,
                     download.FailureReason);
-                return GetCacheStatus(song);
+                return await GetCacheStatusAsync(song, cancellationToken).ConfigureAwait(false);
             }
 
             await Task.Delay(DownloadPollInterval, cancellationToken).ConfigureAwait(false);
         }
 
-        return GetCacheStatus(song);
+        return await GetCacheStatusAsync(song, cancellationToken).ConfigureAwait(false);
     }
 
-    private Download? TryGetDownload(string stableCacheKey)
+    private async Task<Download?> TryGetDownloadAsync(
+        string stableCacheKey,
+        CancellationToken cancellationToken)
     {
         try
         {
-            var downloadManager = AndroidMedia3CacheProvider.GetDownloadManager(_context);
+            var downloadManager = await AndroidMedia3CacheProvider
+                .GetDownloadManagerAsync(_context)
+                .ConfigureAwait(false);
             var downloadIndex = downloadManager.DownloadIndex;
-            return downloadIndex?.GetDownload(stableCacheKey);
+            return await Task.Run(
+                () => downloadIndex?.GetDownload(stableCacheKey),
+                cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -256,11 +323,13 @@ public sealed class AndroidMedia3AudioCacheService : IAudioCacheService
         }
     }
 
-    private bool IsCacheFullyLocal(string stableCacheKey, Download? download)
+    private bool IsCacheFullyLocal(
+        string stableCacheKey,
+        Download? download,
+        AndroidX.Media3.DataSource.Cache.SimpleCache cache)
     {
         try
         {
-            var cache = AndroidMedia3CacheProvider.GetCache(_context);
             var contentLength = download?.ContentLength ?? C.LengthUnset;
 
             return contentLength > 0
@@ -276,8 +345,12 @@ public sealed class AndroidMedia3AudioCacheService : IAudioCacheService
 
     private async Task RemoveStaleCompletedDownloadAsync(string stableCacheKey, CancellationToken cancellationToken)
     {
-        var download = TryGetDownload(stableCacheKey);
-        if (download?.State != Download.StateCompleted || IsCacheFullyLocal(stableCacheKey, download))
+        var download = await TryGetDownloadAsync(stableCacheKey, cancellationToken).ConfigureAwait(false);
+        var cache = await AndroidMedia3CacheProvider.GetCacheAsync(_context).ConfigureAwait(false);
+        var isFullyLocal = await Task.Run(
+            () => IsCacheFullyLocal(stableCacheKey, download, cache),
+            cancellationToken).ConfigureAwait(false);
+        if (download?.State != Download.StateCompleted || isFullyLocal)
         {
             return;
         }
@@ -288,12 +361,14 @@ public sealed class AndroidMedia3AudioCacheService : IAudioCacheService
             download.BytesDownloaded,
             download.ContentLength);
 
-        AndroidMedia3CacheProvider.RemoveDownload(_context, stableCacheKey);
+        await AndroidMedia3CacheProvider
+            .RemoveDownloadAsync(_context, stableCacheKey, cancellationToken)
+            .ConfigureAwait(false);
 
         for (var attempt = 0; attempt < 20; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var current = TryGetDownload(stableCacheKey);
+            var current = await TryGetDownloadAsync(stableCacheKey, cancellationToken).ConfigureAwait(false);
             if (current == null || current.State != Download.StateCompleted)
             {
                 return;

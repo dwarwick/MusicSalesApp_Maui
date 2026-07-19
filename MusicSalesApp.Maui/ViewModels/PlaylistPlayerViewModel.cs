@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MusicSalesApp.Maui.Services;
@@ -83,7 +82,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         _subscriptionsAttached = true;
     }
 
-    public ObservableCollection<SongDto> Songs { get; } = [];
+    public ObservableRangeCollection<SongDto> Songs { get; } = [];
 
     [ObservableProperty]
     public partial string PlaylistTitle { get; set; } = string.Empty;
@@ -320,7 +319,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         if (result.Songs.Count == 0)
         {
             ErrorMessage = "This playlist has no songs yet.";
-            Songs.Clear();
+            Songs.ReplaceAll([]);
             return;
         }
 
@@ -340,9 +339,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
             LoadLikeCountsAsync(list),
             LoadUserLikeStatusAsync(list));
 
-        Songs.Clear();
-        foreach (var song in list)
-            Songs.Add(song);
+        Songs.ReplaceAll(list);
 
         HasActiveSubscription = _authService.HasActiveSubscription;
 
