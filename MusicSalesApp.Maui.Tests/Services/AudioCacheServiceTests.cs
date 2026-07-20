@@ -31,10 +31,11 @@ public class AudioCacheServiceTests
     [Test]
     public async Task ResolvePlaybackUriAsync_DownloadsTrackAndReturnsLocalPath()
     {
+        var payload = CreateAudioPayload(8192);
         var factory = new Mock<IHttpClientFactory>();
         var handler = CreateHandler(new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = new ByteArrayContent([1, 2, 3, 4])
+            Content = new ByteArrayContent(payload)
         });
         factory.Setup(f => f.CreateClient(AudioCacheService.AudioDownloadClientName))
             .Returns(CreateHttpClient(handler.Object));
@@ -46,7 +47,7 @@ public class AudioCacheServiceTests
 
         Assert.That(playbackUri, Does.StartWith(_cacheDirectory));
         Assert.That(File.Exists(playbackUri), Is.True);
-        Assert.That(new FileInfo(playbackUri).Length, Is.EqualTo(4));
+        Assert.That(new FileInfo(playbackUri).Length, Is.EqualTo(payload.Length));
     }
 
     [Test]
@@ -55,7 +56,7 @@ public class AudioCacheServiceTests
         var factory = new Mock<IHttpClientFactory>();
         var handler = CreateHandler(new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = new ByteArrayContent([9, 8, 7])
+            Content = new ByteArrayContent(CreateAudioPayload(8192))
         });
         factory.Setup(f => f.CreateClient(AudioCacheService.AudioDownloadClientName))
             .Returns(CreateHttpClient(handler.Object));
@@ -80,7 +81,7 @@ public class AudioCacheServiceTests
         var factory = new Mock<IHttpClientFactory>();
         var handler = CreateHandler(new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = new ByteArrayContent([1, 2, 3])
+            Content = new ByteArrayContent(CreateAudioPayload(8192))
         });
         factory.Setup(f => f.CreateClient(AudioCacheService.AudioDownloadClientName))
             .Returns(CreateHttpClient(handler.Object));
@@ -109,10 +110,11 @@ public class AudioCacheServiceTests
     [Test]
     public async Task GetCacheUsageBytesAsync_SumsSizeOfDownloadedFiles()
     {
+        var payload = CreateAudioPayload(8192);
         var factory = new Mock<IHttpClientFactory>();
         var handler = CreateHandler(new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = new ByteArrayContent([1, 2, 3, 4, 5])
+            Content = new ByteArrayContent(payload)
         });
         factory.Setup(f => f.CreateClient(AudioCacheService.AudioDownloadClientName))
             .Returns(CreateHttpClient(handler.Object));
@@ -123,7 +125,7 @@ public class AudioCacheServiceTests
 
         var usageBytes = await service.GetCacheUsageBytesAsync();
 
-        Assert.That(usageBytes, Is.EqualTo(5));
+        Assert.That(usageBytes, Is.EqualTo(payload.Length));
     }
 
     [Test]
@@ -143,15 +145,67 @@ public class AudioCacheServiceTests
     }
 
     [Test]
+    public async Task ResolvePlaybackUriAsync_WhenPayloadTooSmallToBePlayable_FallsBackToRemoteAndCachesNothing()
+    {
+        // Regression: a junk blob (170 bytes on-device) was cached as a completed song and
+        // poisoned playback. Undersized payloads must never be committed to the cache.
+        var factory = new Mock<IHttpClientFactory>();
+        var handler = CreateHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(CreateAudioPayload(170))
+        });
+        factory.Setup(f => f.CreateClient(AudioCacheService.AudioDownloadClientName))
+            .Returns(CreateHttpClient(handler.Object));
+
+        var service = new AudioCacheService(factory.Object, NullLogger<AudioCacheService>.Instance, _cacheDirectory);
+        var song = new SongDto { Id = 26, StreamUrl = "https://example.com/audio/junk-song.mp3" };
+
+        var playbackUri = await service.ResolvePlaybackUriAsync(song);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(playbackUri, Is.EqualTo(song.StreamUrl));
+            Assert.That(Directory.EnumerateFiles(_cacheDirectory), Is.Empty);
+        });
+    }
+
+    [Test]
+    public async Task GetCacheStatusAsync_WhenCachedFileIsUndersized_PurgesItAndReportsNotReady()
+    {
+        var factory = new Mock<IHttpClientFactory>();
+        var handler = CreateHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(CreateAudioPayload(8192))
+        });
+        factory.Setup(f => f.CreateClient(AudioCacheService.AudioDownloadClientName))
+            .Returns(CreateHttpClient(handler.Object));
+
+        var service = new AudioCacheService(factory.Object, NullLogger<AudioCacheService>.Instance, _cacheDirectory);
+        var song = new SongDto { Id = 27, StreamUrl = "https://example.com/audio/poisoned-song.mp3" };
+        var cachedPlaybackUri = await service.ResolvePlaybackUriAsync(song);
+
+        // Simulate a poisoned cache entry left behind by an earlier junk download.
+        File.WriteAllBytes(cachedPlaybackUri, CreateAudioPayload(170));
+
+        var status = await service.GetCacheStatusAsync(song);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(status.IsLocalReady, Is.False);
+            Assert.That(File.Exists(cachedPlaybackUri), Is.False);
+        });
+    }
+
+    [Test]
     public async Task ResolvePlaybackUriAsync_WhenContentWouldExceedConfiguredCacheLimit_FallsBackToRemoteStreamUrl()
     {
         var factory = new Mock<IHttpClientFactory>();
         var handler = CreateHandler(new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = new ByteArrayContent([1, 2, 3, 4])
+            Content = new ByteArrayContent(CreateAudioPayload(8192))
         });
         var settings = new Mock<IOfflineCacheSettingsService>();
-        settings.Setup(s => s.GetOfflineCacheLimitBytes()).Returns(3);
+        settings.Setup(s => s.GetOfflineCacheLimitBytes()).Returns(8000);
         settings.Setup(s => s.GetDeviceFreeSpaceReserveBytes()).Returns(0);
         factory.Setup(f => f.CreateClient(AudioCacheService.AudioDownloadClientName))
             .Returns(CreateHttpClient(handler.Object));
@@ -178,7 +232,7 @@ public class AudioCacheServiceTests
         var factory = new Mock<IHttpClientFactory>();
         var handler = CreateHandler(new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = new ByteArrayContent([4, 3, 2, 1])
+            Content = new ByteArrayContent(CreateAudioPayload(8192))
         });
         factory.Setup(f => f.CreateClient(AudioCacheService.AudioDownloadClientName))
             .Returns(CreateHttpClient(handler.Object));
@@ -211,6 +265,17 @@ public class AudioCacheServiceTests
             Assert.That(status.IsLocalReady, Is.False);
             Assert.That(status.LocalPlaybackUri, Is.Null);
         });
+    }
+
+    private static byte[] CreateAudioPayload(int length)
+    {
+        var payload = new byte[length];
+        for (var index = 0; index < payload.Length; index++)
+        {
+            payload[index] = (byte)(index % 251);
+        }
+
+        return payload;
     }
 
     private static HttpClient CreateHttpClient(HttpMessageHandler handler)

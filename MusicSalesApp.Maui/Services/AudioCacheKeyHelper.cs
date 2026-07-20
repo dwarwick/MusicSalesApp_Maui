@@ -6,6 +6,13 @@ namespace MusicSalesApp.Maui.Services;
 
 internal static class AudioCacheKeyHelper
 {
+    /// <summary>
+    /// Smallest byte count a completed audio download can plausibly have. Even a one-second
+    /// low-bitrate MP3 is several kilobytes; anything under this floor is an error payload or
+    /// truncated write masquerading as a song, and caching it poisons playback.
+    /// </summary>
+    public const long MinPlayableAudioBytes = 4096;
+
     public static string GetStableCacheKey(SongDto song)
     {
         if (!TryGetRemoteUri(song, out var remoteUri))

@@ -2231,6 +2231,73 @@ public class PlaybackServiceTests
     }
 
     [Test]
+    public async Task MediaItemFailed_WhenCachedTrackKeepsFailing_SkipsToNextTrackAndRaisesUnplayableTrackSkipped()
+    {
+        // Regression: a corrupt cached download (junk bytes marked Completed) made recovery
+        // replay the same poisoned cache entry until the whole queue was terminally stopped.
+        var service = CreateService(TimeSpan.FromMilliseconds(50));
+        var songs = CreateTestPlaylist(3);
+        SetupCachedSong(songs[0]);
+        SetupCachedSong(songs[1]);
+        var failedEvents = new List<PlaybackRequestFailedEventArgs>();
+        service.PlaybackRequestFailed += (_, args) => failedEvents.Add(args);
+
+        service.SetPlaylist(songs, 0);
+        _mockMediaManager.Invocations.Clear();
+
+        _mediaManagerState = PlaybackRuntimeState.Failed;
+        var failure = new InvalidOperationException("simulated unplayable cached media");
+        for (var attempt = 0; attempt < 4 && service.CurrentTrackIndex == 0; attempt++)
+        {
+            _mockMediaManager.Raise(
+                m => m.MediaItemFailed += null,
+                new PlaybackMediaItemFailedEventArgs(new PlaybackMediaItem(songs[0].StreamUrl!), failure, failure.Message));
+            await Task.Delay(125);
+        }
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(service.CurrentTrackIndex, Is.EqualTo(1));
+            Assert.That(service.CurrentSong, Is.SameAs(songs[1]));
+            Assert.That(service.IsPlaying, Is.True);
+            Assert.That(
+                failedEvents.Select(args => (args.SongId, args.Reason)),
+                Does.Contain((songs[0].Id, PlaybackRequestFailureReason.UnplayableTrackSkipped)));
+        });
+    }
+
+    [Test]
+    public async Task MediaManagerStopped_RepeatedZeroPositionFailures_SkipsToNextTrackInsteadOfStopping()
+    {
+        var service = CreateService(transientStopConfirmationDelay: TimeSpan.FromMilliseconds(40));
+        var songs = CreateTestPlaylist(3);
+        SetupCachedSong(songs[1]);
+        var failedEvents = new List<PlaybackRequestFailedEventArgs>();
+        service.PlaybackRequestFailed += (_, args) => failedEvents.Add(args);
+
+        service.SetPlaylist(songs, 0);
+        await Task.Delay(50);
+        _mockMediaManager.Invocations.Clear();
+
+        _mediaManagerState = PlaybackRuntimeState.Stopped;
+        _mockMediaManager.Raise(m => m.StateChanged += null, new PlaybackRuntimeStateChangedEventArgs(PlaybackRuntimeState.Stopped));
+        await Task.Delay(120);
+        _mockMediaManager.Raise(m => m.StateChanged += null, new PlaybackRuntimeStateChangedEventArgs(PlaybackRuntimeState.Stopped));
+        await Task.Delay(120);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(service.CurrentTrackIndex, Is.EqualTo(1));
+            Assert.That(service.CurrentSong, Is.SameAs(songs[1]));
+            Assert.That(service.IsPlaying, Is.True);
+            Assert.That(service.PreparationState, Is.Not.EqualTo(PlaybackPreparationState.Error));
+            Assert.That(
+                failedEvents.Select(args => (args.SongId, args.Reason)),
+                Does.Contain((songs[0].Id, PlaybackRequestFailureReason.UnplayableTrackSkipped)));
+        });
+    }
+
+    [Test]
     public async Task MediaManagerFailed_WithRecoverablePlaylist_KeepsPlaybackActiveAndRebuildsCurrentTrack()
     {
         var service = CreateService(TimeSpan.FromMilliseconds(50));

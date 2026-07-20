@@ -49,6 +49,8 @@
                         HeightRequest="32"
                         Padding="10,0"
                         CornerRadius="16"
+                        BorderWidth="1.5"
+                        BorderColor="{Binding HasActiveAiFilter, Converter={StaticResource ActivePillBorderConverter}}"
                         BackgroundColor="{Binding HasActiveAiFilter, Converter={StaticResource ActivePillBgConverter}}"
                         TextColor="{Binding HasActiveAiFilter, Converter={StaticResource ActivePillTextConverter}}" />
 
@@ -61,6 +63,8 @@
                     HeightRequest="32"
                     Padding="10,0"
                     CornerRadius="16"
+                    BorderWidth="1.5"
+                    BorderColor="{Binding HasActiveGenreFilters, Converter={StaticResource ActivePillBorderConverter}}"
                     BackgroundColor="{Binding HasActiveGenreFilters, Converter={StaticResource ActivePillBgConverter}}"
                     TextColor="{Binding HasActiveGenreFilters, Converter={StaticResource ActivePillTextConverter}}" />
 
@@ -73,6 +77,8 @@
                     HeightRequest="32"
                     Padding="10,0"
                     CornerRadius="16"
+                    BorderWidth="1.5"
+                    BorderColor="{Binding HasActiveArtistFilters, Converter={StaticResource ActivePillBorderConverter}}"
                     BackgroundColor="{Binding HasActiveArtistFilters, Converter={StaticResource ActivePillBgConverter}}"
                     TextColor="{Binding HasActiveArtistFilters, Converter={StaticResource ActivePillTextConverter}}" />
 
@@ -85,6 +91,8 @@
                     HeightRequest="32"
                     Padding="10,0"
                     CornerRadius="16"
+                    BorderWidth="1.5"
+                    BorderColor="{Binding IsDownloadedFilterActive, Converter={StaticResource ActivePillBorderConverter}}"
                     BackgroundColor="{Binding IsDownloadedFilterActive, Converter={StaticResource ActivePillBgConverter}}"
                     TextColor="{Binding IsDownloadedFilterActive, Converter={StaticResource ActivePillTextConverter}}" />
 

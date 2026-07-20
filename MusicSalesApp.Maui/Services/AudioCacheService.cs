@@ -192,6 +192,17 @@ public class AudioCacheService : IAudioCacheService
                 await destination.FlushAsync(cancellationToken).ConfigureAwait(false);
             }
 
+            var downloadedBytes = new FileInfo(tempPath).Length;
+            if (downloadedBytes < AudioCacheKeyHelper.MinPlayableAudioBytes)
+            {
+                _logger.LogWarning(
+                    "Audio cache download rejected because the payload is too small to be playable audio. SongId={SongId}; DownloadedBytes={DownloadedBytes}; MinPlayableAudioBytes={MinPlayableAudioBytes}",
+                    song.Id,
+                    downloadedBytes,
+                    AudioCacheKeyHelper.MinPlayableAudioBytes);
+                return song.StreamUrl ?? string.Empty;
+            }
+
             File.Move(tempPath, cachePath, true);
 
             _logger.LogInformation(
@@ -326,9 +337,36 @@ public class AudioCacheService : IAudioCacheService
         }
     }
 
-    private static bool HasCachedFile(string cachePath)
+    private bool HasCachedFile(string cachePath)
     {
-        return File.Exists(cachePath) && new FileInfo(cachePath).Length > 0;
+        if (!File.Exists(cachePath))
+        {
+            return false;
+        }
+
+        var length = new FileInfo(cachePath).Length;
+        if (length >= AudioCacheKeyHelper.MinPlayableAudioBytes)
+        {
+            return true;
+        }
+
+        // An undersized cached file is an error payload stored as audio — purge it so the
+        // song is re-fetched instead of being replayed as unplayable bytes.
+        _logger.LogWarning(
+            "Removing undersized cached audio file. CachePath={CachePath}; Length={Length}; MinPlayableAudioBytes={MinPlayableAudioBytes}",
+            cachePath,
+            length,
+            AudioCacheKeyHelper.MinPlayableAudioBytes);
+        try
+        {
+            File.Delete(cachePath);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Unable to delete undersized cached audio file. CachePath={CachePath}", cachePath);
+        }
+
+        return false;
     }
 
     private string GetCachePath(SongDto song, Uri remoteUri)

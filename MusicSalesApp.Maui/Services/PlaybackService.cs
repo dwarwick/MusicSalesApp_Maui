@@ -35,7 +35,10 @@ public class PlaybackService : IPlaybackService
     private static readonly TimeSpan TerminalZeroPositionRecoveryWindow = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan StaleHighPositionAfterTrackResetSuppression = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan UserRequestedStopCleanupSuppressionWindow = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan CachedFailureRecoveryWindow = TimeSpan.FromSeconds(30);
     private const int MaxTerminalZeroPositionRecoveryAttempts = 1;
+    private const int MaxCachedFailureRecoveryAttemptsPerSong = 2;
+    private const int MaxConsecutiveUnplayableTrackSkips = 3;
     private const int QueueCacheResolutionConcurrency = 3;
     private const int BackgroundWarmAheadTrackCount = 12;
     private const int MaxLoggedPlaylistItems = 10;
@@ -72,6 +75,10 @@ public class PlaybackService : IPlaybackService
     private int _subscribeCtaRequestInProgress;
     private int _terminalZeroPositionRecoveryAttemptCount;
     private int _terminalZeroPositionRecoverySongId;
+    private long _cachedFailureRecoveryWindowExpiresUtcTicks;
+    private int _cachedFailureRecoveryAttemptCount;
+    private int _cachedFailureRecoverySongId;
+    private int _consecutiveUnplayableTrackSkipCount;
     private int _userRequestedStopCleanupInProgress;
     private long _userRequestedStopCleanupSuppressUntilUtcTicks;
 
@@ -424,6 +431,11 @@ public class PlaybackService : IPlaybackService
         if (ShouldIgnoreStaleHighPositionAfterTrackReset(position))
         {
             return;
+        }
+
+        if (position > TimeSpan.Zero && Volatile.Read(ref _consecutiveUnplayableTrackSkipCount) != 0)
+        {
+            Interlocked.Exchange(ref _consecutiveUnplayableTrackSkipCount, 0);
         }
 
         // Some platforms emit a final stale position event at/after the preview boundary
@@ -1258,6 +1270,11 @@ public class PlaybackService : IPlaybackService
         var recoveryIndex = ResolveTerminalPlaybackRecoveryIndex(currentState);
         if (ShouldStopTerminalZeroPositionRecovery(currentState, songId, observedPosition, currentPosition))
         {
+            if (TryAdvancePastUnplayableTrack(songId, _currentTrackIndex, "terminal zero-position recovery exhausted"))
+            {
+                return true;
+            }
+
             _logger.LogError(
                 "Terminal {State} recovery stopped after repeated zero-position failures. SongId={SongId}; RecoveryIndex={RecoveryIndex}; ObservedPosition={ObservedPosition}; CurrentPosition={CurrentPosition}; {Snapshot}",
                 currentState,
@@ -1308,6 +1325,27 @@ public class PlaybackService : IPlaybackService
         }
 
         return Interlocked.Increment(ref _terminalZeroPositionRecoveryAttemptCount) > MaxTerminalZeroPositionRecoveryAttempts;
+    }
+
+    /// <summary>
+    /// Bounds how often a failing track may be re-played from its cached copy. A cached entry
+    /// that keeps failing is unplayable content (e.g. a corrupt download), and endless replays
+    /// would starve the advance-to-next-track recovery path.
+    /// </summary>
+    private bool CachedFailureRecoveryAttemptsExhausted(int songId)
+    {
+        var nowTicks = DateTime.UtcNow.Ticks;
+        if (_cachedFailureRecoverySongId != songId ||
+            nowTicks > Volatile.Read(ref _cachedFailureRecoveryWindowExpiresUtcTicks))
+        {
+            _cachedFailureRecoverySongId = songId;
+            Interlocked.Exchange(ref _cachedFailureRecoveryAttemptCount, 0);
+            Interlocked.Exchange(
+                ref _cachedFailureRecoveryWindowExpiresUtcTicks,
+                nowTicks + CachedFailureRecoveryWindow.Ticks);
+        }
+
+        return Interlocked.Increment(ref _cachedFailureRecoveryAttemptCount) > MaxCachedFailureRecoveryAttemptsPerSong;
     }
 
     private int ResolveTerminalPlaybackRecoveryIndex(PlaybackRuntimeState currentState)
@@ -2159,6 +2197,21 @@ public class PlaybackService : IPlaybackService
             return true;
         }
 
+        return TryAdvancePastUnplayableTrack(failedSongId, failedTrackIndex, "media item failure recovery");
+    }
+
+    /// <summary>
+    /// Advances the queue past a track that keeps failing to produce playback (for example a
+    /// corrupt or unplayable media file) so one bad song cannot end the listening session.
+    /// Consecutive skips are bounded; once the limit is hit the caller falls back to stopping.
+    /// </summary>
+    private bool TryAdvancePastUnplayableTrack(int failedSongId, int failedTrackIndex, string reason)
+    {
+        if (!HasPlaylist || _playlist == null)
+        {
+            return false;
+        }
+
         var nextIndex = ResolveSequentialNextTrackIndex(failedTrackIndex);
         if (!nextIndex.HasValue)
         {
@@ -2166,7 +2219,8 @@ public class PlaybackService : IPlaybackService
             {
                 IsPlaying = false;
                 _logger.LogInformation(
-                    "MediaItemFailed recovery reached queue end and stopped playback. FailedSongId={FailedSongId}; FailedTrackIndex={FailedTrackIndex}; {Snapshot}",
+                    "Unplayable-track recovery reached queue end and stopped playback. Reason={Reason}; FailedSongId={FailedSongId}; FailedTrackIndex={FailedTrackIndex}; {Snapshot}",
+                    reason,
                     failedSongId,
                     failedTrackIndex,
                     CreatePlaybackSnapshot(CurrentSong, null));
@@ -2176,28 +2230,45 @@ public class PlaybackService : IPlaybackService
             nextIndex = 0;
         }
 
+        if (nextIndex.Value == failedTrackIndex)
+        {
+            return false;
+        }
+
         if (!IsTrackLocalReady(nextIndex.Value))
         {
             EnterWaitingForPreparedMediaState(
-                "media item failure recovery found remote-only successor",
+                reason + " found remote-only successor",
                 failedSongId,
                 failedTrackIndex,
                 nextIndex.Value);
             return true;
         }
 
+        if (Interlocked.Increment(ref _consecutiveUnplayableTrackSkipCount) > MaxConsecutiveUnplayableTrackSkips)
+        {
+            _logger.LogError(
+                "Unplayable-track skip limit reached without successful playback; not advancing further. Reason={Reason}; FailedSongId={FailedSongId}; FailedTrackIndex={FailedTrackIndex}; {Snapshot}",
+                reason,
+                failedSongId,
+                failedTrackIndex,
+                CreatePlaybackSnapshot(CurrentSong, null));
+            return false;
+        }
+
         _logger.LogWarning(
-            "MediaItemFailed recovery advancing to next track. Reason={Reason}; FailedSongId={FailedSongId}; FailedTrackIndex={FailedTrackIndex}; NextIndex={NextIndex}; MediaState={MediaState}; NativeCurrentIndex={NativeCurrentIndex}; NativeQueueDivergedFromFailedTrack={NativeQueueDivergedFromFailedTrack}; {Snapshot}",
+            "Skipping unplayable track and continuing the queue. Reason={Reason}; FailedSongId={FailedSongId}; FailedTrackIndex={FailedTrackIndex}; NextIndex={NextIndex}; {Snapshot}",
             reason,
             failedSongId,
             failedTrackIndex,
             nextIndex.Value,
-            state,
-            nativeCurrentIndex,
-            nativeQueueDivergedFromFailedTrack,
             CreatePlaybackSnapshot(CurrentSong, null));
 
-        PlayTrackAtIndexWithQueueReload(nextIndex.Value, "media item failure recovery");
+        PlaybackRequestFailed?.Invoke(
+            this,
+            new PlaybackRequestFailedEventArgs(failedSongId, PlaybackRequestFailureReason.UnplayableTrackSkipped));
+
+        PlayTrackAtIndexWithQueueReload(nextIndex.Value, reason);
         return true;
     }
 
@@ -2299,6 +2370,18 @@ public class PlaybackService : IPlaybackService
         var song = _playlist[failedTrackIndex];
         if (!_cacheStatusSnapshot.TryGetValue(song.Id, out var cacheStatus))
         {
+            return false;
+        }
+
+        var canRecoverFromCache = cacheStatus.IsLocalReady || IsLocalPlaybackUri(cacheStatus.LocalPlaybackUri);
+        if (canRecoverFromCache && CachedFailureRecoveryAttemptsExhausted(failedSongId))
+        {
+            _logger.LogWarning(
+                "Cached recovery attempts exhausted for failed track; treating cached media as unplayable. Reason={Reason}; SongId={SongId}; TrackIndex={TrackIndex}; {Snapshot}",
+                reason,
+                failedSongId,
+                failedTrackIndex,
+                CreatePlaybackSnapshot(CurrentSong, failedMediaItem));
             return false;
         }
 

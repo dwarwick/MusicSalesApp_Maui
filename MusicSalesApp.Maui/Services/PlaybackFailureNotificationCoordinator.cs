@@ -5,12 +5,16 @@ public sealed class PlaybackFailureNotificationCoordinator : IDisposable
     internal const string UnavailableOfflineMessage =
         "This song isn't downloaded and no internet connection is available. Use the Downloaded filter to find songs you can play offline.";
 
+    internal const string UnplayableTrackSkippedMessage =
+        "Skipped a song that can't be played.";
+
     private static readonly TimeSpan DuplicateFailureWindow = TimeSpan.FromSeconds(2);
     private readonly IPlaybackService _playbackService;
     private readonly IToastService _toastService;
     private readonly TimeProvider _timeProvider;
     private readonly object _sync = new();
     private DateTimeOffset _lastUnavailableOfflineNotification = DateTimeOffset.MinValue;
+    private DateTimeOffset _lastUnplayableTrackSkippedNotification = DateTimeOffset.MinValue;
     private bool _disposed;
 
     public PlaybackFailureNotificationCoordinator(
@@ -33,13 +37,19 @@ public sealed class PlaybackFailureNotificationCoordinator : IDisposable
 
     private void OnPlaybackRequestFailed(object? sender, PlaybackRequestFailedEventArgs args)
     {
-        if (args.Reason == PlaybackRequestFailureReason.UnavailableOffline && ShouldNotify())
+        if (args.Reason == PlaybackRequestFailureReason.UnavailableOffline &&
+            ShouldNotify(ref _lastUnavailableOfflineNotification))
         {
-            _ = ShowUnavailableOfflineAsync();
+            _ = ShowToastAsync(UnavailableOfflineMessage);
+        }
+        else if (args.Reason == PlaybackRequestFailureReason.UnplayableTrackSkipped &&
+            ShouldNotify(ref _lastUnplayableTrackSkippedNotification))
+        {
+            _ = ShowToastAsync(UnplayableTrackSkippedMessage);
         }
     }
 
-    private bool ShouldNotify()
+    private bool ShouldNotify(ref DateTimeOffset lastNotification)
     {
         lock (_sync)
         {
@@ -49,21 +59,21 @@ public sealed class PlaybackFailureNotificationCoordinator : IDisposable
             }
 
             var now = _timeProvider.GetUtcNow();
-            if (now - _lastUnavailableOfflineNotification < DuplicateFailureWindow)
+            if (now - lastNotification < DuplicateFailureWindow)
             {
                 return false;
             }
 
-            _lastUnavailableOfflineNotification = now;
+            lastNotification = now;
             return true;
         }
     }
 
-    private async Task ShowUnavailableOfflineAsync()
+    private async Task ShowToastAsync(string message)
     {
         try
         {
-            await _toastService.ShowAsync(UnavailableOfflineMessage).ConfigureAwait(false);
+            await _toastService.ShowAsync(message).ConfigureAwait(false);
         }
         catch
         {

@@ -5,7 +5,8 @@ namespace MusicSalesApp.Maui.Services;
 
 public enum PlaybackRequestFailureReason
 {
-    UnavailableOffline
+    UnavailableOffline,
+    UnplayableTrackSkipped
 }
 
 public sealed record PlaybackRequestFailedEventArgs(

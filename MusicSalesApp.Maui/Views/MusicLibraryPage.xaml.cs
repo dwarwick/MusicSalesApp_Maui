@@ -21,6 +21,7 @@ public partial class MusicLibraryPage : ContentPage
         Resources.Add("DurationConverter", new DurationConverter());
         Resources.Add("ActivePillBgConverter", new ActivePillBgConverter());
         Resources.Add("ActivePillTextConverter", new ActivePillTextConverter());
+        Resources.Add("ActivePillBorderConverter", new ActivePillBorderConverter());
         Resources.Add("LikeGlyphConverter", new LikeGlyphConverter());
         Resources.Add("DislikeGlyphConverter", new DislikeGlyphConverter());
         Resources.Add("LikeColorConverter", new LikeColorConverter());
@@ -164,6 +165,25 @@ public class ActivePillTextConverter : IValueConverter
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         return Colors.White;
+    }
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        throw new NotSupportedException();
+    }
+}
+
+/// <summary>
+/// Converts bool (isActive) to a thin purple pill border marking pills with an applied filter.
+/// </summary>
+public class ActivePillBorderConverter : IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is true)
+            return Color.FromArgb("#A855F7");
+
+        return Colors.Transparent;
     }
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)

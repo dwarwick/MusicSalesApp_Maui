@@ -42,6 +42,56 @@ public class PlaybackFailureNotificationCoordinatorTests
     }
 
     [Test]
+    public void UnplayableTrackSkipped_ShowsSkipMessage()
+    {
+        var playback = new Mock<IPlaybackService>();
+        var toast = new Mock<IToastService>();
+        toast.Setup(service => service.ShowAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        using var coordinator = new PlaybackFailureNotificationCoordinator(playback.Object, toast.Object);
+
+        RaiseUnplayableTrackSkipped(playback, 326);
+
+        toast.Verify(service => service.ShowAsync(
+            PlaybackFailureNotificationCoordinator.UnplayableTrackSkippedMessage,
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Test]
+    public void UnplayableTrackSkipped_IsDebouncedForTwoSeconds()
+    {
+        var playback = new Mock<IPlaybackService>();
+        var toast = new Mock<IToastService>();
+        toast.Setup(service => service.ShowAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 7, 19, 12, 0, 0, TimeSpan.Zero));
+        using var coordinator = new PlaybackFailureNotificationCoordinator(playback.Object, toast.Object, clock);
+
+        RaiseUnplayableTrackSkipped(playback, 326);
+        RaiseUnplayableTrackSkipped(playback, 283);
+        clock.Advance(TimeSpan.FromSeconds(2));
+        RaiseUnplayableTrackSkipped(playback, 302);
+
+        toast.Verify(service => service.ShowAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Test]
+    public void UnplayableTrackSkipped_DoesNotShareDebounceWindowWithOfflineMessage()
+    {
+        var playback = new Mock<IPlaybackService>();
+        var toast = new Mock<IToastService>();
+        toast.Setup(service => service.ShowAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 7, 19, 12, 0, 0, TimeSpan.Zero));
+        using var coordinator = new PlaybackFailureNotificationCoordinator(playback.Object, toast.Object, clock);
+
+        RaiseUnavailableOffline(playback, 1);
+        RaiseUnplayableTrackSkipped(playback, 326);
+
+        toast.Verify(service => service.ShowAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Test]
     public void Dispose_UnsubscribesFromPlaybackFailures()
     {
         var playback = new Mock<IPlaybackService>();
@@ -58,6 +108,11 @@ public class PlaybackFailureNotificationCoordinatorTests
         playback.Raise(service => service.PlaybackRequestFailed += null,
             playback.Object,
             new PlaybackRequestFailedEventArgs(songId, PlaybackRequestFailureReason.UnavailableOffline));
+
+    private static void RaiseUnplayableTrackSkipped(Mock<IPlaybackService> playback, int songId) =>
+        playback.Raise(service => service.PlaybackRequestFailed += null,
+            playback.Object,
+            new PlaybackRequestFailedEventArgs(songId, PlaybackRequestFailureReason.UnplayableTrackSkipped));
 
     private sealed class ManualTimeProvider(DateTimeOffset now) : TimeProvider
     {

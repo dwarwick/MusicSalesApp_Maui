@@ -17,6 +17,7 @@ public sealed class AndroidMedia3AudioCacheService : IAudioCacheService
     private readonly ILogger<AndroidMedia3AudioCacheService> _logger;
     private readonly IOfflineCacheSettingsService _offlineCacheSettingsService;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, CachePinScope> _pins = new(StringComparer.Ordinal);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _rejectedUndersizedDownloads = new(StringComparer.Ordinal);
 
     public AndroidMedia3AudioCacheService(
         ILogger<AndroidMedia3AudioCacheService> logger,
@@ -82,8 +83,27 @@ public sealed class AndroidMedia3AudioCacheService : IAudioCacheService
         AndroidX.Media3.DataSource.Cache.SimpleCache cache)
     {
         var downloadCompleted = download?.State == Download.StateCompleted;
-        var isReady = downloadCompleted && IsCacheFullyLocal(stableCacheKey, download, cache);
-        if (downloadCompleted && !isReady)
+        var bytesDownloaded = download?.BytesDownloaded ?? -1;
+
+        // A "completed" download smaller than any real audio file is an error payload that was
+        // stored as if it were the song (observed on-device: a 170-byte blob marked Completed).
+        // Reporting it local-ready would make the queue treat unplayable bytes as sleep-safe.
+        var completedUndersized = downloadCompleted &&
+            bytesDownloaded >= 0 &&
+            bytesDownloaded < AudioCacheKeyHelper.MinPlayableAudioBytes;
+        if (completedUndersized && _rejectedUndersizedDownloads.TryAdd(stableCacheKey, 0))
+        {
+            _logger.LogWarning(
+                "Media3 completed download is too small to be playable audio; removing it and treating the song as not cached. SongId={SongId}; StableCacheKey={StableCacheKey}; BytesDownloaded={BytesDownloaded}; MinPlayableAudioBytes={MinPlayableAudioBytes}",
+                song.Id,
+                stableCacheKey,
+                bytesDownloaded,
+                AudioCacheKeyHelper.MinPlayableAudioBytes);
+            _ = AndroidMedia3CacheProvider.RemoveDownloadAsync(_context, stableCacheKey);
+        }
+
+        var isReady = downloadCompleted && !completedUndersized && IsCacheFullyLocal(stableCacheKey, download, cache);
+        if (downloadCompleted && !completedUndersized && !isReady)
         {
             _logger.LogWarning(
                 "Media3 download index reports completed content, but local cache spans are incomplete. SongId={SongId}; StableCacheKey={StableCacheKey}; BytesDownloaded={BytesDownloaded}; ContentLength={ContentLength}",
@@ -146,6 +166,17 @@ public sealed class AndroidMedia3AudioCacheService : IAudioCacheService
                 song.Id,
                 stableCacheKey,
                 SanitizeMediaUri(status.LocalPlaybackUri));
+            return status;
+        }
+
+        // A key rejected as undersized this session would just download the same junk bytes
+        // again; retry at most once per app launch so a server-side fix heals on next start.
+        if (_rejectedUndersizedDownloads.ContainsKey(stableCacheKey))
+        {
+            _logger.LogDebug(
+                "Media3 cache ensure skipped because this download was rejected as undersized earlier in this session. SongId={SongId}; StableCacheKey={StableCacheKey}",
+                song.Id,
+                stableCacheKey);
             return status;
         }
 
