@@ -20,6 +20,31 @@ public class CoalescedUiUpdateSchedulerTests
     }
 
     [Test]
+    public void ApplyThatThrows_DoesNotWedgeScheduler_NextRequestStillDispatches()
+    {
+        var dispatched = new Queue<Action>();
+        var applied = new List<int>();
+        var scheduler = new CoalescedUiUpdateScheduler(dispatched.Enqueue, updates =>
+        {
+            applied.Add(updates);
+            if (updates == 1)
+            {
+                throw new InvalidOperationException("boom");
+            }
+        });
+
+        scheduler.Request(1);
+        Assert.That(() => dispatched.Dequeue()(), Throws.InvalidOperationException);
+
+        // A single failed apply must not leave the dispatch flag stuck; the next request dispatches.
+        scheduler.Request(2);
+        Assert.That(dispatched, Has.Count.EqualTo(1));
+        dispatched.Dequeue()();
+
+        Assert.That(applied, Is.EqualTo(new[] { 1, 2 }));
+    }
+
+    [Test]
     public void RequestDuringApply_IsScheduledForNextDispatch()
     {
         var dispatched = new Queue<Action>();

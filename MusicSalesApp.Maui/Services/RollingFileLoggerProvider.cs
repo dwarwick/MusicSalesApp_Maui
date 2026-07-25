@@ -9,6 +9,9 @@ public sealed class RollingFileLoggerProvider : ILoggerProvider, IAsyncDisposabl
     internal const int QueueCapacity = 1024;
     internal const int MaximumBatchSize = 64;
     internal static readonly TimeSpan MaximumBatchDelay = TimeSpan.FromMilliseconds(250);
+    // Bounded window the synchronous Dispose() waits for the writer to drain buffered entries,
+    // so the final log lines before shutdown/crash reach disk without blocking teardown for long.
+    internal static readonly TimeSpan DisposeDrainTimeout = TimeSpan.FromMilliseconds(750);
 
     private readonly RollingFileLoggerOptions _options;
     private readonly ConcurrentDictionary<string, RollingFileLogger> _loggers = new(StringComparer.OrdinalIgnoreCase);
@@ -54,6 +57,17 @@ public sealed class RollingFileLoggerProvider : ILoggerProvider, IAsyncDisposabl
     public void Dispose()
     {
         RequestDispose();
+        try
+        {
+            // Drain buffered entries before returning so shutdown/crash diagnostics aren't lost.
+            // Bounded so a stuck writer can never hang application teardown.
+            _writerTask.Wait(DisposeDrainTimeout);
+        }
+        catch
+        {
+            // Logger teardown must never throw during shutdown.
+        }
+
         GC.SuppressFinalize(this);
     }
 

@@ -8,6 +8,9 @@ public sealed class PlaybackFailureNotificationCoordinator : IDisposable
     internal const string UnplayableTrackSkippedMessage =
         "Skipped a song that can't be played.";
 
+    internal const string UnexpectedErrorMessage =
+        "Something went wrong starting playback. Please try again.";
+
     private static readonly TimeSpan DuplicateFailureWindow = TimeSpan.FromSeconds(2);
     private readonly IPlaybackService _playbackService;
     private readonly IToastService _toastService;
@@ -15,6 +18,7 @@ public sealed class PlaybackFailureNotificationCoordinator : IDisposable
     private readonly object _sync = new();
     private DateTimeOffset _lastUnavailableOfflineNotification = DateTimeOffset.MinValue;
     private DateTimeOffset _lastUnplayableTrackSkippedNotification = DateTimeOffset.MinValue;
+    private DateTimeOffset _lastUnexpectedErrorNotification = DateTimeOffset.MinValue;
     private bool _disposed;
 
     public PlaybackFailureNotificationCoordinator(
@@ -46,6 +50,11 @@ public sealed class PlaybackFailureNotificationCoordinator : IDisposable
             ShouldNotify(ref _lastUnplayableTrackSkippedNotification))
         {
             _ = ShowToastAsync(UnplayableTrackSkippedMessage);
+        }
+        else if (args.Reason == PlaybackRequestFailureReason.UnexpectedError &&
+            ShouldNotify(ref _lastUnexpectedErrorNotification))
+        {
+            _ = ShowToastAsync(UnexpectedErrorMessage);
         }
     }
 

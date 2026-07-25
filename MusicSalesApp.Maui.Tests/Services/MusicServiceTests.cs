@@ -54,13 +54,16 @@ public class MusicServiceTests
         return handler;
     }
 
-    private MusicService CreateService(TimeSpan? pendingStreamRetryInterval = null) => new(
+    private MusicService CreateService(
+        TimeSpan? pendingStreamRetryInterval = null,
+        TimeSpan? songsRequestTimeout = null) => new(
         _mockFactory.Object,
         _mockAppSettingsService.Object,
         _preferenceStore,
         _connectivity,
         _mockLogger.Object,
-        pendingStreamRetryInterval);
+        pendingStreamRetryInterval,
+        songsRequestTimeout);
 
     private static async Task WaitForAsync(Func<bool> condition)
     {
@@ -194,6 +197,35 @@ public class MusicServiceTests
 
         Assert.CatchAsync<OperationCanceledException>(async () => await requestTask);
         Assert.That(service.LastSongsError, Is.Null);
+    }
+
+    [Test]
+    public async Task GetSongsAsync_WhenBodyStalls_TimesOutAndReturnsEmptyWithoutHanging()
+    {
+        // Headers arrive but the body never completes (ResponseHeadersRead leaves the body read
+        // outside HttpClient.Timeout). The explicit songs-request timeout must abort it.
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StreamContent(new NeverEndingStream())
+            });
+        CreateMockHttpClient(handler.Object);
+        var service = CreateService(songsRequestTimeout: TimeSpan.FromMilliseconds(200));
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var result = await service.GetSongsAsync();
+        stopwatch.Stop();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Is.Empty);
+            Assert.That(stopwatch.Elapsed, Is.LessThan(TimeSpan.FromSeconds(5)));
+            Assert.That(service.LastSongsError, Is.Not.Null);
+        });
     }
 
     [Test]
@@ -967,6 +999,34 @@ sealed class CancellationAwareHandler : HttpMessageHandler
         await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
         return new HttpResponseMessage(HttpStatusCode.OK);
     }
+}
+
+sealed class NeverEndingStream : Stream
+{
+    public override bool CanRead => true;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => throw new NotSupportedException();
+    public override long Position { get => 0; set => throw new NotSupportedException(); }
+
+    public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+    {
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        return 0;
+    }
+
+    public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        => ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+    public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+    public override void Flush() { }
+
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+    public override void SetLength(long value) => throw new NotSupportedException();
+
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 }
 
 sealed class InMemoryPreferenceStore : IAppPreferenceStore

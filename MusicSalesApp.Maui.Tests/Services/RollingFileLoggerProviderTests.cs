@@ -186,18 +186,33 @@ public class RollingFileLoggerProviderTests
     }
 
     [Test]
-    public async Task Dispose_DoesNotSynchronouslyWaitForBlockedWriter()
+    public void Dispose_FlushesBufferedEntriesToSink()
+    {
+        var sink = new RecordingLogSink();
+        var provider = new RollingFileLoggerProvider(CreateOptions(), sink);
+        provider.CreateLogger("TestCategory").LogInformation("shutdown-diagnostic");
+
+        // Synchronous Dispose must drain buffered entries so the final pre-shutdown/crash
+        // diagnostics reach the sink rather than being lost.
+        provider.Dispose();
+
+        Assert.That(sink.Lines.Any(line => line.Contains("shutdown-diagnostic", StringComparison.Ordinal)), Is.True);
+    }
+
+    [Test]
+    public async Task Dispose_StaysBoundedWhenWriterIsBlocked()
     {
         var sink = new RecordingLogSink { BlockWrites = true };
         var provider = new RollingFileLoggerProvider(CreateOptions(), sink);
         provider.CreateLogger("TestCategory").LogInformation("blocked");
         await sink.WriteStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
+        // A stuck writer must never hang teardown: Dispose caps its drain wait.
         var stopwatch = Stopwatch.StartNew();
         provider.Dispose();
         stopwatch.Stop();
 
-        Assert.That(stopwatch.Elapsed, Is.LessThan(TimeSpan.FromMilliseconds(100)));
+        Assert.That(stopwatch.Elapsed, Is.LessThan(TimeSpan.FromSeconds(3)));
         sink.ReleaseWrites();
         await provider.DisposeAsync();
     }

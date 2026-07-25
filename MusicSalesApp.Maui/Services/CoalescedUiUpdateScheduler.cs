@@ -45,16 +45,23 @@ internal sealed class CoalescedUiUpdateScheduler
 
     private void Drain()
     {
-        var updates = Interlocked.Exchange(ref _pendingUpdates, 0);
-        if (updates != 0)
+        try
         {
-            _apply(updates);
+            var updates = Interlocked.Exchange(ref _pendingUpdates, 0);
+            if (updates != 0)
+            {
+                _apply(updates);
+            }
         }
-
-        Interlocked.Exchange(ref _dispatchScheduled, 0);
-        if (Volatile.Read(ref _pendingUpdates) != 0)
+        finally
         {
-            TrySchedule();
+            // Always clear the pending-dispatch flag, even if _apply throws, so a single
+            // failed update can't wedge the scheduler and freeze all future UI updates.
+            Interlocked.Exchange(ref _dispatchScheduled, 0);
+            if (Volatile.Read(ref _pendingUpdates) != 0)
+            {
+                TrySchedule();
+            }
         }
     }
 }

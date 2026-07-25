@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
+using Microsoft.Maui.ApplicationModel;
 using MusicSalesApp.Common.Helpers;
 using MusicSalesApp.Maui.ViewModels;
 #if IOS
@@ -118,8 +119,11 @@ public class PlaybackService : IPlaybackService
     private int _bufferingStallRecoveryGeneration;
     private PlaybackRuntimeState? _lastObservedPlaybackRuntimeState;
 
-    // Map MediaItem URL -> SongDto for auto-advance detection via MediaItemChanged
+    // Map MediaItem URL -> SongDto for auto-advance detection via MediaItemChanged.
+    // Queue builds mutate this on thread-pool continuations (ConfigureAwait(false)) while
+    // MediaItemChanged reads it on the main thread, so all access is guarded by _urlToSongSync.
     private readonly Dictionary<string, SongDto> _urlToSong = new();
+    private readonly object _urlToSongSync = new();
     private readonly ConcurrentDictionary<int, TrackCacheStatus> _cacheStatusSnapshot = new();
 
     public PlaybackService(
@@ -284,7 +288,34 @@ public class PlaybackService : IPlaybackService
 
     public void PlaySong(SongDto song)
     {
-        _ = PlaySongAsync(song);
+        StartPlaybackRequest(() => PlaySongAsync(song), song, "PlaySong");
+    }
+
+    // Launches a user-initiated playback request without blocking the caller, while ensuring the
+    // discarded task's failures are observed: a non-cancellation exception is logged and surfaced
+    // as PlaybackRequestFailed(UnexpectedError) instead of vanishing as an unobserved task fault.
+    private void StartPlaybackRequest(Func<Task> operation, SongDto? song, string description)
+    {
+        _ = RunGuardedPlaybackRequestAsync(operation, song, description);
+    }
+
+    private async Task RunGuardedPlaybackRequestAsync(Func<Task> operation, SongDto? song, string description)
+    {
+        try
+        {
+            await operation().ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Request was superseded/cancelled — expected, not a failure.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "{Description} failed unexpectedly. SongId={SongId}", description, song?.Id);
+            PlaybackRequestFailed?.Invoke(
+                this,
+                new PlaybackRequestFailedEventArgs(song?.Id ?? 0, PlaybackRequestFailureReason.UnexpectedError));
+        }
     }
 
     private async Task PlaySongAsync(SongDto song)
@@ -301,6 +332,11 @@ public class PlaybackService : IPlaybackService
             LogPlaybackSnapshot("PlaySong paused current song", song, null);
             return;
         }
+
+        // Cancel any pending playlist-advance BEFORE starting the request and awaiting the
+        // cache lookup. If an advance timer fires during the await it would bump the request
+        // generation and cause this tap to be silently dropped by IsPlaybackRequestCurrent.
+        CancelPendingPlaylistAdvance();
 
         var isSameSong = CurrentSong?.Id == song.Id;
         var requestGeneration = BeginPlaybackRequest();
@@ -335,8 +371,6 @@ public class PlaybackService : IPlaybackService
             PublishUnavailableOffline(song);
             return;
         }
-
-        CancelPendingPlaylistAdvance();
 
         // Reset stream tracking for the new song
         ResetStreamTracking(song.Id);
@@ -561,7 +595,13 @@ public class PlaybackService : IPlaybackService
 
     public void SetPlaylist(List<SongDto> songs, int startIndex, PlaybackQueueStartBehavior startBehavior, string queueSourceDescription)
     {
-        _ = SetPlaylistAsync(songs, startIndex, startBehavior, queueSourceDescription);
+        var selectedSong = songs.Count > 0
+            ? songs[Math.Clamp(startIndex, 0, songs.Count - 1)]
+            : null;
+        StartPlaybackRequest(
+            () => SetPlaylistAsync(songs, startIndex, startBehavior, queueSourceDescription),
+            selectedSong,
+            "SetPlaylist");
     }
 
     private async Task SetPlaylistAsync(
@@ -628,7 +668,11 @@ public class PlaybackService : IPlaybackService
         }
 
         _cacheStatusSnapshot[selectedSong.Id] = selectedCacheStatus;
-        if (!CanStartRequestedSong(selectedSong, selectedCacheStatus))
+        // Only gate on offline availability when the caller actually intends to START this song.
+        // Preserve-current-song calls (e.g. filter-driven SynchronizeVisibleQueue) merely reorder
+        // the queue around the already-playing track, so they must not abort or emit a
+        // "not downloaded" toast when that track happens to be a remote stream while offline.
+        if (!shouldPreserveCurrentSong && !CanStartRequestedSong(selectedSong, selectedCacheStatus))
         {
             PublishUnavailableOffline(selectedSong);
             return;
@@ -2768,6 +2812,15 @@ public class PlaybackService : IPlaybackService
                 : result.FailureReason.HasValue
                     ? PlaybackPreparationState.WaitingForNetwork
                     : PlaybackPreparationState.Preparing;
+
+            // Refresh the cache-status snapshot from ground truth now that preparation has
+            // downloaded/warmed content. Otherwise IsTrackLocalReady keeps trusting the pre-
+            // preparation statuses and can treat a now-cached track as remote-only (entering
+            // WaitingForPreparedMedia) or a no-longer-available track as sleep-safe.
+            if (!cancellationSource.IsCancellationRequested)
+            {
+                await ResolveQueueCacheStatusesAsync(queueSnapshot, cancellationSource.Token).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException) when (cancellationSource.IsCancellationRequested)
         {
@@ -2880,7 +2933,7 @@ public class PlaybackService : IPlaybackService
                 CreatePlaybackSnapshot(CurrentSong, null));
             return;
         }
-        _urlToSong.Clear();
+        ClearSongPlaybackUriMap();
         var items = playlistSnapshot.Select((song, index) =>
         {
             var cacheStatus = cacheStatuses[song.Id];
@@ -3038,7 +3091,7 @@ public class PlaybackService : IPlaybackService
             return;
         }
 
-        _urlToSong.Clear();
+        ClearSongPlaybackUriMap();
         var items = playlistSnapshot
             .Select(song =>
             {
@@ -3191,7 +3244,7 @@ public class PlaybackService : IPlaybackService
     {
         try
         {
-            _urlToSong.Clear();
+            ClearSongPlaybackUriMap();
             var mediaItem = CreateMediaItem(song, cacheStatus, ResolveImmediatePlaybackUri(song, cacheStatus));
 
             if (!IsPlaybackRequestCurrent(requestGeneration) || CurrentSong?.Id != song.Id)
@@ -3371,14 +3424,33 @@ public class PlaybackService : IPlaybackService
 
     private void RegisterSongPlaybackUri(SongDto song, string playbackUri)
     {
-        if (!string.IsNullOrWhiteSpace(song.StreamUrl))
+        lock (_urlToSongSync)
         {
-            _urlToSong[song.StreamUrl] = song;
-        }
+            if (!string.IsNullOrWhiteSpace(song.StreamUrl))
+            {
+                _urlToSong[song.StreamUrl] = song;
+            }
 
-        if (!string.IsNullOrWhiteSpace(playbackUri))
+            if (!string.IsNullOrWhiteSpace(playbackUri))
+            {
+                _urlToSong[playbackUri] = song;
+            }
+        }
+    }
+
+    private void ClearSongPlaybackUriMap()
+    {
+        lock (_urlToSongSync)
         {
-            _urlToSong[playbackUri] = song;
+            _urlToSong.Clear();
+        }
+    }
+
+    private int SongPlaybackUriMapCount()
+    {
+        lock (_urlToSongSync)
+        {
+            return _urlToSong.Count;
         }
     }
 
@@ -3592,14 +3664,24 @@ public class PlaybackService : IPlaybackService
 
     private bool TryResolveSongFromMediaItem(PlaybackMediaItem mediaItem, out SongDto song, out int? playlistIndex)
     {
-        if (!string.IsNullOrWhiteSpace(mediaItem.MediaUri) && _urlToSong.TryGetValue(mediaItem.MediaUri, out song!))
+        SongDto? resolved = null;
+        if (!string.IsNullOrWhiteSpace(mediaItem.MediaUri))
         {
+            lock (_urlToSongSync)
+            {
+                _urlToSong.TryGetValue(mediaItem.MediaUri, out resolved);
+            }
+        }
+
+        if (resolved != null)
+        {
+            song = resolved;
             playlistIndex = ResolvePlaylistIndex(song.Id);
             _logger.LogInformation(
                 "TryResolveSongFromMediaItem resolved from URL map. ResolvedSongId={ResolvedSongId}; PlaylistIndex={PlaylistIndex}; UrlMapCount={UrlMapCount}; MediaItem={MediaItem}; {Snapshot}",
                 song.Id,
                 playlistIndex,
-                _urlToSong.Count,
+                SongPlaybackUriMapCount(),
                 DescribeMediaItem(mediaItem),
                 CreatePlaybackSnapshot(CurrentSong, mediaItem));
             return true;
@@ -3740,7 +3822,7 @@ public class PlaybackService : IPlaybackService
                $"Position={_playbackPosition:c}; " +
                $"Duration={_playbackDuration:c}; " +
                $"AdvanceGeneration={_playlistAdvanceGeneration}; " +
-               $"UrlMapCount={_urlToSong.Count}; " +
+               $"UrlMapCount={SongPlaybackUriMapCount()}; " +
                $"AppPlaylist={DescribePlaylistForLog()}; " +
                queueInfo;
     }
@@ -4075,6 +4157,30 @@ public class PlaybackService : IPlaybackService
 
     private void RaiseStateChanged(string propertyName)
     {
-        StateChanged?.Invoke(propertyName);
+        var handler = StateChanged;
+        if (handler == null)
+        {
+            return;
+        }
+
+        // State mutations can complete on a thread-pool thread (async cache continuations use
+        // ConfigureAwait(false)), but subscribers set XAML-bound properties directly, so the
+        // notification must be delivered on the main thread. The single main-thread queue also
+        // preserves the order in which property changes were raised.
+        try
+        {
+            if (MainThread.IsMainThread)
+            {
+                handler(propertyName);
+                return;
+            }
+
+            MainThread.BeginInvokeOnMainThread(() => handler(propertyName));
+        }
+        catch (Exception ex) when (ex is NotImplementedException || ex.GetType().Name == "NotImplementedInReferenceAssemblyException")
+        {
+            // Reference-assembly (unit-test) environment: no MAUI main thread — invoke inline.
+            handler(propertyName);
+        }
     }
 }

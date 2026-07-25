@@ -81,7 +81,11 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
 
     public PlaybackRepeatMode RepeatMode
     {
-        get => _repeatMode;
+        // Read from the native player once initialized so changes made directly on it (media-session
+        // controllers, Android Auto/Bluetooth) are reflected; the field is only the pre-init buffer.
+        get => ReadPlayer(
+            player => player.RepeatMode == RepeatModeAll ? PlaybackRepeatMode.All : PlaybackRepeatMode.Off,
+            _repeatMode);
         set
         {
             _repeatMode = value;
@@ -92,7 +96,9 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
 
     public PlaybackShuffleMode ShuffleMode
     {
-        get => _shuffleMode;
+        get => ReadPlayer(
+            player => player.ShuffleModeEnabled ? PlaybackShuffleMode.All : PlaybackShuffleMode.Off,
+            _shuffleMode);
         set
         {
             _shuffleMode = value;

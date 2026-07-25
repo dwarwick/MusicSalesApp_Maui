@@ -128,6 +128,31 @@ public class MusicLibraryViewModelTests
     }
 
     [Test]
+    public async Task LoadSongsAsync_WhenCacheStatusScanThrows_StillLoadsLibraryWithoutError()
+    {
+        var songs = new List<SongDto>
+        {
+            new() { Id = 1, SongTitle = "Song One" },
+            new() { Id = 2, SongTitle = "Song Two" }
+        };
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
+        _mockAudioCacheService
+            .Setup(service => service.GetCacheStatusesAsync(
+                It.IsAny<IReadOnlyList<SongDto>>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("cache faulted"));
+
+        // A faulted downloaded-status scan must not abort the library load (or throw out of the command).
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.Songs, Has.Count.EqualTo(2));
+            Assert.That(_viewModel.ErrorMessage, Is.Null.Or.Empty);
+        });
+    }
+
+    [Test]
     public async Task LoadSongsAsync_SetsErrorMessageFromMusicService_WhenSongsRequestFails()
     {
         _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync([]);

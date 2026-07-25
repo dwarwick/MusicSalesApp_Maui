@@ -2680,6 +2680,56 @@ public class PlaybackServiceTests
     }
 
     [Test]
+    public void SetPlaylist_PreserveCurrentSong_WhenOfflineAndCurrentUncached_UpdatesQueueWithoutFailure()
+    {
+        var currentSong = new SongDto { Id = 2, SongTitle = "Now Playing", ArtistName = "Artist", Genre = "Rock", StreamUrl = "https://test.com/song2.mp3" };
+        _service.PlaySong(currentSong);
+        Assert.That(_service.IsPlaying, Is.True);
+        _mockMediaManager.Invocations.Clear();
+
+        PlaybackRequestFailedEventArgs? failure = null;
+        _service.PlaybackRequestFailed += (_, args) => failure = args;
+        _isOffline = true;
+
+        var pageSongs = new List<SongDto>
+        {
+            new() { Id = 5, SongTitle = "Other", ArtistName = "Artist 5", Genre = "Rock", StreamUrl = "https://test.com/song5.mp3" },
+            new() { Id = 2, SongTitle = "Now Playing On Page", ArtistName = "Artist", Genre = "Rock", StreamUrl = "https://test.com/song2.mp3" }
+        };
+
+        // Preserve-path queue sync (e.g. filter change) must not gate on the current song's offline
+        // cache state: no UnavailableOffline failure, no toast, and the visible queue still updates.
+        _service.SetPlaylist(pageSongs, 0, PlaybackQueueStartBehavior.PreserveCurrentSongIfPresent);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(failure, Is.Null);
+            Assert.That(_service.Playlist?.Select(song => song.Id), Is.EqualTo(new[] { 5, 2 }));
+            Assert.That(_service.CurrentSong?.Id, Is.EqualTo(2));
+            Assert.That(_service.IsPlaying, Is.True);
+        });
+    }
+
+    [Test]
+    public void PlaySong_WhenCacheStatusThrows_RaisesUnexpectedErrorFailureInsteadOfVanishing()
+    {
+        var song = new SongDto { Id = 340, SongTitle = "Boom", ArtistName = "Artist", Genre = "Rock", StreamUrl = "https://test.com/song340.mp3" };
+        _mockAudioCacheService
+            .Setup(s => s.GetCacheStatusAsync(song, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("cache exploded"));
+        PlaybackRequestFailedEventArgs? failure = null;
+        _service.PlaybackRequestFailed += (_, args) => failure = args;
+
+        _service.PlaySong(song);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(failure?.Reason, Is.EqualTo(PlaybackRequestFailureReason.UnexpectedError));
+            Assert.That(failure?.SongId, Is.EqualTo(song.Id));
+        });
+    }
+
+    [Test]
     public void PlaySong_WhenUncachedAndOnline_StartsRemotePlayback()
     {
         var song = new SongDto { Id = 334, SongTitle = "Online", StreamUrl = "https://test.com/song334.mp3" };

@@ -13,6 +13,10 @@ public class MusicService : IMusicService
     private const string PendingStreamRecordsPreferenceKey = "pending_stream_records_v1";
     private const int MaxPendingStreamRecords = 1000;
     private static readonly TimeSpan DefaultPendingStreamRetryInterval = TimeSpan.FromSeconds(15);
+    // With HttpCompletionOption.ResponseHeadersRead, HttpClient.Timeout only covers the headers,
+    // not the streamed body/deserialize. This explicit timeout guards the whole operation so a
+    // stalled body read can't hang the songs load forever when the caller passes no token.
+    private static readonly TimeSpan DefaultSongsRequestTimeout = TimeSpan.FromSeconds(100);
     private static readonly JsonSerializerOptions SongsSerializerOptions = new(JsonSerializerDefaults.Web);
     private static readonly JsonSerializerOptions PendingStreamRecordsSerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly IHttpClientFactory _httpClientFactory;
@@ -22,6 +26,7 @@ public class MusicService : IMusicService
     private readonly ILogger<MusicService> _logger;
     private readonly SemaphoreSlim _pendingStreamFlushLock = new(1, 1);
     private readonly TimeSpan _pendingStreamRetryInterval;
+    private readonly TimeSpan _songsRequestTimeout;
     private readonly object _pendingStreamRetryLoopLock = new();
     private Task? _pendingStreamRetryLoopTask;
 
@@ -35,7 +40,8 @@ public class MusicService : IMusicService
         IAppPreferenceStore appPreferenceStore,
         IConnectivity connectivity,
         ILogger<MusicService> logger,
-        TimeSpan? pendingStreamRetryInterval = null)
+        TimeSpan? pendingStreamRetryInterval = null,
+        TimeSpan? songsRequestTimeout = null)
     {
         _httpClientFactory = httpClientFactory;
         _appSettingsService = appSettingsService;
@@ -43,6 +49,7 @@ public class MusicService : IMusicService
         _connectivity = connectivity;
         _logger = logger;
         _pendingStreamRetryInterval = pendingStreamRetryInterval ?? DefaultPendingStreamRetryInterval;
+        _songsRequestTimeout = songsRequestTimeout ?? DefaultSongsRequestTimeout;
 
         _connectivity.ConnectivityChanged += OnConnectivityChanged;
 
@@ -57,18 +64,24 @@ public class MusicService : IMusicService
         var client = _httpClientFactory.CreateClient("MusicSalesApi");
         LastSongsError = null;
 
+        // Linked timeout covering the entire request — headers, body stream, and deserialize —
+        // because ResponseHeadersRead leaves the body read outside HttpClient.Timeout.
+        using var timeoutCts = new CancellationTokenSource(_songsRequestTimeout);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+        var requestToken = linkedCts.Token;
+
         try
         {
             using var response = await client.GetAsync(
                     SongsRequestPath,
                     HttpCompletionOption.ResponseHeadersRead,
-                    cancellationToken)
+                    requestToken)
                 .ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {
                 var responseBody = await response.Content
-                    .ReadAsStringAsync(cancellationToken)
+                    .ReadAsStringAsync(requestToken)
                     .ConfigureAwait(false);
                 LastSongsError = ApiErrorMessageFormatter.FormatRequestFailure(
                     client.BaseAddress,
@@ -88,7 +101,7 @@ public class MusicService : IMusicService
             try
             {
                 await using var responseStream = await response.Content
-                    .ReadAsStreamAsync(cancellationToken)
+                    .ReadAsStreamAsync(requestToken)
                     .ConfigureAwait(false);
 
                 // Even an in-memory/cached response must not deserialize a large catalog on the UI thread.
@@ -96,9 +109,9 @@ public class MusicService : IMusicService
                         async () => await JsonSerializer.DeserializeAsync<List<SongDto>>(
                                 responseStream,
                                 SongsSerializerOptions,
-                                cancellationToken)
+                                requestToken)
                             .ConfigureAwait(false) ?? [],
-                        cancellationToken)
+                        requestToken)
                     .ConfigureAwait(false);
             }
             catch (JsonException ex)

@@ -61,49 +61,81 @@ internal static class AndroidMedia3PlaybackRegistry
         }
     }
 
+    // Synchronous session creation for MediaSessionService.OnGetSession, which runs on the main
+    // thread and must return a non-null session immediately (Media3 rejects a null result). We
+    // can't block on the async path there — it marshals back to the main thread and would
+    // deadlock — so build directly on the current (main) thread using the synchronous cache.
+    public static MediaSession GetOrCreateMediaSessionSync(Context context)
+    {
+        var applicationContext = context.ApplicationContext ?? context;
+        var player = CreateOrGetPlayerCore(applicationContext);
+        lock (Sync)
+        {
+            if (_mediaSession != null)
+            {
+                return _mediaSession;
+            }
+
+            _mediaSession = new MediaSession.Builder(applicationContext, player)
+                .Build()
+                ?? throw new InvalidOperationException("Media3 MediaSession.Builder returned null.");
+            _mediaSessionInitializationTask = Task.FromResult(_mediaSession);
+            return _mediaSession;
+        }
+    }
+
     private static async Task<IExoPlayer> InitializePlayerAsync(Context context)
     {
         await AndroidMedia3CacheProvider.GetCacheAsync(context).ConfigureAwait(false);
-        return await MainThread.InvokeOnMainThreadAsync(() =>
-        {
-            lock (Sync)
-            {
-                if (_player != null && !_player.IsReleased)
-                {
-                    return _player;
-                }
-
-                AndroidMedia3CacheProvider.EnsureNotificationChannels(context);
-                var builder = new ExoPlayerBuilder(context);
-                builder.SetMediaSourceFactory(AndroidMedia3CacheProvider.GetMediaSourceFactory(context));
-                builder.SetHandleAudioBecomingNoisy(true);
-
-                _player = builder.Build()
-                    ?? throw new InvalidOperationException("Media3 ExoPlayerBuilder returned null.");
-                _player.SetWakeMode(C.WakeModeNetwork);
-                return _player;
-            }
-        });
+        return await MainThread.InvokeOnMainThreadAsync(() => CreateOrGetPlayerCore(context));
     }
 
     private static async Task<MediaSession> InitializeMediaSessionAsync(Context context)
     {
         var player = await GetOrCreatePlayerAsync(context).ConfigureAwait(false);
-        return await MainThread.InvokeOnMainThreadAsync(() =>
-        {
-            lock (Sync)
-            {
-                if (_mediaSession != null)
-                {
-                    return _mediaSession;
-                }
+        return await MainThread.InvokeOnMainThreadAsync(() => CreateOrGetMediaSessionCore(context, player));
+    }
 
-                _mediaSession = new MediaSession.Builder(context, player)
-                    .Build()
-                    ?? throw new InvalidOperationException("Media3 MediaSession.Builder returned null.");
+    // Builds (or returns) the shared player. MUST be called on the main thread — the native
+    // ExoPlayer builder and SimpleCache access require it.
+    private static IExoPlayer CreateOrGetPlayerCore(Context context)
+    {
+        lock (Sync)
+        {
+            if (_player != null && !_player.IsReleased)
+            {
+                return _player;
+            }
+
+            AndroidMedia3CacheProvider.EnsureNotificationChannels(context);
+            var builder = new ExoPlayerBuilder(context);
+            builder.SetMediaSourceFactory(AndroidMedia3CacheProvider.GetMediaSourceFactory(context));
+            builder.SetHandleAudioBecomingNoisy(true);
+
+            _player = builder.Build()
+                ?? throw new InvalidOperationException("Media3 ExoPlayerBuilder returned null.");
+            _player.SetWakeMode(C.WakeModeNetwork);
+            _playerInitializationTask = Task.FromResult(_player);
+            return _player;
+        }
+    }
+
+    // Builds (or returns) the shared media session. MUST be called on the main thread.
+    private static MediaSession CreateOrGetMediaSessionCore(Context context, IExoPlayer player)
+    {
+        lock (Sync)
+        {
+            if (_mediaSession != null)
+            {
                 return _mediaSession;
             }
-        });
+
+            _mediaSession = new MediaSession.Builder(context, player)
+                .Build()
+                ?? throw new InvalidOperationException("Media3 MediaSession.Builder returned null.");
+            _mediaSessionInitializationTask = Task.FromResult(_mediaSession);
+            return _mediaSession;
+        }
     }
 
     public static void ReleaseMediaSession()

@@ -99,7 +99,7 @@ public sealed class AndroidMedia3AudioCacheService : IAudioCacheService
                 stableCacheKey,
                 bytesDownloaded,
                 AudioCacheKeyHelper.MinPlayableAudioBytes);
-            _ = AndroidMedia3CacheProvider.RemoveDownloadAsync(_context, stableCacheKey);
+            _ = RemovePoisonedUndersizedDownloadAsync(song.Id, stableCacheKey);
         }
 
         var isReady = downloadCompleted && !completedUndersized && IsCacheFullyLocal(stableCacheKey, download, cache);
@@ -249,7 +249,39 @@ public sealed class AndroidMedia3AudioCacheService : IAudioCacheService
                 continue;
             }
 
-            _ = AndroidMedia3CacheProvider.RemoveDownloadAsync(_context, stableCacheKey);
+            _ = RemoveDownloadObservingFaultsAsync(stableCacheKey);
+        }
+    }
+
+    // Removes a poisoned undersized download and, only on failure, rolls back the session
+    // rejection memo so a later status check retries removal instead of permanently stranding
+    // the junk entry (never removed) while also refusing to re-download it.
+    private async Task RemovePoisonedUndersizedDownloadAsync(int songId, string stableCacheKey)
+    {
+        try
+        {
+            await AndroidMedia3CacheProvider.RemoveDownloadAsync(_context, stableCacheKey).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _rejectedUndersizedDownloads.TryRemove(stableCacheKey, out _);
+            _logger.LogWarning(
+                ex,
+                "Failed to remove poisoned undersized download; will retry on a later status check. SongId={SongId}; StableCacheKey={StableCacheKey}",
+                songId,
+                stableCacheKey);
+        }
+    }
+
+    private async Task RemoveDownloadObservingFaultsAsync(string stableCacheKey)
+    {
+        try
+        {
+            await AndroidMedia3CacheProvider.RemoveDownloadAsync(_context, stableCacheKey).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to remove unpinned cached content. StableCacheKey={StableCacheKey}", stableCacheKey);
         }
     }
 

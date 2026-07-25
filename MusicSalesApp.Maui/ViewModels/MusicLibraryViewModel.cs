@@ -836,14 +836,25 @@ public partial class MusicLibraryViewModel : ObservableObject
             return;
         }
 
-        var statuses = await _audioCacheService.GetCacheStatusesAsync(_allSongs.ToList());
-        _downloadedSongIds.Clear();
-        foreach (var status in statuses.Values)
+        try
         {
-            if (status.IsLocalReady)
+            var statuses = await _audioCacheService.GetCacheStatusesAsync(_allSongs.ToList());
+            _downloadedSongIds.Clear();
+            foreach (var status in statuses.Values)
             {
-                _downloadedSongIds.Add(status.SongId);
+                if (status.IsLocalReady)
+                {
+                    _downloadedSongIds.Add(status.SongId);
+                }
             }
+        }
+        catch (Exception ex)
+        {
+            // A cache-status failure (e.g. a faulted Media3 cache) must not abort the library
+            // load or crash the Downloaded-filter command. Degrade to an empty downloaded set
+            // (the filter simply shows nothing as downloaded) rather than throwing.
+            _downloadedSongIds.Clear();
+            System.Diagnostics.Debug.WriteLine($"Failed to refresh downloaded song ids: {ex.Message}");
         }
     }
 

@@ -39,8 +39,8 @@
 		<ApplicationId>net.streamtunes.musicsalesapp.maui</ApplicationId>
 
 		<!-- Versions -->
-		<ApplicationDisplayVersion>1.0.91</ApplicationDisplayVersion>
-		<ApplicationVersion>91</ApplicationVersion>
+		<ApplicationDisplayVersion>1.0.92</ApplicationDisplayVersion>
+		<ApplicationVersion>92</ApplicationVersion>
 		<AndroidXMedia3Version>1.10.1.1</AndroidXMedia3Version>
 
 		<!-- To develop, package, and publish an app to the Microsoft Store, see: https://aka.ms/MauiTemplateUnpackaged -->

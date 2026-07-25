@@ -92,6 +92,39 @@ public class PlaybackFailureNotificationCoordinatorTests
     }
 
     [Test]
+    public void UnexpectedError_ShowsGenericMessage()
+    {
+        var playback = new Mock<IPlaybackService>();
+        var toast = new Mock<IToastService>();
+        toast.Setup(service => service.ShowAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        using var coordinator = new PlaybackFailureNotificationCoordinator(playback.Object, toast.Object);
+
+        RaiseUnexpectedError(playback, 42);
+
+        toast.Verify(service => service.ShowAsync(
+            PlaybackFailureNotificationCoordinator.UnexpectedErrorMessage,
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Test]
+    public void UnexpectedError_DoesNotShareDebounceWindowWithOtherReasons()
+    {
+        var playback = new Mock<IPlaybackService>();
+        var toast = new Mock<IToastService>();
+        toast.Setup(service => service.ShowAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 7, 20, 12, 0, 0, TimeSpan.Zero));
+        using var coordinator = new PlaybackFailureNotificationCoordinator(playback.Object, toast.Object, clock);
+
+        RaiseUnavailableOffline(playback, 1);
+        RaiseUnplayableTrackSkipped(playback, 2);
+        RaiseUnexpectedError(playback, 3);
+
+        toast.Verify(service => service.ShowAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(3));
+    }
+
+    [Test]
     public void Dispose_UnsubscribesFromPlaybackFailures()
     {
         var playback = new Mock<IPlaybackService>();
@@ -113,6 +146,11 @@ public class PlaybackFailureNotificationCoordinatorTests
         playback.Raise(service => service.PlaybackRequestFailed += null,
             playback.Object,
             new PlaybackRequestFailedEventArgs(songId, PlaybackRequestFailureReason.UnplayableTrackSkipped));
+
+    private static void RaiseUnexpectedError(Mock<IPlaybackService> playback, int songId) =>
+        playback.Raise(service => service.PlaybackRequestFailed += null,
+            playback.Object,
+            new PlaybackRequestFailedEventArgs(songId, PlaybackRequestFailureReason.UnexpectedError));
 
     private sealed class ManualTimeProvider(DateTimeOffset now) : TimeProvider
     {

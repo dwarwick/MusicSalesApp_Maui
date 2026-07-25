@@ -62,7 +62,15 @@ internal static class AndroidMedia3CacheProvider
                 return Task.FromResult(_cache);
             }
 
-            return _cacheInitializationTask ??= Task.Run(() => GetCache(context));
+            // Retry on fault/cancel rather than caching a broken task forever: a single
+            // transient SimpleCache construction failure must not permanently disable every
+            // cache/download/player path for the process lifetime.
+            if (_cacheInitializationTask is null or { IsFaulted: true } or { IsCanceled: true })
+            {
+                _cacheInitializationTask = Task.Run(() => GetCache(context));
+            }
+
+            return _cacheInitializationTask;
         }
     }
 

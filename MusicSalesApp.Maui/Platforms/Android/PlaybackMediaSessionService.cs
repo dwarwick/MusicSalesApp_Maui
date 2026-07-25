@@ -49,7 +49,36 @@ public sealed class PlaybackMediaSessionService : MediaSessionService
 
     public override MediaSession? OnGetSession(MediaSession.ControllerInfo? controllerInfo)
     {
-        return _mediaSession ?? AndroidMedia3PlaybackRegistry.TryGetMediaSession();
+        var existing = _mediaSession ?? AndroidMedia3PlaybackRegistry.TryGetMediaSession();
+        if (existing != null)
+        {
+            return existing;
+        }
+
+        if (_isStoppingOrDestroyed)
+        {
+            return null;
+        }
+
+        // System-initiated cold start (media button / Bluetooth / playback resumption): the async
+        // attach hasn't produced a session yet, and Media3 rejects the controller if we return null.
+        // Build synchronously on this (main) thread so headset/notification controls work immediately.
+        try
+        {
+            var session = AndroidMedia3PlaybackRegistry.GetOrCreateMediaSessionSync(this);
+            if (_mediaSession == null)
+            {
+                _mediaSession = session;
+                AddSession(session);
+            }
+
+            return _mediaSession;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Unable to synchronously create Media3 playback session: {ex}");
+            return null;
+        }
     }
 
     public override void OnDestroy()
