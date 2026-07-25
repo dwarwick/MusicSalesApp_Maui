@@ -95,7 +95,7 @@ public class PlaybackService : IPlaybackService
     private TimeSpan _playbackDuration;
 
     // Preview limit state
-    private const double PreviewLimitSeconds = 60.0;
+    private const double PreviewLimitSeconds = PreviewAccessPolicy.PreviewLimitSeconds;
     private const int MinPreviewInterval = 2;
     private const int MaxPreviewIntervalExclusive = 5;
     private int _previewEndCount;
@@ -1439,32 +1439,7 @@ public class PlaybackService : IPlaybackService
     }
 
     private bool ShouldLimitPreviewForSong(SongDto song)
-    {
-        if (song.DisplayOnHomePage)
-            return false;
-        if (HasPlaybackEntitlement())
-            return false;
-        if (_authService.IsCreator && song.CreatorUserId == _authService.UserId)
-            return false;
-        return true;
-    }
-
-    private bool HasPlaybackEntitlement()
-    {
-        if (!_authService.HasActiveSubscription)
-        {
-            return false;
-        }
-
-        if (string.Equals(_authService.SubscriptionStatus, SubscriptionStatuses.Cancelled, StringComparison.OrdinalIgnoreCase) &&
-            _authService.SubscriptionEndDate is { } endDate &&
-            endDate <= DateTime.UtcNow)
-        {
-            return false;
-        }
-
-        return true;
-    }
+        => PreviewAccessPolicy.ShouldLimitPreview(_authService, song);
 
     private void CheckPreviewLimit(TimeSpan position)
     {

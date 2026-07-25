@@ -139,11 +139,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     /// <summary>Show the empty-custom-playlist call-to-action when we've finished loading a user playlist that has no songs.</summary>
     public bool ShowEmptyPlaylistPrompt => IsUserPlaylist && !HasSongs && !IsLoading;
 
-    public bool IsCurrentTrackPreviewLimited =>
-        CurrentSong != null &&
-        !HasActiveSubscription &&
-        !CurrentSong.DisplayOnHomePage &&
-        !(_authService.IsCreator && CurrentSong.CreatorUserId == _authService.UserId);
+    public bool IsCurrentTrackPreviewLimited => PreviewAccessPolicy.ShouldLimitPreview(_authService, CurrentSong);
 
     partial void OnGenreNameChanged(string? value)
     {

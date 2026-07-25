@@ -468,6 +468,32 @@ public class AuthServiceTests
         Assert.That(_authService.IsValidatedUser, Is.False);
     }
 
+    [Test]
+    public void IsAdmin_WhenLoggedInWithAdminRole_ReturnsTrue()
+    {
+        SetBackingField(nameof(AuthService.IsLoggedIn), true);
+        SetBackingField(nameof(AuthService.Roles), new List<string> { Roles.User, Roles.Admin });
+
+        Assert.That(_authService.IsAdmin, Is.True);
+    }
+
+    [Test]
+    public void IsAdmin_WhenAdminRoleMissing_ReturnsFalse()
+    {
+        SetBackingField(nameof(AuthService.IsLoggedIn), true);
+        SetBackingField(nameof(AuthService.Roles), new List<string> { Roles.User });
+
+        Assert.That(_authService.IsAdmin, Is.False);
+    }
+
+    [Test]
+    public void IsAdmin_WhenNotLoggedIn_ReturnsFalse()
+    {
+        SetBackingField(nameof(AuthService.Roles), new List<string> { Roles.Admin });
+
+        Assert.That(_authService.IsAdmin, Is.False);
+    }
+
     private void SetBackingField(string propertyName, object value)
     {
         var field = typeof(AuthService).GetField($"<{propertyName}>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic);

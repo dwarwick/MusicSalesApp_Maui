@@ -130,11 +130,7 @@ public partial class SongPlayerViewModel : ObservableObject
 
     public string ShareUrl => Song?.ShareUrl ?? string.Empty;
 
-    public bool IsCurrentSongPreviewLimited =>
-        Song != null &&
-        !HasActiveSubscription &&
-        !Song.DisplayOnHomePage &&
-        !(_authService.IsCreator && Song.CreatorUserId == _authService.UserId);
+    public bool IsCurrentSongPreviewLimited => PreviewAccessPolicy.ShouldLimitPreview(_authService, Song);
 
     partial void OnSongChanged(SongDto? value)
     {

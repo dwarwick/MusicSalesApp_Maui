@@ -20,6 +20,9 @@ public interface IAuthService
     string? BillingSource { get; }
     bool IsCreator { get; }
     int? CreatorId { get; }
+
+    /// <summary>Whether the signed-in user holds the Admin role (full playback access, same as the web app).</summary>
+    bool IsAdmin { get; }
     IReadOnlyList<string> Roles { get; }
     string? Token { get; }
 
