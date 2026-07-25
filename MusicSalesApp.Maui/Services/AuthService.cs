@@ -44,6 +44,11 @@ public class AuthService : IAuthService
     public string? BillingSource { get; private set; }
     public bool IsCreator { get; private set; }
     public int? CreatorId { get; private set; }
+
+    // Roles come from the login response and are re-parsed from the JWT role claims on session
+    // restore, so admin status survives app restarts without an extra server round trip.
+    // Fully qualified: the Roles property below shadows MusicSalesApp.Common.Helpers.Roles.
+    public bool IsAdmin => IsLoggedIn && Roles.Contains(Common.Helpers.Roles.Admin);
     public IReadOnlyList<string> Roles { get; private set; } = [];
     public string? Token { get; private set; }
 

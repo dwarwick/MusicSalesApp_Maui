@@ -1349,6 +1349,70 @@ public class PlaybackServiceTests
     }
 
     [Test]
+    public void PreviewLimit_Admin_PlaysFullSongWithoutSubscription()
+    {
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+        _mockAuthService.Setup(a => a.IsAdmin).Returns(true);
+
+        var song = new SongDto { Id = 1, SongTitle = "Test", StreamUrl = "https://test.com/song.mp3" };
+        _service.PlaySong(song);
+
+        for (int i = 1; i <= 120; i++)
+        {
+            _service.UpdatePosition(TimeSpan.FromSeconds(i), TimeSpan.FromSeconds(180));
+        }
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_service.IsPlaying, Is.True);
+            Assert.That(_service.PreviewLimitReached, Is.False);
+            Assert.That(_service.FormattedPosition, Is.EqualTo("2:00"));
+        });
+        _mockMediaManager.Verify(m => m.SeekToAsync(TimeSpan.Zero), Times.Never);
+        _mockMediaManager.Verify(m => m.PauseAsync(), Times.Never);
+    }
+
+    [Test]
+    public async Task StreamTracking_Admin_RecordsStream()
+    {
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+        _mockAuthService.Setup(a => a.IsAdmin).Returns(true);
+        _service.SetStreamQualifyingSeconds(5);
+
+        var song = new SongDto { Id = 7, SongTitle = "Test", StreamUrl = "https://test.com/song.mp3" };
+        _service.PlaySong(song);
+
+        for (int i = 1; i <= 10; i++)
+        {
+            _service.UpdatePosition(TimeSpan.FromSeconds(i), TimeSpan.FromSeconds(180));
+        }
+
+        await WaitForAsync(() => _mockMusicService.Invocations.Any(invocation =>
+            invocation.Method.Name == nameof(IMusicService.RecordStreamAsync)));
+
+        _mockMusicService.Verify(s => s.RecordStreamAsync(song.Id), Times.Once);
+    }
+
+    [Test]
+    public void StreamTracking_AdminOwnSong_DoesNotRecordStream()
+    {
+        _mockAuthService.Setup(a => a.IsAdmin).Returns(true);
+        _mockAuthService.Setup(a => a.IsCreator).Returns(true);
+        _mockAuthService.Setup(a => a.UserId).Returns(100);
+        _service.SetStreamQualifyingSeconds(5);
+
+        var song = new SongDto { Id = 1, SongTitle = "My Song", CreatorUserId = 100, StreamUrl = "https://test.com/song.mp3" };
+        _service.PlaySong(song);
+
+        for (int i = 1; i <= 10; i++)
+        {
+            _service.UpdatePosition(TimeSpan.FromSeconds(i), TimeSpan.FromSeconds(180));
+        }
+
+        _mockMusicService.Verify(s => s.RecordStreamAsync(It.IsAny<int>()), Times.Never);
+    }
+
+    [Test]
     public void PreviewLimit_CreatorOtherSong_LimitedAt60s()
     {
         _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);

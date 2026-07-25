@@ -289,12 +289,8 @@ public partial class NowPlayingView : ContentView
     {
         var playbackService = _playbackService;
         var authService = _authService;
-        var hasSubscription = authService?.HasActiveSubscription == true;
         var currentSong = playbackService?.CurrentSong;
-        var isFeatured = currentSong?.DisplayOnHomePage == true;
-        var isCreatorOwnSong = authService?.IsCreator == true &&
-                               currentSong?.CreatorUserId == authService.UserId;
-        if (hasSubscription || isFeatured || isCreatorOwnSong || currentSong == null || playbackService == null)
+        if (playbackService == null || !PreviewAccessPolicy.ShouldLimitPreview(authService, currentSong))
         {
             PreviewMarker.IsVisible = false;
             return;
@@ -308,13 +304,13 @@ public partial class NowPlayingView : ContentView
         }
 
         var totalSeconds = ParseDurationToSeconds(durationText);
-        if (totalSeconds <= 60)
+        if (totalSeconds <= PreviewAccessPolicy.PreviewLimitSeconds)
         {
             PreviewMarker.IsVisible = false;
             return;
         }
 
-        var percentage = 60.0 / totalSeconds;
+        var percentage = PreviewAccessPolicy.PreviewLimitSeconds / totalSeconds;
         var sliderWidth = ProgressSlider.Width;
         if (sliderWidth > 0)
         {
