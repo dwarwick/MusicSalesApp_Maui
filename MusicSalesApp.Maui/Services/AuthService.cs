@@ -26,6 +26,8 @@ public class AuthService : IAuthService
     private const string TokenStorageKey = "auth_token";
     private const string EmailStorageKey = "auth_email";
     private const string EmailConfirmedStorageKey = "auth_email_confirmed";
+    private const string IsCreatorStorageKey = "auth_is_creator";
+    private const string CreatorIdStorageKey = "auth_creator_id";
     private const string BioEmailKey = "bio_email";
     private const string BioPasswordKey = "bio_password";
 
@@ -42,6 +44,9 @@ public class AuthService : IAuthService
     public bool IsOnTrial { get; private set; }
     public DateTime? TrialEndDate { get; private set; }
     public string? BillingSource { get; private set; }
+    // Creator status has no JWT claim — it comes from the Creators table, not a role — so it is
+    // persisted alongside the token and restored with it. Without this a creator who relaunches the
+    // app loses their own-song playback bypass until they log in again.
     public bool IsCreator { get; private set; }
     public int? CreatorId { get; private set; }
 
@@ -387,6 +392,8 @@ public class AuthService : IAuthService
         _secureStorage.Remove(AuthStorageKeys.UserId);
         _secureStorage.Remove(EmailStorageKey);
         _secureStorage.Remove(EmailConfirmedStorageKey);
+        _secureStorage.Remove(IsCreatorStorageKey);
+        _secureStorage.Remove(CreatorIdStorageKey);
         ClearState();
         NotifyAuthStateChanged();
     }
@@ -427,7 +434,15 @@ public class AuthService : IAuthService
             var storedEmailConfirmed = await _secureStorage.GetAsync(EmailConfirmedStorageKey);
             EmailConfirmed = string.Equals(storedEmailConfirmed, "true", StringComparison.OrdinalIgnoreCase);
 
-            // Refresh subscription/creator status from server
+            // Creator status is not carried in the token, so it comes back from SecureStorage. It
+            // was written by the same login that issued this token and is cleared with it, so it
+            // can never outlive the session it describes.
+            var storedIsCreator = await _secureStorage.GetAsync(IsCreatorStorageKey);
+            IsCreator = string.Equals(storedIsCreator, "true", StringComparison.OrdinalIgnoreCase);
+            var storedCreatorId = await _secureStorage.GetAsync(CreatorIdStorageKey);
+            CreatorId = int.TryParse(storedCreatorId, out var creatorId) ? creatorId : null;
+
+            // Refresh subscription status from server
             await RefreshUserStatusAsync();
 
             // Restore any unverified Google Play purchases
@@ -536,6 +551,7 @@ public class AuthService : IAuthService
         await _secureStorage.SetAsync(AuthStorageKeys.UserId, data.UserId.ToString());
         await _secureStorage.SetAsync(EmailStorageKey, data.Email);
         await _secureStorage.SetAsync(EmailConfirmedStorageKey, data.EmailConfirmed.ToString());
+        await StoreCreatorStatusAsync(data.IsCreator, data.CreatorId);
 
         // Restore any unverified Google Play purchases after login
         if (!HasActiveSubscription)
@@ -543,6 +559,21 @@ public class AuthService : IAuthService
 
         await _musicService.FlushPendingStreamRecordsAsync();
         NotifyAuthStateChanged();
+    }
+
+    private async Task StoreCreatorStatusAsync(bool isCreator, int? creatorId)
+    {
+        await _secureStorage.SetAsync(IsCreatorStorageKey, isCreator.ToString());
+
+        if (creatorId.HasValue)
+        {
+            await _secureStorage.SetAsync(CreatorIdStorageKey, creatorId.Value.ToString());
+        }
+        else
+        {
+            // A stale id left over from a previous account would outlive the flag that gates it.
+            _secureStorage.Remove(CreatorIdStorageKey);
+        }
     }
 
     internal void ApplyLoginResponse(LoginResponseDto data)
