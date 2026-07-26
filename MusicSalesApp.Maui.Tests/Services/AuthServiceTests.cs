@@ -1,5 +1,7 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Claims;
 using System.Text;
 using System.Reflection;
 using Microsoft.Extensions.Configuration;
@@ -492,6 +494,139 @@ public class AuthServiceTests
         SetBackingField(nameof(AuthService.Roles), new List<string> { Roles.Admin });
 
         Assert.That(_authService.IsAdmin, Is.False);
+    }
+
+    [Test]
+    public async Task TryRestoreSessionAsync_RestoresCreatorStatusFromSecureStorage()
+    {
+        _mockSecureStorage.Setup(storage => storage.GetAsync("auth_token")).ReturnsAsync(CreateUnexpiredJwt(userId: 42));
+        _mockSecureStorage.Setup(storage => storage.GetAsync("auth_is_creator")).ReturnsAsync(bool.TrueString);
+        _mockSecureStorage.Setup(storage => storage.GetAsync("auth_creator_id")).ReturnsAsync("7");
+        SetupMockSubscriptionStatusResponse(hasSubscription: false, billingSource: null);
+
+        await _authService.TryRestoreSessionAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_authService.IsLoggedIn, Is.True);
+            Assert.That(_authService.IsCreator, Is.True);
+            Assert.That(_authService.CreatorId, Is.EqualTo(7));
+        });
+    }
+
+    [Test]
+    public async Task TryRestoreSessionAsync_RestoredCreatorHearsOwnSongInFull()
+    {
+        _mockSecureStorage.Setup(storage => storage.GetAsync("auth_token")).ReturnsAsync(CreateUnexpiredJwt(userId: 42));
+        _mockSecureStorage.Setup(storage => storage.GetAsync("auth_is_creator")).ReturnsAsync(bool.TrueString);
+        SetupMockSubscriptionStatusResponse(hasSubscription: false, billingSource: null);
+
+        await _authService.TryRestoreSessionAsync();
+
+        var ownSong = new SongDto
+        {
+            Id = 1,
+            SongTitle = "Test",
+            CreatorUserId = 42,
+            StreamUrl = "https://test.com/song.mp3"
+        };
+
+        Assert.That(PreviewAccessPolicy.ShouldLimitPreview(_authService, ownSong), Is.False);
+    }
+
+    [Test]
+    public async Task TryRestoreSessionAsync_WhenCreatorStatusWasNeverStored_LeavesCreatorFalse()
+    {
+        // Sessions stored before creator status was persisted have neither key.
+        _mockSecureStorage.Setup(storage => storage.GetAsync("auth_token")).ReturnsAsync(CreateUnexpiredJwt(userId: 42));
+        SetupMockSubscriptionStatusResponse(hasSubscription: false, billingSource: null);
+
+        await _authService.TryRestoreSessionAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_authService.IsLoggedIn, Is.True);
+            Assert.That(_authService.IsCreator, Is.False);
+            Assert.That(_authService.CreatorId, Is.Null);
+        });
+    }
+
+    [Test]
+    public async Task LoginAsync_PersistsCreatorStatusForTheNextRestore()
+    {
+        SetupMockLoginResponse(isCreator: true, creatorId: 7);
+
+        await _authService.LoginAsync("creator@test.com", "secret");
+
+        _mockSecureStorage.Verify(storage => storage.SetAsync("auth_is_creator", bool.TrueString), Times.Once);
+        _mockSecureStorage.Verify(storage => storage.SetAsync("auth_creator_id", "7"), Times.Once);
+    }
+
+    [Test]
+    public async Task LoginAsync_WhenNotACreator_ClearsAnyStoredCreatorId()
+    {
+        SetupMockLoginResponse(isCreator: false, creatorId: null);
+
+        await _authService.LoginAsync("listener@test.com", "secret");
+
+        _mockSecureStorage.Verify(storage => storage.SetAsync("auth_is_creator", bool.FalseString), Times.Once);
+        _mockSecureStorage.Verify(storage => storage.Remove("auth_creator_id"), Times.Once);
+    }
+
+    [Test]
+    public async Task LogoutAsync_RemovesStoredCreatorStatus()
+    {
+        await _authService.LogoutAsync();
+
+        _mockSecureStorage.Verify(storage => storage.Remove("auth_is_creator"), Times.Once);
+        _mockSecureStorage.Verify(storage => storage.Remove("auth_creator_id"), Times.Once);
+    }
+
+    private static string CreateUnexpiredJwt(int userId)
+    {
+        var handler = new JwtSecurityTokenHandler();
+        var token = handler.CreateJwtSecurityToken(
+            issuer: "MusicSalesApp",
+            audience: "MusicSalesApp.Maui",
+            subject: new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
+                new Claim(ClaimTypes.Email, "user@test.com"),
+                new Claim(ClaimTypes.Role, Roles.User)
+            ]),
+            expires: DateTime.UtcNow.AddDays(1));
+
+        return handler.WriteToken(token);
+    }
+
+    private void SetupMockLoginResponse(bool isCreator, int? creatorId)
+    {
+        var messageHandler = new Mock<HttpMessageHandler>();
+        messageHandler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new
+                {
+                    Token = CreateUnexpiredJwt(userId: 42),
+                    UserId = 42,
+                    Email = "user@test.com",
+                    Roles = new[] { Roles.User },
+                    EmailConfirmed = true,
+                    HasActiveSubscription = true,
+                    IsCreator = isCreator,
+                    CreatorId = creatorId
+                })
+            });
+
+        var httpClient = new HttpClient(messageHandler.Object)
+        {
+            BaseAddress = new Uri("https://test.example.com/")
+        };
+
+        _mockHttpClientFactory.Setup(f => f.CreateClient("MusicSalesApi")).Returns(httpClient);
     }
 
     private void SetBackingField(string propertyName, object value)
