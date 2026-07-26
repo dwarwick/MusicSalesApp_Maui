@@ -13,6 +13,23 @@
     "dotnet.defaultSolution": "MusicSalesApp_Maui.slnx",
     "dotnetAcquisitionExtension.cacheTimeToLiveMultiplier": 0,
     "terminal.integrated.cwd": "${workspaceFolder:MusicSalesApp_Maui}",
+    "files.watcherExclude": {
+      "**/*.tmp.*": true,
+      "**/bin/**": true,
+      "**/obj/**": true,
+      "**/.git/objects/**": true
+    },
+    "files.exclude": {
+      "**/*.tmp.*": true
+    },
+    "search.exclude": {
+      "**/bin": true,
+      "**/obj": true,
+      "**/*.tmp.*": true
+    },
+    "dotnet.projects.enableAutomaticRestore": false,
+    "dotnet.backgroundAnalysis.analyzerDiagnosticsScope": "openFiles",
+    "dotnet.backgroundAnalysis.compilerDiagnosticsScope": "openFiles",
     "chat.tools.terminal.autoApprove": {
       "/^command -v dotnet \\|\\| true && echo '---' && dotnet --list-sdks 2>/dev/null \\|\\| true && echo '---' && ls -1 /usr/local/share/dotnet/sdk 2>/dev/null \\| tail -n 5 \\|\\| true && echo '---' && ls -1 /opt/homebrew/share/dotnet/sdk 2>/dev/null \\| tail -n 5 \\|\\| true$/": {
         "approve": true,

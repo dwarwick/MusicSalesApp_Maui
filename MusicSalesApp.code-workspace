@@ -8,6 +8,18 @@
 		}
 	],
 	"settings": {
+		"files.watcherExclude": {
+			"**/*.tmp.*": true,
+			"**/bin/**": true,
+			"**/obj/**": true,
+			"**/.git/objects/**": true
+		},
+		"files.exclude": {
+			"**/*.tmp.*": true
+		},
+		"dotnet.projects.enableAutomaticRestore": false,
+		"dotnet.backgroundAnalysis.analyzerDiagnosticsScope": "openFiles",
+		"dotnet.backgroundAnalysis.compilerDiagnosticsScope": "openFiles",
 		"chat.tools.terminal.autoApprove": {
 			"/^git stash push -m \"preserve plan file\" -- \\.github/prompts/plan-staticSsrSitemapPages\\.prompt\\.md$/": {
 				"approve": true,
