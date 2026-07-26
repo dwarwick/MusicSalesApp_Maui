@@ -1,5 +1,12 @@
 # CLAUDE.md
 
+## Working Branches
+
+- **Before editing any file**, check the current branch with `git rev-parse --abbrev-ref HEAD`.
+- If it is `master`, create and switch to a working branch **first** — do not start editing and branch later.
+- Use task-based names such as `work/reduce-user-perceived-anr`.
+- Never make code edits on `master` unless the user explicitly asks for that.
+
 ## What this is
 
 .NET MAUI mobile app building the **StreamTunes** Android and iOS apps — **listeners only** (no creator/upload/admin features; those live in the sibling Blazor web app). Talks to one of two backends depending on build configuration:
