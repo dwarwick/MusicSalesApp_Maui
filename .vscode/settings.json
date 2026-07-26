@@ -1,4 +1,32 @@
 {
   "dotnet.defaultSolution": "MusicSalesApp_Maui.slnx",
-  "dotnetAcquisitionExtension.cacheTimeToLiveMultiplier": 0
+  "dotnetAcquisitionExtension.cacheTimeToLiveMultiplier": 0,
+
+  // Claude Code's Edit/Write writes "Foo.cs.tmp.<pid>.<hex>" next to the target and then renames
+  // over it. Watching those files makes C# Dev Kit re-evaluate the 4-target-framework MAUI project
+  // on every single edit, which starves the VS Code extension host and stalls every tool call.
+  "files.watcherExclude": {
+    "**/*.tmp.*": true,
+    "**/bin/**": true,
+    "**/obj/**": true,
+    "**/.git/objects/**": true
+  },
+  "files.exclude": {
+    "**/*.tmp.*": true
+  },
+
+  // 21,462 of this repo's 21,868 files are bin/obj build output. VS Code does not exclude those
+  // by default, so they were also being searched.
+  "search.exclude": {
+    "**/bin": true,
+    "**/obj": true,
+    "**/*.tmp.*": true
+  },
+
+  // Restore-on-change is a second project re-evaluation trigger; run `dotnet restore` on demand.
+  "dotnet.projects.enableAutomaticRestore": false,
+
+  // Already the defaults, pinned so a future default change cannot regress this.
+  "dotnet.backgroundAnalysis.analyzerDiagnosticsScope": "openFiles",
+  "dotnet.backgroundAnalysis.compilerDiagnosticsScope": "openFiles"
 }
