@@ -502,7 +502,9 @@ public class AuthServiceTests
         _mockSecureStorage.Setup(storage => storage.GetAsync("auth_token")).ReturnsAsync(CreateUnexpiredJwt(userId: 42));
         _mockSecureStorage.Setup(storage => storage.GetAsync("auth_is_creator")).ReturnsAsync(bool.TrueString);
         _mockSecureStorage.Setup(storage => storage.GetAsync("auth_creator_id")).ReturnsAsync("7");
-        SetupMockSubscriptionStatusResponse(hasSubscription: false, billingSource: null);
+        // The status refresh must not be what satisfies this assertion, or the test would pass even
+        // if the secure-storage restore were deleted outright.
+        SetupUnreachableServer();
 
         await _authService.TryRestoreSessionAsync();
 
@@ -519,7 +521,7 @@ public class AuthServiceTests
     {
         _mockSecureStorage.Setup(storage => storage.GetAsync("auth_token")).ReturnsAsync(CreateUnexpiredJwt(userId: 42));
         _mockSecureStorage.Setup(storage => storage.GetAsync("auth_is_creator")).ReturnsAsync(bool.TrueString);
-        SetupMockSubscriptionStatusResponse(hasSubscription: false, billingSource: null);
+        SetupUnreachableServer();
 
         await _authService.TryRestoreSessionAsync();
 
@@ -539,7 +541,7 @@ public class AuthServiceTests
     {
         // Sessions stored before creator status was persisted have neither key.
         _mockSecureStorage.Setup(storage => storage.GetAsync("auth_token")).ReturnsAsync(CreateUnexpiredJwt(userId: 42));
-        SetupMockSubscriptionStatusResponse(hasSubscription: false, billingSource: null);
+        SetupUnreachableServer();
 
         await _authService.TryRestoreSessionAsync();
 
@@ -580,6 +582,170 @@ public class AuthServiceTests
 
         _mockSecureStorage.Verify(storage => storage.Remove("auth_is_creator"), Times.Once);
         _mockSecureStorage.Verify(storage => storage.Remove("auth_creator_id"), Times.Once);
+    }
+
+    [Test]
+    public async Task RefreshUserStatusAsync_WhenServerRevokesCreatorStatus_ClearsCachedStatus()
+    {
+        // Without this the cached flag would survive until the JWT expired (7 days), letting a
+        // deactivated creator keep unlimited playback of their own songs.
+        SetBackingField(nameof(AuthService.IsCreator), true);
+        SetBackingField(nameof(AuthService.CreatorId), 7);
+        SetupMockSubscriptionStatusResponse(hasSubscription: false, billingSource: null, isCreator: false);
+
+        await _authService.RefreshUserStatusAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_authService.IsCreator, Is.False);
+            Assert.That(_authService.CreatorId, Is.Null);
+        });
+        _mockSecureStorage.Verify(storage => storage.SetAsync("auth_is_creator", bool.FalseString), Times.Once);
+        _mockSecureStorage.Verify(storage => storage.Remove("auth_creator_id"), Times.Once);
+    }
+
+    [Test]
+    public async Task RefreshUserStatusAsync_WhenServerGrantsCreatorStatus_PersistsItForTheNextRestore()
+    {
+        SetupMockSubscriptionStatusResponse(
+            hasSubscription: false,
+            billingSource: null,
+            isCreator: true,
+            creatorId: 7);
+
+        await _authService.RefreshUserStatusAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_authService.IsCreator, Is.True);
+            Assert.That(_authService.CreatorId, Is.EqualTo(7));
+        });
+        _mockSecureStorage.Verify(storage => storage.SetAsync("auth_is_creator", bool.TrueString), Times.Once);
+        _mockSecureStorage.Verify(storage => storage.SetAsync("auth_creator_id", "7"), Times.Once);
+    }
+
+    [Test]
+    public async Task RefreshUserStatusAsync_WhenCreatorStatusUnchanged_DoesNotRewriteSecureStorage()
+    {
+        SetBackingField(nameof(AuthService.IsCreator), true);
+        SetBackingField(nameof(AuthService.CreatorId), 7);
+        SetupMockSubscriptionStatusResponse(
+            hasSubscription: false,
+            billingSource: null,
+            isCreator: true,
+            creatorId: 7);
+
+        await _authService.RefreshUserStatusAsync();
+
+        _mockSecureStorage.Verify(
+            storage => storage.SetAsync("auth_is_creator", It.IsAny<string>()),
+            Times.Never);
+        _mockSecureStorage.Verify(
+            storage => storage.SetAsync("auth_creator_id", It.IsAny<string>()),
+            Times.Never);
+    }
+
+    [Test]
+    public async Task RefreshUserStatusAsync_WhenCreatorStatusChanges_RaisesAuthStateChanged()
+    {
+        SetBackingField(nameof(AuthService.IsCreator), true);
+        SetBackingField(nameof(AuthService.CreatorId), 7);
+        var eventCount = 0;
+        _authService.AuthStateChanged += () => eventCount++;
+        SetupMockSubscriptionStatusResponse(hasSubscription: false, billingSource: null, isCreator: false);
+
+        await _authService.RefreshUserStatusAsync();
+
+        Assert.That(eventCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task RefreshUserStatusAsync_WhenServerUnreachable_KeepsCachedCreatorStatus()
+    {
+        // Offline is "no data", not "not a creator" - the cached status must survive so creators
+        // keep working on a plane.
+        SetBackingField(nameof(AuthService.IsCreator), true);
+        SetBackingField(nameof(AuthService.CreatorId), 7);
+        SetupUnreachableServer();
+
+        await _authService.RefreshUserStatusAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_authService.IsCreator, Is.True);
+            Assert.That(_authService.CreatorId, Is.EqualTo(7));
+        });
+        _mockSecureStorage.Verify(
+            storage => storage.SetAsync("auth_is_creator", It.IsAny<string>()),
+            Times.Never);
+    }
+
+    [Test]
+    public async Task RefreshUserStatusAsync_WhenServerOmitsCreatorFields_KeepsCachedCreatorStatus()
+    {
+        // Version skew: the app can ship before the server does, or the server can be rolled back.
+        // A non-nullable bool would deserialize the absent field to false and persist a demotion
+        // that survives restarts, costing every creator full-length playback of their own songs.
+        SetBackingField(nameof(AuthService.IsCreator), true);
+        SetBackingField(nameof(AuthService.CreatorId), 7);
+        SetupMockSubscriptionStatusResponse(
+            hasSubscription: false,
+            billingSource: null,
+            includeCreatorFields: false);
+
+        await _authService.RefreshUserStatusAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_authService.IsCreator, Is.True);
+            Assert.That(_authService.CreatorId, Is.EqualTo(7));
+        });
+        _mockSecureStorage.Verify(
+            storage => storage.SetAsync("auth_is_creator", It.IsAny<string>()),
+            Times.Never);
+        _mockSecureStorage.Verify(storage => storage.Remove("auth_creator_id"), Times.Never);
+    }
+
+    [Test]
+    public async Task TryRestoreSessionAsync_WhenServerHasRevokedCreatorStatus_ClearsRestoredStatus()
+    {
+        // End-to-end shape of the actual bug: the cached flag is restored on launch, then corrected
+        // by the very next status refresh instead of surviving for the JWT's remaining lifetime.
+        _mockSecureStorage.Setup(storage => storage.GetAsync("auth_token")).ReturnsAsync(CreateUnexpiredJwt(userId: 42));
+        _mockSecureStorage.Setup(storage => storage.GetAsync("auth_is_creator")).ReturnsAsync(bool.TrueString);
+        _mockSecureStorage.Setup(storage => storage.GetAsync("auth_creator_id")).ReturnsAsync("7");
+        SetupMockSubscriptionStatusResponse(hasSubscription: false, billingSource: null, isCreator: false);
+
+        await _authService.TryRestoreSessionAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_authService.IsLoggedIn, Is.True);
+            Assert.That(_authService.IsCreator, Is.False);
+            Assert.That(_authService.CreatorId, Is.Null);
+        });
+        _mockSecureStorage.Verify(storage => storage.SetAsync("auth_is_creator", bool.FalseString), Times.Once);
+    }
+
+    [Test]
+    public async Task RefreshUserStatusAsync_WhenPersistingCreatorStatusFails_StillNotifiesAuthStateChanged()
+    {
+        SetBackingField(nameof(AuthService.IsCreator), true);
+        SetBackingField(nameof(AuthService.CreatorId), 7);
+        _mockSecureStorage
+            .Setup(storage => storage.SetAsync("auth_is_creator", It.IsAny<string>()))
+            .ThrowsAsync(new InvalidOperationException("keystore unavailable"));
+        var eventCount = 0;
+        _authService.AuthStateChanged += () => eventCount++;
+        SetupMockSubscriptionStatusResponse(hasSubscription: false, billingSource: null, isCreator: false);
+
+        await _authService.RefreshUserStatusAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_authService.IsCreator, Is.False);
+            Assert.That(eventCount, Is.EqualTo(1));
+        });
     }
 
     private static string CreateUnexpiredJwt(int userId)
@@ -641,8 +807,34 @@ public class AuthServiceTests
         string? status = null,
         DateTime? endDate = null,
         bool isOnTrial = false,
-        DateTime? trialEndDate = null)
+        DateTime? trialEndDate = null,
+        bool isCreator = false,
+        int? creatorId = null,
+        bool includeCreatorFields = true)
     {
+        object payload = includeCreatorFields
+            ? new
+            {
+                HasSubscription = hasSubscription,
+                BillingSource = billingSource,
+                Status = status,
+                EndDate = endDate,
+                IsOnTrial = isOnTrial,
+                TrialEndDate = trialEndDate,
+                IsCreator = isCreator,
+                CreatorId = creatorId
+            }
+            // Mirrors a server that predates creator status on this endpoint.
+            : new
+            {
+                HasSubscription = hasSubscription,
+                BillingSource = billingSource,
+                Status = status,
+                EndDate = endDate,
+                IsOnTrial = isOnTrial,
+                TrialEndDate = trialEndDate
+            };
+
         var messageHandler = new Mock<HttpMessageHandler>();
         messageHandler.Protected()
             .Setup<Task<HttpResponseMessage>>("SendAsync",
@@ -650,15 +842,7 @@ public class AuthServiceTests
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = JsonContent.Create(new
-                {
-                    HasSubscription = hasSubscription,
-                    BillingSource = billingSource,
-                    Status = status,
-                    EndDate = endDate,
-                    IsOnTrial = isOnTrial,
-                    TrialEndDate = trialEndDate
-                })
+                Content = JsonContent.Create(payload)
             });
 
         var httpClient = new HttpClient(messageHandler.Object)
@@ -667,5 +851,26 @@ public class AuthServiceTests
         };
 
         _mockHttpClientFactory.Setup(f => f.CreateClient("MusicSalesApi")).Returns(httpClient);
+    }
+
+    /// <summary>
+    /// Makes the status endpoint throw, so only state that survived without the network can satisfy
+    /// an assertion.
+    /// </summary>
+    private void SetupUnreachableServer()
+    {
+        var messageHandler = new Mock<HttpMessageHandler>();
+        messageHandler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ThrowsAsync(new HttpRequestException("offline"));
+
+        _mockHttpClientFactory
+            .Setup(factory => factory.CreateClient("MusicSalesApi"))
+            .Returns(new HttpClient(messageHandler.Object)
+            {
+                BaseAddress = new Uri("https://test.example.com/")
+            });
     }
 }

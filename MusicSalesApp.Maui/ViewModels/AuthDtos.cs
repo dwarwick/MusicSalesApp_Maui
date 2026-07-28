@@ -110,6 +110,13 @@ public class SubscriptionStatusDto
     public string PaypalSubscriptionId { get; set; } = string.Empty;
     public string BillingSource { get; set; } = string.Empty;
     public bool IsSubscriptionBlocked { get; set; }
+
+    // Nullable on purpose. A server that predates creator status on this endpoint - or one that has
+    // been rolled back - omits these fields, and a non-nullable bool would silently deserialize to
+    // false and revoke creator status for everyone. Null means "this server did not say", which is
+    // not the same as "not a creator".
+    public bool? IsCreator { get; set; }
+    public int? CreatorId { get; set; }
 }
 
 public class ForgotPasswordResponseDto

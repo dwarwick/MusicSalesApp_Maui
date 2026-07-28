@@ -622,6 +622,8 @@ public class AuthService : IAuthService
             var previousIsOnTrial = IsOnTrial;
             var previousTrialEndDate = TrialEndDate;
             var previousBillingSource = BillingSource;
+            var previousIsCreator = IsCreator;
+            var previousCreatorId = CreatorId;
 
             var client = _httpClientFactory.CreateClient("MusicSalesApi");
             if (!string.IsNullOrEmpty(Token))
@@ -635,12 +637,40 @@ public class AuthService : IAuthService
             TrialEndDate = response?.TrialEndDate;
             BillingSource = response?.BillingSource;
 
+            // Creator status is cached in secure storage so it survives app restarts, which means a
+            // deactivation on the web would otherwise go unnoticed until the JWT expired. Only apply
+            // it when the server actually reported it: an absent field means the server is older
+            // than this feature (or was rolled back), which must never revoke a creator's
+            // own-song playback - and would persist that revocation across restarts.
+            if (response?.IsCreator is bool serverIsCreator)
+            {
+                IsCreator = serverIsCreator;
+                CreatorId = response.CreatorId;
+
+                if (previousIsCreator != IsCreator || previousCreatorId != CreatorId)
+                {
+                    // Persisting is best-effort. A keystore failure must not cost us the state
+                    // change notification below, or the UI would render stale entitlements for the
+                    // rest of the session.
+                    try
+                    {
+                        await StoreCreatorStatusAsync(IsCreator, CreatorId);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "Could not persist refreshed creator status");
+                    }
+                }
+            }
+
             if (previousHasActiveSubscription != HasActiveSubscription ||
                 previousSubscriptionStatus != SubscriptionStatus ||
                 previousSubscriptionEndDate != SubscriptionEndDate ||
                 previousIsOnTrial != IsOnTrial ||
                 previousTrialEndDate != TrialEndDate ||
-                previousBillingSource != BillingSource)
+                previousBillingSource != BillingSource ||
+                previousIsCreator != IsCreator ||
+                previousCreatorId != CreatorId)
             {
                 NotifyAuthStateChanged();
             }
