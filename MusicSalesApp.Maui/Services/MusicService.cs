@@ -11,7 +11,9 @@ public class MusicService : IMusicService
 {
     private const string SongsRequestPath = "api/music/songs";
     private const string PendingStreamRecordsPreferenceKey = "pending_stream_records_v1";
+    private const string PendingLikeStatesPreferenceKey = "pending_like_states_v1";
     private const int MaxPendingStreamRecords = 1000;
+    private const int MaxPendingLikeStates = 1000;
     private static readonly TimeSpan DefaultPendingStreamRetryInterval = TimeSpan.FromSeconds(15);
     // With HttpCompletionOption.ResponseHeadersRead, HttpClient.Timeout only covers the headers,
     // not the streamed body/deserialize. This explicit timeout guards the whole operation so a
@@ -25,14 +27,19 @@ public class MusicService : IMusicService
     private readonly IConnectivity _connectivity;
     private readonly ILogger<MusicService> _logger;
     private readonly SemaphoreSlim _pendingStreamFlushLock = new(1, 1);
+    private readonly SemaphoreSlim _pendingLikeStateFlushLock = new(1, 1);
     private readonly TimeSpan _pendingStreamRetryInterval;
     private readonly TimeSpan _songsRequestTimeout;
     private readonly object _pendingStreamRetryLoopLock = new();
+    private readonly object _pendingLikeStateRetryLoopLock = new();
     private Task? _pendingStreamRetryLoopTask;
+    private Task? _pendingLikeStateRetryLoopTask;
 
     public event Action<int, int>? OnStreamCountRecorded;
 
     public string? LastSongsError { get; private set; }
+
+    public SongCatalogSource LastSongsSource { get; private set; } = SongCatalogSource.Live;
 
     public MusicService(
         IHttpClientFactory httpClientFactory,
@@ -63,6 +70,7 @@ public class MusicService : IMusicService
     {
         var client = _httpClientFactory.CreateClient("MusicSalesApi");
         LastSongsError = null;
+        LastSongsSource = SongCatalogSource.Live;
 
         // Linked timeout covering the entire request — headers, body stream, and deserialize —
         // because ResponseHeadersRead leaves the body read outside HttpClient.Timeout.
@@ -88,6 +96,7 @@ public class MusicService : IMusicService
                     SongsRequestPath,
                     response.StatusCode,
                     responseBody);
+                LastSongsSource = SongCatalogSource.Unavailable;
 
                 _logger.LogWarning(
                     "Failed to fetch songs from {RequestUri}: {StatusCode} {ResponseBody}",
@@ -117,6 +126,7 @@ public class MusicService : IMusicService
             catch (JsonException ex)
             {
                 LastSongsError = ApiErrorMessageFormatter.FormatException(client.BaseAddress, SongsRequestPath, ex);
+                LastSongsSource = SongCatalogSource.Unavailable;
                 _logger.LogError(
                     ex,
                     "Failed to deserialize songs response from {RequestUri}",
@@ -131,6 +141,7 @@ public class MusicService : IMusicService
         catch (Exception ex)
         {
             LastSongsError = ApiErrorMessageFormatter.FormatException(client.BaseAddress, SongsRequestPath, ex);
+            LastSongsSource = SongCatalogSource.Unavailable;
             _logger.LogError(ex, "Failed to fetch songs from API");
             return [];
         }
@@ -285,6 +296,317 @@ public class MusicService : IMusicService
         }
     }
 
+    // --- Idempotent like state, with an offline queue ---
+
+    public async Task<SetLikeStateOutcome> SetLikeStateAsync(int songMetadataId, bool? desiredState)
+    {
+        var attempt = await SendLikeStateAsync(songMetadataId, desiredState).ConfigureAwait(false);
+
+        if (attempt.Result != null)
+        {
+            // This tap supersedes anything queued for the same song. Without the removal, a state
+            // queued while offline would be replayed by the next flush and overwrite the newer choice
+            // the user just made.
+            await RemovePendingLikeStateAsync(songMetadataId).ConfigureAwait(false);
+
+            // Opportunistically drain anything queued earlier, now that the network clearly works.
+            TriggerPendingLikeStateFlush("a like state was applied successfully");
+            return SetLikeStateOutcome.Applied(attempt.Result);
+        }
+
+        if (attempt.ShouldQueueForRetry)
+        {
+            await QueuePendingLikeStateAsync(songMetadataId, desiredState).ConfigureAwait(false);
+            EnsurePendingLikeStateRetryLoopStarted();
+            _logger.LogInformation(
+                _connectivity.NetworkAccess == NetworkAccess.Internet
+                    ? "Queued like state for song {SongMetadataId} after a transient request failure"
+                    : "Queued like state for song {SongMetadataId} because connectivity currently reports no internet access",
+                songMetadataId);
+            return SetLikeStateOutcome.QueuedForRetry();
+        }
+
+        return SetLikeStateOutcome.Failed();
+    }
+
+    public async Task FlushPendingLikeStatesAsync()
+    {
+        await _pendingLikeStateFlushLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var pendingLikeStates = await LoadPendingLikeStatesAsync().ConfigureAwait(false);
+            for (var index = 0; index < pendingLikeStates.Count; index++)
+            {
+                var pendingLikeState = pendingLikeStates[index];
+                var attempt = await SendLikeStateAsync(
+                        pendingLikeState.SongMetadataId,
+                        pendingLikeState.DesiredState)
+                    .ConfigureAwait(false);
+
+                if (attempt.Result != null || attempt.ShouldDropPendingRecord)
+                {
+                    if (attempt.Result == null)
+                    {
+                        _logger.LogWarning(
+                            "Dropping pending like state for song {SongMetadataId} after a non-retryable response",
+                            pendingLikeState.SongMetadataId);
+                    }
+
+                    pendingLikeStates.RemoveAt(index);
+                    index--;
+                    await SavePendingLikeStatesAsync(pendingLikeStates).ConfigureAwait(false);
+                    continue;
+                }
+
+                // Still offline (or still failing): stop here rather than hammering the rest.
+                break;
+            }
+
+            if (pendingLikeStates.Count > 0)
+            {
+                EnsurePendingLikeStateRetryLoopStarted();
+            }
+        }
+        finally
+        {
+            _pendingLikeStateFlushLock.Release();
+        }
+    }
+
+    public Task ClearPendingLikeStatesAsync() =>
+        Task.Run(() => _appPreferenceStore.Remove(PendingLikeStatesPreferenceKey));
+
+    public async Task<IReadOnlyDictionary<int, bool?>> GetPendingLikeStatesAsync()
+    {
+        var pendingLikeStates = await LoadPendingLikeStatesAsync().ConfigureAwait(false);
+        return pendingLikeStates.ToDictionary(state => state.SongMetadataId, state => state.DesiredState);
+    }
+
+    private async Task<LikeStateAttemptResult> SendLikeStateAsync(int songMetadataId, bool? desiredState)
+    {
+        var client = _httpClientFactory.CreateClient("MusicSalesApi");
+        try
+        {
+            var response = await client
+                .PutAsJsonAsync($"api/music/like-state/{songMetadataId}", new { Status = desiredState })
+                .ConfigureAwait(false);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<LikeStateResult>().ConfigureAwait(false);
+                return new LikeStateAttemptResult(result, false, false);
+            }
+
+            // A client newer than the deployed server. Fall back to the toggle endpoints so the two
+            // repos can ship independently; remove this once the set-state endpoint is everywhere.
+            if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed)
+            {
+                _logger.LogWarning(
+                    "Set-like-state endpoint is unavailable ({StatusCode}); falling back to the toggle endpoints",
+                    response.StatusCode);
+                return await SendLikeStateViaToggleAsync(songMetadataId, desiredState).ConfigureAwait(false);
+            }
+
+            _logger.LogWarning(
+                "SetLikeState returned {StatusCode} for song {SongMetadataId}",
+                response.StatusCode,
+                songMetadataId);
+            return new LikeStateAttemptResult(null, false, ShouldDropPendingLikeState(response.StatusCode));
+        }
+        catch (HttpRequestException ex) when (ShouldQueueRetry(ex))
+        {
+            _logger.LogWarning(
+                ex, "Transient failure setting like state for song {SongMetadataId}; queuing for retry", songMetadataId);
+            return new LikeStateAttemptResult(null, true, false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to set like state for song {SongMetadataId}", songMetadataId);
+            return new LikeStateAttemptResult(null, false, false);
+        }
+    }
+
+    /// <summary>
+    /// Compatibility path for a server without the set-state endpoint. Reads the current state first,
+    /// because the toggle endpoints flip relative to whatever the server holds, then issues at most one
+    /// toggle. Not idempotent under concurrency - it exists only to keep older servers working.
+    /// </summary>
+    private async Task<LikeStateAttemptResult> SendLikeStateViaToggleAsync(int songMetadataId, bool? desiredState)
+    {
+        var statuses = await GetBulkUserLikeStatusAsync([songMetadataId]).ConfigureAwait(false);
+        statuses.TryGetValue(songMetadataId, out var currentState);
+
+        if (currentState == desiredState)
+        {
+            // Already in the requested state, so there is nothing to toggle. The counts are a courtesy:
+            // if the fetch comes back without this song, leave them null rather than reporting zero,
+            // which the caller would apply as authoritative and blank the visible totals.
+            var counts = await GetBulkLikeCountsAsync([songMetadataId]).ConfigureAwait(false);
+            var current = counts.FirstOrDefault(count => count.SongMetadataId == songMetadataId);
+            return new LikeStateAttemptResult(
+                new LikeStateResult
+                {
+                    UserLikeStatus = desiredState,
+                    LikeCount = current?.LikeCount,
+                    DislikeCount = current?.DislikeCount
+                },
+                false,
+                false);
+        }
+
+        // One toggle reaches the desired state from any starting point: thumbs-up toggles to/from
+        // liked, thumbs-down to/from disliked, and clearing means toggling whichever is currently set.
+        var toggleResult = desiredState switch
+        {
+            true => await ToggleLikeAsync(songMetadataId).ConfigureAwait(false),
+            false => await ToggleDislikeAsync(songMetadataId).ConfigureAwait(false),
+            null when currentState == true => await ToggleLikeAsync(songMetadataId).ConfigureAwait(false),
+            null => await ToggleDislikeAsync(songMetadataId).ConfigureAwait(false)
+        };
+
+        if (toggleResult == null)
+        {
+            return new LikeStateAttemptResult(null, false, false);
+        }
+
+        return new LikeStateAttemptResult(
+            new LikeStateResult
+            {
+                UserLikeStatus = toggleResult.IsLiked ? true : toggleResult.IsDisliked ? false : null,
+                LikeCount = toggleResult.LikeCount,
+                DislikeCount = toggleResult.DislikeCount
+            },
+            false,
+            false);
+    }
+
+    /// <summary>
+    /// Records the terminal intent for a song, replacing any earlier one. Coalescing per song is what
+    /// makes the queue correct: two offline thumbs-up taps mean "no opinion", not two toggles.
+    /// </summary>
+    private async Task QueuePendingLikeStateAsync(int songMetadataId, bool? desiredState)
+    {
+        await _pendingLikeStateFlushLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var pendingLikeStates = await LoadPendingLikeStatesAsync().ConfigureAwait(false);
+
+            var existingIndex = pendingLikeStates.FindIndex(state => state.SongMetadataId == songMetadataId);
+            if (existingIndex >= 0)
+            {
+                pendingLikeStates.RemoveAt(existingIndex);
+            }
+
+            pendingLikeStates.Add(new PendingLikeState(songMetadataId, desiredState, DateTime.UtcNow));
+
+            if (pendingLikeStates.Count > MaxPendingLikeStates)
+            {
+                var overflowCount = pendingLikeStates.Count - MaxPendingLikeStates;
+                pendingLikeStates.RemoveRange(0, overflowCount);
+                _logger.LogWarning(
+                    "Trimmed {OverflowCount} old pending like states to enforce the queue size limit",
+                    overflowCount);
+            }
+
+            await SavePendingLikeStatesAsync(pendingLikeStates).ConfigureAwait(false);
+        }
+        finally
+        {
+            _pendingLikeStateFlushLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Drops any queued intent for a song whose state has since been set directly on the server.
+    /// </summary>
+    private async Task RemovePendingLikeStateAsync(int songMetadataId)
+    {
+        await _pendingLikeStateFlushLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var pendingLikeStates = await LoadPendingLikeStatesAsync().ConfigureAwait(false);
+            if (pendingLikeStates.RemoveAll(state => state.SongMetadataId == songMetadataId) > 0)
+            {
+                await SavePendingLikeStatesAsync(pendingLikeStates).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            _pendingLikeStateFlushLock.Release();
+        }
+    }
+
+    private async Task<bool> HasPendingLikeStatesAsync()
+        => (await LoadPendingLikeStatesAsync().ConfigureAwait(false)).Count > 0;
+
+    private Task<List<PendingLikeState>> LoadPendingLikeStatesAsync() =>
+        Task.Run(LoadPendingLikeStates);
+
+    private List<PendingLikeState> LoadPendingLikeStates()
+    {
+        var serializedPendingLikeStates = _appPreferenceStore.GetString(PendingLikeStatesPreferenceKey);
+        if (string.IsNullOrWhiteSpace(serializedPendingLikeStates))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<PendingLikeState>>(
+                       serializedPendingLikeStates,
+                       PendingStreamRecordsSerializerOptions)
+                   ?? [];
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Failed to deserialize pending like states. Clearing the saved queue.");
+            _appPreferenceStore.Remove(PendingLikeStatesPreferenceKey);
+            return [];
+        }
+    }
+
+    private void SavePendingLikeStates(List<PendingLikeState> pendingLikeStates)
+    {
+        if (pendingLikeStates.Count == 0)
+        {
+            _appPreferenceStore.Remove(PendingLikeStatesPreferenceKey);
+            return;
+        }
+
+        _appPreferenceStore.SetString(
+            PendingLikeStatesPreferenceKey,
+            JsonSerializer.Serialize(pendingLikeStates, PendingStreamRecordsSerializerOptions));
+    }
+
+    private Task SavePendingLikeStatesAsync(List<PendingLikeState> pendingLikeStates) =>
+        Task.Run(() => SavePendingLikeStates(pendingLikeStates));
+
+    private void TriggerPendingLikeStateFlush(string reason)
+    {
+        _ = TriggerPendingLikeStateFlushAsync(reason);
+    }
+
+    private async Task TriggerPendingLikeStateFlushAsync(string reason)
+    {
+        if (!await HasPendingLikeStatesAsync().ConfigureAwait(false))
+        {
+            return;
+        }
+
+        _logger.LogInformation("Triggering pending like state flush because {Reason}", reason);
+        await FlushPendingLikeStatesAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Unlike the anonymous stream endpoint, set-like-state requires authentication, so a token that
+    /// expires while an intent is queued would otherwise be retried forever.
+    /// </summary>
+    private static bool ShouldDropPendingLikeState(HttpStatusCode statusCode)
+        => statusCode is HttpStatusCode.BadRequest
+            or HttpStatusCode.NotFound
+            or HttpStatusCode.Unauthorized
+            or HttpStatusCode.Forbidden;
+
     public async Task<Dictionary<int, bool?>> GetBulkUserLikeStatusAsync(IEnumerable<int> songIds)
     {
         var client = _httpClientFactory.CreateClient("MusicSalesApi");
@@ -310,6 +632,7 @@ public class MusicService : IMusicService
         if (e.NetworkAccess == NetworkAccess.Internet)
         {
             TriggerPendingStreamFlush("connectivity was restored");
+            TriggerPendingLikeStateFlush("connectivity was restored");
         }
     }
 
@@ -334,6 +657,50 @@ public class MusicService : IMusicService
         if (await HasPendingStreamRecordsAsync().ConfigureAwait(false))
         {
             EnsurePendingStreamRetryLoopStarted();
+        }
+
+        if (await HasPendingLikeStatesAsync().ConfigureAwait(false))
+        {
+            EnsurePendingLikeStateRetryLoopStarted();
+        }
+    }
+
+    private void EnsurePendingLikeStateRetryLoopStarted()
+    {
+        lock (_pendingLikeStateRetryLoopLock)
+        {
+            if (_pendingLikeStateRetryLoopTask is { IsCompleted: false })
+            {
+                return;
+            }
+
+            _pendingLikeStateRetryLoopTask = RunPendingLikeStateRetryLoopAsync();
+        }
+    }
+
+    private async Task RunPendingLikeStateRetryLoopAsync()
+    {
+        try
+        {
+            while (await HasPendingLikeStatesAsync().ConfigureAwait(false))
+            {
+                await Task.Delay(_pendingStreamRetryInterval).ConfigureAwait(false);
+
+                if (!await HasPendingLikeStatesAsync().ConfigureAwait(false))
+                {
+                    break;
+                }
+
+                _logger.LogInformation(
+                    "Retrying pending like states after waiting {RetryIntervalSeconds} seconds",
+                    _pendingStreamRetryInterval.TotalSeconds);
+
+                await FlushPendingLikeStatesAsync().ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Pending like state retry loop failed unexpectedly");
         }
     }
 
@@ -403,7 +770,7 @@ public class MusicService : IMusicService
 
             return new StreamRecordAttemptResult(result?.StreamCount, false, false);
         }
-        catch (HttpRequestException ex) when (ShouldQueueStreamRecordRetry(ex))
+        catch (HttpRequestException ex) when (ShouldQueueRetry(ex))
         {
             _logger.LogWarning(ex, "Transient failure recording stream for song {SongMetadataId}; queuing for retry", songMetadataId);
             return new StreamRecordAttemptResult(null, true, false);
@@ -484,7 +851,11 @@ public class MusicService : IMusicService
     private Task SavePendingStreamRecordsAsync(List<PendingStreamRecord> pendingStreamRecords) =>
         Task.Run(() => SavePendingStreamRecords(pendingStreamRecords));
 
-    private bool ShouldQueueStreamRecordRetry(HttpRequestException exception)
+    /// <summary>
+    /// Whether a failed request looks transient enough to be worth queueing. Shared by the stream-count
+    /// and like-state queues so both classify connectivity failures identically.
+    /// </summary>
+    private bool ShouldQueueRetry(HttpRequestException exception)
     {
         if (_connectivity.NetworkAccess != NetworkAccess.Internet)
         {
@@ -520,6 +891,8 @@ public class MusicService : IMusicService
     private sealed record UserLikeStatusDto(int SongMetadataId, bool? UserLikeStatus);
     private sealed record PendingStreamRecord(int SongMetadataId, DateTime RecordedUtc);
     private sealed record StreamRecordAttemptResult(int? StreamCount, bool ShouldQueueForRetry, bool ShouldDropPendingRecord);
+    private sealed record PendingLikeState(int SongMetadataId, bool? DesiredState, DateTime RecordedUtc);
+    private sealed record LikeStateAttemptResult(LikeStateResult? Result, bool ShouldQueueForRetry, bool ShouldDropPendingRecord);
 
     public Task<(bool Success, string ErrorMessage)> VerifyGooglePlayPurchaseAsync(string purchaseToken, string? orderId)
         => VerifySubscriptionPurchaseAsync(BillingPurchaseVerificationRequest.ForGooglePlay(purchaseToken, orderId));

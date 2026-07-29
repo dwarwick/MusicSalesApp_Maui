@@ -26,7 +26,7 @@
                       <Border HorizontalOptions="Center"
                         StrokeShape="RoundRectangle 12"
                         StrokeThickness="0">
-                       <views:SongArtworkView AlbumArtUrl="{Binding Song.AlbumArtUrl}"
+                       <views:SongArtworkView AlbumArtUrl="{Binding Song.AlbumArtDisplaySource}"
                                     HeightRequest="{StaticResource PlayerHeroArtSize}"
                                     WidthRequest="{StaticResource PlayerHeroArtSize}" />
                       </Border>
@@ -55,8 +55,8 @@
                             HeightRequest="24"
                             WidthRequest="24"
                             VerticalOptions="Center"
-                            IsVisible="{Binding Song.PersonaImageUrl, Converter={toolkit:IsNotNullConverter}}">
-                        <Image Source="{Binding Song.PersonaImageUrl}"
+                            IsVisible="{Binding Song.PersonaImageDisplaySource, Converter={toolkit:IsNotNullConverter}}">
+                        <Image Source="{Binding Song.PersonaImageDisplaySource}"
                                Aspect="AspectFill"
                                HeightRequest="24"
                                WidthRequest="24" />
@@ -207,8 +207,9 @@
                                      CreatorUserId="{Binding Song.CreatorUserId}"
                                      VerticalOptions="Center" />
 
-                    <!-- Report Button -->
+                    <!-- Report Button (hidden offline - reporting needs the server) -->
                     <VerticalStackLayout VerticalOptions="Center"
+                                         IsVisible="{Binding CanUseServerActions}"
                                          Spacing="2">
                         <Grid HeightRequest="40" WidthRequest="40"
                               HorizontalOptions="Center">

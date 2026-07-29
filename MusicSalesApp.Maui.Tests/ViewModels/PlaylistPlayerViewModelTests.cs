@@ -531,36 +531,38 @@ public class PlaylistPlayerViewModelTests
     }
 
     [Test]
-    public async Task LikeSong_WhenAuthenticated_CallsToggleLike()
+    public async Task LikeSong_WhenAuthenticated_SetsTheLikeState()
     {
         _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
         _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
-        _mockMusicService.Setup(s => s.ToggleLikeAsync(42)).ReturnsAsync(new LikeToggleResult
-        {
-            IsLiked = true, LikeCount = 5, DislikeCount = 1
-        });
+        _mockMusicService.Setup(s => s.SetLikeStateAsync(42, true))
+            .ReturnsAsync(SetLikeStateOutcome.Applied(new LikeStateResult
+            {
+                UserLikeStatus = true, LikeCount = 5, DislikeCount = 1
+            }));
         _viewModel.CurrentSong = new SongDto { Id = 42, SongTitle = "Test" };
 
         await _viewModel.LikeSongCommand.ExecuteAsync(null);
 
-        _mockMusicService.Verify(s => s.ToggleLikeAsync(42), Times.Once);
+        _mockMusicService.Verify(s => s.SetLikeStateAsync(42, true), Times.Once);
         Assert.That(_viewModel.CurrentSong.UserLikeStatus, Is.True);
     }
 
     [Test]
-    public async Task DislikeSong_WhenAuthenticated_CallsToggleDislike()
+    public async Task DislikeSong_WhenAuthenticated_SetsTheLikeState()
     {
         _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
         _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
-        _mockMusicService.Setup(s => s.ToggleDislikeAsync(42)).ReturnsAsync(new LikeToggleResult
-        {
-            IsDisliked = true, LikeCount = 3, DislikeCount = 7
-        });
+        _mockMusicService.Setup(s => s.SetLikeStateAsync(42, false))
+            .ReturnsAsync(SetLikeStateOutcome.Applied(new LikeStateResult
+            {
+                UserLikeStatus = false, LikeCount = 3, DislikeCount = 7
+            }));
         _viewModel.CurrentSong = new SongDto { Id = 42, SongTitle = "Test" };
 
         await _viewModel.DislikeSongCommand.ExecuteAsync(null);
 
-        _mockMusicService.Verify(s => s.ToggleDislikeAsync(42), Times.Once);
+        _mockMusicService.Verify(s => s.SetLikeStateAsync(42, false), Times.Once);
         Assert.That(_viewModel.CurrentSong.UserLikeStatus, Is.False);
     }
 

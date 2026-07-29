@@ -36,7 +36,9 @@ public partial class PersonaViewModel : ObservableObject
 
         var trimmedImageUrl = imageUrl.Trim();
 
-        if (Uri.TryCreate(trimmedImageUrl, UriKind.Absolute, out var uri))
+        // A Windows path such as C:\... parses as an absolute URI with the file scheme, so it has to be
+        // excluded explicitly or a locally cached image would be handed to UriImageSource.
+        if (Uri.TryCreate(trimmedImageUrl, UriKind.Absolute, out var uri) && uri.Scheme != Uri.UriSchemeFile)
         {
             return new UriImageSource
             {

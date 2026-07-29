@@ -54,6 +54,7 @@ public class PlaybackService : IPlaybackService
     private readonly IPlaybackKeepAliveService _playbackKeepAliveService;
     private readonly IAnonymousFeaturedStreamStore? _anonymousFeaturedStreamStore;
     private readonly INetworkStatusService? _networkStatusService;
+    private readonly IImageCacheService? _imageCacheService;
     private readonly ILogger<PlaybackService> _logger;
     private readonly TimeSpan _playlistAdvanceFallbackDelay;
     private readonly TimeSpan _positionSamplerInterval;
@@ -141,7 +142,8 @@ public class PlaybackService : IPlaybackService
         TimeSpan? subscriptionStatusRefreshInterval = null,
         TimeSpan? bufferingStallRecoveryDelay = null,
         IAnonymousFeaturedStreamStore? anonymousFeaturedStreamStore = null,
-        INetworkStatusService? networkStatusService = null)
+        INetworkStatusService? networkStatusService = null,
+        IImageCacheService? imageCacheService = null)
     {
         _authService = authService;
         _musicService = musicService;
@@ -151,6 +153,7 @@ public class PlaybackService : IPlaybackService
         _playbackKeepAliveService = playbackKeepAliveService;
         _anonymousFeaturedStreamStore = anonymousFeaturedStreamStore;
         _networkStatusService = networkStatusService;
+        _imageCacheService = imageCacheService;
         _logger = logger;
         _playlistAdvanceFallbackDelay = playlistAdvanceFallbackDelay ?? DefaultPlaylistAdvanceFallbackDelay;
         _positionSamplerInterval = positionSamplerInterval ?? DefaultPositionSamplerInterval;
@@ -3322,8 +3325,31 @@ public class PlaybackService : IPlaybackService
         return mediaItem;
     }
 
-    private static string ResolveAlbumImageUri(SongDto song)
+    /// <summary>
+    /// Artwork URI handed to the platform runtime for the lock screen and notification.
+    ///
+    /// Prefers a locally cached file:// URI so notification artwork renders offline - Media3's default
+    /// bitmap loader resolves file:// through FileDataSource without touching the network. Offline with
+    /// nothing cached, returns empty rather than a remote URL, so the loader never stalls on the media
+    /// thread waiting for a request that cannot succeed.
+    /// </summary>
+    internal string ResolveAlbumImageUri(SongDto song)
     {
+        if (TryResolveCachedMediaImageUri(song.AlbumArtUrl, out var cachedAlbumImageUri))
+        {
+            return cachedAlbumImageUri;
+        }
+
+        if (TryResolveCachedMediaImageUri(song.PersonaImageUrl, out var cachedPersonaImageUri))
+        {
+            return cachedPersonaImageUri;
+        }
+
+        if (_networkStatusService?.HasNoNetworkAccess == true)
+        {
+            return string.Empty;
+        }
+
         if (TryResolveMediaImageUri(song.AlbumArtUrl, out var albumImageUri))
         {
             return albumImageUri;
@@ -3335,6 +3361,28 @@ public class PlaybackService : IPlaybackService
         }
 
         return string.Empty;
+    }
+
+    private bool TryResolveCachedMediaImageUri(string? remoteImageUrl, out string resolvedUri)
+    {
+        resolvedUri = string.Empty;
+
+        var cachedPath = _imageCacheService?.TryGetCachedImagePath(remoteImageUrl);
+        if (string.IsNullOrWhiteSpace(cachedPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            // TryResolveMediaImageUri only accepts a file:// URI, not a bare path.
+            resolvedUri = new Uri(cachedPath).AbsoluteUri;
+            return true;
+        }
+        catch (UriFormatException)
+        {
+            return false;
+        }
     }
 
     private static bool TryResolveMediaImageUri(string? candidate, out string resolvedUri)

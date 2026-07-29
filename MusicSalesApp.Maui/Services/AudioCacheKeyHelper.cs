@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using MusicSalesApp.Maui.ViewModels;
 
 namespace MusicSalesApp.Maui.Services;
@@ -23,22 +21,14 @@ internal static class AudioCacheKeyHelper
         return $"song-{song.Id}-{GetStablePathHash(song, remoteUri)}";
     }
 
+    /// <summary>
+    /// Hashes only the URL path, so a rotated SAS query string still resolves to the same cached audio.
+    /// Delegates to <see cref="StableRemoteAssetKey"/> so audio and image cache keys cannot drift apart.
+    /// The output is load-bearing: changing it orphans every track already on disk.
+    /// </summary>
     public static string GetStablePathHash(SongDto song, Uri remoteUri)
-    {
-        var keySource = string.IsNullOrWhiteSpace(remoteUri.AbsolutePath)
-            ? $"song-{song.Id}"
-            : remoteUri.AbsolutePath.ToLowerInvariant();
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(keySource))).ToLowerInvariant();
-    }
+        => StableRemoteAssetKey.GetPathHash(remoteUri, $"song-{song.Id}");
 
     public static bool TryGetRemoteUri(SongDto song, out Uri remoteUri)
-    {
-        if (string.IsNullOrWhiteSpace(song.StreamUrl))
-        {
-            remoteUri = null!;
-            return false;
-        }
-
-        return Uri.TryCreate(song.StreamUrl, UriKind.Absolute, out remoteUri!);
-    }
+        => StableRemoteAssetKey.TryGetAbsoluteUri(song.StreamUrl, out remoteUri);
 }

@@ -20,6 +20,8 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     private readonly IAppConfig _appConfig;
     private readonly IBillingService _billingService;
     private readonly IPlaylistService _playlistService;
+    private readonly INetworkStatusService? _networkStatusService;
+    private readonly ISongArtworkHydrator? _songArtworkHydrator;
 
     /// <summary>Id of the currently loaded custom playlist, if any.</summary>
     private int? _loadedPlaylistId;
@@ -37,7 +39,9 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         ISignalRService signalRService,
         IAppConfig appConfig,
         IBillingService billingService,
-        IPlaylistService playlistService)
+        IPlaylistService playlistService,
+        INetworkStatusService? networkStatusService = null,
+        ISongArtworkHydrator? songArtworkHydrator = null)
     {
         _musicService = musicService;
         _alertService = alertService;
@@ -49,6 +53,8 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         _appConfig = appConfig;
         _billingService = billingService;
         _playlistService = playlistService;
+        _networkStatusService = networkStatusService;
+        _songArtworkHydrator = songArtworkHydrator;
 
         AttachSubscriptions();
 
@@ -79,7 +85,29 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         _signalRService.OnLikeCountUpdated += HandleLikeCountUpdated;
         _playbackService.StateChanged += OnPlaybackStateChanged;
         _playbackService.ShowSubscribeCtaRequested += OnShowSubscribeCta;
+        if (_networkStatusService != null)
+            _networkStatusService.PropertyChanged += HandleNetworkStatusChanged;
         _subscriptionsAttached = true;
+    }
+
+    /// <summary>
+    /// Refreshes the offline-dependent properties, then reloads so the playlist narrows to downloaded
+    /// songs going offline and restores the full list coming back online.
+    /// </summary>
+    private void HandleNetworkStatusChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (!NetworkStatusChange.AffectsConnectivity(e.PropertyName))
+            return;
+
+        OnPropertyChanged(nameof(CanUseServerActions));
+        OnPropertyChanged(nameof(IsReorderEnabled));
+        OnPropertyChanged(nameof(CanEditPlaylist));
+        OnPropertyChanged(nameof(ShowOfflineEditingNotice));
+
+        if (IsLoading)
+            return;
+
+        _ = LoadPlaylistAsync();
     }
 
     public ObservableRangeCollection<SongDto> Songs { get; } = [];
@@ -122,10 +150,30 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsReorderEnabled))]
     [NotifyPropertyChangedFor(nameof(ShowTracksHeader))]
     [NotifyPropertyChangedFor(nameof(ShowEmptyPlaylistPrompt))]
+    [NotifyPropertyChangedFor(nameof(ShowOfflineEditingNotice))]
+    [NotifyPropertyChangedFor(nameof(CanEditPlaylist))]
     public partial bool IsUserPlaylist { get; set; }
 
-    /// <summary>True when the user can drag-reorder tracks (custom playlist + active subscription).</summary>
-    public bool IsReorderEnabled => IsUserPlaylist && HasActiveSubscription;
+    /// <summary>True when the user can drag-reorder tracks (custom playlist + active subscription + online).</summary>
+    public bool IsReorderEnabled => IsUserPlaylist && HasActiveSubscription && CanUseServerActions;
+
+    /// <summary>
+    /// False when the device has no network at all. Playlist editing, tipping, reporting and
+    /// add-to-playlist all need the server, so their controls are hidden rather than left to fail on
+    /// tap. Gated on <see cref="INetworkStatusService.HasNoNetworkAccess"/> rather than the
+    /// pessimistic <see cref="INetworkStatusService.IsOffline"/>, so a constrained or unknown
+    /// connection - where the server is still reachable - keeps them available.
+    /// </summary>
+    public bool CanUseServerActions => _networkStatusService?.HasNoNetworkAccess != true;
+
+    /// <summary>
+    /// True when the loaded playlist's edit controls (remove track) should be shown. Same rule as
+    /// <see cref="IsUserPlaylist"/> as before, now also requiring a connection.
+    /// </summary>
+    public bool CanEditPlaylist => IsUserPlaylist && CanUseServerActions;
+
+    /// <summary>True when a playlist is loaded that could be edited if the device were online.</summary>
+    public bool ShowOfflineEditingNotice => IsUserPlaylist && !CanUseServerActions;
 
     /// <summary>Tracks Songs.Count changes so computed properties refresh.</summary>
     [ObservableProperty]
@@ -233,9 +281,12 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         _userPlaylistIdBySongId.Clear();
 
         var allSongs = await _musicService.GetSongsAsync();
-        if (allSongs.Count == 0 && !string.IsNullOrWhiteSpace(_musicService.LastSongsError))
+        // This load's own error, not the service's shared last-load state - the library and home
+        // reload on the same connectivity change and would otherwise overwrite it out from under us.
+        var catalogError = SongCatalogOutcome.For(allSongs, _musicService).Error;
+        if (allSongs.Count == 0 && !string.IsNullOrWhiteSpace(catalogError))
         {
-            ErrorMessage = _musicService.LastSongsError;
+            ErrorMessage = catalogError;
             return;
         }
 
@@ -275,6 +326,14 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         await FinalizeLoadedSongsAsync(filtered);
     }
 
+    /// <summary>
+    /// Offline, "failed to load" is misleading - nothing is broken, the songs just aren't downloaded.
+    /// </summary>
+    private string ResolveLoadFailureMessage(string onlineMessage)
+        => _networkStatusService?.HasNoNetworkAccess == true
+            ? "You're offline. None of this playlist's songs are downloaded for offline playback."
+            : onlineMessage;
+
     private async Task LoadFromPlaylistServiceAsync(int? playlistId, bool loadRecommended)
     {
         _userPlaylistIdBySongId.Clear();
@@ -286,7 +345,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
             result = await _playlistService.GetPlaylistSongsAsync(playlistId.Value);
             if (result == null)
             {
-                ErrorMessage = "Failed to load playlist.";
+                ErrorMessage = ResolveLoadFailureMessage("Failed to load playlist.");
                 IsUserPlaylist = false;
                 return;
             }
@@ -299,7 +358,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
             result = await _playlistService.GetRecommendedSongsAsync();
             if (result == null)
             {
-                ErrorMessage = "Failed to load recommended playlist.";
+                ErrorMessage = ResolveLoadFailureMessage("Failed to load recommended playlist.");
                 IsUserPlaylist = false;
                 return;
             }
@@ -331,9 +390,16 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         foreach (var song in list)
             song.ShareUrl = SongDto.BuildShareUrl(song.Id, _appConfig.WebBaseUrl);
 
-        await Task.WhenAll(
-            LoadLikeCountsAsync(list),
-            LoadUserLikeStatusAsync(list));
+        // Offline these two requests can only stall for the client timeout; the songs already carry
+        // their last-known counts from whichever cache they were restored from.
+        if (_networkStatusService?.HasNoNetworkAccess != true)
+        {
+            await Task.WhenAll(
+                LoadLikeCountsAsync(list),
+                LoadUserLikeStatusAsync(list));
+        }
+
+        await HydrateArtworkAsync(list);
 
         Songs.ReplaceAll(list);
 
@@ -357,6 +423,24 @@ public partial class PlaylistPlayerViewModel : ObservableObject
             BuildVisibleQueueDescription());
         CurrentSong = PlaybackQueueSelection.ResolveCurrentSong(_playbackService, list);
         OnPropertyChanged(nameof(ShareUrl));
+    }
+
+    /// <summary>
+    /// Points each song's artwork at its locally cached copy. Best-effort - artwork is decorative.
+    /// </summary>
+    private async Task HydrateArtworkAsync(IReadOnlyList<SongDto> songs)
+    {
+        if (_songArtworkHydrator == null)
+            return;
+
+        try
+        {
+            await _songArtworkHydrator.HydrateAsync(songs);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to hydrate song artwork: {ex.Message}");
+        }
     }
 
     private string BuildVisibleQueueDescription()
@@ -511,13 +595,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         if (CurrentSong == null) return;
         if (!await RequireAuthenticatedUserAsync("like songs")) return;
 
-        var result = await _musicService.ToggleLikeAsync(CurrentSong.Id);
-        if (result != null)
-        {
-            CurrentSong.UserLikeStatus = result.IsLiked ? true : null;
-            CurrentSong.LikeCount = result.LikeCount;
-            CurrentSong.DislikeCount = result.DislikeCount;
-        }
+        await OptimisticLikeStateUpdater.ApplyAsync(_musicService, CurrentSong, LikeAction.ThumbsUp);
     }
 
     [RelayCommand]
@@ -526,13 +604,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         if (CurrentSong == null) return;
         if (!await RequireAuthenticatedUserAsync("dislike songs")) return;
 
-        var result = await _musicService.ToggleDislikeAsync(CurrentSong.Id);
-        if (result != null)
-        {
-            CurrentSong.UserLikeStatus = result.IsDisliked ? false : null;
-            CurrentSong.LikeCount = result.LikeCount;
-            CurrentSong.DislikeCount = result.DislikeCount;
-        }
+        await OptimisticLikeStateUpdater.ApplyAsync(_musicService, CurrentSong, LikeAction.ThumbsDown);
     }
 
     // --- Navigation ---
@@ -545,7 +617,8 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         await _navigationService.GoToAsync("persona", new Dictionary<string, object>
         {
             ["PersonaName"] = CurrentSong.ArtistName,
-            ["PersonaImageUrl"] = CurrentSong.PersonaImageUrl ?? string.Empty,
+            // Prefer the cached copy so the persona page renders offline too.
+            ["PersonaImageUrl"] = CurrentSong.PersonaImageDisplaySource ?? string.Empty,
             ["PersonaBio"] = CurrentSong.PersonaBio ?? string.Empty
         });
     }
@@ -725,6 +798,8 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         _signalRService.OnLikeCountUpdated -= HandleLikeCountUpdated;
         _playbackService.StateChanged -= OnPlaybackStateChanged;
         _playbackService.ShowSubscribeCtaRequested -= OnShowSubscribeCta;
+        if (_networkStatusService != null)
+            _networkStatusService.PropertyChanged -= HandleNetworkStatusChanged;
         _subscriptionsAttached = false;
     }
 }

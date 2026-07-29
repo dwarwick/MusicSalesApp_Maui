@@ -17,6 +17,7 @@ public class TipFlowHandler : ITipFlowHandler
     private readonly ITipAmountPicker _tipAmountPicker;
     private readonly IAlertService _alertService;
     private readonly IBrowserService _browserService;
+    private readonly INetworkStatusService? _networkStatusService;
     private readonly ILogger<TipFlowHandler> _logger;
 
     public TipFlowHandler(
@@ -25,18 +26,27 @@ public class TipFlowHandler : ITipFlowHandler
         ITipAmountPicker tipAmountPicker,
         IAlertService alertService,
         IBrowserService browserService,
-        ILogger<TipFlowHandler> logger)
+        ILogger<TipFlowHandler> logger,
+        INetworkStatusService? networkStatusService = null)
     {
         _authService = authService;
         _tipApiService = tipApiService;
         _tipAmountPicker = tipAmountPicker;
         _alertService = alertService;
         _browserService = browserService;
+        _networkStatusService = networkStatusService;
         _logger = logger;
     }
 
     public bool CanShowTipButton(int? creatorId, int? creatorUserId)
     {
+        // Tipping opens a PayPal approval flow in the browser, so it cannot work offline. Gating here
+        // covers every TipButton placement at once. HasNoNetworkAccess rather than IsOffline: on a
+        // constrained or unknown connection the flow still works, and hiding the button would take a
+        // working feature away.
+        if (_networkStatusService?.HasNoNetworkAccess == true)
+            return false;
+
         if (!_authService.IsValidatedUser)
             return false;
 

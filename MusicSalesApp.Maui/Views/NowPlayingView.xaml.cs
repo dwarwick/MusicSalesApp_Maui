@@ -206,7 +206,7 @@ public partial class NowPlayingView : ContentView
         {
             SongTitleLabel.Text = song!.SongTitle;
             ArtistNameLabel.Text = song.ArtistName;
-            AlbumArtworkView.AlbumArtUrl = song.AlbumArtUrl;
+            AlbumArtworkView.AlbumArtUrl = song.AlbumArtDisplaySource;
         }
         else
         {

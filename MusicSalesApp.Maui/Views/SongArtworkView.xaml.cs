@@ -18,6 +18,11 @@ public partial class SongArtworkView : ContentView
     public static readonly BindableProperty HasFallbackArtworkProperty =
         BindableProperty.Create(nameof(HasFallbackArtwork), typeof(bool), typeof(SongArtworkView), true);
 
+    /// <summary>
+    /// Artwork to display: either a remote URL or a local file path. Call sites bind
+    /// <c>SongDto.AlbumArtDisplaySource</c>, which prefers the locally cached copy when one exists.
+    /// Null or empty shows the built-in placeholder.
+    /// </summary>
     public string? AlbumArtUrl
     {
         get => (string?)GetValue(AlbumArtUrlProperty);

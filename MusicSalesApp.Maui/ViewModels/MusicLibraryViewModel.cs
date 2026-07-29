@@ -23,6 +23,8 @@ public partial class MusicLibraryViewModel : ObservableObject
     private readonly IAppConfig _appConfig;
     private readonly IBillingService _billingService;
     private readonly IAudioCacheService? _audioCacheService;
+    private readonly INetworkStatusService? _networkStatusService;
+    private readonly ISongArtworkHydrator? _songArtworkHydrator;
     private readonly Dictionary<int, (int likes, int dislikes)> _likeCounts = new();
     private readonly HashSet<int> _downloadedSongIds = [];
     private bool _subscriptionsAttached;
@@ -40,7 +42,9 @@ public partial class MusicLibraryViewModel : ObservableObject
         IMediaPlaybackOnboardingService mediaPlaybackOnboardingService,
         IAppConfig appConfig,
         IBillingService billingService,
-        IAudioCacheService? audioCacheService = null)
+        IAudioCacheService? audioCacheService = null,
+        INetworkStatusService? networkStatusService = null,
+        ISongArtworkHydrator? songArtworkHydrator = null)
     {
         _musicService = musicService;
         _alertService = alertService;
@@ -52,6 +56,8 @@ public partial class MusicLibraryViewModel : ObservableObject
         _appConfig = appConfig;
         _billingService = billingService;
         _audioCacheService = audioCacheService;
+        _networkStatusService = networkStatusService;
+        _songArtworkHydrator = songArtworkHydrator;
 
         UpdateAiPillText();
         UpdateGenrePillText();
@@ -75,6 +81,8 @@ public partial class MusicLibraryViewModel : ObservableObject
         _signalRService.OnStreamCountUpdated -= HandleStreamCountUpdated;
         _signalRService.OnLikeCountUpdated -= HandleLikeCountUpdated;
         _playbackService.ShowSubscribeCtaRequested -= OnShowSubscribeCta;
+        if (_networkStatusService != null)
+            _networkStatusService.PropertyChanged -= HandleNetworkStatusChanged;
         _subscriptionsAttached = false;
     }
 
@@ -87,7 +95,29 @@ public partial class MusicLibraryViewModel : ObservableObject
         _signalRService.OnStreamCountUpdated += HandleStreamCountUpdated;
         _signalRService.OnLikeCountUpdated += HandleLikeCountUpdated;
         _playbackService.ShowSubscribeCtaRequested += OnShowSubscribeCta;
+        if (_networkStatusService != null)
+            _networkStatusService.PropertyChanged += HandleNetworkStatusChanged;
         _subscriptionsAttached = true;
+    }
+
+    /// <summary>
+    /// Reloads when connectivity flips in either direction: going offline narrows the library to
+    /// downloaded songs, coming back online restores the full catalog without a manual pull-to-refresh.
+    /// NetworkStatusService already marshals this to the main thread.
+    /// </summary>
+    private void HandleNetworkStatusChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (!NetworkStatusChange.AffectsConnectivity(e.PropertyName))
+            return;
+
+        OnPropertyChanged(nameof(CanUseServerActions));
+        OnPropertyChanged(nameof(EmptyStateTitle));
+        OnPropertyChanged(nameof(EmptyStateDetail));
+
+        if (IsLoading)
+            return;
+
+        _ = LoadSongsCommand.ExecuteAsync(null);
     }
 
     /// <summary>Expose the shared playback service so the page can bind NowPlayingView.</summary>
@@ -561,6 +591,32 @@ public partial class MusicLibraryViewModel : ObservableObject
     public partial string? ErrorMessage { get; set; }
 
     /// <summary>
+    /// True when the visible list came from the offline catalog rather than the API, meaning it holds
+    /// only songs whose audio is downloaded. Drives the offline banner and the empty-state copy.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EmptyStateTitle))]
+    [NotifyPropertyChangedFor(nameof(EmptyStateDetail))]
+    public partial bool IsOfflineCatalog { get; set; }
+
+    public string EmptyStateTitle => IsOfflineCatalog || _networkStatusService?.HasNoNetworkAccess == true
+        ? "You're offline"
+        : "No songs available";
+
+    public string EmptyStateDetail => IsOfflineCatalog || _networkStatusService?.HasNoNetworkAccess == true
+        ? "Only downloaded songs can be played right now. Reconnect to browse the full library."
+        : "Pull down to refresh.";
+
+    /// <summary>
+    /// False when the device has no network at all. Actions that need the server (reporting a song,
+    /// tipping a creator) are hidden rather than left to fail with a generic error on tap. Gated on
+    /// <see cref="INetworkStatusService.HasNoNetworkAccess"/> rather than the pessimistic
+    /// <see cref="INetworkStatusService.IsOffline"/>, which is also true on a constrained connection
+    /// that can still reach the server.
+    /// </summary>
+    public bool CanUseServerActions => _networkStatusService?.HasNoNetworkAccess != true;
+
+    /// <summary>
     /// Fetches the stream qualifying seconds from the server. Call once at startup.
     /// </summary>
     public async Task LoadStreamQualifyingSecondsAsync()
@@ -589,11 +645,9 @@ public partial class MusicLibraryViewModel : ObservableObject
         if (!await RequireAuthenticatedUserAsync("like songs"))
             return;
 
-        var result = await _musicService.ToggleLikeAsync(song.Id);
-        if (result != null)
-        {
-            song.UserLikeStatus = result.IsLiked ? true : null;
-        }
+        // applyServerCounts: false - the library leaves counts to the SignalR broadcast so every open
+        // screen updates together rather than only the one that was tapped.
+        await OptimisticLikeStateUpdater.ApplyAsync(_musicService, song, LikeAction.ThumbsUp, applyServerCounts: false);
     }
 
     [RelayCommand]
@@ -604,11 +658,7 @@ public partial class MusicLibraryViewModel : ObservableObject
         if (!await RequireAuthenticatedUserAsync("dislike songs"))
             return;
 
-        var result = await _musicService.ToggleDislikeAsync(song.Id);
-        if (result != null)
-        {
-            song.UserLikeStatus = result.IsDisliked ? false : null;
-        }
+        await OptimisticLikeStateUpdater.ApplyAsync(_musicService, song, LikeAction.ThumbsDown, applyServerCounts: false);
     }
 
     [RelayCommand]
@@ -729,10 +779,19 @@ public partial class MusicLibraryViewModel : ObservableObject
         try
         {
             var songs = await _musicService.GetSongsAsync();
-            if (songs.Count == 0 && !string.IsNullOrWhiteSpace(_musicService.LastSongsError))
-            {
-                ErrorMessage = _musicService.LastSongsError;
-            }
+
+            // Read the source from this load's own result: home and the playlist player reload on the
+            // same connectivity change, and the service's last-load properties are shared between us.
+            var catalog = SongCatalogOutcome.For(songs, _musicService);
+            var songsSource = catalog.Source;
+
+            // Offline states get a friendly empty state; only a genuine server failure while online
+            // still surfaces the raw diagnostic (which includes the API URL).
+            IsOfflineCatalog = songsSource == SongCatalogSource.OfflineCache
+                || (songsSource == SongCatalogSource.Unavailable && _networkStatusService?.HasNoNetworkAccess == true);
+            ErrorMessage = songsSource == SongCatalogSource.Unavailable
+                ? catalog.Error
+                : null;
 
             var orderedSongs = await Task.Run(() =>
             {
@@ -747,6 +806,7 @@ public partial class MusicLibraryViewModel : ObservableObject
             _allSongs.Clear();
             _allSongs.AddRange(orderedSongs);
             await RefreshDownloadedSongIdsAsync();
+            await HydrateArtworkAsync(orderedSongs);
 
             // Reset filters when reloading
             SelectedGenres.Clear();
@@ -762,10 +822,20 @@ public partial class MusicLibraryViewModel : ObservableObject
             RefreshAvailableArtists();
             ApplyFilters();
 
-            // Load like counts and user like status in parallel
-            await Task.WhenAll(
-                LoadLikeCountsAsync(orderedSongs),
-                LoadUserLikeStatusAsync(orderedSongs));
+            // Skip the like/status calls unless the catalog itself came back live. Offline they are two
+            // more requests that each hang for the full HTTP timeout after the songs call already
+            // failed, and the cached songs already carry their last-known counts.
+            if (songsSource == SongCatalogSource.Live)
+            {
+                // Load like counts and user like status in parallel
+                await Task.WhenAll(
+                    LoadLikeCountsAsync(orderedSongs),
+                    LoadUserLikeStatusAsync(orderedSongs));
+            }
+            else
+            {
+                SeedLikeCountsFromCachedSongs(orderedSongs);
+            }
         }
         catch (Exception ex)
         {
@@ -801,6 +871,39 @@ public partial class MusicLibraryViewModel : ObservableObject
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Failed to load like counts: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Points each song's artwork at its locally cached copy. Best-effort: artwork is decorative, so a
+    /// failure here must never break the song list.
+    /// </summary>
+    private async Task HydrateArtworkAsync(IReadOnlyList<SongDto> songs)
+    {
+        if (_songArtworkHydrator == null)
+            return;
+
+        try
+        {
+            await _songArtworkHydrator.HydrateAsync(songs);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to hydrate song artwork: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Populates the like-count lookup from the songs themselves rather than the API. The offline
+    /// catalog persists the counts that were current when it was written, so GetLikeCount/GetDislikeCount
+    /// keep working offline instead of reporting zero for everything.
+    /// </summary>
+    private void SeedLikeCountsFromCachedSongs(List<SongDto> songs)
+    {
+        _likeCounts.Clear();
+        foreach (var song in songs)
+        {
+            _likeCounts[song.Id] = (song.LikeCount, song.DislikeCount);
         }
     }
 

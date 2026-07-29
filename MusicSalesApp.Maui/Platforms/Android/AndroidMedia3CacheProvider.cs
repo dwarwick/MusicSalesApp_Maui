@@ -9,6 +9,8 @@ using AndroidX.Media3.ExoPlayer.Source;
 using Java.IO;
 using Java.Util.Concurrent;
 using Microsoft.Maui.ApplicationModel;
+using Microsoft.Maui.Storage;
+using MusicSalesApp.Maui.Services;
 using Media3DownloadManager = AndroidX.Media3.ExoPlayer.Offline.DownloadManager;
 
 namespace MusicSalesApp.Maui.Platforms.Android;
@@ -33,6 +35,46 @@ internal static class AndroidMedia3CacheProvider
         }
     }
 
+    /// <summary>
+    /// Size for the cache evictor, read straight from preferences because the cache is built from a
+    /// static context that has no access to DI. Uses the same pure function as
+    /// <c>IOfflineCacheSettingsService.GetAudioCacheLimitBytes</c>, so the ceiling the cache trims
+    /// itself to and the ceiling that gates new downloads can never disagree.
+    ///
+    /// Read once per process: changing the limit in settings takes effect on the next app start.
+    /// </summary>
+    private static long GetAudioCacheLimitBytes()
+    {
+        try
+        {
+            var configuredLimitMb = Preferences.Default.Get(
+                OfflineCacheSettingsService.CacheLimitPreferenceKey,
+                OfflineCacheSettingsService.DefaultCacheLimitMegabytesValue);
+            return OfflineCacheSettingsService.ComputeAudioCacheLimitBytes(configuredLimitMb);
+        }
+        catch (Exception)
+        {
+            // Never let a preference read stop the cache being created - without a cache there is no
+            // playback at all.
+            return OfflineCacheSettingsService.ComputeAudioCacheLimitBytes(
+                OfflineCacheSettingsService.DefaultCacheLimitMegabytesValue);
+        }
+    }
+
+    /// <summary>
+    /// The shared Media3 cache. Both the download manager and playback write into it, so it needs an
+    /// evictor: playback streams through <see cref="GetCacheDataSourceFactory"/>, which has a write
+    /// sink, so simply listening to music grows the cache whether or not anything was ever explicitly
+    /// downloaded. With the previous NoOpCacheEvictor it grew without limit, and once it passed the
+    /// download ceiling <c>AndroidMedia3AudioCacheService</c> refused every new download - permanently,
+    /// because nothing ever shrank it again. Observed on device at 1.02 GB and still climbing.
+    ///
+    /// Interaction with the sleep-safe contract: LRU only evicts while writing, and writing only
+    /// happens with a network connection, so cached content cannot be evicted out from under a sleeping
+    /// or offline device. A freshly prepared queue item counts as most-recently-used, so eviction
+    /// victims are old content rather than the active queue. Readiness is re-resolved from the cache on
+    /// every check, so anything that does get evicted is simply re-prepared rather than played wrong.
+    /// </summary>
     public static SimpleCache GetCache(Context context)
     {
         lock (Sync)
@@ -46,7 +88,7 @@ internal static class AndroidMedia3CacheProvider
 
             _cache = new SimpleCache(
                 downloadDirectory,
-                new NoOpCacheEvictor(),
+                new LeastRecentlyUsedCacheEvictor(GetAudioCacheLimitBytes()),
                 GetDatabaseProvider(context));
 
             return _cache;

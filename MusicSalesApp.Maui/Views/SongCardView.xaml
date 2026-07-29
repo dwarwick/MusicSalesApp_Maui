@@ -35,7 +35,7 @@
                         StrokeThickness="0"
                         HeightRequest="150"
                         WidthRequest="150">
-                    <views:SongArtworkView AlbumArtUrl="{Binding AlbumArtUrl}"
+                    <views:SongArtworkView AlbumArtUrl="{Binding AlbumArtDisplaySource}"
                                            HeightRequest="150"
                                            WidthRequest="150" />
                 </Border>
@@ -62,8 +62,8 @@
                         HeightRequest="20"
                         WidthRequest="20"
                         VerticalOptions="Center"
-                        IsVisible="{Binding PersonaImageUrl, Converter={toolkit:IsNotNullConverter}}">
-                    <Image Source="{Binding PersonaImageUrl}"
+                        IsVisible="{Binding PersonaImageDisplaySource, Converter={toolkit:IsNotNullConverter}}">
+                    <Image Source="{Binding PersonaImageDisplaySource}"
                            Aspect="AspectFill"
                            HeightRequest="20"
                            WidthRequest="20" />
@@ -188,10 +188,12 @@
                            IsVisible="{Binding Source={x:Reference Root}, Path=ShowShareButton}"
                                    VerticalOptions="Center" />
 
+                <!-- Suppressed rather than IsVisible: the control also hides itself while offline, and
+                     one owner of IsVisible avoids the two gates fighting. -->
                 <views:AddToPlaylistButton Grid.Column="2"
                                            SongId="{Binding Id}"
                                            SongTitle="{Binding SongTitle}"
-                               IsVisible="{Binding Source={x:Reference Root}, Path=ShowAddToPlaylistButton}"
+                               Suppressed="{Binding Source={x:Reference Root}, Path=HideAddToPlaylistButton}"
                                            VerticalOptions="Center" />
 
                                 <views:TipButton Grid.Column="3"
@@ -203,7 +205,8 @@
 
                                 <Grid Grid.Column="4"
                       HeightRequest="32"
-                      WidthRequest="32">
+                      WidthRequest="32"
+                      IsVisible="{Binding Source={x:Reference Root}, Path=ShowReportButton}">
                     <Grid.GestureRecognizers>
                         <TapGestureRecognizer
                             Command="{Binding Source={x:Reference Root}, Path=ReportSongCommand}"

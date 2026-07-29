@@ -17,6 +17,7 @@ public partial class TipButton : ContentView
         BindableProperty.Create(nameof(CreatorUserId), typeof(int?), typeof(TipButton), default(int?), propertyChanged: OnVisibilityInputsChanged);
 
     private bool _subscribedToAuthChanges;
+    private bool _subscribedToNetworkChanges;
 
     public int SongId
     {
@@ -44,6 +45,7 @@ public partial class TipButton : ContentView
 
     public ITipFlowHandler? TipHandler { get; set; }
     public IAuthService? AuthService { get; set; }
+    public INetworkStatusService? NetworkStatusService { get; set; }
 
     public TipButton()
     {
@@ -70,12 +72,43 @@ public partial class TipButton : ContentView
     private void OnLoaded(object? sender, EventArgs e)
     {
         SubscribeToAuthChanges();
+        SubscribeToNetworkChanges();
         UpdateVisibility();
     }
 
     private void OnUnloaded(object? sender, EventArgs e)
     {
         UnsubscribeFromAuthChanges();
+        UnsubscribeFromNetworkChanges();
+    }
+
+    private void SubscribeToNetworkChanges()
+    {
+        var networkStatusService = NetworkStatusService ?? ResolveNetworkStatusService();
+        if (networkStatusService == null || _subscribedToNetworkChanges)
+            return;
+
+        NetworkStatusService = networkStatusService;
+        networkStatusService.PropertyChanged += OnNetworkStatusChanged;
+        _subscribedToNetworkChanges = true;
+    }
+
+    private void UnsubscribeFromNetworkChanges()
+    {
+        if (!_subscribedToNetworkChanges || NetworkStatusService == null)
+            return;
+
+        NetworkStatusService.PropertyChanged -= OnNetworkStatusChanged;
+        _subscribedToNetworkChanges = false;
+    }
+
+    /// <summary>
+    /// Tipping needs the server, so the button hides while offline and reappears on reconnect.
+    /// </summary>
+    private void OnNetworkStatusChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (NetworkStatusChange.AffectsConnectivity(e.PropertyName))
+            MainThread.BeginInvokeOnMainThread(UpdateVisibility);
     }
 
     private void SubscribeToAuthChanges()
@@ -124,5 +157,11 @@ public partial class TipButton : ContentView
     {
         var services = IPlatformApplication.Current?.Services;
         return services?.GetService(typeof(IAuthService)) as IAuthService;
+    }
+
+    private static INetworkStatusService? ResolveNetworkStatusService()
+    {
+        var services = IPlatformApplication.Current?.Services;
+        return services?.GetService(typeof(INetworkStatusService)) as INetworkStatusService;
     }
 }

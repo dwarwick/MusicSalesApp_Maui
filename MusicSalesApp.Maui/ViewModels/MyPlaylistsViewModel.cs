@@ -11,17 +11,58 @@ public partial class MyPlaylistsViewModel : ObservableObject
     private readonly IAuthService _authService;
     private readonly IAlertService _alertService;
     private readonly INavigationService _navigationService;
+    private readonly INetworkStatusService? _networkStatusService;
+    private bool _networkSubscriptionAttached;
 
     public MyPlaylistsViewModel(
         IPlaylistService playlistService,
         IAuthService authService,
         IAlertService alertService,
-        INavigationService navigationService)
+        INavigationService navigationService,
+        INetworkStatusService? networkStatusService = null)
     {
         _playlistService = playlistService;
         _authService = authService;
         _alertService = alertService;
         _navigationService = navigationService;
+        _networkStatusService = networkStatusService;
+
+        Activate();
+    }
+
+    /// <summary>
+    /// Subscribes to connectivity changes. Paired with <see cref="Cleanup"/> and guarded, because the
+    /// page can be navigated away from and back to on the same ViewModel instance.
+    /// </summary>
+    public void Activate()
+    {
+        if (_networkSubscriptionAttached || _networkStatusService == null)
+            return;
+
+        _networkStatusService.PropertyChanged += HandleNetworkStatusChanged;
+        _networkSubscriptionAttached = true;
+    }
+
+    private void HandleNetworkStatusChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (!NetworkStatusChange.AffectsConnectivity(e.PropertyName))
+            return;
+
+        OnPropertyChanged(nameof(CanUseServerActions));
+        OnPropertyChanged(nameof(EmptyStateTitle));
+        OnPropertyChanged(nameof(EmptyStateDetail));
+
+        if (!IsLoading)
+            _ = LoadCommand.ExecuteAsync(null);
+    }
+
+    public void Cleanup()
+    {
+        if (!_networkSubscriptionAttached || _networkStatusService == null)
+            return;
+
+        _networkStatusService.PropertyChanged -= HandleNetworkStatusChanged;
+        _networkSubscriptionAttached = false;
     }
 
     public ObservableCollection<PlaylistDto> Playlists { get; } = [];
@@ -43,6 +84,26 @@ public partial class MyPlaylistsViewModel : ObservableObject
     public bool ShowEmptyState => !IsLoading && Playlists.Count == 0;
 
     public bool ShowPlaylists => !IsLoading && Playlists.Count > 0;
+
+    /// <summary>
+    /// False when the device has no network at all: creating and renaming playlists both need the
+    /// server. Gated on <see cref="INetworkStatusService.HasNoNetworkAccess"/> rather than the
+    /// pessimistic <see cref="INetworkStatusService.IsOffline"/>, so a constrained connection - where
+    /// the server is still reachable - keeps the controls available.
+    /// </summary>
+    public bool CanUseServerActions => _networkStatusService?.HasNoNetworkAccess != true;
+
+    /// <summary>
+    /// Offline, an empty list means "we couldn't reach the server", not "you have no playlists" -
+    /// showing the latter reads as if the user's playlists were deleted.
+    /// </summary>
+    public string EmptyStateTitle => CanUseServerActions
+        ? "No playlists yet"
+        : "You're offline";
+
+    public string EmptyStateDetail => CanUseServerActions
+        ? "Create a playlist to get started."
+        : "Your playlists will be here when you reconnect.";
 
     /// <summary>
     /// Banner copy shown above the list when the user lacks an active subscription.

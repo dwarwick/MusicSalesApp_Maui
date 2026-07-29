@@ -31,6 +31,9 @@ public class AuthService : IAuthService
     private const string BioEmailKey = "bio_email";
     private const string BioPasswordKey = "bio_password";
 
+    private readonly IOfflinePlaylistStore? _offlinePlaylistStore;
+    private readonly IOfflineSongCatalogStore? _offlineSongCatalogStore;
+
     public event Action? AuthStateChanged;
 
     public bool IsLoggedIn { get; private set; }
@@ -59,7 +62,9 @@ public class AuthService : IAuthService
 
     public AuthService(IHttpClientFactory httpClientFactory, IConfiguration configuration,
         ILogger<AuthService> logger, IWebAuthenticatorService webAuthenticatorService,
-        IBillingService billingService, IMusicService musicService, ISecureStorage secureStorage)
+        IBillingService billingService, IMusicService musicService, ISecureStorage secureStorage,
+        IOfflinePlaylistStore? offlinePlaylistStore = null,
+        IOfflineSongCatalogStore? offlineSongCatalogStore = null)
     {
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
@@ -68,6 +73,8 @@ public class AuthService : IAuthService
         _billingService = billingService;
         _musicService = musicService;
         _secureStorage = secureStorage;
+        _offlinePlaylistStore = offlinePlaylistStore;
+        _offlineSongCatalogStore = offlineSongCatalogStore;
     }
 
     public async Task<bool> HasBiometricCredentialsAsync(CancellationToken cancellationToken = default)
@@ -388,6 +395,10 @@ public class AuthService : IAuthService
     public async Task LogoutAsync()
     {
         await _musicService.ClearPendingStreamRecordsAsync();
+        // Queued like/dislike intents belong to the outgoing user - replaying them under the next
+        // account would attribute their opinions to someone else.
+        await _musicService.ClearPendingLikeStatesAsync();
+        await ClearOfflineSnapshotsAsync();
         _secureStorage.Remove(TokenStorageKey);
         _secureStorage.Remove(AuthStorageKeys.UserId);
         _secureStorage.Remove(EmailStorageKey);
@@ -396,6 +407,33 @@ public class AuthService : IAuthService
         _secureStorage.Remove(CreatorIdStorageKey);
         ClearState();
         NotifyAuthStateChanged();
+    }
+
+    /// <summary>
+    /// Clears the outgoing user's data out of the offline snapshots.
+    ///
+    /// Neither store is namespaced by account, so without this the next person to sign in would see the
+    /// previous user's playlists and votes while offline. The two are treated differently on purpose:
+    /// playlists are wholly personal and go entirely, whereas the song catalog is public and only the
+    /// thumbs-up/down state on it is personal. Deleting the catalog would take offline playback away
+    /// too - including on the session-expiry logout that can fire at startup with no network - so only
+    /// the votes are stripped.
+    /// </summary>
+    private async Task ClearOfflineSnapshotsAsync()
+    {
+        try
+        {
+            if (_offlinePlaylistStore != null)
+                await _offlinePlaylistStore.ClearAsync();
+
+            if (_offlineSongCatalogStore != null)
+                await _offlineSongCatalogStore.ClearUserLikeStatesAsync();
+        }
+        catch (Exception ex)
+        {
+            // Never block a logout on a file delete; the next successful load overwrites both stores.
+            _logger.LogWarning(ex, "Failed to clear the offline snapshots during logout");
+        }
     }
 
     public async Task TryRestoreSessionAsync()

@@ -167,11 +167,35 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IWebAuthenticatorService, WebAuthenticatorService>();
 		builder.Services.AddSingleton<IAppSettingsService, AppSettingsService>();
 		builder.Services.AddSingleton<IOfflineCacheSettingsService, OfflineCacheSettingsService>();
-		builder.Services.AddSingleton<IMusicService, MusicService>();
+		builder.Services.AddSingleton<IOfflineSongCatalogStore, OfflineSongCatalogStore>();
+		// MusicService is registered concretely so OfflineAwareMusicService can decorate it. Every
+		// consumer resolves IMusicService and therefore gets the offline fallback for free.
+		builder.Services.AddSingleton<MusicService>();
+		builder.Services.AddSingleton<IMusicService>(services => new OfflineAwareMusicService(
+			services.GetRequiredService<MusicService>(),
+			services.GetRequiredService<IOfflineSongCatalogStore>(),
+			services.GetRequiredService<ITrackCacheService>(),
+			services.GetRequiredService<IConnectivity>(),
+			services.GetRequiredService<ILogger<OfflineAwareMusicService>>(),
+			services.GetRequiredService<IImageCacheService>()));
+		builder.Services.AddSingleton<IImageCacheService, ImageCacheService>();
+		builder.Services.AddSingleton<ISongArtworkHydrator, SongArtworkHydrator>();
+		// The platform cache is registered concretely and wrapped, so a song's artwork is downloaded at
+		// exactly the same moment its audio is - no separate trigger to keep in sync.
 	#if ANDROID
-		builder.Services.AddSingleton<IAudioCacheService, MusicSalesApp.Maui.Platforms.Android.AndroidMedia3AudioCacheService>();
+		builder.Services.AddSingleton<MusicSalesApp.Maui.Platforms.Android.AndroidMedia3AudioCacheService>();
+		builder.Services.AddSingleton<IAudioCacheService>(services => new ArtworkCachingAudioCacheService(
+			services.GetRequiredService<MusicSalesApp.Maui.Platforms.Android.AndroidMedia3AudioCacheService>(),
+			services.GetRequiredService<IImageCacheService>(),
+			services.GetRequiredService<ILogger<ArtworkCachingAudioCacheService>>(),
+			services.GetRequiredService<INetworkStatusService>()));
 	#else
-		builder.Services.AddSingleton<IAudioCacheService, AudioCacheService>();
+		builder.Services.AddSingleton<AudioCacheService>();
+		builder.Services.AddSingleton<IAudioCacheService>(services => new ArtworkCachingAudioCacheService(
+			services.GetRequiredService<AudioCacheService>(),
+			services.GetRequiredService<IImageCacheService>(),
+			services.GetRequiredService<ILogger<ArtworkCachingAudioCacheService>>(),
+			services.GetRequiredService<INetworkStatusService>()));
 	#endif
 		builder.Services.AddSingleton<ITrackCacheService>(services => services.GetRequiredService<IAudioCacheService>());
 		builder.Services.AddSingleton<IQueuePreparationService, QueuePreparationService>();
@@ -205,7 +229,18 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IAudioVisualizerService, NoAudioVisualizerService>();
 	#endif
 		builder.Services.AddSingleton<IBrowserService, BrowserService>();
-		builder.Services.AddSingleton<IPlaylistService, PlaylistService>();
+		builder.Services.AddSingleton<IOfflinePlaylistStore, OfflinePlaylistStore>();
+		// Same decorator shape as IMusicService: every playlist consumer gets offline support with no
+		// call-site changes. Registered as its own singleton too, so ViewModels can read LastPlaylistSource.
+		builder.Services.AddSingleton<PlaylistService>();
+		builder.Services.AddSingleton(services => new OfflineAwarePlaylistService(
+			services.GetRequiredService<PlaylistService>(),
+			services.GetRequiredService<IOfflinePlaylistStore>(),
+			services.GetRequiredService<ITrackCacheService>(),
+			services.GetRequiredService<IConnectivity>(),
+			services.GetRequiredService<ILogger<OfflineAwarePlaylistService>>()));
+		builder.Services.AddSingleton<IPlaylistService>(services => services.GetRequiredService<OfflineAwarePlaylistService>());
+		builder.Services.AddSingleton<IPlaylistDataSourceReporter>(services => services.GetRequiredService<OfflineAwarePlaylistService>());
 		builder.Services.AddSingleton<IContactApiService, ContactApiService>();
 		builder.Services.AddSingleton<ITipApiService, TipApiService>();
 		builder.Services.AddSingleton<ITipAmountPicker, TipAmountPicker>();

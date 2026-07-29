@@ -14,6 +14,7 @@ public class TipFlowHandlerTests
     private Mock<IAlertService> _alerts = null!;
     private Mock<IBrowserService> _browser = null!;
     private Mock<ILogger<TipFlowHandler>> _logger = null!;
+    private TestNetworkStatusService _networkStatus = null!;
     private TipFlowHandler _handler = null!;
 
     [SetUp]
@@ -31,7 +32,49 @@ public class TipFlowHandlerTests
         _auth.SetupGet(a => a.UserId).Returns(22);
         _auth.SetupGet(a => a.CreatorId).Returns((int?)null);
 
-        _handler = new TipFlowHandler(_auth.Object, _tipApi.Object, _tipAmountPicker.Object, _alerts.Object, _browser.Object, _logger.Object);
+        _networkStatus = new TestNetworkStatusService();
+
+        _handler = new TipFlowHandler(_auth.Object, _tipApi.Object, _tipAmountPicker.Object, _alerts.Object, _browser.Object, _logger.Object, _networkStatus);
+    }
+
+    [Test]
+    public void CanShowTipButton_WhileOffline_ReturnsFalseEvenForAValidatedUser()
+    {
+        // Tipping opens a PayPal approval flow in the browser, so it cannot work offline.
+        Assert.That(_handler.CanShowTipButton(7, 99), Is.True);
+
+        _networkStatus.SetOffline(true);
+
+        Assert.That(_handler.CanShowTipButton(7, 99), Is.False);
+    }
+
+    [Test]
+    public void CanShowTipButton_AfterReconnecting_ReturnsTrueAgain()
+    {
+        _networkStatus.SetOffline(true);
+
+        _networkStatus.SetOffline(false);
+
+        Assert.That(_handler.CanShowTipButton(7, 99), Is.True);
+    }
+
+    [Test]
+    public void CanShowTipButton_OnAConstrainedConnection_StaysVisible()
+    {
+        // IsOffline is true here, but the PayPal flow still works - hiding the button would take away a
+        // working feature. The gate uses HasNoNetworkAccess for exactly this reason.
+        _networkStatus.SetConstrained();
+
+        Assert.That(_handler.CanShowTipButton(7, 99), Is.True);
+    }
+
+    [Test]
+    public void CanShowTipButton_WithNoNetworkStatusService_KeepsThePreExistingBehaviour()
+    {
+        var handlerWithoutNetworkStatus = new TipFlowHandler(
+            _auth.Object, _tipApi.Object, _tipAmountPicker.Object, _alerts.Object, _browser.Object, _logger.Object);
+
+        Assert.That(handlerWithoutNetworkStatus.CanShowTipButton(7, 99), Is.True);
     }
 
     [Test]

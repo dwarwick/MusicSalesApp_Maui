@@ -1,5 +1,6 @@
 using Moq;
 using MusicSalesApp.Maui.Services;
+using MusicSalesApp.Maui.Tests.Services;
 using MusicSalesApp.Maui.ViewModels;
 
 namespace MusicSalesApp.Maui.Tests.ViewModels;
@@ -157,11 +158,181 @@ public class MusicLibraryViewModelTests
     {
         _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync([]);
         _mockMusicService.SetupGet(s => s.LastSongsError).Returns("Request to https://davidtest.dev/api/music/songs failed (500).");
+        _mockMusicService.SetupGet(s => s.LastSongsSource).Returns(SongCatalogSource.Unavailable);
 
         await _viewModel.LoadSongsCommand.ExecuteAsync(null);
 
         Assert.That(_viewModel.ErrorMessage, Does.Contain("https://davidtest.dev/api/music/songs"));
     }
+
+    // --- Offline catalog ---
+
+    [Test]
+    public async Task LoadSongsAsync_OfflineCatalog_ShowsTheOfflineBannerAndSuppressesTheRawApiError()
+    {
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync([new SongDto { Id = 1, SongTitle = "Cached" }]);
+        _mockMusicService.SetupGet(s => s.LastSongsSource).Returns(SongCatalogSource.OfflineCache);
+
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.IsOfflineCatalog, Is.True);
+            Assert.That(_viewModel.ErrorMessage, Is.Null);
+            Assert.That(_viewModel.Songs, Has.Count.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task LoadSongsAsync_PrefersTheSourceTaggedOnItsOwnResult()
+    {
+        // Home and the playlist player reload on the same connectivity change and share these
+        // properties, so a load that has already returned must not be re-interpreted by a later one.
+        // Here the shared property says Live while this result carries OfflineCache.
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(
+            new SongCatalogList([new SongDto { Id = 1, SongTitle = "Cached" }], SongCatalogSource.OfflineCache, null));
+        _mockMusicService.SetupGet(s => s.LastSongsSource).Returns(SongCatalogSource.Live);
+        _mockMusicService.SetupGet(s => s.LastSongsError).Returns("stale error from another load");
+
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.IsOfflineCatalog, Is.True);
+            Assert.That(_viewModel.ErrorMessage, Is.Null);
+        });
+    }
+
+    [Test]
+    public async Task LoadSongsAsync_OfflineCatalog_SkipsTheLikeAndStatusRequests()
+    {
+        // Offline these would each stall for the full HTTP timeout after the songs call already failed.
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync([new SongDto { Id = 1 }]);
+        _mockMusicService.SetupGet(s => s.LastSongsSource).Returns(SongCatalogSource.OfflineCache);
+
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        _mockMusicService.Verify(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()), Times.Never);
+        _mockMusicService.Verify(s => s.GetBulkUserLikeStatusAsync(It.IsAny<IEnumerable<int>>()), Times.Never);
+    }
+
+    [Test]
+    public async Task LoadSongsAsync_OfflineCatalog_SeedsLikeCountsFromTheCachedSongs()
+    {
+        _mockMusicService.Setup(s => s.GetSongsAsync())
+            .ReturnsAsync([new SongDto { Id = 1, LikeCount = 12, DislikeCount = 3 }]);
+        _mockMusicService.SetupGet(s => s.LastSongsSource).Returns(SongCatalogSource.OfflineCache);
+
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        Assert.That(_viewModel.GetLikeCount(1), Is.EqualTo(12));
+        Assert.That(_viewModel.GetDislikeCount(1), Is.EqualTo(3));
+    }
+
+    [Test]
+    public async Task LoadSongsAsync_LiveCatalog_StillLoadsLikeCounts()
+    {
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync([new SongDto { Id = 1 }]);
+        _mockMusicService.SetupGet(s => s.LastSongsSource).Returns(SongCatalogSource.Live);
+
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        _mockMusicService.Verify(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()), Times.Once);
+    }
+
+    [Test]
+    public async Task LoadSongsAsync_UnavailableWhileOffline_ShowsOfflineCopyInsteadOfAnError()
+    {
+        var networkStatus = new TestNetworkStatusService { IsOffline = true };
+        var viewModel = CreateViewModel(networkStatus);
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync([]);
+        _mockMusicService.SetupGet(s => s.LastSongsSource).Returns(SongCatalogSource.Unavailable);
+
+        await viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(viewModel.IsOfflineCatalog, Is.True);
+            Assert.That(viewModel.EmptyStateTitle, Is.EqualTo("You're offline"));
+            Assert.That(viewModel.EmptyStateDetail, Does.Contain("downloaded"));
+        });
+    }
+
+    [Test]
+    public async Task LoadSongsAsync_LiveCatalog_ClearsAPreviousOfflineState()
+    {
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync([new SongDto { Id = 1 }]);
+        _mockMusicService.SetupGet(s => s.LastSongsSource).Returns(SongCatalogSource.OfflineCache);
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        _mockMusicService.SetupGet(s => s.LastSongsSource).Returns(SongCatalogSource.Live);
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        Assert.That(_viewModel.IsOfflineCatalog, Is.False);
+    }
+
+    [Test]
+    public async Task NetworkStatusChange_TriggersASingleReload()
+    {
+        var networkStatus = new TestNetworkStatusService();
+        var viewModel = CreateViewModel(networkStatus);
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync([new SongDto { Id = 1 }]);
+        await viewModel.LoadSongsCommand.ExecuteAsync(null);
+        _mockMusicService.Invocations.Clear();
+
+        networkStatus.SetOffline(true);
+        await Task.Delay(50);
+
+        _mockMusicService.Verify(s => s.GetSongsAsync(), Times.Once);
+    }
+
+    [Test]
+    public async Task NetworkStatusChange_WhileAlreadyLoading_DoesNotReenter()
+    {
+        var networkStatus = new TestNetworkStatusService();
+        var viewModel = CreateViewModel(networkStatus);
+        var gate = new TaskCompletionSource<List<SongDto>>();
+        _mockMusicService.Setup(s => s.GetSongsAsync()).Returns(gate.Task);
+
+        var loadTask = viewModel.LoadSongsCommand.ExecuteAsync(null);
+        networkStatus.SetOffline(true);
+        gate.SetResult([new SongDto { Id = 1 }]);
+        await loadTask;
+
+        _mockMusicService.Verify(s => s.GetSongsAsync(), Times.Once);
+    }
+
+    [Test]
+    public void CanUseServerActions_TracksConnectivity()
+    {
+        var networkStatus = new TestNetworkStatusService();
+        var viewModel = CreateViewModel(networkStatus);
+        Assert.That(viewModel.CanUseServerActions, Is.True);
+
+        networkStatus.SetOffline(true);
+
+        Assert.That(viewModel.CanUseServerActions, Is.False);
+    }
+
+    [Test]
+    public void CanUseServerActions_RaisesPropertyChangedWhenConnectivityFlips()
+    {
+        var networkStatus = new TestNetworkStatusService();
+        var viewModel = CreateViewModel(networkStatus);
+        var raised = new List<string?>();
+        viewModel.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        networkStatus.SetOffline(true);
+
+        Assert.That(raised, Does.Contain(nameof(MusicLibraryViewModel.CanUseServerActions)));
+    }
+
+    private MusicLibraryViewModel CreateViewModel(INetworkStatusService networkStatusService) => new(
+        _mockMusicService.Object, _mockAlertService.Object, _mockSignalRService.Object,
+        _mockAuthService.Object, _mockNavigationService.Object,
+        _mockPlaybackService.Object, _mockMediaPlaybackOnboardingService.Object, _mockAppConfig.Object,
+        _mockBillingService.Object, _mockAudioCacheService.Object, networkStatusService);
 
     [Test]
     public async Task LoadSongsAsync_ClearsExistingSongsBeforeReloading()
@@ -1039,7 +1210,7 @@ public class MusicLibraryViewModelTests
     }
 
     [Test]
-    public async Task LikeSong_WhenAuthenticatedUser_CallsToggleLike()
+    public async Task LikeSong_WhenAuthenticatedUser_SetsTheLikeState()
     {
         _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
         _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
@@ -1047,11 +1218,45 @@ public class MusicLibraryViewModelTests
 
         await _viewModel.LikeSongCommand.ExecuteAsync(song);
 
-        _mockMusicService.Verify(s => s.ToggleLikeAsync(42), Times.Once);
+        _mockMusicService.Verify(s => s.SetLikeStateAsync(42, true), Times.Once);
     }
 
     [Test]
-    public async Task DislikeSong_WhenAuthenticatedUser_CallsToggleDislike()
+    public async Task LikeSong_UpdatesTheButtonImmediately_EvenBeforeTheServerAnswers()
+    {
+        // Optimistic UI: offline the call returns a queued outcome and the state must stick.
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
+        _mockMusicService.Setup(s => s.SetLikeStateAsync(It.IsAny<int>(), It.IsAny<bool?>()))
+            .ReturnsAsync(SetLikeStateOutcome.QueuedForRetry());
+        var song = new SongDto { Id = 42, SongTitle = "Test" };
+
+        await _viewModel.LikeSongCommand.ExecuteAsync(song);
+
+        Assert.That(song.UserLikeStatus, Is.True);
+    }
+
+    [Test]
+    public async Task LikeSong_LeavesCountsToTheSignalRBroadcast()
+    {
+        // The library deliberately ignores the server's counts so every open screen updates together.
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
+        _mockMusicService.Setup(s => s.SetLikeStateAsync(It.IsAny<int>(), It.IsAny<bool?>()))
+            .ReturnsAsync(SetLikeStateOutcome.Applied(new LikeStateResult
+            {
+                UserLikeStatus = true, LikeCount = 999, DislikeCount = 999
+            }));
+        var song = new SongDto { Id = 42, SongTitle = "Test", LikeCount = 10, DislikeCount = 4 };
+
+        await _viewModel.LikeSongCommand.ExecuteAsync(song);
+
+        Assert.That(song.LikeCount, Is.EqualTo(11));
+        Assert.That(song.DislikeCount, Is.EqualTo(4));
+    }
+
+    [Test]
+    public async Task DislikeSong_WhenAuthenticatedUser_SetsTheLikeState()
     {
         _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
         _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
@@ -1059,7 +1264,7 @@ public class MusicLibraryViewModelTests
 
         await _viewModel.DislikeSongCommand.ExecuteAsync(song);
 
-        _mockMusicService.Verify(s => s.ToggleDislikeAsync(42), Times.Once);
+        _mockMusicService.Verify(s => s.SetLikeStateAsync(42, false), Times.Once);
     }
 
     // --- Playback restriction (now in PlaybackService) ---

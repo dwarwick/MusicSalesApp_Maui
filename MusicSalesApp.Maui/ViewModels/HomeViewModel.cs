@@ -23,8 +23,10 @@ public partial class HomeViewModel : ObservableObject
     private readonly IBrowserService _browserService;
     private readonly IConfiguration _configuration;
     private readonly IPlaylistService _playlistService;
+    private readonly ISongArtworkHydrator? _songArtworkHydrator;
     private bool _signalRSubscriptionsAttached;
     private bool _authSubscriptionAttached;
+    private bool _networkSubscriptionAttached;
     private bool _hasBillingDerivedSubscriptionPrice;
 
     private const string DefaultAppleSubscriptionManagementUrl = "https://account.apple.com/account/manage/section/subscriptions";
@@ -195,6 +197,15 @@ public partial class HomeViewModel : ObservableObject
     public bool ShowRecommended => RecommendedPlaylist != null;
     public bool ShowLikedSongs => LikedSongsPlaylist != null;
 
+    /// <summary>
+    /// False when the device has no network at all. Reporting a song, tipping and adding to a playlist
+    /// all need the server, so their controls are hidden rather than left to fail on tap. Uses
+    /// <see cref="INetworkStatusService.HasNoNetworkAccess"/>, not the pessimistic
+    /// <see cref="INetworkStatusService.IsOffline"/> behind the banner: a constrained connection still
+    /// reaches the server.
+    /// </summary>
+    public bool CanUseServerActions => !NetworkStatus.HasNoNetworkAccess;
+
     private bool ShouldUseTrialTerms => !IsAuthenticated
         || HasEligibleAndroidFreeTrial
         || (!HasPreviousSubscriptionHistory && (ShouldShowFallbackAndroidFreeTrial || !HasResolvedAndroidSubscriptionOffer));
@@ -221,7 +232,8 @@ public partial class HomeViewModel : ObservableObject
         IMediaPlaybackOnboardingService mediaPlaybackOnboardingService,
         IBrowserService browserService,
         IConfiguration configuration,
-        IPlaylistService playlistService)
+        IPlaylistService playlistService,
+        ISongArtworkHydrator? songArtworkHydrator = null)
     {
         _authService = authService;
         NetworkStatus = networkStatus;
@@ -236,15 +248,18 @@ public partial class HomeViewModel : ObservableObject
         _browserService = browserService;
         _configuration = configuration;
         _playlistService = playlistService;
+        _songArtworkHydrator = songArtworkHydrator;
 
         AttachAuthSubscription();
         AttachSignalRSubscriptions();
+        AttachNetworkSubscription();
     }
 
     public void Activate()
     {
         AttachAuthSubscription();
         AttachSignalRSubscriptions();
+        AttachNetworkSubscription();
         SynchronizeFeaturedQueue();
     }
 
@@ -265,6 +280,40 @@ public partial class HomeViewModel : ObservableObject
             _authService.AuthStateChanged -= OnAuthStateChanged;
             _authSubscriptionAttached = false;
         }
+
+        if (_networkSubscriptionAttached)
+        {
+            NetworkStatus.PropertyChanged -= HandleNetworkStatusChanged;
+            _networkSubscriptionAttached = false;
+        }
+    }
+
+    private void AttachNetworkSubscription()
+    {
+        if (_networkSubscriptionAttached)
+        {
+            return;
+        }
+
+        NetworkStatus.PropertyChanged += HandleNetworkStatusChanged;
+        _networkSubscriptionAttached = true;
+    }
+
+    /// <summary>
+    /// Reloads when connectivity flips so the featured row and playlist tiles narrow to what is
+    /// downloaded going offline, and fill back in on reconnect without a manual refresh.
+    /// </summary>
+    private void HandleNetworkStatusChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (!NetworkStatusChange.AffectsConnectivity(e.PropertyName))
+            return;
+
+        OnPropertyChanged(nameof(CanUseServerActions));
+
+        if (IsLoading)
+            return;
+
+        _ = LoadCommand.ExecuteAsync(null);
     }
 
     private void AttachSignalRSubscriptions()
@@ -326,6 +375,9 @@ public partial class HomeViewModel : ObservableObject
     private async Task LoadFeaturedSongsAsync()
     {
         var songs = await _musicService.GetSongsAsync();
+        // This load's own source, not the service's shared last-load state, which the library's
+        // simultaneous reload can overwrite between the await above and this line.
+        var songsSource = SongCatalogOutcome.For(songs, _musicService).Source;
         foreach (var song in songs)
         {
             song.ShareUrl = SongDto.BuildShareUrl(song.Id, _appConfig.WebBaseUrl);
@@ -337,9 +389,16 @@ public partial class HomeViewModel : ObservableObject
 
         featuredSongs = SongDisplayOrderSorter.OrderForLibrary(featuredSongs);
 
-        await Task.WhenAll(
-            LoadLikeCountsAsync(featuredSongs),
-            LoadUserLikeStatusAsync(featuredSongs));
+        // Offline the songs came from the local catalog and already carry their last-known counts;
+        // firing these two requests anyway would just stall for the full HTTP timeout each.
+        if (songsSource == SongCatalogSource.Live)
+        {
+            await Task.WhenAll(
+                LoadLikeCountsAsync(featuredSongs),
+                LoadUserLikeStatusAsync(featuredSongs));
+        }
+
+        await HydrateArtworkAsync(featuredSongs);
 
         FeaturedSongs = new ObservableCollection<SongDto>(featuredSongs);
         SynchronizeFeaturedQueue();
@@ -349,6 +408,24 @@ public partial class HomeViewModel : ObservableObject
     {
         var seconds = await _musicService.GetStreamQualifyingSecondsAsync();
         _playbackService.SetStreamQualifyingSeconds(seconds);
+    }
+
+    /// <summary>
+    /// Points each song's artwork at its locally cached copy. Best-effort - artwork is decorative.
+    /// </summary>
+    private async Task HydrateArtworkAsync(IReadOnlyList<SongDto> songs)
+    {
+        if (_songArtworkHydrator == null)
+            return;
+
+        try
+        {
+            await _songArtworkHydrator.HydrateAsync(songs);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to hydrate song artwork: {ex.Message}");
+        }
     }
 
     private async Task LoadLikeCountsAsync(List<SongDto> songs)
@@ -493,13 +570,7 @@ public partial class HomeViewModel : ObservableObject
         if (!await RequireAuthenticatedUserAsync("like songs"))
             return;
 
-        var result = await _musicService.ToggleLikeAsync(song.Id);
-        if (result != null)
-        {
-            song.UserLikeStatus = result.IsLiked ? true : null;
-            song.LikeCount = result.LikeCount;
-            song.DislikeCount = result.DislikeCount;
-        }
+        await OptimisticLikeStateUpdater.ApplyAsync(_musicService, song, LikeAction.ThumbsUp);
     }
 
     [RelayCommand]
@@ -510,13 +581,7 @@ public partial class HomeViewModel : ObservableObject
         if (!await RequireAuthenticatedUserAsync("dislike songs"))
             return;
 
-        var result = await _musicService.ToggleDislikeAsync(song.Id);
-        if (result != null)
-        {
-            song.UserLikeStatus = result.IsDisliked ? false : null;
-            song.LikeCount = result.LikeCount;
-            song.DislikeCount = result.DislikeCount;
-        }
+        await OptimisticLikeStateUpdater.ApplyAsync(_musicService, song, LikeAction.ThumbsDown);
     }
 
     [RelayCommand]

@@ -8,11 +8,13 @@ public sealed class NetworkStatusService : ObservableObject, INetworkStatusServi
 {
     private readonly IConnectivity _connectivity;
     private bool _isOffline;
+    private bool _hasNoNetworkAccess;
 
     public NetworkStatusService(IConnectivity connectivity)
     {
         _connectivity = connectivity;
         _isOffline = IsNetworkUnavailable(connectivity.NetworkAccess);
+        _hasNoNetworkAccess = HasNoAccess(connectivity.NetworkAccess);
         _connectivity.ConnectivityChanged += OnConnectivityChanged;
     }
 
@@ -22,6 +24,12 @@ public sealed class NetworkStatusService : ObservableObject, INetworkStatusServi
         private set => SetProperty(ref _isOffline, value);
     }
 
+    public bool HasNoNetworkAccess
+    {
+        get => _hasNoNetworkAccess;
+        private set => SetProperty(ref _hasNoNetworkAccess, value);
+    }
+
     public void Dispose()
     {
         _connectivity.ConnectivityChanged -= OnConnectivityChanged;
@@ -29,7 +37,11 @@ public sealed class NetworkStatusService : ObservableObject, INetworkStatusServi
 
     private void OnConnectivityChanged(object? sender, ConnectivityChangedEventArgs e)
     {
-        void UpdateState() => IsOffline = IsNetworkUnavailable(e.NetworkAccess);
+        void UpdateState()
+        {
+            IsOffline = IsNetworkUnavailable(e.NetworkAccess);
+            HasNoNetworkAccess = HasNoAccess(e.NetworkAccess);
+        }
 
         try
         {
@@ -51,4 +63,7 @@ public sealed class NetworkStatusService : ObservableObject, INetworkStatusServi
 
     private static bool IsNetworkUnavailable(NetworkAccess networkAccess)
         => networkAccess != NetworkAccess.Internet;
+
+    private static bool HasNoAccess(NetworkAccess networkAccess)
+        => networkAccess == NetworkAccess.None;
 }

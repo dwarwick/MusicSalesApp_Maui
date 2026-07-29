@@ -205,7 +205,9 @@ public class AudioCacheServiceTests
             Content = new ByteArrayContent(CreateAudioPayload(8192))
         });
         var settings = new Mock<IOfflineCacheSettingsService>();
-        settings.Setup(s => s.GetOfflineCacheLimitBytes()).Returns(8000);
+        // The audio share of the configured limit, not the whole thing - cached artwork is spent out of
+        // the same budget.
+        settings.Setup(s => s.GetAudioCacheLimitBytes()).Returns(8000);
         settings.Setup(s => s.GetDeviceFreeSpaceReserveBytes()).Returns(0);
         factory.Setup(f => f.CreateClient(AudioCacheService.AudioDownloadClientName))
             .Returns(CreateHttpClient(handler.Object));
@@ -224,6 +226,35 @@ public class AudioCacheServiceTests
             Assert.That(playbackUri, Is.EqualTo(song.StreamUrl));
             Assert.That(Directory.EnumerateFiles(_cacheDirectory), Is.Empty);
         });
+    }
+
+    [Test]
+    public async Task ResolvePlaybackUriAsync_WhenContentFitsTheAudioBudget_StillCaches()
+    {
+        // The companion to the test above: it would keep passing if the audio budget ever collapsed to
+        // zero, which is exactly what carving the artwork share out of the limit risks getting wrong.
+        var factory = new Mock<IHttpClientFactory>();
+        var handler = CreateHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(CreateAudioPayload(8192))
+        });
+        var settings = new Mock<IOfflineCacheSettingsService>();
+        settings.Setup(s => s.GetAudioCacheLimitBytes()).Returns(1024L * 1024);
+        settings.Setup(s => s.GetDeviceFreeSpaceReserveBytes()).Returns(0);
+        factory.Setup(f => f.CreateClient(AudioCacheService.AudioDownloadClientName))
+            .Returns(CreateHttpClient(handler.Object));
+
+        var service = new AudioCacheService(
+            factory.Object,
+            NullLogger<AudioCacheService>.Instance,
+            _cacheDirectory,
+            settings.Object);
+        var song = new SongDto { Id = 25, StreamUrl = "https://example.com/audio/fits.mp3" };
+
+        var playbackUri = await service.ResolvePlaybackUriAsync(song);
+
+        Assert.That(playbackUri, Is.Not.EqualTo(song.StreamUrl));
+        Assert.That(File.Exists(playbackUri), Is.True);
     }
 
     [Test]

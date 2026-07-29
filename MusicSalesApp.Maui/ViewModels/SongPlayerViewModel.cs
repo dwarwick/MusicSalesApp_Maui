@@ -17,6 +17,8 @@ public partial class SongPlayerViewModel : ObservableObject
     private readonly ISignalRService _signalRService;
     private readonly IAppConfig _appConfig;
     private readonly IBillingService _billingService;
+    private readonly INetworkStatusService? _networkStatusService;
+    private readonly ISongArtworkHydrator? _songArtworkHydrator;
     private bool _subscriptionsAttached;
 
     public SongPlayerViewModel(
@@ -28,7 +30,9 @@ public partial class SongPlayerViewModel : ObservableObject
         IMediaPlaybackOnboardingService mediaPlaybackOnboardingService,
         ISignalRService signalRService,
         IAppConfig appConfig,
-        IBillingService billingService)
+        IBillingService billingService,
+        INetworkStatusService? networkStatusService = null,
+        ISongArtworkHydrator? songArtworkHydrator = null)
     {
         _musicService = musicService;
         _alertService = alertService;
@@ -39,6 +43,8 @@ public partial class SongPlayerViewModel : ObservableObject
         _signalRService = signalRService;
         _appConfig = appConfig;
         _billingService = billingService;
+        _networkStatusService = networkStatusService;
+        _songArtworkHydrator = songArtworkHydrator;
 
         AttachSubscriptions();
     }
@@ -61,8 +67,24 @@ public partial class SongPlayerViewModel : ObservableObject
         _signalRService.OnStreamCountUpdated += HandleStreamCountUpdated;
         _signalRService.OnLikeCountUpdated += HandleLikeCountUpdated;
         _playbackService.ShowSubscribeCtaRequested += OnShowSubscribeCta;
+        if (_networkStatusService != null)
+            _networkStatusService.PropertyChanged += HandleNetworkStatusChanged;
         _subscriptionsAttached = true;
     }
+
+    private void HandleNetworkStatusChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (NetworkStatusChange.AffectsConnectivity(e.PropertyName))
+            OnPropertyChanged(nameof(CanUseServerActions));
+    }
+
+    /// <summary>
+    /// False when the device has no network at all. Reporting a song needs the server, so the control
+    /// is hidden rather than left to fail with a generic error on tap. Deliberately not
+    /// <see cref="INetworkStatusService.IsOffline"/>, which is also true on a constrained connection
+    /// that can still reach the server.
+    /// </summary>
+    public bool CanUseServerActions => _networkStatusService?.HasNoNetworkAccess != true;
 
     public IPlaybackService PlaybackService => _playbackService;
 
@@ -142,7 +164,26 @@ public partial class SongPlayerViewModel : ObservableObject
                 value.ShareUrl = SongDto.BuildShareUrl(value.Id, _appConfig.WebBaseUrl);
             }
             OnPropertyChanged(nameof(ShareUrl));
+            _ = HydrateArtworkAsync(value);
             _ = LoadSongDetailsAsync(value);
+        }
+    }
+
+    /// <summary>
+    /// Points the song's artwork at its locally cached copy. Best-effort - artwork is decorative.
+    /// </summary>
+    private async Task HydrateArtworkAsync(SongDto song)
+    {
+        if (_songArtworkHydrator == null)
+            return;
+
+        try
+        {
+            await _songArtworkHydrator.HydrateAsync([song]);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to hydrate song artwork: {ex.Message}");
         }
     }
 
@@ -220,13 +261,7 @@ public partial class SongPlayerViewModel : ObservableObject
         if (Song == null) return;
         if (!await RequireAuthenticatedUserAsync("like songs")) return;
 
-        var result = await _musicService.ToggleLikeAsync(Song.Id);
-        if (result != null)
-        {
-            Song.UserLikeStatus = result.IsLiked ? true : null;
-            Song.LikeCount = result.LikeCount;
-            Song.DislikeCount = result.DislikeCount;
-        }
+        await OptimisticLikeStateUpdater.ApplyAsync(_musicService, Song, LikeAction.ThumbsUp);
     }
 
     [RelayCommand]
@@ -235,13 +270,7 @@ public partial class SongPlayerViewModel : ObservableObject
         if (Song == null) return;
         if (!await RequireAuthenticatedUserAsync("dislike songs")) return;
 
-        var result = await _musicService.ToggleDislikeAsync(Song.Id);
-        if (result != null)
-        {
-            Song.UserLikeStatus = result.IsDisliked ? false : null;
-            Song.LikeCount = result.LikeCount;
-            Song.DislikeCount = result.DislikeCount;
-        }
+        await OptimisticLikeStateUpdater.ApplyAsync(_musicService, Song, LikeAction.ThumbsDown);
     }
 
     [RelayCommand]
@@ -368,7 +397,8 @@ public partial class SongPlayerViewModel : ObservableObject
         await _navigationService.GoToAsync("persona", new Dictionary<string, object>
         {
             ["PersonaName"] = Song.ArtistName,
-            ["PersonaImageUrl"] = Song.PersonaImageUrl ?? string.Empty,
+            // Prefer the cached copy so the persona page renders offline too.
+            ["PersonaImageUrl"] = Song.PersonaImageDisplaySource ?? string.Empty,
             ["PersonaBio"] = Song.PersonaBio ?? string.Empty
         });
     }
@@ -429,6 +459,8 @@ public partial class SongPlayerViewModel : ObservableObject
         _signalRService.OnStreamCountUpdated -= HandleStreamCountUpdated;
         _signalRService.OnLikeCountUpdated -= HandleLikeCountUpdated;
         _playbackService.ShowSubscribeCtaRequested -= OnShowSubscribeCta;
+        if (_networkStatusService != null)
+            _networkStatusService.PropertyChanged -= HandleNetworkStatusChanged;
         _subscriptionsAttached = false;
     }
 }

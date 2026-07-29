@@ -60,6 +60,7 @@
                                                 LikeSongCommand="{Binding Source={RelativeSource AncestorType={x:Type vm:HomeViewModel}}, Path=LikeSongCommand}"
                                                 DislikeSongCommand="{Binding Source={RelativeSource AncestorType={x:Type vm:HomeViewModel}}, Path=DislikeSongCommand}"
                                                 ReportSongCommand="{Binding Source={RelativeSource AncestorType={x:Type vm:HomeViewModel}}, Path=ReportSongCommand}"
+                                                ShowReportButton="{Binding Source={RelativeSource AncestorType={x:Type vm:HomeViewModel}}, Path=CanUseServerActions}"
                                                 PlaySongCommand="{Binding Source={RelativeSource AncestorType={x:Type vm:HomeViewModel}}, Path=PlaySongCommand}" />
                         </DataTemplate>
                     </CollectionView.ItemTemplate>

@@ -26,6 +26,8 @@ public class AuthServiceTests
     private Mock<IBillingService> _mockBillingService;
     private Mock<IMusicService> _mockMusicService;
     private Mock<ISecureStorage> _mockSecureStorage;
+    private Mock<IOfflinePlaylistStore> _mockOfflinePlaylistStore;
+    private Mock<IOfflineSongCatalogStore> _mockOfflineSongCatalogStore;
     private AuthService _authService;
 
     [SetUp]
@@ -44,6 +46,9 @@ public class AuthServiceTests
         _mockSecureStorage.Setup(storage => storage.Remove(It.IsAny<string>())).Returns(true);
         _mockConfiguration.Setup(c => c["MobileExternalAuth:CallbackUrl"]).Returns("streamtunes://auth");
 
+        _mockOfflinePlaylistStore = new Mock<IOfflinePlaylistStore>();
+        _mockOfflineSongCatalogStore = new Mock<IOfflineSongCatalogStore>();
+
         _authService = new AuthService(
             _mockHttpClientFactory.Object,
             _mockConfiguration.Object,
@@ -51,7 +56,68 @@ public class AuthServiceTests
             _mockWebAuthenticatorService.Object,
             _mockBillingService.Object,
             _mockMusicService.Object,
+            _mockSecureStorage.Object,
+            _mockOfflinePlaylistStore.Object,
+            _mockOfflineSongCatalogStore.Object);
+    }
+
+    // --- Logout clears the offline snapshots ---
+
+    [Test]
+    public async Task LogoutAsync_ClearsTheOfflinePlaylistSnapshot()
+    {
+        // Neither snapshot is namespaced by account, so leaving it would show the outgoing user's
+        // playlists to whoever logs in next while offline.
+        await _authService.LogoutAsync();
+
+        _mockOfflinePlaylistStore.Verify(store => store.ClearAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Test]
+    public async Task LogoutAsync_StripsTheUserVotesFromTheOfflineSongCatalog()
+    {
+        // The catalog entries carry the user's own thumbs-up/down state.
+        await _authService.LogoutAsync();
+
+        _mockOfflineSongCatalogStore.Verify(
+            store => store.ClearUserLikeStatesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Test]
+    public async Task LogoutAsync_KeepsTheOfflineSongCatalogItself()
+    {
+        // Deleting it would take offline playback away as well - and this path also runs on the
+        // session-expiry logout that can fire at startup with no network to reload from.
+        await _authService.LogoutAsync();
+
+        _mockOfflineSongCatalogStore.Verify(store => store.ClearAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Test]
+    public void LogoutAsync_WhenClearingTheSnapshotsFails_StillCompletes()
+    {
+        _mockOfflinePlaylistStore.Setup(store => store.ClearAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new IOException("file locked"));
+
+        Assert.That(async () => await _authService.LogoutAsync(), Throws.Nothing);
+    }
+
+    [Test]
+    public async Task LogoutAsync_WithoutTheOfflineStores_StillClearsTheSession()
+    {
+        // Trailing-optional injection: a call site that omits them must keep working.
+        var authService = new AuthService(
+            _mockHttpClientFactory.Object,
+            _mockConfiguration.Object,
+            _mockLogger.Object,
+            _mockWebAuthenticatorService.Object,
+            _mockBillingService.Object,
+            _mockMusicService.Object,
             _mockSecureStorage.Object);
+
+        await authService.LogoutAsync();
+
+        Assert.That(authService.IsLoggedIn, Is.False);
     }
 
     [Test]

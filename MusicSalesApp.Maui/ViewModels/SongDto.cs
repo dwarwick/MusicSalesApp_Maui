@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace MusicSalesApp.Maui.ViewModels;
@@ -49,6 +50,45 @@ public partial class SongDto : ObservableObject
     /// Set by the ViewModel after loading songs.
     /// </summary>
     public string ShareUrl { get; set; } = string.Empty;
+
+    // --- Artwork resolution ---
+    //
+    // AlbumArtUrl/PersonaImageUrl stay the canonical remote URLs; they are still needed to download the
+    // image and to derive its cache key. The properties below layer a locally cached copy on top, and
+    // are set by ISongArtworkHydrator. JsonIgnore keeps per-device paths out of the offline catalog.
+    //
+    // Note the fallback shape: with none of these set, DisplaySource == Url, so a code path that
+    // forgets to hydrate degrades to the pre-existing behaviour rather than to blank artwork.
+
+    [JsonIgnore]
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AlbumArtDisplaySource))]
+    public partial string? CachedAlbumArtPath { get; set; }
+
+    [JsonIgnore]
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PersonaImageDisplaySource))]
+    public partial string? CachedPersonaImagePath { get; set; }
+
+    /// <summary>
+    /// Set while offline. Suppresses the remote URL fallback so no image request is attempted; the UI
+    /// shows its built-in placeholder instead of an image that would never load.
+    /// </summary>
+    [JsonIgnore]
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AlbumArtDisplaySource))]
+    [NotifyPropertyChangedFor(nameof(PersonaImageDisplaySource))]
+    public partial bool SuppressRemoteArtwork { get; set; }
+
+    /// <summary>Local cached album art if present, otherwise the remote URL (unless suppressed).</summary>
+    [JsonIgnore]
+    public string? AlbumArtDisplaySource =>
+        CachedAlbumArtPath ?? (SuppressRemoteArtwork ? null : AlbumArtUrl);
+
+    /// <summary>Local cached persona image if present, otherwise the remote URL (unless suppressed).</summary>
+    [JsonIgnore]
+    public string? PersonaImageDisplaySource =>
+        CachedPersonaImagePath ?? (SuppressRemoteArtwork ? null : PersonaImageUrl);
 
     /// <summary>
     /// Builds a share URL using the song's numeric ID to avoid encoding issues.

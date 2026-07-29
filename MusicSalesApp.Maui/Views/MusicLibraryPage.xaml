@@ -40,6 +40,28 @@
                      Spacing="8"
                      Padding="8,8,8,4">
 
+            <!-- Offline banner. Sits inside the existing Row 0 stack so the grid's row definitions
+                 don't have to be renumbered. -->
+            <Border IsVisible="{Binding IsOfflineCatalog}"
+                    AutomationId="OfflineLibraryBanner"
+                    StrokeShape="RoundRectangle 8"
+                    Stroke="{AppThemeBinding Light={StaticResource OfflineBannerLightBorder}, Dark={StaticResource OfflineBannerDarkBorder}}"
+                    BackgroundColor="{AppThemeBinding Light={StaticResource OfflineBannerLightBackground}, Dark={StaticResource OfflineBannerDarkBackground}}"
+                    Padding="12,10">
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                    <Label Text="⚠"
+                           FontSize="16"
+                           VerticalOptions="Start"
+                           TextColor="{AppThemeBinding Light={StaticResource OfflineBannerLightText}, Dark={StaticResource OfflineBannerDarkText}}" />
+                    <Label Grid.Column="1"
+                           Text="You're offline. Showing only downloaded songs — reconnect to browse the full library."
+                           FontSize="13"
+                           LineBreakMode="WordWrap"
+                           VerticalOptions="Center"
+                           TextColor="{AppThemeBinding Light={StaticResource OfflineBannerLightText}, Dark={StaticResource OfflineBannerDarkText}}" />
+                </Grid>
+            </Border>
+
             <HorizontalStackLayout Spacing="6">
                 <Button Command="{Binding ToggleAiPanelCommand}"
                         Clicked="OnFilterChromeClicked"
@@ -362,9 +384,14 @@
                 <CollectionView.EmptyView>
                     <VerticalStackLayout HorizontalOptions="Center"
                                          VerticalOptions="Center"
+                                         Spacing="6"
                                          Padding="20">
-                        <Label Text="No songs available"
+                        <Label Text="{Binding EmptyStateTitle}"
                                FontSize="18"
+                               HorizontalTextAlignment="Center"
+                               TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray300}}" />
+                        <Label Text="{Binding EmptyStateDetail}"
+                               FontSize="14"
                                HorizontalTextAlignment="Center"
                                TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray300}}" />
                         <Label Text="{Binding ErrorMessage}"
@@ -384,6 +411,7 @@
                             LikeSongCommand="{Binding Source={RelativeSource AncestorType={x:Type vm:MusicLibraryViewModel}}, Path=LikeSongCommand}"
                             DislikeSongCommand="{Binding Source={RelativeSource AncestorType={x:Type vm:MusicLibraryViewModel}}, Path=DislikeSongCommand}"
                             ReportSongCommand="{Binding Source={RelativeSource AncestorType={x:Type vm:MusicLibraryViewModel}}, Path=ReportSongCommand}"
+                            ShowReportButton="{Binding Source={RelativeSource AncestorType={x:Type vm:MusicLibraryViewModel}}, Path=CanUseServerActions}"
                             PlaySongCommand="{Binding Source={RelativeSource AncestorType={x:Type vm:MusicLibraryViewModel}}, Path=PlaySongCommand}" />
                     </DataTemplate>
                 </CollectionView.ItemTemplate>

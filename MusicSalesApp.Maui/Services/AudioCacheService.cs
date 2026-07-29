@@ -48,6 +48,41 @@ public class AudioCacheService : IAudioCacheService
         _logger = logger;
         _cacheDirectory = cacheDirectory;
         _offlineCacheSettingsService = offlineCacheSettingsService;
+
+        // Off the constructor's thread: this service is resolved during startup on the main thread, and
+        // the sweep enumerates a directory and stats every file in it. Nothing waits on the result.
+        StaleTemporaryFileSweep = Task.Run(SweepStaleTemporaryFiles);
+    }
+
+    /// <summary>Completion of the background startup sweep. Exposed so tests need not poll.</summary>
+    internal Task StaleTemporaryFileSweep { get; }
+
+    /// <summary>
+    /// Removes orphaned .tmp downloads left by a process kill. They are invisible to the cache lookup
+    /// but still count against the configured cache limit, so they can silently block new downloads.
+    /// </summary>
+    private void SweepStaleTemporaryFiles()
+    {
+        try
+        {
+            if (!Directory.Exists(_cacheDirectory))
+            {
+                return;
+            }
+
+            var cutoffUtc = DateTime.UtcNow.AddHours(-1);
+            foreach (var file in Directory.EnumerateFiles(_cacheDirectory, "*.tmp"))
+            {
+                if (File.GetLastWriteTimeUtc(file) < cutoffUtc)
+                {
+                    DeleteFileIfPresent(file);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to sweep stale audio cache temporary files");
+        }
     }
 
     public string GetStableCacheKey(SongDto song)
@@ -237,7 +272,9 @@ public class AudioCacheService : IAudioCacheService
         }
 
         var cacheSizeBytes = GetCacheDirectorySizeBytes();
-        var cacheLimitBytes = _offlineCacheSettingsService.GetOfflineCacheLimitBytes();
+        // The audio share of the configured limit, not the whole thing: cached artwork is spent out of
+        // the same budget and reported in the same usage figure.
+        var cacheLimitBytes = _offlineCacheSettingsService.GetAudioCacheLimitBytes();
         var projectedCacheSizeBytes = contentLengthBytes is > 0
             ? cacheSizeBytes + contentLengthBytes.Value
             : cacheSizeBytes;
@@ -298,13 +335,11 @@ public class AudioCacheService : IAudioCacheService
         try
         {
             Directory.CreateDirectory(_cacheDirectory);
-            var root = Path.GetPathRoot(_cacheDirectory);
-            if (string.IsNullOrWhiteSpace(root))
-            {
-                return long.MaxValue;
-            }
 
-            return new DriveInfo(root).AvailableFreeSpace;
+            // Probes the cache directory, not its path root. This service is the audio cache for
+            // iOS/macOS/Windows, and on the Apple platforms "/" is the read-only system volume - the
+            // same mistake that silently disabled artwork caching on Android.
+            return CacheStorageProbe.GetAvailableFreeSpaceBytes(_cacheDirectory);
         }
         catch (Exception ex)
         {

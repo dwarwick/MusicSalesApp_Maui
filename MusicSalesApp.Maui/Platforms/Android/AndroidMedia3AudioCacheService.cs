@@ -293,7 +293,9 @@ public sealed class AndroidMedia3AudioCacheService : IAudioCacheService
         var cacheSizeBytes = await AndroidMedia3CacheProvider
             .GetCacheSizeBytesAsync(_context, cancellationToken)
             .ConfigureAwait(false);
-        var cacheLimitBytes = _offlineCacheSettingsService.GetOfflineCacheLimitBytes();
+        // The audio share of the configured limit, not the whole thing: cached artwork is spent out of
+        // the same budget and reported in the same usage figure.
+        var cacheLimitBytes = _offlineCacheSettingsService.GetAudioCacheLimitBytes();
         if (cacheSizeBytes >= cacheLimitBytes)
         {
             _logger.LogWarning(

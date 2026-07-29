@@ -13,7 +13,9 @@
 
         <!-- Create button + subscription banner -->
         <VerticalStackLayout Grid.Row="0" Spacing="8">
+            <!-- Creating a playlist needs the server, so the control is hidden offline -->
             <Button Text="+ Create Playlist"
+                    IsVisible="{Binding CanUseServerActions}"
                     Command="{Binding CreatePlaylistCommand}"
                     BackgroundColor="{StaticResource Primary}"
                     TextColor="White"
@@ -47,13 +49,21 @@
                      Command="{Binding LoadCommand}"
                      IsRefreshing="{Binding IsLoading}">
             <Grid>
-                <!-- Empty state -->
-                <Label IsVisible="{Binding ShowEmptyState}"
-                       Text="You don't have any playlists yet. Tap 'Create Playlist' to get started."
-                       FontSize="14"
-                       HorizontalTextAlignment="Center"
-                       Padding="24"
-                       TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+                <!-- Empty state. Offline this must not read as "your playlists were deleted". -->
+                <VerticalStackLayout IsVisible="{Binding ShowEmptyState}"
+                                     VerticalOptions="Start"
+                                     Spacing="6"
+                                     Padding="24">
+                    <Label Text="{Binding EmptyStateTitle}"
+                           FontSize="16"
+                           FontAttributes="Bold"
+                           HorizontalTextAlignment="Center"
+                           TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+                    <Label Text="{Binding EmptyStateDetail}"
+                           FontSize="14"
+                           HorizontalTextAlignment="Center"
+                           TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+                </VerticalStackLayout>
 
                 <!-- Playlist cards -->
                 <CollectionView IsVisible="{Binding ShowPlaylists}"
@@ -72,7 +82,7 @@
                                     <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MyPlaylistsViewModel}}, Path=OpenPlaylistCommand}"
                                                           CommandParameter="{Binding .}" />
                                 </Border.GestureRecognizers>
-                                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8" VerticalOptions="Center">
+                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" VerticalOptions="Center">
                                     <VerticalStackLayout Grid.Column="0" Spacing="2" VerticalOptions="Center">
                                         <Label Text="{Binding Name}"
                                                FontSize="16"
@@ -82,32 +92,36 @@
                                                FontSize="12"
                                                TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
                                     </VerticalStackLayout>
-                                    <!-- Rename (hidden for system playlists) -->
-                                    <Button Grid.Column="1"
-                                            Text="✎"
-                                            FontSize="18"
-                                            HeightRequest="36"
-                                            WidthRequest="40"
-                                            Padding="0"
-                                            BackgroundColor="Transparent"
-                                            TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}"
-                                            IsVisible="{Binding IsSystemGenerated, Converter={toolkit:InvertedBoolConverter}}"
-                                            Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MyPlaylistsViewModel}}, Path=RenamePlaylistCommand}"
-                                            CommandParameter="{Binding .}" />
-                                    <!-- Delete (hidden for system playlists) -->
-                                    <Button Grid.Column="2"
-                                            Text="🗑"
-                                            FontSize="16"
-                                            HeightRequest="36"
-                                            WidthRequest="40"
-                                            Padding="0"
-                                            BackgroundColor="Transparent"
-                                            TextColor="#e74c3c"
-                                            IsVisible="{Binding IsSystemGenerated, Converter={toolkit:InvertedBoolConverter}}"
-                                            Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MyPlaylistsViewModel}}, Path=DeletePlaylistCommand}"
-                                            CommandParameter="{Binding .}" />
+                                    <!-- Edit controls: hidden for system playlists, and hidden entirely
+                                         while offline since renaming and deleting both need the server. -->
+                                    <HorizontalStackLayout Grid.Column="1"
+                                                           Spacing="8"
+                                                           IsVisible="{Binding Source={RelativeSource AncestorType={x:Type vm:MyPlaylistsViewModel}}, Path=CanUseServerActions}">
+                                        <!-- Rename (hidden for system playlists) -->
+                                        <Button Text="✎"
+                                                FontSize="18"
+                                                HeightRequest="36"
+                                                WidthRequest="40"
+                                                Padding="0"
+                                                BackgroundColor="Transparent"
+                                                TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}"
+                                                IsVisible="{Binding IsSystemGenerated, Converter={toolkit:InvertedBoolConverter}}"
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MyPlaylistsViewModel}}, Path=RenamePlaylistCommand}"
+                                                CommandParameter="{Binding .}" />
+                                        <!-- Delete (hidden for system playlists) -->
+                                        <Button Text="🗑"
+                                                FontSize="16"
+                                                HeightRequest="36"
+                                                WidthRequest="40"
+                                                Padding="0"
+                                                BackgroundColor="Transparent"
+                                                TextColor="#e74c3c"
+                                                IsVisible="{Binding IsSystemGenerated, Converter={toolkit:InvertedBoolConverter}}"
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MyPlaylistsViewModel}}, Path=DeletePlaylistCommand}"
+                                                CommandParameter="{Binding .}" />
+                                    </HorizontalStackLayout>
                                     <!-- Play -->
-                                    <Label Grid.Column="3"
+                                    <Label Grid.Column="2"
                                            Text="▶"
                                            FontSize="22"
                                            TextColor="{StaticResource Primary}"

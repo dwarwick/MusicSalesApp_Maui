@@ -267,7 +267,7 @@ File: `MusicSalesApp.Maui/Platforms/Android/AndroidMedia3CacheProvider.cs`
 Android uses one shared Media3 download/playback cache:
 
 ```csharp
-SimpleCache(downloadDirectory, NoOpCacheEvictor, StandaloneDatabaseProvider)
+SimpleCache(downloadDirectory, LeastRecentlyUsedCacheEvictor(audioBudget), StandaloneDatabaseProvider)
 ```
 
 Current directory:
@@ -286,8 +286,23 @@ The same cache instance is used by:
 
 Important details:
 
-- `NoOpCacheEvictor` is used because sleep-safe content must not be removed automatically by LRU eviction.
-- Cleanup is explicit and app-policy driven.
+- The evictor is sized to `IOfflineCacheSettingsService.GetAudioCacheLimitBytes()`, via the static
+  `OfflineCacheSettingsService.ComputeAudioCacheLimitBytes` (the provider is built from a static context
+  and cannot reach DI). Read once per process — changing the limit in settings applies on next launch.
+- **This was `NoOpCacheEvictor`, on the reasoning that sleep-safe content must never be evicted by LRU.
+  That reasoning was right about the goal and wrong about the consequence.** `CacheDataSource.Factory`
+  has a write sink, so *playback* grows the same cache — listening to music caches bytes whether or not
+  anything was explicitly downloaded. With no evictor the cache only ever grew, and once it passed the
+  download ceiling `AndroidMedia3AudioCacheService.CanQueueDownloadAsync` refused every new download,
+  permanently, because nothing shrank it again. Found on a device sitting at 1.02 GB and still climbing,
+  with every `EnsureCachedAsync` logging *"Media3 cache ensure skipped because configured offline cache
+  limit is reached"* and nothing appearing under the Downloaded filter.
+- Why LRU is safe for the sleep-safe contract: eviction happens only on **write**, and writes only happen
+  with a connection, so nothing can be evicted out from under a sleeping or offline device. A
+  freshly-prepared queue item is the *most* recently used, so victims are old content rather than the
+  active queue. Readiness is always re-resolved from the cache, so an evicted track is re-prepared
+  rather than played wrong.
+- Explicit cleanup is still app-policy driven; the evictor is the backstop, not the policy.
 - `DownloadManager.MaxParallelDownloads = 2`.
 - `DownloadManager.MinRetryCount = 3`.
 - The Media3 package versions are pinned through `AndroidXMedia3Version` in the csproj.
@@ -440,6 +455,120 @@ If the configured limit or reserve is reached:
 - The cache service skips additional downloads.
 - Queue preparation reports not-ready items.
 - Sleep-safe playback should only continue through already local-ready items.
+
+## Offline Browsing Layer
+
+The cache described above makes audio *playable* offline. It does not, on its own, make the app *usable*
+offline: every cache key is derived from a `SongDto`, so with no song list there was no way to enumerate
+what had been downloaded. In airplane mode the library showed "No songs available" plus the raw
+`Unable to load data from https://…/api/music/songs` diagnostic, and the cached MP3s were unreachable.
+
+The offline browsing layer closes that gap. It is deliberately built from decorators so that no call site
+had to change and the offline rules live in one place each.
+
+### Catalog and playlist snapshots
+
+- `Services/OfflineSongCatalogStore.cs` — the song catalog, `AppDataDirectory/offline/song-catalog-v1.json`.
+- `Services/OfflinePlaylistStore.cs` — home playlists, the user's playlists, per-playlist song lists and
+  Recommended, `AppDataDirectory/offline/playlists-v1.json`.
+
+Both are JSON files rather than `IAppPreferenceStore`: Preferences is SharedPreferences XML /
+NSUserDefaults, parsed wholesale into memory and rewritten on every commit, with a synchronous-only API.
+Both live in `AppDataDirectory` rather than `CacheDirectory` because the OS may purge the cache directory —
+losing audio while keeping metadata is self-healing, losing metadata while keeping audio is not.
+
+### The decorators
+
+- `Services/OfflineAwareMusicService.cs` wraps `MusicService`. On a successful live load it snapshots the
+  catalog; when the API is unreachable it restores the snapshot and narrows it to songs whose audio is
+  actually cached. Each result says where it came from — `Live` / `OfflineCache` / `Unavailable` — which
+  lets callers distinguish "offline, showing what's downloaded" from "the server is broken", since those
+  need different UI. Read it with `SongCatalogOutcome.For(songs, musicService)`, **not** from
+  `IMusicService.LastSongsSource`: those properties are shared by every caller, and the library, home and
+  the playlist player all reload on a single connectivity change, so a caller reading them after its own
+  await can observe another caller's load. `SongCatalogOutcome` reads the tag the decorator puts on the
+  returned list and falls back to the properties for anything that doesn't tag.
+- `Services/OfflineAwarePlaylistService.cs` does the same for playlists, and additionally refuses playlist
+  *writes* offline with an explicit message rather than a raw `HttpRequestException`. Playlist edits are
+  not queued; the UI hides those controls entirely.
+
+Both gate the skip-the-live-call shortcut on `NetworkAccess.None`, not `INetworkStatusService.IsOffline`.
+The latter is "not Internet", which also covers `Unknown` and `ConstrainedInternet`, and would skip calls
+that would have succeeded.
+
+The UI follows the same rule via `INetworkStatusService.HasNoNetworkAccess` (`NetworkAccess.None`), which
+is what every server-only control gates on — tip, report, add to playlist, playlist editing. `IsOffline`
+stays deliberately pessimistic and is used only where a false positive is harmless: banner copy and empty
+states. Getting this backwards hides working features on a merely constrained connection. Note the two
+properties move independently — `None` → `ConstrainedInternet` changes only `HasNoNetworkAccess` — so
+subscribers must filter with `NetworkStatusChange.AffectsConnectivity(e.PropertyName)` rather than
+matching a single property name.
+
+Readiness is always re-resolved from the live cache via `ITrackCacheService.GetCacheStatusesAsync`, never
+trusted from the snapshot — so an OS cache purge simply shrinks the offline library.
+
+### Artwork cache
+
+`SongDto.AlbumArtUrl` / `PersonaImageUrl` are Azure Blob SAS URLs whose query string the server
+regenerates on **every** API call. MAUI's built-in URL-keyed `UriImageSource` cache therefore never hits
+across sessions. `Services/StableRemoteAssetKey.cs` centralises the fix — hash `Uri.AbsolutePath` only —
+and `AudioCacheKeyHelper` now delegates to it so audio and image keys cannot drift.
+
+- `Services/ImageCacheService.cs` — the on-disk cache, `CacheDirectory/image-cache`, budgeted by
+  `IOfflineCacheSettingsService.GetImageCacheLimitBytes()` (a twentieth of the configured limit, clamped
+  to 8–64 MB, so artwork can never starve audio). It is **carved out of** `GetOfflineCacheLimitBytes()`,
+  not added on top: audio is bounded by `GetAudioCacheLimitBytes()` (the remainder), so the two sum to
+  what the user configured. Reported cache usage covers both, so without the subtraction the settings
+  screen could show usage above its own limit.
+- `Services/ArtworkCachingAudioCacheService.cs` — decorates the platform audio cache so artwork is
+  downloaded at exactly the moment its audio becomes local-ready. That coupling is the point: everything
+  playable offline has a cover, and nothing else is downloaded.
+- `Services/SongArtworkHydrator.cs` — points `SongDto.AlbumArtDisplaySource` /
+  `PersonaImageDisplaySource` at the cached copy. With nothing set, those fall back to the remote URL, so
+  a path that forgets to hydrate degrades to the pre-existing behaviour rather than to blank artwork.
+
+Lock-screen and notification artwork needs no Android-specific code: `PlaybackService.ResolveAlbumImageUri`
+returns a `file://` URI for cached art, which Media3's default `DataSourceBitmapLoader` resolves through
+`FileDataSource` with no network. Offline with nothing cached it returns empty rather than a remote URL,
+so the loader cannot stall on the media thread.
+
+### Offline like/dislike queue
+
+`api/music/like/{id}` and `dislike/{id}` are true toggles — they flip whatever the DB holds — so replaying
+a queued toggle is not idempotent. The server therefore gained `PUT api/music/like-state/{id}`
+(`SongLikeService.SetLikeStateAsync`), whose outcome depends only on the requested state.
+
+On the client, `MusicService` keeps a `pending_like_states_v1` queue that mirrors the pending stream-record
+machinery with one structural difference: it stores **one terminal intent per song**, replacing rather than
+appending. Two offline thumbs-up taps mean "no opinion", not two toggles. `ViewModels/LikeStateTransition.cs`
+owns the toggle semantics client-side (the server can no longer imply them), and
+`ViewModels/OptimisticLikeStateUpdater.cs` applies the tap optimistically, then reconciles: server response
+wins, queued keeps the optimistic values, non-retryable failure rolls back.
+
+A tap that reaches the server drops any intent queued for that same song first — otherwise the next flush
+replays the stale one and silently reverts the newer choice.
+
+`MusicService.SetLikeStateAsync` falls back to the toggle endpoints on 404/405 so the app can ship before
+the server change is deployed. Remove that fallback once the endpoint is live everywhere — it is also the
+reason the server answers **400** rather than 404 for a song that no longer exists: a 404 would be read
+here as "endpoint missing" and send the replay down the toggle path, which cannot succeed for a deleted
+song either. Since the flush stops at the first failure, that one intent would strand every intent behind
+it. 400/401/403/404 are dropped; everything else is retried every 15s. On its no-op
+branch (state already correct, so nothing to toggle) it reports `LikeStateResult.LikeCount` /
+`DislikeCount` as **null** when the counts fetch fails — the counts are unknown, and reporting zero would
+be applied as authoritative and blank the visible totals.
+
+Logout clears the outgoing user out of both snapshots as well as the queue (`AuthService.LogoutAsync`),
+since neither store is namespaced by account. The two differ on purpose: the playlist snapshot is deleted
+outright, while the song catalog only has its `UserLikeStatus` values stripped. The catalog is public and
+deleting it would take offline playback away too — including on the session-expiry logout that can fire
+at startup with no network to reload from.
+
+### Still unused
+
+`CachePinScope.Offline` and `AndroidMedia3AudioCacheService.RemoveUnpinnedPreparedContent` remain
+uncalled. They are the intended hooks for a future user-initiated "keep offline" feature — the current
+work caches as a side effect of playback, and never pins on the user's behalf.
 
 ## Storage And Song Protection
 

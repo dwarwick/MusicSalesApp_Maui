@@ -16,6 +16,15 @@ public partial class MyPlaylistsPage : ContentPage
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        _viewModel.Activate();
         await _viewModel.LoadCommand.ExecuteAsync(null);
+    }
+
+    protected override void OnDisappearing()
+    {
+        base.OnDisappearing();
+        // The ViewModel is transient but subscribes to the singleton network-status service, so it
+        // has to unsubscribe or every navigation here leaks one.
+        _viewModel.Cleanup();
     }
 }
