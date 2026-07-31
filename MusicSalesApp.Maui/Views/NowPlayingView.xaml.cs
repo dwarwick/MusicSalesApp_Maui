@@ -206,7 +206,9 @@ public partial class NowPlayingView : ContentView
         {
             SongTitleLabel.Text = song!.SongTitle;
             ArtistNameLabel.Text = song.ArtistName;
-            AlbumArtworkView.AlbumArtUrl = song.AlbumArtDisplaySource;
+            // The mini player renders at 36 units, so the small rendition is ample and keeps this
+            // off the multi-megabyte original.
+            AlbumArtworkView.AlbumArtUrl = song.AlbumArtThumbDisplaySource;
         }
         else
         {

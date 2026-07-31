@@ -3326,21 +3326,41 @@ public class PlaybackService : IPlaybackService
     }
 
     /// <summary>
-    /// Artwork URI handed to the platform runtime for the lock screen and notification.
+    /// The artwork URI handed to the platform media session for the lock screen and notification.
     ///
-    /// Prefers a locally cached file:// URI so notification artwork renders offline - Media3's default
-    /// bitmap loader resolves file:// through FileDataSource without touching the network. Offline with
-    /// nothing cached, returns empty rather than a remote URL, so the loader never stalls on the media
-    /// thread waiting for a request that cannot succeed.
+    /// <para>
+    /// A locally cached file:// URI is preferred so notification artwork renders offline - Media3's
+    /// default bitmap loader resolves file:// through FileDataSource without touching the network.
+    /// Offline with nothing cached, this returns empty rather than a remote URL, so the loader never
+    /// stalls on the media thread waiting for a request that cannot succeed.
+    /// </para>
+    ///
+    /// <para>
+    /// The small pre-resized rendition is preferred over the full-size original throughout. Media3 is
+    /// given a bare URI and uses its default bitmap loader, so whatever is named here is decoded on
+    /// the media thread at full resolution - a multi-megabyte cover is an expensive decode at exactly
+    /// the moment the player is starting. A notification icon is a couple of hundred pixels, so the
+    /// thumb is both cheaper and entirely sufficient.
+    /// </para>
     /// </summary>
     internal string ResolveAlbumImageUri(SongDto song)
     {
-        if (TryResolveCachedMediaImageUri(song.AlbumArtUrl, out var cachedAlbumImageUri))
+        if (TryResolveCachedMediaImageUri(song.AlbumArtThumbUrl, song.AlbumArtVersion, out var cachedAlbumThumbUri))
+        {
+            return cachedAlbumThumbUri;
+        }
+
+        if (TryResolveCachedMediaImageUri(song.AlbumArtUrl, song.AlbumArtVersion, out var cachedAlbumImageUri))
         {
             return cachedAlbumImageUri;
         }
 
-        if (TryResolveCachedMediaImageUri(song.PersonaImageUrl, out var cachedPersonaImageUri))
+        if (TryResolveCachedMediaImageUri(song.PersonaImageThumbUrl, song.PersonaImageVersion, out var cachedPersonaThumbUri))
+        {
+            return cachedPersonaThumbUri;
+        }
+
+        if (TryResolveCachedMediaImageUri(song.PersonaImageUrl, song.PersonaImageVersion, out var cachedPersonaImageUri))
         {
             return cachedPersonaImageUri;
         }
@@ -3350,9 +3370,19 @@ public class PlaybackService : IPlaybackService
             return string.Empty;
         }
 
+        if (TryResolveMediaImageUri(song.AlbumArtThumbUrl, out var albumThumbUri))
+        {
+            return albumThumbUri;
+        }
+
         if (TryResolveMediaImageUri(song.AlbumArtUrl, out var albumImageUri))
         {
             return albumImageUri;
+        }
+
+        if (TryResolveMediaImageUri(song.PersonaImageThumbUrl, out var personaThumbUri))
+        {
+            return personaThumbUri;
         }
 
         if (TryResolveMediaImageUri(song.PersonaImageUrl, out var personaImageUri))
@@ -3363,11 +3393,11 @@ public class PlaybackService : IPlaybackService
         return string.Empty;
     }
 
-    private bool TryResolveCachedMediaImageUri(string? remoteImageUrl, out string resolvedUri)
+    private bool TryResolveCachedMediaImageUri(string? remoteImageUrl, int contentVersion, out string resolvedUri)
     {
         resolvedUri = string.Empty;
 
-        var cachedPath = _imageCacheService?.TryGetCachedImagePath(remoteImageUrl);
+        var cachedPath = _imageCacheService?.TryGetCachedImagePath(remoteImageUrl, contentVersion);
         if (string.IsNullOrWhiteSpace(cachedPath))
         {
             return false;

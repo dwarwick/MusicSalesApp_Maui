@@ -9,6 +9,7 @@ namespace MusicSalesApp.Maui.Tests.Services;
 public class ImageCacheServiceTests
 {
     private const string ImagePath = "/images-dev/covers/42.jpg";
+    private const string RenditionPath = ImagePath + ".w320.webp";
 
     private string _cacheDirectory = string.Empty;
     private RecordingHttpMessageHandler _handler = null!;
@@ -48,7 +49,31 @@ public class ImageCacheServiceTests
     private static string ImageUrl(string signature = "aaa", string path = ImagePath)
         => $"https://storage.blob.core.windows.net{path}?sv=2024-01-01&sig={signature}";
 
-    private static byte[] ValidImageBytes(int size = 4096) => new byte[size];
+    /// <summary>
+    /// A payload the cache will accept. It carries a real PNG signature, because the cache checks
+    /// the container signature rather than a byte-count floor - a small WebP rendition is
+    /// legitimately only a few hundred bytes, so size alone cannot distinguish artwork from an
+    /// expired-SAS error document.
+    /// </summary>
+    private static byte[] ValidImageBytes(int size = 4096)
+    {
+        var bytes = new byte[size];
+        PngSignature.CopyTo(bytes, 0);
+        return bytes;
+    }
+
+    private static readonly byte[] PngSignature =
+        [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+
+    /// <summary>A small but entirely valid WebP payload, as a pre-resized rendition would be.</summary>
+    private static byte[] SmallWebpBytes()
+    {
+        // "RIFF" <size> "WEBP" then filler - enough for the signature check.
+        var bytes = new byte[200];
+        "RIFF"u8.CopyTo(bytes);
+        "WEBP"u8.CopyTo(bytes.AsSpan(8));
+        return bytes;
+    }
 
     // --- Downloading ---
 
@@ -105,16 +130,206 @@ public class ImageCacheServiceTests
     // --- Rejection and failure ---
 
     [Test]
-    public async Task EnsureCachedAsync_UndersizedPayload_IsRejected()
+    public async Task EnsureCachedAsync_APayloadThatIsNotAnImage_IsRejected()
     {
-        // An expired-SAS "AuthenticationFailed" XML body is a few hundred bytes. Caching one would pin
-        // a broken image forever.
-        _handler.RespondWith(HttpStatusCode.OK, new byte[100]);
+        // An expired-SAS "AuthenticationFailed" XML body. Caching one would pin a broken image forever.
+        _handler.RespondWith(
+            HttpStatusCode.OK,
+            System.Text.Encoding.UTF8.GetBytes(
+                "<?xml version=\"1.0\"?><Error><Code>AuthenticationFailed</Code></Error>"));
 
         var path = await CreateService().EnsureCachedAsync(ImageUrl());
 
         Assert.That(path, Is.Null);
         Assert.That(Directory.Exists(_cacheDirectory) && Directory.EnumerateFiles(_cacheDirectory).Any(), Is.False);
+    }
+
+    [Test]
+    public async Task EnsureCachedAsync_ANewContentVersionAtTheSamePath_RefetchesRatherThanServingTheOldCopy()
+    {
+        // A re-crop rewrites cover art in place under the GUID naming scheme: same blob path, new
+        // pixels. Without the version in the key the app would keep showing the pre-crop image until
+        // the OS purged its cache.
+        _handler.RespondWith(HttpStatusCode.OK, ValidImageBytes());
+        var service = CreateService();
+
+        var beforeCrop = await service.EnsureCachedAsync(ImageUrl(), ImageCachePriority.Thumb, 1);
+        var afterCrop = await service.EnsureCachedAsync(ImageUrl(), ImageCachePriority.Thumb, 2);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(beforeCrop, Is.Not.Null);
+            Assert.That(afterCrop, Is.Not.EqualTo(beforeCrop));
+            Assert.That(_handler.RequestCount, Is.EqualTo(2));
+        });
+    }
+
+    [Test]
+    public async Task EnsureCachedAsync_TheSameContentVersion_IsStillServedFromDisk()
+    {
+        _handler.RespondWith(HttpStatusCode.OK, ValidImageBytes());
+        var service = CreateService();
+
+        await service.EnsureCachedAsync(ImageUrl(), ImageCachePriority.Thumb, 5);
+        await service.EnsureCachedAsync(ImageUrl("rotated-token"), ImageCachePriority.Thumb, 5);
+
+        Assert.That(_handler.RequestCount, Is.EqualTo(1), "a rotated SAS token must still hit the cache");
+    }
+
+    [Test]
+    public async Task TryGetCachedImagePath_DoesNotReturnACopyCachedUnderAnEarlierVersion()
+    {
+        _handler.RespondWith(HttpStatusCode.OK, ValidImageBytes());
+        var service = CreateService();
+        await service.EnsureCachedAsync(ImageUrl(), ImageCachePriority.Thumb, 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(service.TryGetCachedImagePath(ImageUrl(), 1), Is.Not.Null);
+            Assert.That(service.TryGetCachedImagePath(ImageUrl(), 2), Is.Null);
+        });
+    }
+
+    [Test]
+    public async Task PruneAsync_RemovesCopiesLeftBehindByAnEarlierVersion()
+    {
+        // Otherwise every re-crop would leave its predecessor on disk forever, counting against a
+        // budget that has no eviction.
+        _handler.RespondWith(HttpStatusCode.OK, ValidImageBytes());
+        var service = CreateService();
+        var oldCopy = await service.EnsureCachedAsync(ImageUrl(), ImageCachePriority.Thumb, 1);
+        var newCopy = await service.EnsureCachedAsync(ImageUrl(), ImageCachePriority.Thumb, 2);
+
+        await service.PruneAsync([new CachedImageReference(ImageUrl(), 2)]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(File.Exists(oldCopy!), Is.False, "the superseded copy should be swept up");
+            Assert.That(File.Exists(newCopy!), Is.True);
+        });
+    }
+
+    [Test]
+    public async Task TryGetCachedImagePath_FallsBackToACopyCachedBeforeVersioningExisted()
+    {
+        // Everything cached by a build that predates versioning sits under the version-0 key. The
+        // backfill gives every image a nonzero version at once, so without this fallback a user with
+        // a downloaded offline library loses every cover the moment the new catalog arrives.
+        _handler.RespondWith(HttpStatusCode.OK, ValidImageBytes());
+        var service = CreateService();
+        var legacyCopy = await service.EnsureCachedAsync(ImageUrl());
+
+        Assert.That(service.TryGetCachedImagePath(ImageUrl(), 3), Is.EqualTo(legacyCopy));
+    }
+
+    [Test]
+    public async Task TryGetCachedImagePath_PrefersTheVersionedCopyOverTheLegacyOne()
+    {
+        _handler.RespondWith(HttpStatusCode.OK, ValidImageBytes());
+        var service = CreateService();
+        var legacyCopy = await service.EnsureCachedAsync(ImageUrl());
+        var versionedCopy = await service.EnsureCachedAsync(ImageUrl(), ImageCachePriority.Thumb, 3);
+
+        Assert.That(versionedCopy, Is.Not.EqualTo(legacyCopy));
+        Assert.That(service.TryGetCachedImagePath(ImageUrl(), 3), Is.EqualTo(versionedCopy));
+    }
+
+    [Test]
+    public async Task PruneAsync_KeepsTheLegacyCopyUntilItsVersionedReplacementExists()
+    {
+        // Deleting it first would leave the cover missing until a download the user may not be in a
+        // position to make.
+        _handler.RespondWith(HttpStatusCode.OK, ValidImageBytes());
+        var service = CreateService();
+        var legacyCopy = await service.EnsureCachedAsync(ImageUrl());
+
+        await service.PruneAsync([new CachedImageReference(ImageUrl(), 3)]);
+
+        Assert.That(File.Exists(legacyCopy!), Is.True);
+    }
+
+    [Test]
+    public async Task PruneAsync_SweepsTheLegacyCopyOnceTheVersionedOneIsCached()
+    {
+        _handler.RespondWith(HttpStatusCode.OK, ValidImageBytes());
+        var service = CreateService();
+        var legacyCopy = await service.EnsureCachedAsync(ImageUrl());
+        var versionedCopy = await service.EnsureCachedAsync(ImageUrl(), ImageCachePriority.Thumb, 3);
+
+        await service.PruneAsync([new CachedImageReference(ImageUrl(), 3)]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(File.Exists(legacyCopy!), Is.False, "the migration copy has served its purpose");
+            Assert.That(File.Exists(versionedCopy!), Is.True);
+        });
+    }
+
+    [Test]
+    public async Task PruneAsync_KeepsASupersededOriginalUntilItsReplacementIsCached()
+    {
+        // The display chain still falls back to the full-size master while the thumb is missing.
+        _handler.RespondWith(HttpStatusCode.OK, ValidImageBytes());
+        var service = CreateService();
+        var master = await service.EnsureCachedAsync(ImageUrl(), ImageCachePriority.Thumb, 3);
+
+        await service.PruneAsync([
+            new CachedImageReference(ImageUrl(), 3).RetainedUntilCached(ImageUrl(path: RenditionPath), 3)
+        ]);
+
+        Assert.That(File.Exists(master!), Is.True);
+    }
+
+    [Test]
+    public async Task PruneAsync_DropsASupersededOriginalOnceItsReplacementIsCached()
+    {
+        // A multi-megabyte original kept beside a twenty-kilobyte rendition would eat the budget the
+        // renditions exist to free, and the budget has no eviction to recover from that.
+        _handler.RespondWith(HttpStatusCode.OK, ValidImageBytes());
+        var service = CreateService();
+        var master = await service.EnsureCachedAsync(ImageUrl(), ImageCachePriority.Thumb, 3);
+        var rendition = await service.EnsureCachedAsync(ImageUrl(path: RenditionPath), ImageCachePriority.Thumb, 3);
+
+        await service.PruneAsync([
+            new CachedImageReference(ImageUrl(), 3).RetainedUntilCached(ImageUrl(path: RenditionPath), 3),
+            new CachedImageReference(ImageUrl(path: RenditionPath), 3)
+        ]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(File.Exists(master!), Is.False);
+            Assert.That(File.Exists(rendition!), Is.True);
+        });
+    }
+
+    [Test]
+    public async Task TryGetCachedImagePath_RevalidatesAFileThatChangedOnDisk()
+    {
+        // The signature check is memoised so it does not open every file on every lookup. The
+        // memo is keyed on size and write time, so a file replaced by something else is re-checked.
+        _handler.RespondWith(HttpStatusCode.OK, ValidImageBytes());
+        var service = CreateService();
+        var path = await service.EnsureCachedAsync(ImageUrl());
+
+        Assert.That(service.TryGetCachedImagePath(ImageUrl()), Is.Not.Null, "cached and valid");
+
+        await File.WriteAllBytesAsync(path!, "<?xml version=\"1.0\"?><Error/>"u8.ToArray());
+
+        Assert.That(service.TryGetCachedImagePath(ImageUrl()), Is.Null,
+            "a memoised verdict must not outlive the file it was about");
+    }
+
+    [Test]
+    public async Task EnsureCachedAsync_ASmallButValidRendition_IsAccepted()
+    {
+        // The reason the byte-count floor had to go: a pre-resized WebP of flat-coloured artwork is
+        // legitimately smaller than the old 512-byte threshold, and would have been deleted and
+        // re-downloaded on every single load.
+        _handler.RespondWith(HttpStatusCode.OK, SmallWebpBytes());
+
+        var path = await CreateService().EnsureCachedAsync(ImageUrl(path: "/images/cover.jpg.w128.webp"));
+
+        Assert.That(path, Is.Not.Null);
     }
 
     [Test]
@@ -193,12 +408,13 @@ public class ImageCacheServiceTests
     }
 
     [Test]
-    public async Task TryGetCachedImagePath_DiscardsAnUndersizedFileOnDisk()
+    public async Task TryGetCachedImagePath_DiscardsACorruptFileOnDisk()
     {
         // Self-heals a truncated write left by an earlier crash rather than serving a broken image.
         _handler.RespondWith(HttpStatusCode.OK, ValidImageBytes());
         var service = CreateService();
         var cachedPath = await service.EnsureCachedAsync(ImageUrl())!;
+        Assert.That(cachedPath, Is.Not.Null);
         await File.WriteAllBytesAsync(cachedPath!, new byte[10]);
 
         Assert.That(service.TryGetCachedImagePath(ImageUrl()), Is.Null);

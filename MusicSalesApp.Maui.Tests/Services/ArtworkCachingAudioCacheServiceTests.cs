@@ -20,10 +20,10 @@ public class ArtworkCachingAudioCacheServiceTests
         _imageCache = new Mock<IImageCacheService>();
         _networkStatus = new TestNetworkStatusService();
 
-        // Downloads succeed by default. The decorator keys its retry decision off the returned path,
-        // so a loose mock's null would read as a failed download in every test.
-        _imageCache.Setup(c => c.EnsureCachedAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync("/cache/image-cache/cover.jpg");
+        // Downloads succeed by default. The decorator keys its retry decision off the outcome, so a
+        // loose mock's default would read as a failed download in every test.
+        _imageCache.Setup(c => c.TryEnsureCachedAsync(It.IsAny<string>(), It.IsAny<ImageCachePriority>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Cached);
 
         _service = CreateService();
     }
@@ -45,6 +45,16 @@ public class ArtworkCachingAudioCacheServiceTests
     private static TrackCacheStatus Status(int songId, bool isLocalReady)
         => new(songId, $"song-{songId}", isLocalReady ? $"/cache/{songId}.mp3" : null, isLocalReady, false);
 
+    private static readonly ImageCacheOutcome Cached =
+        new("/cache/image-cache/cover.jpg", ImageCacheResult.Cached);
+
+    private static readonly ImageCacheOutcome DownloadFailed =
+        new(null, ImageCacheResult.Failed);
+
+    /// <summary>Turned away by the budget - nothing wrong with the image.</summary>
+    private static readonly ImageCacheOutcome Declined =
+        new(null, ImageCacheResult.Declined);
+
     /// <summary>Artwork caching is fire-and-forget, so tests need a moment for it to land.</summary>
     private async Task WaitForBackfillAsync() => await Task.Delay(100);
 
@@ -60,8 +70,8 @@ public class ArtworkCachingAudioCacheServiceTests
         await _service.EnsureCachedAsync(song, CachePinScope.ActiveQueue);
         await WaitForBackfillAsync();
 
-        _imageCache.Verify(c => c.EnsureCachedAsync(song.AlbumArtUrl, It.IsAny<CancellationToken>()), Times.Once);
-        _imageCache.Verify(c => c.EnsureCachedAsync(song.PersonaImageUrl, It.IsAny<CancellationToken>()), Times.Once);
+        _imageCache.Verify(c => c.TryEnsureCachedAsync(song.AlbumArtUrl, It.IsAny<ImageCachePriority>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
+        _imageCache.Verify(c => c.TryEnsureCachedAsync(song.PersonaImageUrl, It.IsAny<ImageCachePriority>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Test]
@@ -75,7 +85,7 @@ public class ArtworkCachingAudioCacheServiceTests
         await _service.EnsureCachedAsync(song, CachePinScope.TemporaryWarm);
         await WaitForBackfillAsync();
 
-        _imageCache.Verify(c => c.EnsureCachedAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _imageCache.Verify(c => c.TryEnsureCachedAsync(It.IsAny<string>(), It.IsAny<ImageCachePriority>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Test]
@@ -95,7 +105,7 @@ public class ArtworkCachingAudioCacheServiceTests
         var song = CreateSong();
         _inner.Setup(s => s.EnsureCachedAsync(song, It.IsAny<CachePinScope>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Status(song.Id, isLocalReady: true));
-        _imageCache.Setup(c => c.EnsureCachedAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _imageCache.Setup(c => c.TryEnsureCachedAsync(It.IsAny<string>(), It.IsAny<ImageCachePriority>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new IOException("disk full"));
 
         Assert.That(async () => await _service.EnsureCachedAsync(song, CachePinScope.ActiveQueue), Throws.Nothing);
@@ -119,8 +129,8 @@ public class ArtworkCachingAudioCacheServiceTests
         await _service.GetCacheStatusesAsync([ready, notReady]);
         await WaitForBackfillAsync();
 
-        _imageCache.Verify(c => c.EnsureCachedAsync(ready.AlbumArtUrl, It.IsAny<CancellationToken>()), Times.Once);
-        _imageCache.Verify(c => c.EnsureCachedAsync(notReady.AlbumArtUrl, It.IsAny<CancellationToken>()), Times.Never);
+        _imageCache.Verify(c => c.TryEnsureCachedAsync(ready.AlbumArtUrl, It.IsAny<ImageCachePriority>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
+        _imageCache.Verify(c => c.TryEnsureCachedAsync(notReady.AlbumArtUrl, It.IsAny<ImageCachePriority>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Test]
@@ -135,7 +145,7 @@ public class ArtworkCachingAudioCacheServiceTests
         await _service.GetCacheStatusesAsync([song]);
         await WaitForBackfillAsync();
 
-        _imageCache.Verify(c => c.EnsureCachedAsync(song.AlbumArtUrl, It.IsAny<CancellationToken>()), Times.Once);
+        _imageCache.Verify(c => c.TryEnsureCachedAsync(song.AlbumArtUrl, It.IsAny<ImageCachePriority>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Test]
@@ -153,7 +163,7 @@ public class ArtworkCachingAudioCacheServiceTests
         await _service.GetCacheStatusesAsync([second]);
         await WaitForBackfillAsync();
 
-        _imageCache.Verify(c => c.EnsureCachedAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+        _imageCache.Verify(c => c.TryEnsureCachedAsync(It.IsAny<string>(), It.IsAny<ImageCachePriority>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     [Test]
@@ -164,20 +174,20 @@ public class ArtworkCachingAudioCacheServiceTests
         var song = CreateSong();
         _inner.Setup(s => s.GetCacheStatusesAsync(It.IsAny<IReadOnlyList<SongDto>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<int, TrackCacheStatus> { [1] = Status(1, isLocalReady: true) });
-        _imageCache.Setup(c => c.EnsureCachedAsync(song.AlbumArtUrl, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string?)null);
+        _imageCache.Setup(c => c.TryEnsureCachedAsync(song.AlbumArtUrl, It.IsAny<ImageCachePriority>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(DownloadFailed);
 
         await _service.GetCacheStatusesAsync([song]);
         await WaitForBackfillAsync();
 
-        _imageCache.Setup(c => c.EnsureCachedAsync(song.AlbumArtUrl, It.IsAny<CancellationToken>()))
-            .ReturnsAsync("/cache/image-cache/cover.jpg");
+        _imageCache.Setup(c => c.TryEnsureCachedAsync(song.AlbumArtUrl, It.IsAny<ImageCachePriority>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Cached);
 
         await _service.GetCacheStatusesAsync([song]);
         await WaitForBackfillAsync();
 
         _imageCache.Verify(
-            c => c.EnsureCachedAsync(song.AlbumArtUrl, It.IsAny<CancellationToken>()), Times.Exactly(2));
+            c => c.TryEnsureCachedAsync(song.AlbumArtUrl, It.IsAny<ImageCachePriority>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     [Test]
@@ -187,8 +197,8 @@ public class ArtworkCachingAudioCacheServiceTests
         var song = CreateSong();
         _inner.Setup(s => s.GetCacheStatusesAsync(It.IsAny<IReadOnlyList<SongDto>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<int, TrackCacheStatus> { [1] = Status(1, isLocalReady: true) });
-        _imageCache.Setup(c => c.EnsureCachedAsync(song.AlbumArtUrl, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string?)null);
+        _imageCache.Setup(c => c.TryEnsureCachedAsync(song.AlbumArtUrl, It.IsAny<ImageCachePriority>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(DownloadFailed);
 
         for (var refresh = 0; refresh < 6; refresh++)
         {
@@ -197,7 +207,50 @@ public class ArtworkCachingAudioCacheServiceTests
         }
 
         _imageCache.Verify(
-            c => c.EnsureCachedAsync(song.AlbumArtUrl, It.IsAny<CancellationToken>()), Times.Exactly(3));
+            c => c.TryEnsureCachedAsync(song.AlbumArtUrl, It.IsAny<ImageCachePriority>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Exactly(3));
+    }
+
+    [Test]
+    public async Task GetCacheStatusesAsync_AnImageTheBudgetDeclinedIsNeverBlacklisted()
+    {
+        // A hero turned away by the budget is not a broken image, and counting it against the retry
+        // limit would blacklist heroes for the rest of the session after three declines - permanently,
+        // because the prune that frees the space is exactly what would have let them through.
+        var song = CreateSong();
+        _inner.Setup(s => s.GetCacheStatusesAsync(It.IsAny<IReadOnlyList<SongDto>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, TrackCacheStatus> { [1] = Status(1, isLocalReady: true) });
+        _imageCache.Setup(c => c.TryEnsureCachedAsync(song.AlbumArtUrl, It.IsAny<ImageCachePriority>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Declined);
+
+        for (var refresh = 0; refresh < 6; refresh++)
+        {
+            await _service.GetCacheStatusesAsync([song]);
+            await WaitForBackfillAsync();
+        }
+
+        _imageCache.Verify(
+            c => c.TryEnsureCachedAsync(song.AlbumArtUrl, It.IsAny<ImageCachePriority>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(6));
+    }
+
+    [Test]
+    public async Task GetCacheStatusesAsync_AnImageSkippedWhileOfflineIsNeverBlacklisted()
+    {
+        var song = CreateSong();
+        _inner.Setup(s => s.GetCacheStatusesAsync(It.IsAny<IReadOnlyList<SongDto>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, TrackCacheStatus> { [1] = Status(1, isLocalReady: true) });
+        _imageCache.Setup(c => c.TryEnsureCachedAsync(song.AlbumArtUrl, It.IsAny<ImageCachePriority>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ImageCacheOutcome(null, ImageCacheResult.Offline));
+
+        for (var refresh = 0; refresh < 6; refresh++)
+        {
+            await _service.GetCacheStatusesAsync([song]);
+            await WaitForBackfillAsync();
+        }
+
+        _imageCache.Verify(
+            c => c.TryEnsureCachedAsync(song.AlbumArtUrl, It.IsAny<ImageCachePriority>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(6));
     }
 
     [Test]
@@ -206,7 +259,7 @@ public class ArtworkCachingAudioCacheServiceTests
         var song = CreateSong();
         _inner.Setup(s => s.GetCacheStatusesAsync(It.IsAny<IReadOnlyList<SongDto>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<int, TrackCacheStatus> { [1] = Status(1, isLocalReady: true) });
-        _imageCache.Setup(c => c.EnsureCachedAsync(song.AlbumArtUrl, It.IsAny<CancellationToken>()))
+        _imageCache.Setup(c => c.TryEnsureCachedAsync(song.AlbumArtUrl, It.IsAny<ImageCachePriority>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new IOException("transient"));
 
         await _service.GetCacheStatusesAsync([song]);
@@ -215,7 +268,7 @@ public class ArtworkCachingAudioCacheServiceTests
         await WaitForBackfillAsync();
 
         _imageCache.Verify(
-            c => c.EnsureCachedAsync(song.AlbumArtUrl, It.IsAny<CancellationToken>()), Times.Exactly(2));
+            c => c.TryEnsureCachedAsync(song.AlbumArtUrl, It.IsAny<ImageCachePriority>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     [Test]
@@ -228,7 +281,7 @@ public class ArtworkCachingAudioCacheServiceTests
         await _service.GetCacheStatusesAsync([CreateSong()]);
         await WaitForBackfillAsync();
 
-        _imageCache.Verify(c => c.EnsureCachedAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _imageCache.Verify(c => c.TryEnsureCachedAsync(It.IsAny<string>(), It.IsAny<ImageCachePriority>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Test]
@@ -253,7 +306,7 @@ public class ArtworkCachingAudioCacheServiceTests
         await _service.GetCacheStatusesAsync([song]);
         await WaitForBackfillAsync();
 
-        _imageCache.Verify(c => c.EnsureCachedAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _imageCache.Verify(c => c.TryEnsureCachedAsync(It.IsAny<string>(), It.IsAny<ImageCachePriority>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // --- Usage reporting ---

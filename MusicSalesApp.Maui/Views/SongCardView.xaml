@@ -35,7 +35,7 @@
                         StrokeThickness="0"
                         HeightRequest="150"
                         WidthRequest="150">
-                    <views:SongArtworkView AlbumArtUrl="{Binding AlbumArtDisplaySource}"
+                    <views:SongArtworkView AlbumArtUrl="{Binding AlbumArtHeroDisplaySource}"
                                            HeightRequest="150"
                                            WidthRequest="150" />
                 </Border>
@@ -62,8 +62,8 @@
                         HeightRequest="20"
                         WidthRequest="20"
                         VerticalOptions="Center"
-                        IsVisible="{Binding PersonaImageDisplaySource, Converter={toolkit:IsNotNullConverter}}">
-                    <Image Source="{Binding PersonaImageDisplaySource}"
+                        IsVisible="{Binding PersonaImageThumbDisplaySource, Converter={toolkit:IsNotNullConverter}}">
+                    <Image Source="{Binding PersonaImageThumbDisplaySource}"
                            Aspect="AspectFill"
                            HeightRequest="20"
                            WidthRequest="20" />
