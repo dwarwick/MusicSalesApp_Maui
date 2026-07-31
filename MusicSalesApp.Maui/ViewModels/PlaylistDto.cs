@@ -47,7 +47,27 @@ public class PlaylistSongDto
     public string ArtistName { get; set; } = string.Empty;
     public string Genre { get; set; } = string.Empty;
     public string? AlbumArtUrl { get; set; }
+
+    /// <summary>Small pre-resized rendition; null when none exists. See <see cref="SongDto"/>.</summary>
+    public string? AlbumArtThumbUrl { get; set; }
+
+    /// <summary>Larger pre-resized rendition for the player hero; null when none exists.</summary>
+    public string? AlbumArtHeroUrl { get; set; }
+
+    /// <summary>Cache-busting counter for the cover art. See <see cref="SongDto"/>.</summary>
+    public int AlbumArtVersion { get; set; }
+
     public string? PersonaImageUrl { get; set; }
+
+    /// <summary>Small pre-resized rendition of the persona image; null when none exists.</summary>
+    public string? PersonaImageThumbUrl { get; set; }
+
+    /// <summary>Larger persona-image rendition for the persona page; null when none exists.</summary>
+    public string? PersonaImageHeroUrl { get; set; }
+
+    /// <summary>Cache-busting counter for the persona image.</summary>
+    public int PersonaImageVersion { get; set; }
+
     public string? PersonaBio { get; set; }
     public string StreamUrl { get; set; } = string.Empty;
     public int StreamQualifyingSeconds { get; set; }

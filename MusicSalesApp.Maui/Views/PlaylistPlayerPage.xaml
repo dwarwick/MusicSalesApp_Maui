@@ -48,7 +48,7 @@
                            <Border HorizontalOptions="Center"
                                 StrokeShape="RoundRectangle 12"
                                 StrokeThickness="0">
-                            <views:SongArtworkView AlbumArtUrl="{Binding CurrentSong.AlbumArtDisplaySource}"
+                            <views:SongArtworkView AlbumArtUrl="{Binding CurrentSong.AlbumArtHeroDisplaySource}"
                                           HeightRequest="{StaticResource PlayerHeroArtSize}"
                                           WidthRequest="{StaticResource PlayerHeroArtSize}" />
                            </Border>
@@ -77,8 +77,8 @@
                                 HeightRequest="24"
                                 WidthRequest="24"
                                 VerticalOptions="Center"
-                                IsVisible="{Binding CurrentSong.PersonaImageDisplaySource, Converter={toolkit:IsNotNullConverter}}">
-                            <Image Source="{Binding CurrentSong.PersonaImageDisplaySource}"
+                                IsVisible="{Binding CurrentSong.PersonaImageThumbDisplaySource, Converter={toolkit:IsNotNullConverter}}">
+                            <Image Source="{Binding CurrentSong.PersonaImageThumbDisplaySource}"
                                    Aspect="AspectFill"
                                    HeightRequest="24"
                                    WidthRequest="24" />
@@ -335,7 +335,7 @@
                                             StrokeThickness="0"
                                             HeightRequest="48"
                                             WidthRequest="48">
-                                        <views:SongArtworkView AlbumArtUrl="{Binding AlbumArtDisplaySource}"
+                                        <views:SongArtworkView AlbumArtUrl="{Binding AlbumArtThumbDisplaySource}"
                                                HeightRequest="48"
                                                WidthRequest="48" />
                                     </Border>

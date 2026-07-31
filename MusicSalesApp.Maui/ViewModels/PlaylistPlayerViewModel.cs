@@ -467,7 +467,13 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         ArtistName = ps.ArtistName,
         Genre = ps.Genre,
         AlbumArtUrl = ps.AlbumArtUrl,
+        AlbumArtThumbUrl = ps.AlbumArtThumbUrl,
+        AlbumArtHeroUrl = ps.AlbumArtHeroUrl,
+        AlbumArtVersion = ps.AlbumArtVersion,
         PersonaImageUrl = ps.PersonaImageUrl,
+        PersonaImageThumbUrl = ps.PersonaImageThumbUrl,
+        PersonaImageHeroUrl = ps.PersonaImageHeroUrl,
+        PersonaImageVersion = ps.PersonaImageVersion,
         PersonaBio = ps.PersonaBio,
         StreamUrl = ps.StreamUrl,
         StreamQualifyingSeconds = ps.StreamQualifyingSeconds,
@@ -617,8 +623,10 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         await _navigationService.GoToAsync("persona", new Dictionary<string, object>
         {
             ["PersonaName"] = CurrentSong.ArtistName,
-            // Prefer the cached copy so the persona page renders offline too.
-            ["PersonaImageUrl"] = CurrentSong.PersonaImageDisplaySource ?? string.Empty,
+            // Prefer the cached copy so the persona page renders offline too, and the larger
+            // rendition because the page shows the image at 120 DIP - 360 px on a 3x screen, which
+            // the 320 px thumb would visibly soften.
+            ["PersonaImageUrl"] = CurrentSong.PersonaImageHeroDisplaySource ?? string.Empty,
             ["PersonaBio"] = CurrentSong.PersonaBio ?? string.Empty
         });
     }

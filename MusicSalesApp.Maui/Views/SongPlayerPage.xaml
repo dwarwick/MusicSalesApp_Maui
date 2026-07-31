@@ -26,7 +26,7 @@
                       <Border HorizontalOptions="Center"
                         StrokeShape="RoundRectangle 12"
                         StrokeThickness="0">
-                       <views:SongArtworkView AlbumArtUrl="{Binding Song.AlbumArtDisplaySource}"
+                       <views:SongArtworkView AlbumArtUrl="{Binding Song.AlbumArtHeroDisplaySource}"
                                     HeightRequest="{StaticResource PlayerHeroArtSize}"
                                     WidthRequest="{StaticResource PlayerHeroArtSize}" />
                       </Border>
@@ -55,8 +55,8 @@
                             HeightRequest="24"
                             WidthRequest="24"
                             VerticalOptions="Center"
-                            IsVisible="{Binding Song.PersonaImageDisplaySource, Converter={toolkit:IsNotNullConverter}}">
-                        <Image Source="{Binding Song.PersonaImageDisplaySource}"
+                            IsVisible="{Binding Song.PersonaImageThumbDisplaySource, Converter={toolkit:IsNotNullConverter}}">
+                        <Image Source="{Binding Song.PersonaImageThumbDisplaySource}"
                                Aspect="AspectFill"
                                HeightRequest="24"
                                WidthRequest="24" />

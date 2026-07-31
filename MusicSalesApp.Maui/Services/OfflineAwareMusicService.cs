@@ -180,18 +180,38 @@ public sealed class OfflineAwareMusicService : IMusicService
             return;
         }
 
-        var retainedImageUrls = songs
-            .SelectMany(song => new[] { song.AlbumArtUrl, song.PersonaImageUrl })
-            .Where(url => !string.IsNullOrWhiteSpace(url))
-            .Select(url => url!)
-            .Distinct(StringComparer.Ordinal)
+        // Every URL the app may have cached has to be named here. The prune deletes any file whose
+        // name is not derived from this list, and each pre-resized rendition is a distinct blob path
+        // and therefore a distinct cache entry. Omitting one would delete it after every catalog
+        // load and re-download it moments later - a silent, permanent loop burning the user's data.
+        // Each entry carries the version it was cached under, so a superseded copy left behind by an
+        // earlier version of the same image is swept up rather than counting against the budget
+        // forever.
+        // The full-size masters are retained only until their thumbs are actually cached. They stay
+        // reachable while the thumb is missing - the display chain still falls back to them - but a
+        // multi-megabyte original kept permanently beside a twenty-kilobyte rendition would eat the
+        // budget the renditions exist to free, and the budget has no eviction to recover from that.
+        var retainedImages = songs
+            .SelectMany(song => new CachedImageReference[]
+            {
+                new CachedImageReference(song.AlbumArtUrl ?? string.Empty, song.AlbumArtVersion)
+                    .RetainedUntilCached(song.AlbumArtThumbUrl, song.AlbumArtVersion),
+                new(song.AlbumArtThumbUrl ?? string.Empty, song.AlbumArtVersion),
+                new(song.AlbumArtHeroUrl ?? string.Empty, song.AlbumArtVersion),
+                new CachedImageReference(song.PersonaImageUrl ?? string.Empty, song.PersonaImageVersion)
+                    .RetainedUntilCached(song.PersonaImageThumbUrl, song.PersonaImageVersion),
+                new(song.PersonaImageThumbUrl ?? string.Empty, song.PersonaImageVersion),
+                new(song.PersonaImageHeroUrl ?? string.Empty, song.PersonaImageVersion)
+            })
+            .Where(image => !string.IsNullOrWhiteSpace(image.Url))
+            .DistinctBy(image => (image.Url, image.Version))
             .ToList();
 
         _ = Task.Run(async () =>
         {
             try
             {
-                await _imageCacheService.PruneAsync(retainedImageUrls).ConfigureAwait(false);
+                await _imageCacheService.PruneAsync(retainedImages).ConfigureAwait(false);
             }
             catch (Exception ex)
             {

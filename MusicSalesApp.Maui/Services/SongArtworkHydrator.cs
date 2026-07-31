@@ -42,8 +42,15 @@ public sealed class SongArtworkHydrator : ISongArtworkHydrator
             () => songs
                 .Select(song => (
                     Song: song,
-                    AlbumArtPath: _imageCacheService.TryGetCachedImagePath(song.AlbumArtUrl),
-                    PersonaImagePath: _imageCacheService.TryGetCachedImagePath(song.PersonaImageUrl)))
+                    AlbumArtPath: _imageCacheService.TryGetCachedImagePath(song.AlbumArtUrl, song.AlbumArtVersion),
+                    PersonaImagePath: _imageCacheService.TryGetCachedImagePath(song.PersonaImageUrl, song.PersonaImageVersion),
+                    // Each rendition is a separate blob path and so a separate cache entry. They are
+                    // looked up independently because any combination can be present: a thumb with no
+                    // hero is the normal steady state once the hero budget is reached.
+                    AlbumArtThumbPath: _imageCacheService.TryGetCachedImagePath(song.AlbumArtThumbUrl, song.AlbumArtVersion),
+                    AlbumArtHeroPath: _imageCacheService.TryGetCachedImagePath(song.AlbumArtHeroUrl, song.AlbumArtVersion),
+                    PersonaImageThumbPath: _imageCacheService.TryGetCachedImagePath(song.PersonaImageThumbUrl, song.PersonaImageVersion),
+                    PersonaImageHeroPath: _imageCacheService.TryGetCachedImagePath(song.PersonaImageHeroUrl, song.PersonaImageVersion)))
                 .ToList(),
             cancellationToken).ConfigureAwait(false);
 
@@ -51,11 +58,15 @@ public sealed class SongArtworkHydrator : ISongArtworkHydrator
         // CollectionView bindings, and raising PropertyChanged off-thread crashes the list.
         RunOnMainThread(() =>
         {
-            foreach (var (song, albumArtPath, personaImagePath) in resolved)
+            foreach (var item in resolved)
             {
-                song.CachedAlbumArtPath = albumArtPath;
-                song.CachedPersonaImagePath = personaImagePath;
-                song.SuppressRemoteArtwork = hasNoNetwork;
+                item.Song.CachedAlbumArtPath = item.AlbumArtPath;
+                item.Song.CachedPersonaImagePath = item.PersonaImagePath;
+                item.Song.CachedAlbumArtThumbPath = item.AlbumArtThumbPath;
+                item.Song.CachedAlbumArtHeroPath = item.AlbumArtHeroPath;
+                item.Song.CachedPersonaImageThumbPath = item.PersonaImageThumbPath;
+                item.Song.CachedPersonaImageHeroPath = item.PersonaImageHeroPath;
+                item.Song.SuppressRemoteArtwork = hasNoNetwork;
             }
         });
     }

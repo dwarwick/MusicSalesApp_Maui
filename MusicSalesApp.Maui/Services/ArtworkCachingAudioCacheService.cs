@@ -31,7 +31,7 @@ public sealed class ArtworkCachingAudioCacheService : IAudioCacheService
 
     /// <summary>
     /// Images that are cached, or have an attempt in flight, or have failed too often to keep trying.
-    /// Membership is a reservation, not a record of success - see <see cref="ReleaseFailedAttempt"/>.
+    /// Membership is a reservation, not a record of success - see <see cref="ReleaseAttempt"/>.
     /// </summary>
     private readonly ConcurrentDictionary<string, byte> _reservedImageUrls = new();
 
@@ -121,18 +121,25 @@ public sealed class ArtworkCachingAudioCacheService : IAudioCacheService
             return;
         }
 
-        var pendingUrls = songs
-            .SelectMany(song => new[] { song.AlbumArtUrl, song.PersonaImageUrl })
-            .Where(url => !string.IsNullOrWhiteSpace(url))
-            .Select(url => url!)
-            .Distinct(StringComparer.Ordinal)
-            // One attempt at a time per image, and no repeat once it is cached. A failed attempt gives
-            // its reservation back so a later refresh can retry - up to MaxBackfillAttemptsPerImage,
-            // after which a persistently broken image stops being retried on every list refresh.
-            .Where(url => _reservedImageUrls.TryAdd(NormalizeAttemptKey(url), 0))
-            .ToList();
+        // The small renditions, which every list row, the mini player and the lock screen fall back
+        // to. Where the server has generated one, the thumb replaces the full-size URL rather than
+        // adding to it - caching both would store the same artwork twice.
+        var thumbs = SelectPending(songs.SelectMany(song => new CachedImageReference[]
+        {
+            new(song.AlbumArtThumbUrl ?? song.AlbumArtUrl ?? string.Empty, song.AlbumArtVersion),
+            new(song.PersonaImageThumbUrl ?? song.PersonaImageUrl ?? string.Empty, song.PersonaImageVersion)
+        }));
 
-        if (pendingUrls.Count == 0)
+        // Only offered when the server has actually generated one; there is no full-size fallback
+        // here, because downloading a multi-megabyte original for the hero is precisely what this
+        // feature exists to stop.
+        var heroes = SelectPending(songs.SelectMany(song => new CachedImageReference[]
+        {
+            new(song.AlbumArtHeroUrl ?? string.Empty, song.AlbumArtVersion),
+            new(song.PersonaImageHeroUrl ?? string.Empty, song.PersonaImageVersion)
+        }));
+
+        if (thumbs.Count == 0 && heroes.Count == 0)
         {
             return;
         }
@@ -141,7 +148,17 @@ public sealed class ArtworkCachingAudioCacheService : IAudioCacheService
         {
             try
             {
-                await Task.WhenAll(pendingUrls.Select(CacheImageAsync)).ConfigureAwait(false);
+                // Thumbs first, and completely, before any hero starts. With a backfill gate of two
+                // a single interleaved WhenAll would let heroes consume the budget while thumbs were
+                // still queued, which is the one outcome worth avoiding: a missing hero degrades to
+                // an upscaled thumb, while a missing thumb leaves a blank placeholder everywhere.
+                await Task.WhenAll(
+                    thumbs.Select(image => CacheImageAsync(image, ImageCachePriority.Thumb)))
+                    .ConfigureAwait(false);
+
+                await Task.WhenAll(
+                    heroes.Select(image => CacheImageAsync(image, ImageCachePriority.Hero)))
+                    .ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -150,13 +167,30 @@ public sealed class ArtworkCachingAudioCacheService : IAudioCacheService
         });
     }
 
-    private async Task CacheImageAsync(string remoteImageUrl)
+    /// <summary>
+    /// Filters candidates down to those worth attempting now: present, not duplicated, and not
+    /// already reserved by an in-flight or completed attempt.
+    /// </summary>
+    private List<CachedImageReference> SelectPending(IEnumerable<CachedImageReference> candidates)
+        => candidates
+            .Where(image => !string.IsNullOrWhiteSpace(image.Url))
+            .DistinctBy(image => (image.Url, image.Version))
+            // One attempt at a time per image, and no repeat once it is cached. A failed attempt gives
+            // its reservation back so a later refresh can retry - up to MaxBackfillAttemptsPerImage,
+            // after which a persistently broken image stops being retried on every list refresh.
+            // Renditions reserve independently of their master, since the blob paths differ.
+            .Where(image => _reservedImageUrls.TryAdd(NormalizeAttemptKey(image), 0))
+            .ToList();
+
+    private async Task CacheImageAsync(CachedImageReference image, ImageCachePriority priority)
     {
-        var cached = false;
+        var outcome = new ImageCacheOutcome(null, ImageCacheResult.Failed);
         await _backfillGate.WaitAsync().ConfigureAwait(false);
         try
         {
-            cached = await _imageCacheService.EnsureCachedAsync(remoteImageUrl).ConfigureAwait(false) != null;
+            outcome = await _imageCacheService
+                .TryEnsureCachedAsync(image.Url, priority, image.Version)
+                .ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -166,9 +200,13 @@ public sealed class ArtworkCachingAudioCacheService : IAudioCacheService
         {
             _backfillGate.Release();
 
-            if (!cached)
+            if (outcome.Result != ImageCacheResult.Cached)
             {
-                ReleaseFailedAttempt(NormalizeAttemptKey(remoteImageUrl));
+                // A hero the budget turned away, or anything skipped because the device was offline,
+                // is not a broken image. Counting those against the retry limit would blacklist every
+                // hero for the rest of the session after three declines - permanently, since a later
+                // prune frees exactly the space that would have let them through.
+                ReleaseAttempt(NormalizeAttemptKey(image), countsAsFailure: !outcome.IsWorthRetrying);
             }
         }
     }
@@ -180,8 +218,16 @@ public sealed class ArtworkCachingAudioCacheService : IAudioCacheService
     /// <see cref="MaxBackfillAttemptsPerImage"/> failures the reservation is kept, so an image that is
     /// genuinely gone stops costing a request on every refresh.
     /// </summary>
-    private void ReleaseFailedAttempt(string attemptKey)
+    private void ReleaseAttempt(string attemptKey, bool countsAsFailure)
     {
+        if (!countsAsFailure)
+        {
+            // Nothing was wrong with the image, so the reservation goes back with no strike against
+            // it and the next refresh may try again.
+            _reservedImageUrls.TryRemove(attemptKey, out _);
+            return;
+        }
+
         var failureCount = _backfillFailureCounts.AddOrUpdate(attemptKey, 1, (_, existing) => existing + 1);
         if (failureCount < MaxBackfillAttemptsPerImage)
         {
@@ -191,10 +237,16 @@ public sealed class ArtworkCachingAudioCacheService : IAudioCacheService
 
     /// <summary>
     /// De-duplicates on the blob path, so the same image arriving with a freshly minted SAS token is
-    /// recognised as already attempted.
+    /// recognised as already attempted. The version is part of the key as well: a re-crop leaves the
+    /// path unchanged, and without it a session that had already attempted the old image would never
+    /// fetch the new one.
     /// </summary>
-    private static string NormalizeAttemptKey(string remoteImageUrl)
-        => StableRemoteAssetKey.TryGetAbsoluteUri(remoteImageUrl, out var uri)
+    private static string NormalizeAttemptKey(CachedImageReference image)
+    {
+        var path = StableRemoteAssetKey.TryGetAbsoluteUri(image.Url, out var uri)
             ? uri.AbsolutePath.ToLowerInvariant()
-            : remoteImageUrl;
+            : image.Url;
+
+        return image.Version > 0 ? $"{path}|v{image.Version}" : path;
+    }
 }

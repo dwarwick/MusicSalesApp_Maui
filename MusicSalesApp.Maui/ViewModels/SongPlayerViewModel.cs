@@ -397,8 +397,10 @@ public partial class SongPlayerViewModel : ObservableObject
         await _navigationService.GoToAsync("persona", new Dictionary<string, object>
         {
             ["PersonaName"] = Song.ArtistName,
-            // Prefer the cached copy so the persona page renders offline too.
-            ["PersonaImageUrl"] = Song.PersonaImageDisplaySource ?? string.Empty,
+            // Prefer the cached copy so the persona page renders offline too, and the larger
+            // rendition because the page shows the image at 120 DIP - 360 px on a 3x screen, which
+            // the 320 px thumb would visibly soften.
+            ["PersonaImageUrl"] = Song.PersonaImageHeroDisplaySource ?? string.Empty,
             ["PersonaBio"] = Song.PersonaBio ?? string.Empty
         });
     }
