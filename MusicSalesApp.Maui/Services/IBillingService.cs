@@ -85,13 +85,17 @@ public interface IBillingService
     /// <summary>
     /// Checks whether the user has an active platform subscription
     /// that hasn't been sent to the server yet (e.g., after app reinstall).
+    /// Returns null when the store answered and the user owns nothing, and a result with
+    /// <see cref="BillingPurchaseResult.BillingUnavailable"/> set when the store could not be
+    /// reached — those two must stay distinguishable, because only the latter is worth retrying.
     /// </summary>
     Task<BillingPurchaseResult?> RestorePurchaseAsync();
 
     Task<SubscriptionOfferInfo> GetSubscriptionOfferAsync();
 
     /// <summary>
-    /// Connects to platform billing. Called once at app startup.
+    /// Connects to platform billing. Safe to call from anywhere, any number of times: callers
+    /// share a single connection attempt, so startup ordering does not affect correctness.
     /// </summary>
     Task InitializeAsync();
 }
@@ -113,6 +117,13 @@ public class BillingPurchaseResult
     public string? PriceCurrencyCode { get; init; }
     public string? FormattedPrice { get; init; }
     public string? ErrorMessage { get; init; }
+
+    /// <summary>
+    /// True when the platform store could not be reached at all, so this result carries no
+    /// information about what the user owns. Callers must not read it as "nothing owned" — a
+    /// restore that could not ask is retried, one that asked and got nothing is not.
+    /// </summary>
+    public bool BillingUnavailable { get; init; }
 
     public static BillingPurchaseResult Succeeded(
         string purchaseToken,
@@ -149,6 +160,13 @@ public class BillingPurchaseResult
 
     public static BillingPurchaseResult Failed(string error)
         => new() { Success = false, ErrorMessage = error };
+
+    /// <summary>
+    /// The platform store could not be reached, so the question went unanswered.
+    /// Distinct from <see cref="Failed"/>, which means the store answered and refused.
+    /// </summary>
+    public static BillingPurchaseResult Unavailable(string error)
+        => new() { Success = false, BillingUnavailable = true, ErrorMessage = error };
 
     public static BillingPurchaseResult Cancelled()
         => new() { Success = false, ErrorMessage = "Purchase was cancelled." };

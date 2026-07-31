@@ -17,6 +17,8 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
 
     private readonly ILogger<GooglePlayBillingService> _logger;
     private readonly string _productId;
+    private readonly BillingConnectionGate _connectionGate;
+    private readonly object _clientSync = new();
     private BillingClient? _billingClient;
     private TaskCompletionSource<BillingPurchaseResult>? _purchaseTcs;
     private ProductDetails? _subscriptionProductDetails;
@@ -28,30 +30,10 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
     {
         _logger = logger;
         _productId = configuration["GooglePlay:SubscriptionProductId"] ?? "streamtunes_monthly_sub";
+        _connectionGate = new BillingConnectionGate(ConnectAsync);
     }
 
-    public async Task InitializeAsync()
-    {
-        if (_billingClient != null)
-            return;
-
-        var activity = Platform.CurrentActivity;
-        if (activity == null)
-        {
-            _logger.LogWarning("Cannot initialize BillingClient — no current activity");
-            return;
-        }
-
-        _billingClient = BillingClient.NewBuilder(activity)
-            .SetListener(this)
-            .EnablePendingPurchases(PendingPurchasesParams.NewBuilder()
-                .EnableOneTimeProducts()
-                .EnablePrepaidPlans()
-                .Build())
-            .Build();
-
-        await ConnectAsync();
-    }
+    public Task InitializeAsync() => _connectionGate.EnsureConnectedAsync();
 
     public async Task<BillingPurchaseResult> PurchaseSubscriptionAsync()
     {
@@ -59,17 +41,13 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
         if (activity == null)
             return BillingPurchaseResult.Failed("No active Android activity.");
 
-        if (_billingClient == null || !_billingClient.IsReady)
-        {
-            await InitializeAsync();
-            if (_billingClient == null || !_billingClient.IsReady)
-                return BillingPurchaseResult.Failed("Could not connect to Google Play Billing.");
-        }
+        if (await ConnectedClientAsync() is not { } client)
+            return BillingPurchaseResult.Failed("Could not connect to Google Play Billing.");
 
         // Query for the subscription product details if not cached
         if (_subscriptionProductDetails == null)
         {
-            var queryResult = await QuerySubscriptionProductAsync();
+            var queryResult = await QuerySubscriptionProductAsync(client);
             if (queryResult != null)
                 return queryResult; // Error result
         }
@@ -98,7 +76,7 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
         // Create TCS to await the result from OnPurchasesUpdated callback
         _purchaseTcs = new TaskCompletionSource<BillingPurchaseResult>();
 
-        var responseCode = _billingClient.LaunchBillingFlow(activity, flowParams);
+        var responseCode = client.LaunchBillingFlow(activity, flowParams);
         if (responseCode.ResponseCode != BillingResponseCode.Ok)
         {
             _purchaseTcs = null;
@@ -111,20 +89,24 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
 
     public async Task<BillingPurchaseResult?> RestorePurchaseAsync()
     {
-        if (_billingClient == null || !_billingClient.IsReady)
-        {
-            await InitializeAsync();
-            if (_billingClient == null || !_billingClient.IsReady)
-                return null;
-        }
+        // "We could not ask Google Play" must not be reported as "Google Play says you own
+        // nothing" — the caller retries the first and accepts the second as final.
+        if (await ConnectedClientAsync() is not { } client)
+            return BillingPurchaseResult.Unavailable("Could not connect to Google Play Billing.");
 
         var queryParams = QueryPurchasesParams.NewBuilder()
             .SetProductType(BillingClient.ProductType.Subs)
             .Build();
 
-        var result = await _billingClient.QueryPurchasesAsync(queryParams);
+        var result = await client.QueryPurchasesAsync(queryParams);
         if (result == null)
-            return null;
+            return BillingPurchaseResult.Unavailable("Google Play returned no purchase query result.");
+
+        // A query that failed comes back with an empty purchase list, which is indistinguishable
+        // from a genuine "owns nothing" unless the response code is checked. Reading a failure as
+        // "owns nothing" is what would strand a subscriber on the free tier.
+        if (result.Result.ResponseCode != BillingResponseCode.Ok)
+            return BillingPurchaseResult.Unavailable(CreateBillingFailureMessage(result.Result));
 
         var purchases = result.Purchases;
         if (purchases == null || purchases.Count == 0)
@@ -138,7 +120,7 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
                 // Acknowledge if needed
                 if (!purchase.IsAcknowledged)
                 {
-                    await AcknowledgePurchaseAsync(purchase.PurchaseToken);
+                    await AcknowledgePurchaseAsync(client, purchase.PurchaseToken);
                 }
 
                 return BillingPurchaseResult.Succeeded(purchase.PurchaseToken, purchase.OrderId);
@@ -150,15 +132,11 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
 
     public async Task<SubscriptionOfferInfo> GetSubscriptionOfferAsync()
     {
-        if (_billingClient == null || !_billingClient.IsReady)
-        {
-            await InitializeAsync();
-            if (_billingClient == null || !_billingClient.IsReady)
-                return SubscriptionOfferInfo.None;
-        }
+        if (await ConnectedClientAsync() is not { } client)
+            return SubscriptionOfferInfo.None;
 
         _subscriptionProductDetails = null;
-        var queryResult = await QuerySubscriptionProductAsync();
+        var queryResult = await QuerySubscriptionProductAsync(client);
         if (queryResult != null || _subscriptionProductDetails == null)
         {
             _logger.LogWarning("Google Play subscription offer lookup failed: {ErrorMessage}", queryResult?.ErrorMessage);
@@ -216,7 +194,10 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
             if (purchase.PurchaseState == PurchaseState.Purchased)
             {
                 // Acknowledge in background — don't block the callback
-                _ = AcknowledgePurchaseAsync(purchase.PurchaseToken);
+                if (CurrentClient is { } client)
+                {
+                    _ = AcknowledgePurchaseAsync(client, purchase.PurchaseToken);
+                }
 
                 _purchaseTcs.TrySetResult(BillingPurchaseResult.Succeeded(
                     purchase.PurchaseToken,
@@ -245,14 +226,20 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
         }
     }
 
-    private async Task ConnectAsync()
+    /// <summary>
+    /// The connect delegate behind <see cref="_connectionGate"/>. The gate guarantees only one of
+    /// these runs at a time, bounds how long it may take, and discards it if it fails — so this
+    /// method only has to open the connection and report whether it worked.
+    /// </summary>
+    private async Task<bool> ConnectAsync(CancellationToken cancellationToken)
     {
-        if (_billingClient == null)
-            return;
+        var client = GetOrCreateClient();
+        if (client == null)
+            return false;
 
-        var tcs = new TaskCompletionSource<bool>();
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        _billingClient.StartConnection(new BillingClientStateListener(
+        client.StartConnection(new BillingClientStateListener(
             onConnected: () =>
             {
                 _logger.LogInformation("Connected to Google Play Billing");
@@ -261,13 +248,73 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
             onDisconnected: () =>
             {
                 _logger.LogWarning("Disconnected from Google Play Billing");
+
+                // Google's BillingClient requires an explicit reconnect after a disconnect, and a
+                // disconnect can arrive long after this attempt has completed. Dropping the cached
+                // attempt is what makes the next caller reconnect instead of using a dead client.
+                _connectionGate.Invalidate();
                 tcs.TrySetResult(false);
             }));
 
-        await tcs.Task;
+        using var registration = cancellationToken.Register(() => tcs.TrySetResult(false));
+        return await tcs.Task.ConfigureAwait(false);
     }
 
-    private async Task<BillingPurchaseResult?> QuerySubscriptionProductAsync()
+    /// <summary>
+    /// Creates the BillingClient on first use and reuses it afterwards. The client outlives any
+    /// single connection attempt: reconnecting reuses it, only disposal clears it.
+    /// </summary>
+    private BillingClient? GetOrCreateClient()
+    {
+        lock (_clientSync)
+        {
+            if (_billingClient != null)
+                return _billingClient;
+
+            var activity = Platform.CurrentActivity;
+            if (activity == null)
+            {
+                _logger.LogWarning("Cannot initialize BillingClient — no current activity");
+                return null;
+            }
+
+            _billingClient = BillingClient.NewBuilder(activity)
+                .SetListener(this)
+                .EnablePendingPurchases(PendingPurchasesParams.NewBuilder()
+                    .EnableOneTimeProducts()
+                    .EnablePrepaidPlans()
+                    .Build())
+                .Build();
+
+            return _billingClient;
+        }
+    }
+
+    private BillingClient? CurrentClient
+    {
+        get
+        {
+            lock (_clientSync)
+            {
+                return _billingClient;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Returns a client that is connected and ready, or null if Google Play could not be reached.
+    /// Every public entry point starts here, so none of them can observe a half-built client.
+    /// </summary>
+    private async Task<BillingClient?> ConnectedClientAsync()
+    {
+        if (!await _connectionGate.EnsureConnectedAsync())
+            return null;
+
+        var client = CurrentClient;
+        return client is { IsReady: true } ? client : null;
+    }
+
+    private async Task<BillingPurchaseResult?> QuerySubscriptionProductAsync(BillingClient client)
     {
         var productList = new List<QueryProductDetailsParams.Product>
         {
@@ -281,7 +328,7 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
             .SetProductList(productList)
             .Build();
 
-        var result = await _billingClient!.QueryProductDetailsAsync(queryParams);
+        var result = await client.QueryProductDetailsAsync(queryParams);
         if (result == null || result.Result.ResponseCode != BillingResponseCode.Ok)
         {
             return BillingPurchaseResult.Failed(CreateBillingFailureMessage(result?.Result));
@@ -346,7 +393,7 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
             : $"Google Play Billing failed: {debugMessage} (code: {responseCode}).";
     }
 
-    private async Task AcknowledgePurchaseAsync(string purchaseToken)
+    private async Task AcknowledgePurchaseAsync(BillingClient client, string purchaseToken)
     {
         try
         {
@@ -354,7 +401,7 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
                 .SetPurchaseToken(purchaseToken)
                 .Build();
 
-            var result = await _billingClient!.AcknowledgePurchaseAsync(ackParams);
+            var result = await client.AcknowledgePurchaseAsync(ackParams);
             if (result.ResponseCode == BillingResponseCode.Ok)
             {
                 _logger.LogInformation("Purchase acknowledged successfully");
@@ -373,11 +420,24 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing && _billingClient != null)
+        if (disposing)
         {
-            _billingClient.EndConnection();
-            _billingClient = null;
+            BillingClient? client;
+            lock (_clientSync)
+            {
+                client = _billingClient;
+                _billingClient = null;
+            }
+
+            if (client != null)
+            {
+                // Drop the cached connection too, or a later caller would be handed a "connected"
+                // answer for a client that has already ended its connection.
+                _connectionGate.Invalidate();
+                client.EndConnection();
+            }
         }
+
         base.Dispose(disposing);
     }
 

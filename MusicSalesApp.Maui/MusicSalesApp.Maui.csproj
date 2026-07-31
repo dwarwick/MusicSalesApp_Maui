@@ -68,6 +68,23 @@
 	<PropertyGroup Condition="'$(Configuration)' == 'Release' and '$(TargetFramework)' == 'net10.0-android'">
 		<DebugSymbols>true</DebugSymbols>
 		<DebugType>portable</DebugType>
+
+		<!-- Full AOT instead of the SDK default of profiled AOT.
+		     Microsoft.Android.Sdk.DefaultProperties.targets defaults RunAOTCompilation=true AND
+		     AndroidEnableProfiledAot=true for Release/MonoVM, which precompiles only the methods in
+		     the SDK's stock dotnet.aotprofile (a generic startup profile) and leaves the rest of the
+		     app to JIT on first use — on whatever thread touches it first, which for a UI app is the
+		     main thread. A production ANR in 1.0.93 caught the main thread inside
+		     mono_method_get_generic_container holding the Mono image lock while a Play Billing
+		     callback thread blocked on that same lock in get_function_pointer_at_runtime.
+		     Full AOT precompiles every method and removes that class of main-thread stall.
+		     Costs AAB size and publish time.
+		     RunAOTCompilation is already the default here; it is set explicitly so a future SDK
+		     default change cannot silently turn AOT off.
+		     Deliberately NOT setting AndroidStripILAfterAOT: it strips IL that the reflection paths
+		     in SignalR, System.Text.Json and MAUI's XAML fallback still need at runtime. -->
+		<RunAOTCompilation>true</RunAOTCompilation>
+		<AndroidEnableProfiledAot>false</AndroidEnableProfiledAot>
 	</PropertyGroup>
 
 	<!-- iOS Release: workaround for App Store launch crash on iPad (iPadOS 26).

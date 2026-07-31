@@ -23,6 +23,12 @@ public class AuthService : IAuthService
     private readonly SemaphoreSlim _biometricStateLock = new(1, 1);
     private int _biometricCredentialsState = -1;
 
+    /// <summary>
+    /// Set when a purchase restore could not reach the platform store, so the answer it would have
+    /// given is still outstanding. See <see cref="RetryPendingBillingRestoreAsync"/>.
+    /// </summary>
+    private bool _billingRestorePending;
+
     private const string TokenStorageKey = "auth_token";
     private const string EmailStorageKey = "auth_email";
     private const string EmailConfirmedStorageKey = "auth_email_confirmed";
@@ -648,6 +654,9 @@ public class AuthService : IAuthService
         CreatorId = null;
         Roles = [];
         IsLoggedIn = false;
+
+        // A restore owed to the signed-out user must not be retried against whoever signs in next.
+        _billingRestorePending = false;
     }
 
     public async Task RefreshUserStatusAsync()
@@ -717,6 +726,29 @@ public class AuthService : IAuthService
         {
             _logger.LogDebug(ex, "Could not refresh subscription status on session restore");
         }
+
+        await RetryPendingBillingRestoreAsync();
+    }
+
+    /// <summary>
+    /// Re-runs a purchase restore that could not reach the store the first time.
+    ///
+    /// A restore that the store answered is final, but one that never got to ask leaves the user
+    /// looking unsubscribed — and, without this, would stay that way until the app was next
+    /// launched. Every surface that shows entitlement already refreshes status through
+    /// <see cref="RefreshUserStatusAsync"/>, so hanging the retry off that gets the user their
+    /// trial or subscription back as soon as the store becomes reachable.
+    /// </summary>
+    private async Task RetryPendingBillingRestoreAsync()
+    {
+        // The server is authoritative: if it now reports a subscription there is nothing to repair.
+        if (!_billingRestorePending || HasActiveSubscription)
+            return;
+
+        // Cleared before re-entering, so the success path inside TryRestoreBillingAsync — which
+        // calls back into RefreshUserStatusAsync — cannot start this retry a second time.
+        _billingRestorePending = false;
+        await TryRestoreBillingAsync();
     }
 
     private void NotifyAuthStateChanged()
@@ -752,6 +784,18 @@ public class AuthService : IAuthService
         try
         {
             var result = await _billingService.RestorePurchaseAsync();
+
+            // "Could not reach the store" carries no information about what the user owns, so it
+            // must not be accepted as "owns nothing". Remembering it is what lets the next status
+            // refresh ask again instead of writing the answer off until the next app launch.
+            _billingRestorePending = result is { BillingUnavailable: true };
+            if (_billingRestorePending)
+            {
+                _logger.LogInformation(
+                    "Could not reach the store to restore purchases ({ErrorMessage}); will retry on the next status refresh",
+                    result?.ErrorMessage);
+            }
+
             if (result is not { Success: true })
                 return;
 

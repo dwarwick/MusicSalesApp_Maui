@@ -397,6 +397,94 @@ public class AuthServiceTests
         Assert.DoesNotThrowAsync(() => _authService.TryRestoreBillingAsync());
     }
 
+    // --- An unreachable store leaves the restore outstanding, so it is retried ---
+
+    [Test]
+    public async Task RefreshUserStatusAsync_AfterTheStoreCouldNotBeReached_AsksItAgain()
+    {
+        // "Could not ask the store" says nothing about what the user owns. Accepting it as
+        // "owns nothing" would leave a subscriber looking unsubscribed until the next app launch.
+        _mockBillingService.Setup(b => b.RestorePurchaseAsync())
+            .ReturnsAsync(BillingPurchaseResult.Unavailable("Could not connect to Google Play Billing."));
+        SetupMockSubscriptionStatusResponse(hasSubscription: false, billingSource: null);
+
+        await _authService.TryRestoreBillingAsync();
+        await _authService.RefreshUserStatusAsync();
+
+        _mockBillingService.Verify(b => b.RestorePurchaseAsync(), Times.Exactly(2));
+    }
+
+    [Test]
+    public async Task RefreshUserStatusAsync_WhenTheStoreSaidNothingIsOwned_DoesNotAskAgain()
+    {
+        // The store answered. That answer is final, so re-asking on every status refresh would be
+        // pure noise.
+        _mockBillingService.Setup(b => b.RestorePurchaseAsync())
+            .ReturnsAsync((BillingPurchaseResult?)null);
+        SetupMockSubscriptionStatusResponse(hasSubscription: false, billingSource: null);
+
+        await _authService.TryRestoreBillingAsync();
+        await _authService.RefreshUserStatusAsync();
+
+        _mockBillingService.Verify(b => b.RestorePurchaseAsync(), Times.Once);
+    }
+
+    [Test]
+    public async Task RefreshUserStatusAsync_WhenTheServerNowReportsASubscription_DoesNotAskAgain()
+    {
+        // The server is authoritative: if it reports a subscription there is nothing left to repair.
+        _mockBillingService.Setup(b => b.RestorePurchaseAsync())
+            .ReturnsAsync(BillingPurchaseResult.Unavailable("Could not connect to Google Play Billing."));
+
+        await _authService.TryRestoreBillingAsync();
+
+        SetupMockSubscriptionStatusResponse(hasSubscription: true, billingSource: "GooglePlay");
+        await _authService.RefreshUserStatusAsync();
+
+        _mockBillingService.Verify(b => b.RestorePurchaseAsync(), Times.Once);
+    }
+
+    [Test]
+    public async Task RefreshUserStatusAsync_WhenTheRetryReachesTheStore_VerifiesThePurchase()
+    {
+        // The whole point of retrying: a purchase the store knew about all along reaches the
+        // server on this launch instead of the next one.
+        _mockBillingService.SetupSequence(b => b.RestorePurchaseAsync())
+            .ReturnsAsync(BillingPurchaseResult.Unavailable("Could not connect to Google Play Billing."))
+            .ReturnsAsync(BillingPurchaseResult.Succeeded("token", "order"));
+        _mockMusicService.Setup(m => m.VerifySubscriptionPurchaseAsync(It.IsAny<BillingPurchaseVerificationRequest>()))
+            .ReturnsAsync((true, string.Empty));
+        SetupMockSubscriptionStatusResponse(hasSubscription: false, billingSource: null);
+
+        await _authService.TryRestoreBillingAsync();
+        await _authService.RefreshUserStatusAsync();
+
+        Assert.Multiple(() =>
+        {
+            _mockMusicService.Verify(
+                m => m.VerifySubscriptionPurchaseAsync(It.Is<BillingPurchaseVerificationRequest>(r => r.PurchaseToken == "token")),
+                Times.Once);
+            // The successful restore refreshes status again; that must not start another retry.
+            _mockBillingService.Verify(b => b.RestorePurchaseAsync(), Times.Exactly(2));
+        });
+    }
+
+    [Test]
+    public async Task LogoutAsync_DiscardsARestoreOwedToTheSignedOutUser()
+    {
+        // Retrying it after a different account signs in would attach the outgoing user's purchase
+        // to the incoming one.
+        _mockBillingService.Setup(b => b.RestorePurchaseAsync())
+            .ReturnsAsync(BillingPurchaseResult.Unavailable("Could not connect to Google Play Billing."));
+        SetupMockSubscriptionStatusResponse(hasSubscription: false, billingSource: null);
+
+        await _authService.TryRestoreBillingAsync();
+        await _authService.LogoutAsync();
+        await _authService.RefreshUserStatusAsync();
+
+        _mockBillingService.Verify(b => b.RestorePurchaseAsync(), Times.Once);
+    }
+
     [Test]
     public async Task LogoutAsync_ClearsPendingStreamRecords()
     {

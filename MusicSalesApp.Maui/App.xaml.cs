@@ -59,9 +59,13 @@ public partial class App : Application
 
 		window.Created += async (_, _) =>
 		{
-			// Connect to Google Play Billing early (non-blocking)
-			try { await _billingService.InitializeAsync(); }
-			catch { /* logged inside service */ }
+			// Start connecting to platform billing, but do not wait for it here. The platform store
+			// answers through a callback that can be slow or, on a device where the store is
+			// disabled or wedged, never arrive — and waiting on that used to hold up everything
+			// below it, leaving a signed-in user looking signed out. Session restore reaches
+			// billing through the same connection gate, so it still gets a connected client;
+			// it just no longer queues behind this call.
+			StartBillingInitialization();
 
 			await _signalRConnectionManager.InitializeAsync();
 
@@ -72,6 +76,19 @@ public partial class App : Application
 		};
 
 		return window;
+	}
+
+	/// <summary>
+	/// Kicks off the billing connection without joining it to the startup chain. The task is
+	/// observed here so a failure is logged rather than surfacing later as an unobserved exception.
+	/// </summary>
+	private void StartBillingInitialization()
+	{
+		_ = Task.Run(async () =>
+		{
+			try { await _billingService.InitializeAsync(); }
+			catch { /* logged inside service */ }
+		});
 	}
 
 	protected override async void OnAppLinkRequestReceived(Uri uri)
