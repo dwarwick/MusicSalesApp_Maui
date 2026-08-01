@@ -938,7 +938,7 @@ public class AuthServiceTests
         if (cached is not null)
         {
             _mockSecureStorage.Setup(storage => storage.GetAsync(SubscriptionCacheKey))
-                .ReturnsAsync(System.Text.Json.JsonSerializer.Serialize(cached));
+                .ReturnsAsync(cached.Serialize());
         }
     }
 

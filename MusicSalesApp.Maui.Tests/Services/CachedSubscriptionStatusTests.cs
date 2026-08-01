@@ -146,6 +146,83 @@ public class CachedSubscriptionStatusTests
         Assert.That(snapshot.IsUsableAt(Now), Is.False);
     }
 
+    // --- Persistence round-trip ---
+    //
+    // The format is hand-rolled precisely so a trimmed, AOT-compiled Release build cannot quietly
+    // return a defaulted snapshot the way reflection-based serialization can. These pin that.
+
+    [Test]
+    public void SerializeThenParse_PreservesEveryField()
+    {
+        var original = new CachedSubscriptionStatus
+        {
+            HasActiveSubscription = true,
+            SubscriptionStatus = "ACTIVE",
+            SubscriptionEndDate = new DateTime(2026, 9, 15, 8, 30, 0, DateTimeKind.Utc),
+            IsOnTrial = true,
+            TrialEndDate = new DateTime(2026, 8, 10, 6, 0, 0, DateTimeKind.Utc),
+            BillingSource = "GooglePlay",
+            CachedAtUtc = Now
+        };
+
+        Assert.That(CachedSubscriptionStatus.TryParse(original.Serialize(), out var parsed), Is.True);
+        Assert.That(parsed, Is.EqualTo(original));
+    }
+
+    [Test]
+    public void SerializeThenParse_PreservesNullDatesAndStrings()
+    {
+        var original = new CachedSubscriptionStatus { HasActiveSubscription = true, CachedAtUtc = Now };
+
+        Assert.That(CachedSubscriptionStatus.TryParse(original.Serialize(), out var parsed), Is.True);
+        Assert.That(parsed, Is.EqualTo(original));
+    }
+
+    [Test]
+    public void SerializeThenParse_SurvivesAServerStringContainingTheSeparator()
+    {
+        var original = new CachedSubscriptionStatus
+        {
+            HasActiveSubscription = true,
+            SubscriptionStatus = "ACTIVE|WEIRD",
+            BillingSource = "Google|Play",
+            CachedAtUtc = Now
+        };
+
+        Assert.That(CachedSubscriptionStatus.TryParse(original.Serialize(), out var parsed), Is.True);
+        Assert.Multiple(() =>
+        {
+            Assert.That(parsed!.SubscriptionStatus, Is.EqualTo("ACTIVE|WEIRD"));
+            Assert.That(parsed.BillingSource, Is.EqualTo("Google|Play"));
+        });
+    }
+
+    [Test]
+    public void SerializeThenParse_KeepsAnUnexpiredSubscriptionUsable()
+    {
+        // The round trip has to survive as *usable*, not merely as equal fields — this is the whole
+        // path an offline launch depends on.
+        var original = Subscribed(endsAt: Now.AddDays(20), cachedAt: Now.AddHours(-2));
+
+        Assert.That(CachedSubscriptionStatus.TryParse(original.Serialize(), out var parsed), Is.True);
+        Assert.That(parsed!.IsUsableAt(Now), Is.True);
+    }
+
+    [TestCase(null)]
+    [TestCase("")]
+    [TestCase("   ")]
+    [TestCase("garbage")]
+    [TestCase("v0|1||||||")]
+    [TestCase("v1|1|ACTIVE")]
+    public void TryParse_WithUnreadableInput_Fails(string? stored)
+    {
+        Assert.Multiple(() =>
+        {
+            Assert.That(CachedSubscriptionStatus.TryParse(stored, out var parsed), Is.False);
+            Assert.That(parsed, Is.Null);
+        });
+    }
+
     [Test]
     public void IsUsableAt_TreatsUnspecifiedKindDatesAsUtc()
     {

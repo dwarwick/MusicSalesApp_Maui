@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace MusicSalesApp.Maui.Services;
 
 /// <summary>
@@ -107,4 +109,104 @@ public sealed record CachedSubscriptionStatus
         DateTimeKind.Local => value.ToUniversalTime(),
         _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
     };
+
+    // --- Persistence ---
+    //
+    // Deliberately hand-rolled rather than JSON. This snapshot is written on every successful status
+    // refresh and read on every launch, in a Release build that is trimmed and fully AOT-compiled —
+    // exactly the conditions where reflection-based serialization fails quietly, returning a
+    // defaulted object rather than throwing. A defaulted snapshot looks like "no entitlement", which
+    // is indistinguishable from an absent cache and would silently drop a subscriber to the free
+    // tier. A fixed field order and explicit parsing cannot degrade that way, and is directly
+    // testable.
+
+    private const char FieldSeparator = '|';
+    private const string FormatVersion = "v1";
+    private const int FieldCount = 8;
+
+    public string Serialize() => string.Join(FieldSeparator,
+        FormatVersion,
+        HasActiveSubscription ? "1" : "0",
+        Encode(SubscriptionStatus),
+        FormatDate(SubscriptionEndDate),
+        IsOnTrial ? "1" : "0",
+        FormatDate(TrialEndDate),
+        Encode(BillingSource),
+        CachedAtUtc.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+
+    /// <summary>
+    /// Returns false for anything it cannot read in full — a missing value, a version it does not
+    /// recognise, or a malformed field. Callers treat that as "no cache", which costs the user a
+    /// trip to the free tier until the server is reachable, rather than acting on half a snapshot.
+    /// </summary>
+    public static bool TryParse(string? value, out CachedSubscriptionStatus? result)
+    {
+        result = null;
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var fields = value.Split(FieldSeparator);
+        if (fields.Length != FieldCount || fields[0] != FormatVersion)
+        {
+            return false;
+        }
+
+        if (!DateTime.TryParse(
+                fields[7],
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.RoundtripKind,
+                out var cachedAtUtc))
+        {
+            return false;
+        }
+
+        if (!TryParseDate(fields[3], out var subscriptionEndDate) || !TryParseDate(fields[5], out var trialEndDate))
+        {
+            return false;
+        }
+
+        result = new CachedSubscriptionStatus
+        {
+            HasActiveSubscription = fields[1] == "1",
+            SubscriptionStatus = Decode(fields[2]),
+            SubscriptionEndDate = subscriptionEndDate,
+            IsOnTrial = fields[4] == "1",
+            TrialEndDate = trialEndDate,
+            BillingSource = Decode(fields[6]),
+            CachedAtUtc = cachedAtUtc.ToUniversalTime()
+        };
+
+        return true;
+    }
+
+    private static string FormatDate(DateTime? value)
+        => value is null ? string.Empty : AsUtc(value.Value).ToString("O", CultureInfo.InvariantCulture);
+
+    private static bool TryParseDate(string field, out DateTime? value)
+    {
+        if (string.IsNullOrEmpty(field))
+        {
+            value = null;
+            return true;
+        }
+
+        if (DateTime.TryParse(field, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed))
+        {
+            value = parsed;
+            return true;
+        }
+
+        value = null;
+        return false;
+    }
+
+    /// <summary>Keeps a server string containing the separator from corrupting the field layout.</summary>
+    private static string Encode(string? value)
+        => string.IsNullOrEmpty(value) ? string.Empty : Uri.EscapeDataString(value);
+
+    private static string? Decode(string field)
+        => string.IsNullOrEmpty(field) ? null : Uri.UnescapeDataString(field);
 }

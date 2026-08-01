@@ -1,7 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Net.Http.Json;
 using System.Security.Claims;
-using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Maui.ApplicationModel;
@@ -781,7 +780,14 @@ public class AuthService : IAuthService
                 CachedAtUtc = DateTime.UtcNow
             };
 
-            await _secureStorage.SetAsync(SubscriptionStatusStorageKey, JsonSerializer.Serialize(snapshot));
+            await _secureStorage.SetAsync(SubscriptionStatusStorageKey, snapshot.Serialize());
+            _logger.LogInformation(
+                "Cached subscription status for offline use. HasActiveSubscription={HasActiveSubscription}; Status={Status}; EndDate={EndDate}; IsOnTrial={IsOnTrial}; TrialEndDate={TrialEndDate}",
+                snapshot.HasActiveSubscription,
+                snapshot.SubscriptionStatus,
+                snapshot.SubscriptionEndDate,
+                snapshot.IsOnTrial,
+                snapshot.TrialEndDate);
         }
         catch (Exception ex)
         {
@@ -803,14 +809,29 @@ public class AuthService : IAuthService
             var stored = await _secureStorage.GetAsync(SubscriptionStatusStorageKey);
             if (string.IsNullOrWhiteSpace(stored))
             {
+                // Distinguished from the cases below on purpose: "nothing was ever cached" and
+                // "what was cached is no longer good" call for completely different investigations.
+                _logger.LogInformation("No cached subscription status is stored for this session");
                 return;
             }
 
-            var snapshot = JsonSerializer.Deserialize<CachedSubscriptionStatus>(stored);
-            if (snapshot is null || !snapshot.IsUsableAt(DateTime.UtcNow))
+            if (!CachedSubscriptionStatus.TryParse(stored, out var snapshot) || snapshot is null)
+            {
+                _logger.LogInformation("The cached subscription status could not be read and was ignored");
+                return;
+            }
+
+            if (!snapshot.IsUsableAt(DateTime.UtcNow))
             {
                 // Expired or too stale to trust. Leaving the defaults in place drops the user to the
                 // free tier, which is the safe direction to fail in.
+                _logger.LogInformation(
+                    "The cached subscription status is no longer usable and was ignored. HasActiveSubscription={HasActiveSubscription}; EndDate={EndDate}; IsOnTrial={IsOnTrial}; TrialEndDate={TrialEndDate}; CachedAtUtc={CachedAtUtc}",
+                    snapshot.HasActiveSubscription,
+                    snapshot.SubscriptionEndDate,
+                    snapshot.IsOnTrial,
+                    snapshot.TrialEndDate,
+                    snapshot.CachedAtUtc);
                 return;
             }
 
@@ -821,6 +842,11 @@ public class AuthService : IAuthService
             TrialEndDate = snapshot.TrialEndDate;
             BillingSource = snapshot.BillingSource;
             SubscriptionVerification = SubscriptionVerificationState.Cached;
+            _logger.LogInformation(
+                "Applied the cached subscription status. HasActiveSubscription={HasActiveSubscription}; Status={Status}; CachedAtUtc={CachedAtUtc}",
+                snapshot.HasActiveSubscription,
+                snapshot.SubscriptionStatus,
+                snapshot.CachedAtUtc);
         }
         catch (Exception ex)
         {
