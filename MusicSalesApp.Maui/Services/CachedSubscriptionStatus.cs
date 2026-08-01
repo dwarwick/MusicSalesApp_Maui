@@ -8,17 +8,21 @@ namespace MusicSalesApp.Maui.Services;
 /// </summary>
 public enum SubscriptionVerificationState
 {
-    /// <summary>The server answered this session. The normal case.</summary>
-    Verified,
+    /// <summary>
+    /// The server was unreachable and there is no usable cache — either none was stored, or the one
+    /// stored has expired. Entitlement falls back to the free tier until the server can be reached.
+    ///
+    /// Deliberately first, so <c>default</c> is the state that claims nothing. With Verified at zero
+    /// any uninitialised field silently asserted "the server confirmed this" and suppressed the
+    /// banner that explains an unconfirmed entitlement — the enum failed open.
+    /// </summary>
+    Unverified,
 
     /// <summary>The server was unreachable and a still-valid cached snapshot is standing in.</summary>
     Cached,
 
-    /// <summary>
-    /// The server was unreachable and there is no usable cache — either none was stored, or the one
-    /// stored has expired. Entitlement falls back to the free tier until the server can be reached.
-    /// </summary>
-    Unverified
+    /// <summary>The server answered this session. The normal case.</summary>
+    Verified
 }
 
 /// <summary>

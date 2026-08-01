@@ -47,7 +47,6 @@ public class AccountSettingsViewModelTests
     {
         return new AccountSettingsViewModel(
             _mockAuthService.Object,
-            _mockNetworkStatus.Object,
             _mockAlertService.Object,
             _mockNavigationService.Object,
             _mockBrowserService.Object,
@@ -75,12 +74,49 @@ public class AccountSettingsViewModelTests
         });
     }
 
-    [Test]
-    public void NetworkStatus_ExposesOfflineStateForSubscriptionBanner()
-    {
-        _mockNetworkStatus.SetupGet(service => service.IsOffline).Returns(true);
+    // --- The subscription banner reports how current the displayed status is, not connectivity ---
 
-        Assert.That(_viewModel.NetworkStatus.IsOffline, Is.True);
+    [Test]
+    public void SubscriptionBanner_WhenTheServerConfirmedTheStatus_IsSilent()
+    {
+        // Being offline is not itself worth saying anything about: a status the server confirmed
+        // this session is correct, and "subscription information is unavailable" printed above
+        // "Active" is a contradiction that only the banner was wrong about.
+        _viewModel.SubscriptionVerification = SubscriptionVerificationState.Verified;
+
+        Assert.That(_viewModel.ShowSubscriptionUnavailableBanner, Is.False);
+    }
+
+    [Test]
+    public void SubscriptionBanner_WhenStandingOnACachedStatus_SaysItIsUnconfirmedNotPaused()
+    {
+        _viewModel.SubscriptionVerification = SubscriptionVerificationState.Cached;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.ShowSubscriptionUnavailableBanner, Is.True);
+            Assert.That(_viewModel.SubscriptionUnavailableBannerText, Does.Contain("last confirmed"));
+            Assert.That(_viewModel.SubscriptionUnavailableBannerText, Does.Not.Contain("paused"));
+        });
+    }
+
+    [Test]
+    public void SubscriptionBanner_WhenEntitlementCouldNotBeEstablished_SaysFeaturesArePaused()
+    {
+        _viewModel.SubscriptionVerification = SubscriptionVerificationState.Unverified;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.ShowSubscriptionUnavailableBanner, Is.True);
+            Assert.That(_viewModel.SubscriptionUnavailableBannerText, Does.Contain("paused"));
+        });
+    }
+
+    [Test]
+    public void SubscriptionVerification_DefaultsToUnverified()
+    {
+        // The safe default: an uninitialised value must not claim the server confirmed anything.
+        Assert.That(default(SubscriptionVerificationState), Is.EqualTo(SubscriptionVerificationState.Unverified));
     }
 
     [Test]

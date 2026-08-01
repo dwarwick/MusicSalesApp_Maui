@@ -22,7 +22,6 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
     private readonly object _clientSync = new();
     private BillingClient? _billingClient;
     private TaskCompletionSource<BillingPurchaseResult>? _purchaseTcs;
-    private ProductDetails? _subscriptionProductDetails;
     private long? _pendingRenewalPriceAmountMicros;
     private string? _pendingRenewalPriceCurrencyCode;
     private string? _pendingFormattedPrice;
@@ -45,47 +44,67 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
         if (await ConnectedClientAsync() is not { } client)
             return BillingPurchaseResult.Failed("Could not connect to Google Play Billing.");
 
-        // Query for the subscription product details if not cached
-        if (_subscriptionProductDetails == null)
+        var (product, queryError) = await ResolveSubscriptionProductAsync(client);
+        if (product is null)
+            return queryError ?? BillingPurchaseResult.Failed($"Subscription product '{_productId}' not found in Google Play.");
+
+        // The product is owned by this call alone and released when it ends. It used to live in a
+        // shared field that every caller overwrote and disposed, so a concurrent offer lookup could
+        // release the peer this one was about to launch a purchase with.
+        using (product)
         {
-            var queryResult = await QuerySubscriptionProductAsync(client);
-            if (queryResult != null)
-                return queryResult; // Error result
+            var offerDetails = product.GetSubscriptionOfferDetails();
+            if (offerDetails == null || offerDetails.Count == 0)
+                return BillingPurchaseResult.Failed("No subscription offers available.");
+
+            var purchaseOffer = FindFreeTrialOffer(offerDetails) ?? offerDetails[0];
+            var offerToken = purchaseOffer.OfferToken;
+            var renewalPricePhase = ResolveRenewalPricePhase(purchaseOffer);
+            _pendingRenewalPriceAmountMicros = renewalPricePhase?.PriceAmountMicros;
+            _pendingRenewalPriceCurrencyCode = renewalPricePhase?.PriceCurrencyCode;
+            _pendingFormattedPrice = renewalPricePhase?.FormattedPrice;
+
+            // Build the billing flow params
+            var productDetailsParams = BillingFlowParams.ProductDetailsParams.NewBuilder()
+                .SetProductDetails(product)
+                .SetOfferToken(offerToken)
+                .Build();
+
+            var flowParams = BillingFlowParams.NewBuilder()
+                .SetProductDetailsParamsList([productDetailsParams])
+                .Build();
+
+            // A second Subscribe tap used to overwrite this outright, orphaning the first waiter
+            // forever. Settle the old one before replacing it.
+            var purchaseTcs = new TaskCompletionSource<BillingPurchaseResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+            Interlocked.Exchange(ref _purchaseTcs, purchaseTcs)
+                ?.TrySetResult(BillingPurchaseResult.Failed("Superseded by another purchase attempt."));
+
+            var responseCode = client.LaunchBillingFlow(activity, flowParams);
+            if (responseCode.ResponseCode != BillingResponseCode.Ok)
+            {
+                Interlocked.CompareExchange(ref _purchaseTcs, null, purchaseTcs);
+                return BillingPurchaseResult.Failed(CreateBillingFailureMessage(responseCode));
+            }
+
+            // Wait for the OnPurchasesUpdated callback. Bounded because the callback is not
+            // guaranteed: if the OS kills the Play dialog, or the binder dies, it simply never
+            // arrives, and an unbounded wait leaves the Subscribe button disabled for the rest of
+            // the process. The bound is generous because what it is really waiting on is a person
+            // reading a payment sheet, not a machine.
+            try
+            {
+                return await purchaseTcs.Task.WaitAsync(PurchaseFlowTimeout).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                Interlocked.CompareExchange(ref _purchaseTcs, null, purchaseTcs);
+                _logger.LogWarning(
+                    "Google Play did not report the outcome of the purchase flow within {TimeoutMinutes} minutes",
+                    PurchaseFlowTimeout.TotalMinutes);
+                return BillingPurchaseResult.Failed("Google Play did not report the result of the purchase. If you completed it, it will be restored automatically.");
+            }
         }
-
-        var offerDetails = _subscriptionProductDetails!.GetSubscriptionOfferDetails();
-        if (offerDetails == null || offerDetails.Count == 0)
-            return BillingPurchaseResult.Failed("No subscription offers available.");
-
-        var purchaseOffer = FindFreeTrialOffer(offerDetails) ?? offerDetails[0];
-        var offerToken = purchaseOffer.OfferToken;
-        var renewalPricePhase = ResolveRenewalPricePhase(purchaseOffer);
-        _pendingRenewalPriceAmountMicros = renewalPricePhase?.PriceAmountMicros;
-        _pendingRenewalPriceCurrencyCode = renewalPricePhase?.PriceCurrencyCode;
-        _pendingFormattedPrice = renewalPricePhase?.FormattedPrice;
-
-        // Build the billing flow params
-        var productDetailsParams = BillingFlowParams.ProductDetailsParams.NewBuilder()
-            .SetProductDetails(_subscriptionProductDetails)
-            .SetOfferToken(offerToken)
-            .Build();
-
-        var flowParams = BillingFlowParams.NewBuilder()
-            .SetProductDetailsParamsList([productDetailsParams])
-            .Build();
-
-        // Create TCS to await the result from OnPurchasesUpdated callback
-        _purchaseTcs = new TaskCompletionSource<BillingPurchaseResult>();
-
-        var responseCode = client.LaunchBillingFlow(activity, flowParams);
-        if (responseCode.ResponseCode != BillingResponseCode.Ok)
-        {
-            _purchaseTcs = null;
-            return BillingPurchaseResult.Failed(CreateBillingFailureMessage(responseCode));
-        }
-
-        // Wait for the OnPurchasesUpdated callback
-        return await _purchaseTcs.Task;
     }
 
     public async Task<BillingPurchaseResult?> RestorePurchaseAsync()
@@ -136,21 +155,21 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
         if (await ConnectedClientAsync() is not { } client)
             return SubscriptionOfferInfo.None;
 
-        // Forces a fresh query rather than reusing a cached product, and releases the global
-        // reference held for the previous one.
-        SetSubscriptionProductDetails(null);
-        var queryResult = await QuerySubscriptionProductAsync(client);
-        if (queryResult != null || _subscriptionProductDetails == null)
+        var (product, queryError) = await ResolveSubscriptionProductAsync(client);
+        if (product is null)
         {
-            _logger.LogWarning("Google Play subscription offer lookup failed: {ErrorMessage}", queryResult?.ErrorMessage);
+            _logger.LogWarning("Google Play subscription offer lookup failed: {ErrorMessage}", queryError?.ErrorMessage);
             return new SubscriptionOfferInfo
             {
                 LookupSucceeded = false,
-                ErrorMessage = queryResult?.ErrorMessage
+                ErrorMessage = queryError?.ErrorMessage
             };
         }
 
-        var offerDetails = _subscriptionProductDetails.GetSubscriptionOfferDetails();
+        // Owned by this call and released when it ends — see PurchaseSubscriptionAsync.
+        using var ownedProduct = product;
+
+        var offerDetails = ownedProduct.GetSubscriptionOfferDetails();
         if (offerDetails == null || offerDetails.Count == 0)
         {
             return new SubscriptionOfferInfo
@@ -234,7 +253,7 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
     /// these runs at a time, bounds how long it may take, and discards it if it fails — so this
     /// method only has to open the connection and report whether it worked.
     /// </summary>
-    private async Task<bool> ConnectAsync(CancellationToken cancellationToken)
+    private async Task<bool> ConnectAsync(int epoch, CancellationToken cancellationToken)
     {
         var client = GetOrCreateClient();
         if (client == null)
@@ -262,7 +281,7 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
                     setupResult.ResponseCode,
                     string.IsNullOrWhiteSpace(setupResult.DebugMessage) ? "(none)" : setupResult.DebugMessage);
 
-                _connectionGate.Invalidate();
+                _connectionGate.Invalidate(epoch);
                 tcs.TrySetResult(false);
             },
             onDisconnected: () =>
@@ -270,9 +289,11 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
                 _logger.LogWarning("Disconnected from Google Play Billing");
 
                 // Google's BillingClient requires an explicit reconnect after a disconnect, and a
-                // disconnect can arrive long after this attempt has completed. Dropping the cached
-                // attempt is what makes the next caller reconnect instead of using a dead client.
-                _connectionGate.Invalidate();
+                // disconnect can arrive long after this attempt has completed — this listener stays
+                // registered with the client and can fire long after we gave up on it. Invalidating
+                // by epoch drops the cached attempt only if it is still this one, so a stale
+                // listener cannot throw away a newer, healthy connection.
+                _connectionGate.Invalidate(epoch);
                 tcs.TrySetResult(false);
             }));
 
@@ -349,7 +370,12 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
         return null;
     }
 
-    private async Task<BillingPurchaseResult?> QuerySubscriptionProductAsync(BillingClient client)
+    /// <summary>
+    /// Looks up the subscription product, returning it to the caller to own rather than parking it
+    /// in a shared field. The returned <see cref="ProductDetails"/> holds a JNI global reference and
+    /// must be disposed by the caller.
+    /// </summary>
+    private async Task<(ProductDetails? Product, BillingPurchaseResult? Error)> ResolveSubscriptionProductAsync(BillingClient client)
     {
         var productList = new List<QueryProductDetailsParams.Product>
         {
@@ -367,23 +393,22 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
 
         if (outcome.Product is not null)
         {
-            SetSubscriptionProductDetails(outcome.Product);
-            return null; // Success — no error
+            return (outcome.Product, null);
         }
 
         if (outcome.ResponseCode is not null && outcome.ResponseCode != BillingResponseCode.Ok)
         {
-            return BillingPurchaseResult.Failed(CreateBillingFailureMessage(outcome.ResponseCode, outcome.DebugMessage));
+            return (null, BillingPurchaseResult.Failed(CreateBillingFailureMessage(outcome.ResponseCode, outcome.DebugMessage)));
         }
 
         if (outcome.TimedOut)
         {
             // Distinct from the message below on purpose: "Play never answered" and "Play answered,
             // and this product is not there" send you to completely different places.
-            return BillingPurchaseResult.Failed("Google Play did not respond to the subscription lookup. Please try again.");
+            return (null, BillingPurchaseResult.Failed("Google Play did not respond to the subscription lookup. Please try again."));
         }
 
-        return BillingPurchaseResult.Failed($"Subscription product '{_productId}' not found in Google Play.");
+        return (null, BillingPurchaseResult.Failed($"Subscription product '{_productId}' not found in Google Play."));
     }
 
     /// <summary>
@@ -426,7 +451,13 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
                 _logger.LogWarning(ex, "Failed to read the Google Play product details response");
             }
 
-            tcs.TrySetResult(new ProductQueryOutcome(responseCode, debugMessage, product));
+            if (!tcs.TrySetResult(new ProductQueryOutcome(responseCode, debugMessage, product)))
+            {
+                // The wait already timed out, so nobody will take ownership of the global reference
+                // this callback just allocated. Releasing it here is what stops a device that
+                // repeatedly times out from accumulating entries on the JNI global table.
+                product?.Dispose();
+            }
         }));
 
         return WithQueryTimeoutAsync(
@@ -556,6 +587,14 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
     private static readonly TimeSpan QueryTimeout = TimeSpan.FromSeconds(15);
 
     /// <summary>
+    /// How long to wait for Play to report the outcome of a purchase. Far longer than the query
+    /// bound because this one is waiting on a person reading a payment sheet — but not unbounded,
+    /// because the callback genuinely may never arrive (the OS killing the Play dialog, binder
+    /// death), and that used to leave the Subscribe button disabled for the rest of the process.
+    /// </summary>
+    private static readonly TimeSpan PurchaseFlowTimeout = TimeSpan.FromMinutes(10);
+
+    /// <summary>
     /// Bounds a query that answers through a listener. On timeout the underlying callback is left to
     /// arrive whenever it likes — its TrySetResult simply finds the task already settled — so the
     /// only cost is that this caller stops waiting.
@@ -595,20 +634,6 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
         string? DebugMessage,
         IReadOnlyList<PurchaseSnapshot> Purchases,
         bool TimedOut = false);
-
-    /// <summary>
-    /// Replaces the cached product, disposing the global reference held for the previous one.
-    /// </summary>
-    private void SetSubscriptionProductDetails(ProductDetails? product)
-    {
-        var previous = _subscriptionProductDetails;
-        _subscriptionProductDetails = product;
-
-        if (!ReferenceEquals(previous, product))
-        {
-            previous?.Dispose();
-        }
-    }
 
     private sealed class ProductDetailsResponseListener(Action<BillingResult?, QueryProductDetailsResult?> onResponse)
         : Java.Lang.Object, IProductDetailsResponseListener
@@ -685,8 +710,9 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
                 _billingClient = null;
             }
 
-            // Releases the global reference we hold for the cached product.
-            SetSubscriptionProductDetails(null);
+            // Nothing to release for product details: each call owns and disposes its own.
+            Interlocked.Exchange(ref _purchaseTcs, null)
+                ?.TrySetResult(BillingPurchaseResult.Failed("Billing was shut down before the purchase completed."));
 
             if (client != null)
             {

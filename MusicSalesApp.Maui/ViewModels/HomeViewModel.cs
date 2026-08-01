@@ -59,6 +59,11 @@ public partial class HomeViewModel : ObservableObject
     public partial bool HasActiveSubscription { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionUnavailableBanner))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionUnavailableBannerText))]
+    public partial SubscriptionVerificationState SubscriptionVerification { get; set; }
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowLoginRegister))]
     [NotifyPropertyChangedFor(nameof(ShowSubscribeNow))]
     [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferCard))]
@@ -153,6 +158,20 @@ public partial class HomeViewModel : ObservableObject
     public string SubscriptionAccessText => HasActiveSubscription
         ? "Listen to today's featured songs in full. You have unlimited access to the full library!"
         : "Listen to today's featured songs in full. Subscribe for unlimited access to the full library!";
+
+    /// <summary>
+    /// Mirrors Account Settings: the banner is silent whenever the server confirmed the status this
+    /// session. It was bound to connectivity here, so going offline put "Subscription information is
+    /// unavailable" directly above "You have unlimited access to the full library!" — the same
+    /// contradiction that was fixed on the other page and left standing on this one.
+    /// </summary>
+    public bool ShowSubscriptionUnavailableBanner
+        => SubscriptionVerification != SubscriptionVerificationState.Verified;
+
+    public string SubscriptionUnavailableBannerText
+        => SubscriptionVerification == SubscriptionVerificationState.Cached
+            ? "You're offline, so this is your subscription as we last confirmed it. It'll refresh automatically when you reconnect."
+            : "We couldn't confirm your subscription, so subscription features are paused. This usually means you're offline — reconnect and your subscription will be restored automatically.";
 
     public bool ShowSubscribeNow => IsAuthenticated && IsEmailVerified && !HasActiveSubscription && !ShowSubscriptionOfferCard;
     public bool ShowSubscriptionOfferCard => IsAndroidSubscriptionPlatform
@@ -785,6 +804,7 @@ public partial class HomeViewModel : ObservableObject
     {
         IsAuthenticated = _authService.IsLoggedIn;
         HasActiveSubscription = _authService.HasActiveSubscription;
+        SubscriptionVerification = _authService.SubscriptionVerification;
         HasPreviousSubscriptionHistory = IsAuthenticated && HasSubscriptionHistory(
             _authService.SubscriptionStatus,
             _authService.SubscriptionEndDate,

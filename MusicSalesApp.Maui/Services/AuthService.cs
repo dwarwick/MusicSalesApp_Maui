@@ -700,6 +700,19 @@ public class AuthService : IAuthService
                 client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Token);
 
             var response = await client.GetFromJsonAsync<SubscriptionStatusDto>("api/subscription/status");
+
+            // A null body — a 204, or a literal JSON null, neither of which throws — says nothing
+            // about the subscription. Treating it as an authoritative "no subscription" would mark
+            // the session Verified and write an empty snapshot over a good cached one, silently
+            // dropping a paying subscriber to the free tier with the banner suppressed and nothing
+            // left to restore on the next offline launch.
+            if (response is null)
+            {
+                _logger.LogInformation(
+                    "The subscription status endpoint returned no content; keeping the last known entitlement");
+                return;
+            }
+
             HasActiveSubscription = response?.HasSubscription ?? false;
             SubscriptionStatus = response?.Status;
             SubscriptionEndDate = response?.EndDate;
@@ -758,7 +771,11 @@ public class AuthService : IAuthService
             _logger.LogInformation(ex, "Could not refresh subscription status from the server; keeping the last known entitlement");
         }
 
-        await RetryPendingBillingRestoreAsync();
+        // Deliberately not awaited. A status refresh is a cheap call that UI sits in front of —
+        // AccountSettingsViewModel awaits it before rendering — and the retry reaches the platform
+        // store, which can cost the connection timeout plus the query timeout on a wedged device.
+        // Joining the two turned every refresh into a call that could stall a page for ~25s.
+        _ = RetryPendingBillingRestoreAsync();
     }
 
     /// <summary>

@@ -18,7 +18,7 @@ public class BillingConnectionGateTests
         var attempts = 0;
         var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var gate = new BillingConnectionGate(
-            _ =>
+            (_, _) =>
             {
                 Interlocked.Increment(ref attempts);
                 return release.Task;
@@ -41,7 +41,7 @@ public class BillingConnectionGateTests
     {
         var attempts = 0;
         var gate = new BillingConnectionGate(
-            _ =>
+            (_, _) =>
             {
                 Interlocked.Increment(ref attempts);
                 return Task.FromResult(true);
@@ -64,7 +64,7 @@ public class BillingConnectionGateTests
         // A platform store that never calls back must not hold the caller forever — that is what
         // used to wedge app startup behind billing.
         var gate = new BillingConnectionGate(
-            _ => new TaskCompletionSource<bool>().Task,
+            (_, _) => new TaskCompletionSource<bool>().Task,
             ShortTimeout);
 
         var connected = await gate.EnsureConnectedAsync();
@@ -77,7 +77,7 @@ public class BillingConnectionGateTests
     {
         CancellationToken observed = default;
         var gate = new BillingConnectionGate(
-            token =>
+            (_, token) =>
             {
                 observed = token;
                 return new TaskCompletionSource<bool>().Task;
@@ -95,7 +95,7 @@ public class BillingConnectionGateTests
         // One bad attempt must not disable billing for the rest of the process lifetime.
         var attempts = 0;
         var gate = new BillingConnectionGate(
-            _ => Interlocked.Increment(ref attempts) == 1
+            (_, _) => Interlocked.Increment(ref attempts) == 1
                 ? new TaskCompletionSource<bool>().Task
                 : Task.FromResult(true),
             ShortTimeout);
@@ -116,7 +116,7 @@ public class BillingConnectionGateTests
     {
         var attempts = 0;
         var gate = new BillingConnectionGate(
-            _ => Task.FromResult(Interlocked.Increment(ref attempts) != 1),
+            (_, _) => Task.FromResult(Interlocked.Increment(ref attempts) != 1),
             GenerousTimeout);
 
         var first = await gate.EnsureConnectedAsync();
@@ -135,7 +135,7 @@ public class BillingConnectionGateTests
     {
         var attempts = 0;
         var gate = new BillingConnectionGate(
-            _ => Interlocked.Increment(ref attempts) == 1
+            (_, _) => Interlocked.Increment(ref attempts) == 1
                 ? Task.FromException<bool>(new InvalidOperationException("store unavailable"))
                 : Task.FromResult(true),
             GenerousTimeout);
@@ -157,7 +157,7 @@ public class BillingConnectionGateTests
         // "connected" answer is stale from that moment on.
         var attempts = 0;
         var gate = new BillingConnectionGate(
-            _ =>
+            (_, _) =>
             {
                 Interlocked.Increment(ref attempts);
                 return Task.FromResult(true);
@@ -179,7 +179,7 @@ public class BillingConnectionGateTests
         // re-entrancy hazard rather than a plain call.
         BillingConnectionGate? gate = null;
         gate = new BillingConnectionGate(
-            _ =>
+            (_, _) =>
             {
                 gate!.Invalidate();
                 return Task.FromResult(true);
@@ -189,6 +189,67 @@ public class BillingConnectionGateTests
         var connected = await gate.EnsureConnectedAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
         Assert.That(connected, Is.True);
+    }
+
+    [Test]
+    public async Task Invalidate_WithAStaleEpoch_LeavesTheCurrentConnectionAlone()
+    {
+        // A listener registered by an abandoned attempt stays alive inside the platform client and
+        // can fire long afterwards. Unconditionally invalidating on that late callback would throw
+        // away the healthy connection that replaced it.
+        var attempts = 0;
+        var gate = new BillingConnectionGate(
+            (_, _) =>
+            {
+                Interlocked.Increment(ref attempts);
+                return Task.FromResult(true);
+            },
+            GenerousTimeout);
+
+        await gate.EnsureConnectedAsync();
+        var staleEpoch = gate.CurrentEpoch - 1;
+
+        gate.Invalidate(staleEpoch);
+        await gate.EnsureConnectedAsync();
+
+        Assert.That(attempts, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task Invalidate_WithTheCurrentEpoch_ForcesAReconnect()
+    {
+        var attempts = 0;
+        var gate = new BillingConnectionGate(
+            (_, _) =>
+            {
+                Interlocked.Increment(ref attempts);
+                return Task.FromResult(true);
+            },
+            GenerousTimeout);
+
+        await gate.EnsureConnectedAsync();
+        gate.Invalidate(gate.CurrentEpoch);
+        await gate.EnsureConnectedAsync();
+
+        Assert.That(attempts, Is.EqualTo(2));
+    }
+
+    [Test]
+    public async Task EnsureConnectedAsync_GivesEachAttemptADistinctEpoch()
+    {
+        var epochs = new List<int>();
+        var gate = new BillingConnectionGate(
+            (epoch, _) =>
+            {
+                lock (epochs) { epochs.Add(epoch); }
+                return Task.FromResult(false);
+            },
+            GenerousTimeout);
+
+        await gate.EnsureConnectedAsync();
+        await gate.EnsureConnectedAsync();
+
+        Assert.That(epochs, Is.Unique);
     }
 
     [Test]

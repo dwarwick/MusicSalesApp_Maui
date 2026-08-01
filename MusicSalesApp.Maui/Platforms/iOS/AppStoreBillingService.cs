@@ -112,11 +112,43 @@ public class AppStoreBillingService : NSObject, IBillingService, ISKPaymentTrans
     {
         _logger.LogWarning("App Store restore failed: {Code} {Description}", error.Code, error.LocalizedDescription);
         Console.WriteLine("[AppStoreBillingService] Restore failed: {0} {1}", error.Code, error.LocalizedDescription ?? "<no description>");
-        _restoreTcs?.TrySetResult(BillingPurchaseResult.Failed(error.LocalizedDescription ?? "Failed to restore App Store purchases."));
+
+        var message = error.LocalizedDescription ?? "Failed to restore App Store purchases.";
+
+        // "We could not ask the store" has to be distinguishable from "the store answered and you
+        // own nothing", or AuthService accepts it as final and never retries — leaving a subscriber
+        // whose restore failed on a flaky network stuck on the free tier until the next launch.
+        // Without this the retry contract on IBillingService was implemented on Android only.
+        _restoreTcs?.TrySetResult(IsStoreUnreachable(error)
+            ? BillingPurchaseResult.Unavailable(message)
+            : BillingPurchaseResult.Failed(message));
     }
 
     public void UpdatedDownloads(SKPaymentQueue queue, SKDownload[] downloads)
     {
+    }
+
+    // Compared as literals rather than through the SDK constants: this file cannot be compiled on
+    // the Windows machine this change was made from, so it avoids depending on API shapes that
+    // cannot be checked here.
+    private const string StoreKitErrorDomain = "SKErrorDomain";
+    private const string UrlLoadingErrorDomain = "NSURLErrorDomain";
+
+    /// <summary>
+    /// True when StoreKit failed because it could not reach the store, rather than because it
+    /// reached it and gave an answer. Only the former is worth retrying — a declined or cancelled
+    /// restore is final, and retrying it would achieve nothing.
+    /// </summary>
+    private static bool IsStoreUnreachable(NSError error)
+    {
+        // StoreKit surfaces transport failures under the URL loading domain.
+        if (error.Domain == UrlLoadingErrorDomain)
+        {
+            return true;
+        }
+
+        return error.Domain == StoreKitErrorDomain
+            && (SKErrorCode)(long)error.Code == SKErrorCode.CloudServiceNetworkConnectionFailed;
     }
 
     private async Task<ProductLookupResult> QueryProductAsync()

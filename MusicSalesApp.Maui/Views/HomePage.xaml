@@ -94,7 +94,8 @@
                 </FlexLayout>
 
                 <views:SubscriptionInfoUnavailableBanner
-                    IsVisible="{Binding NetworkStatus.IsOffline}"
+                    IsVisible="{Binding ShowSubscriptionUnavailableBanner}"
+                    Text="{Binding SubscriptionUnavailableBannerText}"
                     Margin="0,8,0,0" />
 
                 <!-- CTA: Not logged in -->

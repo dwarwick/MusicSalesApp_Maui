@@ -1,4 +1,5 @@
-﻿using MusicSalesApp.Maui.Services;
+﻿using Microsoft.Extensions.Logging;
+using MusicSalesApp.Maui.Services;
 
 namespace MusicSalesApp.Maui;
 
@@ -14,6 +15,7 @@ public partial class App : Application
 	private readonly ITipFlowHandler _tipFlowHandler;
 	private readonly ISignalRConnectionManager _signalRConnectionManager;
 	private readonly PlaybackFailureNotificationCoordinator _playbackFailureNotificationCoordinator;
+	private readonly ILogger<App> _logger;
 
 	public App(
 		IAuthService authService,
@@ -25,9 +27,11 @@ public partial class App : Application
 		IAppConfig appConfig,
 		ITipFlowHandler tipFlowHandler,
 		ISignalRConnectionManager signalRConnectionManager,
-		PlaybackFailureNotificationCoordinator playbackFailureNotificationCoordinator)
+		PlaybackFailureNotificationCoordinator playbackFailureNotificationCoordinator,
+		ILogger<App> logger)
 	{
 		InitializeComponent();
+		_logger = logger;
 		_authService = authService;
 		_adminMessageCoordinator = adminMessageCoordinator;
 		_musicService = musicService;
@@ -79,15 +83,23 @@ public partial class App : Application
 	}
 
 	/// <summary>
-	/// Kicks off the billing connection without joining it to the startup chain. The task is
-	/// observed here so a failure is logged rather than surfacing later as an unobserved exception.
+	/// Kicks off the billing connection without joining it to the startup chain.
 	/// </summary>
 	private void StartBillingInitialization()
 	{
 		_ = Task.Run(async () =>
 		{
-			try { await _billingService.InitializeAsync(); }
-			catch { /* logged inside service */ }
+			try
+			{
+				await _billingService.InitializeAsync();
+			}
+			catch (Exception ex)
+			{
+				// The gate converts its own failures into a false result, so anything reaching here
+				// came from outside it. An empty catch would swallow that without a trace — exactly
+				// the silence that has already caused a wrong diagnosis on this work.
+				_logger.LogError(ex, "Billing initialization failed at startup");
+			}
 		});
 	}
 

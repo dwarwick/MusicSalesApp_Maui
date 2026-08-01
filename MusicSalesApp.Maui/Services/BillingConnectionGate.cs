@@ -34,14 +34,18 @@ public sealed class BillingConnectionGate
     public static readonly TimeSpan DefaultConnectTimeout = TimeSpan.FromSeconds(10);
 
     private readonly object _sync = new();
-    private readonly Func<CancellationToken, Task<bool>> _connectAsync;
+    private readonly Func<int, CancellationToken, Task<bool>> _connectAsync;
     private readonly TimeSpan _connectTimeout;
     private readonly ILogger? _logger;
     private Task<bool>? _attempt;
+    private int _epoch;
 
     /// <param name="connectAsync">
     /// Opens the platform connection and completes with true once it is usable. It is cancelled
-    /// when the attempt times out, and is expected to log its own failures.
+    /// when the attempt times out, and is expected to log its own failures. Receives the epoch of
+    /// the attempt it is running as, to hand back to <see cref="Invalidate(int)"/> when the platform
+    /// reports the connection dropped — a listener that outlives its attempt must not invalidate a
+    /// newer one.
     /// </param>
     /// <param name="connectTimeout">Overrides <see cref="DefaultConnectTimeout"/>; tests use a short value.</param>
     /// <param name="logger">
@@ -51,7 +55,7 @@ public sealed class BillingConnectionGate
     /// leaves no trace at all in the log.
     /// </param>
     public BillingConnectionGate(
-        Func<CancellationToken, Task<bool>> connectAsync,
+        Func<int, CancellationToken, Task<bool>> connectAsync,
         TimeSpan? connectTimeout = null,
         ILogger? logger = null)
     {
@@ -74,7 +78,8 @@ public sealed class BillingConnectionGate
                 return existing;
             }
 
-            var started = RunAttemptAsync();
+            var epoch = ++_epoch;
+            var started = RunAttemptAsync(epoch);
             _attempt = started;
             return started;
         }
@@ -84,12 +89,48 @@ public sealed class BillingConnectionGate
     /// Drops the cached connection so the next <see cref="EnsureConnectedAsync"/> reconnects.
     /// Call this when the platform reports a disconnect — platform billing clients require an
     /// explicit reconnect afterwards, and the cached "connected" answer is stale from that moment.
+    ///
+    /// Prefer the <see cref="Invalidate(int)"/> overload from anything holding a connection epoch.
     /// </summary>
     public void Invalidate()
     {
         lock (_sync)
         {
             _attempt = null;
+        }
+    }
+
+    /// <summary>
+    /// Drops the cached connection only if it is still the one <paramref name="epoch"/> describes.
+    ///
+    /// A listener registered by an abandoned attempt stays alive inside the platform client and can
+    /// fire long afterwards. Unconditionally invalidating on that late callback would throw away a
+    /// newer, healthy connection — and under repeated late callbacks the client would churn between
+    /// connecting and being invalidated. The epoch makes a stale listener harmless.
+    /// </summary>
+    public void Invalidate(int epoch)
+    {
+        lock (_sync)
+        {
+            if (epoch == _epoch)
+            {
+                _attempt = null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Identifies the current connection attempt. Read under <see cref="_sync"/> by callers that
+    /// need to report a disconnect against the attempt they were part of.
+    /// </summary>
+    public int CurrentEpoch
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _epoch;
+            }
         }
     }
 
@@ -105,18 +146,22 @@ public sealed class BillingConnectionGate
         _ => true
     };
 
-    private async Task<bool> RunAttemptAsync()
+    private async Task<bool> RunAttemptAsync(int epoch)
     {
-        // EnsureConnectedAsync starts this while holding _sync, and an async method runs
-        // synchronously up to its first await. Yielding first guarantees the platform connect —
-        // which may call back into Invalidate() on the calling thread — never runs under the lock.
-        await Task.Yield();
-
+        // Task.Run, not Task.Yield. Yielding resumes on the captured SynchronizationContext, which
+        // for any caller entered from a ViewModel is the UI thread — so the platform connect
+        // (building the client, then a bindService IPC) would run on the main thread. That is the
+        // exact main-thread native work this branch exists to remove, and only the startup call in
+        // App.xaml.cs was wrapped against it. Running on the pool also keeps the connect off the
+        // lock: EnsureConnectedAsync starts this while holding _sync, and a delegate that calls back
+        // into Invalidate() on its calling thread must not do so underneath it.
         using var timeoutSource = new CancellationTokenSource();
 
         try
         {
-            return await _connectAsync(timeoutSource.Token).WaitAsync(_connectTimeout).ConfigureAwait(false);
+            return await Task.Run(() => _connectAsync(epoch, timeoutSource.Token))
+                .WaitAsync(_connectTimeout)
+                .ConfigureAwait(false);
         }
         catch (TimeoutException)
         {
