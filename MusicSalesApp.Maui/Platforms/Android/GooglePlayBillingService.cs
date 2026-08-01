@@ -1,5 +1,6 @@
 using Android.App;
 using Android.BillingClient.Api;
+using Android.Runtime;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using MusicSalesApp.Maui.Services;
@@ -98,36 +99,27 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
             .SetProductType(BillingClient.ProductType.Subs)
             .Build();
 
-        var result = await client.QueryPurchasesAsync(queryParams);
-        if (result == null)
-            return BillingPurchaseResult.Unavailable("Google Play returned no purchase query result.");
+        var outcome = await QueryPurchasesAsync(client, queryParams).ConfigureAwait(false);
 
         // A query that failed comes back with an empty purchase list, which is indistinguishable
         // from a genuine "owns nothing" unless the response code is checked. Reading a failure as
-        // "owns nothing" is what would strand a subscriber on the free tier.
-        var (responseCode, debugMessage) = ReadBillingOutcome(() => result.Result);
-        var purchases = result.Purchases;
-
-        // An unreadable response code is only worth treating as a failure when there is nothing to
-        // show for the query — purchases in hand prove it succeeded.
-        if (responseCode != BillingResponseCode.Ok && purchases is not { Count: > 0 })
-            return BillingPurchaseResult.Unavailable(CreateBillingFailureMessage(responseCode, debugMessage));
-
-        if (purchases == null || purchases.Count == 0)
-            return null;
+        // "owns nothing" is what would strand a subscriber on the free tier. Purchases in hand
+        // prove the query succeeded whatever the code says.
+        if (outcome.ResponseCode != BillingResponseCode.Ok && outcome.Purchases.Count == 0)
+            return BillingPurchaseResult.Unavailable(CreateBillingFailureMessage(outcome.ResponseCode, outcome.DebugMessage));
 
         // Find an active subscription
-        foreach (var purchase in purchases)
+        foreach (var purchase in outcome.Purchases)
         {
-            if (purchase.PurchaseState == PurchaseState.Purchased)
+            if (purchase.State == PurchaseState.Purchased && purchase.PurchaseToken is { } purchaseToken)
             {
                 // Acknowledge if needed
                 if (!purchase.IsAcknowledged)
                 {
-                    await AcknowledgePurchaseAsync(client, purchase.PurchaseToken);
+                    await AcknowledgePurchaseAsync(client, purchaseToken);
                 }
 
-                return BillingPurchaseResult.Succeeded(purchase.PurchaseToken, purchase.OrderId);
+                return BillingPurchaseResult.Succeeded(purchaseToken, purchase.OrderId);
             }
         }
 
@@ -139,7 +131,9 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
         if (await ConnectedClientAsync() is not { } client)
             return SubscriptionOfferInfo.None;
 
-        _subscriptionProductDetails = null;
+        // Forces a fresh query rather than reusing a cached product, and releases the global
+        // reference held for the previous one.
+        SetSubscriptionProductDetails(null);
         var queryResult = await QuerySubscriptionProductAsync(client);
         if (queryResult != null || _subscriptionProductDetails == null)
         {
@@ -364,29 +358,105 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
             .SetProductList(productList)
             .Build();
 
-        var result = await client.QueryProductDetailsAsync(queryParams);
-        if (result == null)
-        {
-            return BillingPurchaseResult.Failed(CreateBillingFailureMessage(null, null));
-        }
+        var outcome = await QueryProductDetailsAsync(client, queryParams).ConfigureAwait(false);
 
-        var (responseCode, debugMessage) = ReadBillingOutcome(() => result.Result);
-        var productDetailsList = result.ProductDetails;
-
-        // Products in hand prove the query succeeded, and that list survives the callback — so trust
-        // it ahead of a response code we may no longer be able to read at all.
-        if (productDetailsList is { Count: > 0 })
+        if (outcome.Product is not null)
         {
-            _subscriptionProductDetails = productDetailsList[0];
+            SetSubscriptionProductDetails(outcome.Product);
             return null; // Success — no error
         }
 
-        if (responseCode is not null && responseCode != BillingResponseCode.Ok)
+        if (outcome.ResponseCode is not null && outcome.ResponseCode != BillingResponseCode.Ok)
         {
-            return BillingPurchaseResult.Failed(CreateBillingFailureMessage(responseCode, debugMessage));
+            return BillingPurchaseResult.Failed(CreateBillingFailureMessage(outcome.ResponseCode, outcome.DebugMessage));
         }
 
         return BillingPurchaseResult.Failed($"Subscription product '{_productId}' not found in Google Play.");
+    }
+
+    /// <summary>
+    /// Runs the product query through the listener overload rather than the awaitable one, and reads
+    /// the whole response before the callback returns.
+    ///
+    /// The awaitable overload hands back Java-owned objects that the binding releases once its
+    /// callback completes, so every access in the continuation is a race against the GC. That race
+    /// crashed Account Settings twice: first on BillingResult.ResponseCode, then — after that read
+    /// was guarded — on ProductDetailsList.Count. Guarding individual properties only moves the
+    /// crash to the next one, because the entire result graph dies together. Reading here, while the
+    /// peers are still valid, is what actually removes it. The chosen product is kept alive by a
+    /// global reference of our own.
+    /// </summary>
+    private Task<ProductQueryOutcome> QueryProductDetailsAsync(BillingClient client, QueryProductDetailsParams queryParams)
+    {
+        var tcs = new TaskCompletionSource<ProductQueryOutcome>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        client.QueryProductDetails(queryParams, new ProductDetailsResponseListener((billingResult, queryResult) =>
+        {
+            BillingResponseCode? responseCode = null;
+            string? debugMessage = null;
+            ProductDetails? product = null;
+
+            try
+            {
+                responseCode = billingResult?.ResponseCode;
+                debugMessage = billingResult?.DebugMessage;
+
+                var productDetailsList = queryResult?.ProductDetailsList;
+                if (productDetailsList is { Count: > 0 })
+                {
+                    product = Retain(productDetailsList[0]);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Never let a read failure escape into a Java callback — it would surface as an
+                // unhandled exception on the main thread, which is exactly the crash being fixed.
+                _logger.LogWarning(ex, "Failed to read the Google Play product details response");
+            }
+
+            tcs.TrySetResult(new ProductQueryOutcome(responseCode, debugMessage, product));
+        }));
+
+        return tcs.Task;
+    }
+
+    /// <summary>
+    /// The purchases equivalent of <see cref="QueryProductDetailsAsync"/>. Purchases reduce cleanly
+    /// to plain values, so nothing Java-owned needs to escape the callback at all.
+    /// </summary>
+    private Task<PurchaseQueryOutcome> QueryPurchasesAsync(BillingClient client, QueryPurchasesParams queryParams)
+    {
+        var tcs = new TaskCompletionSource<PurchaseQueryOutcome>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        client.QueryPurchases(queryParams, new PurchasesResponseListener((billingResult, purchases) =>
+        {
+            BillingResponseCode? responseCode = null;
+            string? debugMessage = null;
+            var snapshots = new List<PurchaseSnapshot>();
+
+            try
+            {
+                responseCode = billingResult?.ResponseCode;
+                debugMessage = billingResult?.DebugMessage;
+
+                if (purchases is not null)
+                {
+                    snapshots.AddRange(purchases.Select(purchase => new PurchaseSnapshot(
+                        purchase.PurchaseToken,
+                        purchase.OrderId,
+                        purchase.PurchaseState,
+                        purchase.IsAcknowledged)));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to read the Google Play purchases response");
+            }
+
+            tcs.TrySetResult(new PurchaseQueryOutcome(responseCode, debugMessage, snapshots));
+        }));
+
+        return tcs.Task;
     }
 
     private static ProductDetails.SubscriptionOfferDetails? FindFreeTrialOffer(IList<ProductDetails.SubscriptionOfferDetails> offerDetails)
@@ -425,13 +495,9 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
     }
 
     /// <summary>
-    /// Reads a <see cref="BillingResult"/> that arrived from an awaited query, tolerating a peer
-    /// that has already been released.
-    ///
-    /// The binding disposes the Java object once its callback returns, so whether it is still alive
-    /// when our continuation runs is a race decided by the GC — one that crashed the app with
-    /// ObjectDisposedException from Account Settings. Callers treat a null response code as "no
-    /// usable answer" and fall back on evidence that outlives the callback.
+    /// Reads a <see cref="BillingResult"/> defensively, tolerating a peer that has already been
+    /// released. Only for paths that cannot read inside the callback; the query paths capture
+    /// everything up front instead, which is the actual cure rather than damage limitation.
     /// </summary>
     private static (BillingResponseCode? ResponseCode, string? DebugMessage) ReadBillingOutcome(Func<BillingResult?> read)
     {
@@ -446,6 +512,67 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
         {
             return (null, null);
         }
+    }
+
+    /// <summary>
+    /// Takes our own global reference to a Java object so it outlives the callback that delivered
+    /// it. The binding releases its wrapper once the callback returns; a wrapper we own is
+    /// unaffected. The caller owns the result and must dispose it.
+    /// </summary>
+    private static T? Retain<T>(T? value) where T : Java.Lang.Object
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        return Java.Lang.Object.GetObject<T>(JNIEnv.NewGlobalRef(value.Handle), JniHandleOwnership.TransferGlobalRef);
+    }
+
+    /// <summary>Everything worth keeping from a product-details query, already off the Java heap.</summary>
+    private sealed record ProductQueryOutcome(
+        BillingResponseCode? ResponseCode,
+        string? DebugMessage,
+        ProductDetails? Product);
+
+    /// <summary>A purchase reduced to plain values, so nothing Java-owned escapes the callback.</summary>
+    private sealed record PurchaseSnapshot(
+        string? PurchaseToken,
+        string? OrderId,
+        PurchaseState State,
+        bool IsAcknowledged);
+
+    private sealed record PurchaseQueryOutcome(
+        BillingResponseCode? ResponseCode,
+        string? DebugMessage,
+        IReadOnlyList<PurchaseSnapshot> Purchases);
+
+    /// <summary>
+    /// Replaces the cached product, disposing the global reference held for the previous one.
+    /// </summary>
+    private void SetSubscriptionProductDetails(ProductDetails? product)
+    {
+        var previous = _subscriptionProductDetails;
+        _subscriptionProductDetails = product;
+
+        if (!ReferenceEquals(previous, product))
+        {
+            previous?.Dispose();
+        }
+    }
+
+    private sealed class ProductDetailsResponseListener(Action<BillingResult?, QueryProductDetailsResult?> onResponse)
+        : Java.Lang.Object, IProductDetailsResponseListener
+    {
+        public void OnProductDetailsResponse(BillingResult billingResult, QueryProductDetailsResult queryProductDetailsResult)
+            => onResponse(billingResult, queryProductDetailsResult);
+    }
+
+    private sealed class PurchasesResponseListener(Action<BillingResult?, IList<Purchase>?> onResponse)
+        : Java.Lang.Object, IPurchasesResponseListener
+    {
+        public void OnQueryPurchasesResponse(BillingResult billingResult, IList<Purchase> purchases)
+            => onResponse(billingResult, purchases);
     }
 
     private string CreateBillingFailureMessage(BillingResult? billingResult)
@@ -477,14 +604,19 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
                 .Build();
 
             var result = await client.AcknowledgePurchaseAsync(ackParams);
-            if (result.ResponseCode == BillingResponseCode.Ok)
+
+            // Same released-peer hazard as the queries. This one is already inside a catch so it
+            // could never crash the app, but reading it defensively keeps the log honest instead of
+            // reporting an acknowledgement failure that was really just a disposed wrapper.
+            var (responseCode, debugMessage) = ReadBillingOutcome(() => result);
+            if (responseCode == BillingResponseCode.Ok)
             {
                 _logger.LogInformation("Purchase acknowledged successfully");
             }
             else
             {
                 _logger.LogWarning("Failed to acknowledge purchase: {Code} {Message}",
-                    result.ResponseCode, result.DebugMessage);
+                    responseCode, debugMessage);
             }
         }
         catch (Exception ex)
@@ -503,6 +635,9 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
                 client = _billingClient;
                 _billingClient = null;
             }
+
+            // Releases the global reference we hold for the cached product.
+            SetSubscriptionProductDetails(null);
 
             if (client != null)
             {
