@@ -324,11 +324,26 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
     /// </summary>
     private async Task<BillingClient?> ConnectedClientAsync()
     {
-        if (!await _connectionGate.EnsureConnectedAsync())
-            return null;
+        // Two passes, because the gate's cached "connected" answer can outlive the connection it
+        // describes. Google's BillingClient normally reports a drop through
+        // OnBillingServiceDisconnected, which invalidates the gate — but a binder that dies without
+        // delivering that callback would leave a successful attempt cached forever while IsReady
+        // says otherwise, and every billing call from then on would fail for the life of the
+        // process. Invalidating on the mismatch is what makes that self-healing.
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            if (!await _connectionGate.EnsureConnectedAsync())
+                return null;
 
-        var client = CurrentClient;
-        return client is { IsReady: true } ? client : null;
+            if (CurrentClient is { IsReady: true } client)
+                return client;
+
+            _logger.LogWarning(
+                "Google Play Billing reported connected but the client is not ready; dropping the cached connection and reconnecting");
+            _connectionGate.Invalidate();
+        }
+
+        return null;
     }
 
     private async Task<BillingPurchaseResult?> QuerySubscriptionProductAsync(BillingClient client)

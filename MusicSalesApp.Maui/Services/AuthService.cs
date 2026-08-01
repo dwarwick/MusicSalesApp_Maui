@@ -724,7 +724,10 @@ public class AuthService : IAuthService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Could not refresh subscription status on session restore");
+            // Information, not Debug: the file logger's floor is Information, and a status refresh
+            // that failed is exactly what you need to see when entitlement looks wrong offline.
+            // Not a Warning — going offline is a supported state in this app, not a fault.
+            _logger.LogInformation(ex, "Could not refresh subscription status from the server; keeping the last known entitlement");
         }
 
         await RetryPendingBillingRestoreAsync();
@@ -815,7 +818,9 @@ public class AuthService : IAuthService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Could not restore subscription purchases");
+            // Same reasoning as the status refresh above — at Debug this was below the file
+            // logger's floor, so a restore that threw left no trace at all.
+            _logger.LogInformation(ex, "Could not restore subscription purchases");
         }
     }
 
