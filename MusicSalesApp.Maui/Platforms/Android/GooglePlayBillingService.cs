@@ -105,10 +105,14 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
         // A query that failed comes back with an empty purchase list, which is indistinguishable
         // from a genuine "owns nothing" unless the response code is checked. Reading a failure as
         // "owns nothing" is what would strand a subscriber on the free tier.
-        if (result.Result.ResponseCode != BillingResponseCode.Ok)
-            return BillingPurchaseResult.Unavailable(CreateBillingFailureMessage(result.Result));
-
+        var (responseCode, debugMessage) = ReadBillingOutcome(() => result.Result);
         var purchases = result.Purchases;
+
+        // An unreadable response code is only worth treating as a failure when there is nothing to
+        // show for the query — purchases in hand prove it succeeded.
+        if (responseCode != BillingResponseCode.Ok && purchases is not { Count: > 0 })
+            return BillingPurchaseResult.Unavailable(CreateBillingFailureMessage(responseCode, debugMessage));
+
         if (purchases == null || purchases.Count == 0)
             return null;
 
@@ -361,19 +365,28 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
             .Build();
 
         var result = await client.QueryProductDetailsAsync(queryParams);
-        if (result == null || result.Result.ResponseCode != BillingResponseCode.Ok)
+        if (result == null)
         {
-            return BillingPurchaseResult.Failed(CreateBillingFailureMessage(result?.Result));
+            return BillingPurchaseResult.Failed(CreateBillingFailureMessage(null, null));
         }
 
+        var (responseCode, debugMessage) = ReadBillingOutcome(() => result.Result);
         var productDetailsList = result.ProductDetails;
-        if (productDetailsList == null || productDetailsList.Count == 0)
+
+        // Products in hand prove the query succeeded, and that list survives the callback — so trust
+        // it ahead of a response code we may no longer be able to read at all.
+        if (productDetailsList is { Count: > 0 })
         {
-            return BillingPurchaseResult.Failed($"Subscription product '{_productId}' not found in Google Play.");
+            _subscriptionProductDetails = productDetailsList[0];
+            return null; // Success — no error
         }
 
-        _subscriptionProductDetails = productDetailsList[0];
-        return null; // Success — no error
+        if (responseCode is not null && responseCode != BillingResponseCode.Ok)
+        {
+            return BillingPurchaseResult.Failed(CreateBillingFailureMessage(responseCode, debugMessage));
+        }
+
+        return BillingPurchaseResult.Failed($"Subscription product '{_productId}' not found in Google Play.");
     }
 
     private static ProductDetails.SubscriptionOfferDetails? FindFreeTrialOffer(IList<ProductDetails.SubscriptionOfferDetails> offerDetails)
@@ -411,18 +424,48 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
             .LastOrDefault(phase => phase.PriceAmountMicros > 0);
     }
 
+    /// <summary>
+    /// Reads a <see cref="BillingResult"/> that arrived from an awaited query, tolerating a peer
+    /// that has already been released.
+    ///
+    /// The binding disposes the Java object once its callback returns, so whether it is still alive
+    /// when our continuation runs is a race decided by the GC — one that crashed the app with
+    /// ObjectDisposedException from Account Settings. Callers treat a null response code as "no
+    /// usable answer" and fall back on evidence that outlives the callback.
+    /// </summary>
+    private static (BillingResponseCode? ResponseCode, string? DebugMessage) ReadBillingOutcome(Func<BillingResult?> read)
+    {
+        try
+        {
+            var billingResult = read();
+            return billingResult is null
+                ? (null, null)
+                : (billingResult.ResponseCode, billingResult.DebugMessage);
+        }
+        catch (ObjectDisposedException)
+        {
+            return (null, null);
+        }
+    }
+
     private string CreateBillingFailureMessage(BillingResult? billingResult)
     {
-        var debugMessage = billingResult?.DebugMessage ?? string.Empty;
+        var (responseCode, debugMessage) = ReadBillingOutcome(() => billingResult);
+        return CreateBillingFailureMessage(responseCode, debugMessage);
+    }
+
+    private string CreateBillingFailureMessage(BillingResponseCode? responseCode, string? debugMessageOrNull)
+    {
+        var debugMessage = debugMessageOrNull ?? string.Empty;
         if (debugMessage.Contains("not configured for billing", StringComparison.OrdinalIgnoreCase))
         {
             return "Google Play Billing is not available for this installed build. Install the app from a Google Play internal or closed testing track that uses the same package name, signing key, version, and subscription product, then try again.";
         }
 
-        var responseCode = billingResult?.ResponseCode.ToString() ?? "Unknown";
+        var code = responseCode?.ToString() ?? "Unknown";
         return string.IsNullOrWhiteSpace(debugMessage)
-            ? $"Google Play Billing failed (code: {responseCode})."
-            : $"Google Play Billing failed: {debugMessage} (code: {responseCode}).";
+            ? $"Google Play Billing failed (code: {code})."
+            : $"Google Play Billing failed: {debugMessage} (code: {code}).";
     }
 
     private async Task AcknowledgePurchaseAsync(BillingClient client, string purchaseToken)

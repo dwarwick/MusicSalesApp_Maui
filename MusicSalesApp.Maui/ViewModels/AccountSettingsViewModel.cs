@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Configuration;
@@ -237,22 +236,23 @@ public partial class AccountSettingsViewModel : ObservableObject
         => SubscriptionVerification == SubscriptionVerificationState.Unverified;
 
     /// <summary>
-    /// The existing offline banner also stands in for the paused case, so the two never stack. It
-    /// still shows when merely offline (the displayed status may be out of date), but it must also
-    /// show when entitlement could not be established while the device believes it is online — a
-    /// reachable network with an unreachable API.
+    /// Silent when the server confirmed the status this session, even if the device has gone offline
+    /// since. Showing "subscription information is unavailable" directly above a status reading
+    /// "Active" is a contradiction, and it is the status that is right — so the banner only appears
+    /// when the displayed status genuinely is not the server's latest word.
     /// </summary>
     public bool ShowSubscriptionUnavailableBanner
-        => ShowSubscriptionVerificationNotice || NetworkStatus.IsOffline;
+        => SubscriptionVerification != SubscriptionVerificationState.Verified;
 
     /// <summary>
-    /// Escalates from "this might be out of date" to "your features are paused", because those need
-    /// very different things from the user.
+    /// The two non-verified cases need opposite things from the user, so they must not share copy:
+    /// a cached status is accurate and merely unconfirmed, while an unverified one means the
+    /// features they paid for are switched off.
     /// </summary>
     public string SubscriptionUnavailableBannerText
-        => ShowSubscriptionVerificationNotice
-            ? "We couldn't confirm your subscription, so subscription features are paused. This usually means you're offline — reconnect and your subscription will be restored automatically."
-            : "Subscription information is unavailable while you're offline. Connect to the internet to refresh it.";
+        => SubscriptionVerification == SubscriptionVerificationState.Cached
+            ? "You're offline, so this is your subscription as we last confirmed it. It'll refresh automatically when you reconnect."
+            : "We couldn't confirm your subscription, so subscription features are paused. This usually means you're offline — reconnect and your subscription will be restored automatically.";
 
     public string SubscriptionEndDateText => SubscriptionEndDate.HasValue
         ? IsActiveTrial
@@ -622,7 +622,6 @@ public partial class AccountSettingsViewModel : ObservableObject
         }
 
         _authService.AuthStateChanged -= OnAuthStateChanged;
-        NetworkStatus.PropertyChanged -= OnNetworkStatusChanged;
         _authSubscriptionAttached = false;
     }
 
@@ -634,24 +633,7 @@ public partial class AccountSettingsViewModel : ObservableObject
         }
 
         _authService.AuthStateChanged += OnAuthStateChanged;
-        NetworkStatus.PropertyChanged += OnNetworkStatusChanged;
         _authSubscriptionAttached = true;
-    }
-
-    /// <summary>
-    /// The banner's visibility and copy both depend on connectivity, and INetworkStatusService
-    /// raises its own notifications — without relaying them the banner would keep whatever state it
-    /// had when the page appeared.
-    /// </summary>
-    private void OnNetworkStatusChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (!NetworkStatusChange.AffectsConnectivity(e.PropertyName))
-        {
-            return;
-        }
-
-        OnPropertyChanged(nameof(ShowSubscriptionUnavailableBanner));
-        OnPropertyChanged(nameof(SubscriptionUnavailableBannerText));
     }
 
     private DateTime GetTrialEndDateForDisplay()
