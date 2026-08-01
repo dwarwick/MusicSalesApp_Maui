@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Net.Http.Json;
 using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Maui.ApplicationModel;
@@ -34,6 +35,7 @@ public class AuthService : IAuthService
     private const string EmailConfirmedStorageKey = "auth_email_confirmed";
     private const string IsCreatorStorageKey = "auth_is_creator";
     private const string CreatorIdStorageKey = "auth_creator_id";
+    private const string SubscriptionStatusStorageKey = "auth_subscription_status";
     private const string BioEmailKey = "bio_email";
     private const string BioPasswordKey = "bio_password";
 
@@ -53,6 +55,14 @@ public class AuthService : IAuthService
     public bool IsOnTrial { get; private set; }
     public DateTime? TrialEndDate { get; private set; }
     public string? BillingSource { get; private set; }
+
+    /// <summary>
+    /// Whether the entitlement above was confirmed by the server this session, is standing on a
+    /// cached snapshot, or could not be established at all. Drives the explanation on the account
+    /// screen so an offline subscriber is not silently shown the free tier.
+    /// </summary>
+    public SubscriptionVerificationState SubscriptionVerification { get; private set; }
+        = SubscriptionVerificationState.Unverified;
     // Creator status has no JWT claim — it comes from the Creators table, not a role — so it is
     // persisted alongside the token and restored with it. Without this a creator who relaunches the
     // app loses their own-song playback bypass until they log in again.
@@ -411,6 +421,9 @@ public class AuthService : IAuthService
         _secureStorage.Remove(EmailConfirmedStorageKey);
         _secureStorage.Remove(IsCreatorStorageKey);
         _secureStorage.Remove(CreatorIdStorageKey);
+        // Written by the same login that issued this token, so it must not outlive it — otherwise
+        // the next account to sign in on this device could inherit the outgoing user's entitlement.
+        _secureStorage.Remove(SubscriptionStatusStorageKey);
         ClearState();
         NotifyAuthStateChanged();
     }
@@ -485,6 +498,11 @@ public class AuthService : IAuthService
             IsCreator = string.Equals(storedIsCreator, "true", StringComparison.OrdinalIgnoreCase);
             var storedCreatorId = await _secureStorage.GetAsync(CreatorIdStorageKey);
             CreatorId = int.TryParse(storedCreatorId, out var creatorId) ? creatorId : null;
+
+            // Apply the cached entitlement first so a server that cannot be reached leaves a paying
+            // subscriber on their subscription rather than silently on the free tier. A successful
+            // refresh below overwrites all of it.
+            await RestoreSubscriptionStatusAsync();
 
             // Refresh subscription status from server
             await RefreshUserStatusAsync();
@@ -596,6 +614,7 @@ public class AuthService : IAuthService
         await _secureStorage.SetAsync(EmailStorageKey, data.Email);
         await _secureStorage.SetAsync(EmailConfirmedStorageKey, data.EmailConfirmed.ToString());
         await StoreCreatorStatusAsync(data.IsCreator, data.CreatorId);
+        await StoreSubscriptionStatusAsync();
 
         // Restore any unverified Google Play purchases after login
         if (!HasActiveSubscription)
@@ -633,6 +652,10 @@ public class AuthService : IAuthService
         IsOnTrial = data.IsOnTrial;
         TrialEndDate = data.TrialEndDate;
         BillingSource = data.BillingSource;
+        // The login response came from the server, so this entitlement is as verified as a status
+        // refresh. Caching it here means a user who logs in and immediately goes offline still has
+        // a snapshot to fall back on at the next launch.
+        SubscriptionVerification = SubscriptionVerificationState.Verified;
         IsCreator = data.IsCreator;
         CreatorId = data.CreatorId;
         IsLoggedIn = true;
@@ -654,6 +677,7 @@ public class AuthService : IAuthService
         CreatorId = null;
         Roles = [];
         IsLoggedIn = false;
+        SubscriptionVerification = SubscriptionVerificationState.Unverified;
 
         // A restore owed to the signed-out user must not be retried against whoever signs in next.
         _billingRestorePending = false;
@@ -683,6 +707,11 @@ public class AuthService : IAuthService
             IsOnTrial = response?.IsOnTrial ?? false;
             TrialEndDate = response?.TrialEndDate;
             BillingSource = response?.BillingSource;
+            SubscriptionVerification = SubscriptionVerificationState.Verified;
+
+            // Write through on every answer, including a negative one — otherwise a subscription
+            // that genuinely lapsed would be resurrected by the old cache on the next offline launch.
+            await StoreSubscriptionStatusAsync();
 
             // Creator status is cached in secure storage so it survives app restarts, which means a
             // deactivation on the web would otherwise go unnoticed until the JWT expired. Only apply
@@ -731,6 +760,72 @@ public class AuthService : IAuthService
         }
 
         await RetryPendingBillingRestoreAsync();
+    }
+
+    /// <summary>
+    /// Persists the server's latest subscription answer so an offline launch has something to fall
+    /// back on. Best-effort: a keystore failure must never cost the caller its refreshed state.
+    /// </summary>
+    private async Task StoreSubscriptionStatusAsync()
+    {
+        try
+        {
+            var snapshot = new CachedSubscriptionStatus
+            {
+                HasActiveSubscription = HasActiveSubscription,
+                SubscriptionStatus = SubscriptionStatus,
+                SubscriptionEndDate = SubscriptionEndDate,
+                IsOnTrial = IsOnTrial,
+                TrialEndDate = TrialEndDate,
+                BillingSource = BillingSource,
+                CachedAtUtc = DateTime.UtcNow
+            };
+
+            await _secureStorage.SetAsync(SubscriptionStatusStorageKey, JsonSerializer.Serialize(snapshot));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInformation(ex, "Could not cache the subscription status for offline use");
+        }
+    }
+
+    /// <summary>
+    /// Applies the cached subscription answer during session restore, before the server is asked.
+    /// A successful refresh immediately overwrites whatever this sets, so the only time it decides
+    /// anything is when the server cannot be reached — which is exactly the case it exists for.
+    /// </summary>
+    private async Task RestoreSubscriptionStatusAsync()
+    {
+        SubscriptionVerification = SubscriptionVerificationState.Unverified;
+
+        try
+        {
+            var stored = await _secureStorage.GetAsync(SubscriptionStatusStorageKey);
+            if (string.IsNullOrWhiteSpace(stored))
+            {
+                return;
+            }
+
+            var snapshot = JsonSerializer.Deserialize<CachedSubscriptionStatus>(stored);
+            if (snapshot is null || !snapshot.IsUsableAt(DateTime.UtcNow))
+            {
+                // Expired or too stale to trust. Leaving the defaults in place drops the user to the
+                // free tier, which is the safe direction to fail in.
+                return;
+            }
+
+            HasActiveSubscription = snapshot.HasActiveSubscription;
+            SubscriptionStatus = snapshot.SubscriptionStatus;
+            SubscriptionEndDate = snapshot.SubscriptionEndDate;
+            IsOnTrial = snapshot.IsOnTrial;
+            TrialEndDate = snapshot.TrialEndDate;
+            BillingSource = snapshot.BillingSource;
+            SubscriptionVerification = SubscriptionVerificationState.Cached;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInformation(ex, "Could not read the cached subscription status");
+        }
     }
 
     /// <summary>

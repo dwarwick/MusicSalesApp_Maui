@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Configuration;
@@ -23,6 +24,13 @@ public partial class AccountSettingsViewModel : ObservableObject
 
     [ObservableProperty]
     public partial string UserEmail { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionVerificationNotice))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionUnavailableBanner))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionUnavailableBannerText))]
+    public partial SubscriptionVerificationState SubscriptionVerification { get; set; }
+        = SubscriptionVerificationState.Verified;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsActiveTrial))]
@@ -219,6 +227,33 @@ public partial class AccountSettingsViewModel : ObservableObject
             : SubscriptionEndDate.HasValue
                 ? $"Your previous subscription ended on {SubscriptionEndDate.Value.ToLocalTime():MMMM dd, yyyy h:mm tt}."
                 : "You do not currently have an active subscription.";
+    /// <summary>
+    /// Shown only when entitlement could not be established at all — the server was unreachable and
+    /// no usable cached status was available, so a subscriber is looking at the free tier. A merely
+    /// cached (but still valid) status stays silent: the user has everything they paid for, and
+    /// telling them their subscription "could not be verified" would alarm them over nothing.
+    /// </summary>
+    public bool ShowSubscriptionVerificationNotice
+        => SubscriptionVerification == SubscriptionVerificationState.Unverified;
+
+    /// <summary>
+    /// The existing offline banner also stands in for the paused case, so the two never stack. It
+    /// still shows when merely offline (the displayed status may be out of date), but it must also
+    /// show when entitlement could not be established while the device believes it is online — a
+    /// reachable network with an unreachable API.
+    /// </summary>
+    public bool ShowSubscriptionUnavailableBanner
+        => ShowSubscriptionVerificationNotice || NetworkStatus.IsOffline;
+
+    /// <summary>
+    /// Escalates from "this might be out of date" to "your features are paused", because those need
+    /// very different things from the user.
+    /// </summary>
+    public string SubscriptionUnavailableBannerText
+        => ShowSubscriptionVerificationNotice
+            ? "We couldn't confirm your subscription, so subscription features are paused. This usually means you're offline — reconnect and your subscription will be restored automatically."
+            : "Subscription information is unavailable while you're offline. Connect to the internet to refresh it.";
+
     public string SubscriptionEndDateText => SubscriptionEndDate.HasValue
         ? IsActiveTrial
             ? $"Trial Active Until: {GetTrialEndDateForDisplay():MMMM dd, yyyy h:mm tt}"
@@ -513,6 +548,11 @@ public partial class AccountSettingsViewModel : ObservableObject
         SubscriptionStatus = status?.Status ?? _authService.SubscriptionStatus ?? string.Empty;
         SubscriptionBillingSource = status?.BillingSource ?? _authService.BillingSource ?? string.Empty;
         IsActiveCreator = _authService.IsCreator;
+        // A status DTO in hand means the server just answered, so treat that as verified regardless
+        // of what the last session-restore concluded.
+        SubscriptionVerification = status is not null
+            ? SubscriptionVerificationState.Verified
+            : _authService.SubscriptionVerification;
     }
 
     private async Task LoadAndroidSubscriptionOfferAsync()
@@ -582,6 +622,7 @@ public partial class AccountSettingsViewModel : ObservableObject
         }
 
         _authService.AuthStateChanged -= OnAuthStateChanged;
+        NetworkStatus.PropertyChanged -= OnNetworkStatusChanged;
         _authSubscriptionAttached = false;
     }
 
@@ -593,7 +634,24 @@ public partial class AccountSettingsViewModel : ObservableObject
         }
 
         _authService.AuthStateChanged += OnAuthStateChanged;
+        NetworkStatus.PropertyChanged += OnNetworkStatusChanged;
         _authSubscriptionAttached = true;
+    }
+
+    /// <summary>
+    /// The banner's visibility and copy both depend on connectivity, and INetworkStatusService
+    /// raises its own notifications — without relaying them the banner would keep whatever state it
+    /// had when the page appeared.
+    /// </summary>
+    private void OnNetworkStatusChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (!NetworkStatusChange.AffectsConnectivity(e.PropertyName))
+        {
+            return;
+        }
+
+        OnPropertyChanged(nameof(ShowSubscriptionUnavailableBanner));
+        OnPropertyChanged(nameof(SubscriptionUnavailableBannerText));
     }
 
     private DateTime GetTrialEndDateForDisplay()
