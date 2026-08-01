@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+
 namespace MusicSalesApp.Maui.Services;
 
 /// <summary>
@@ -34,6 +36,7 @@ public sealed class BillingConnectionGate
     private readonly object _sync = new();
     private readonly Func<CancellationToken, Task<bool>> _connectAsync;
     private readonly TimeSpan _connectTimeout;
+    private readonly ILogger? _logger;
     private Task<bool>? _attempt;
 
     /// <param name="connectAsync">
@@ -41,11 +44,21 @@ public sealed class BillingConnectionGate
     /// when the attempt times out, and is expected to log its own failures.
     /// </param>
     /// <param name="connectTimeout">Overrides <see cref="DefaultConnectTimeout"/>; tests use a short value.</param>
-    public BillingConnectionGate(Func<CancellationToken, Task<bool>> connectAsync, TimeSpan? connectTimeout = null)
+    /// <param name="logger">
+    /// Records the two failures the connect delegate cannot report itself: a timeout (the delegate is
+    /// still waiting, so it has nothing to log) and an exception thrown out of it (swallowed here to
+    /// keep the failure on the retry path). Without this, a billing connection that never succeeds
+    /// leaves no trace at all in the log.
+    /// </param>
+    public BillingConnectionGate(
+        Func<CancellationToken, Task<bool>> connectAsync,
+        TimeSpan? connectTimeout = null,
+        ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(connectAsync);
         _connectAsync = connectAsync;
         _connectTimeout = connectTimeout ?? DefaultConnectTimeout;
+        _logger = logger;
     }
 
     /// <summary>
@@ -111,12 +124,19 @@ public sealed class BillingConnectionGate
             // already given up. A callback that arrives afterwards is harmless — this attempt is
             // no longer cached, so the next caller starts a fresh one.
             timeoutSource.Cancel();
+
+            // The delegate is still waiting on a callback that never came, so it cannot report this
+            // itself — if we stay quiet here the whole failure is invisible.
+            _logger?.LogWarning(
+                "Billing connection attempt timed out after {TimeoutSeconds}s; the next caller will retry",
+                _connectTimeout.TotalSeconds);
             return false;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // The connect delegate owns its own logging. Reporting false here keeps the failure on
-            // the "retry next time" path instead of surfacing as an unobserved task exception.
+            // Reporting false keeps the failure on the "retry next time" path instead of surfacing
+            // as an unobserved task exception — but it must not also make the failure silent.
+            _logger?.LogError(ex, "Billing connection attempt failed; the next caller will retry");
             return false;
         }
     }

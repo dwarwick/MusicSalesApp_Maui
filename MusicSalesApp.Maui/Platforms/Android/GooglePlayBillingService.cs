@@ -30,7 +30,7 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
     {
         _logger = logger;
         _productId = configuration["GooglePlay:SubscriptionProductId"] ?? "streamtunes_monthly_sub";
-        _connectionGate = new BillingConnectionGate(ConnectAsync);
+        _connectionGate = new BillingConnectionGate(ConnectAsync, connectTimeout: null, logger: logger);
     }
 
     public Task InitializeAsync() => _connectionGate.EnsureConnectedAsync();
@@ -240,10 +240,27 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         client.StartConnection(new BillingClientStateListener(
-            onConnected: () =>
+            onSetupFinished: setupResult =>
             {
-                _logger.LogInformation("Connected to Google Play Billing");
-                tcs.TrySetResult(true);
+                if (setupResult.ResponseCode == BillingResponseCode.Ok)
+                {
+                    _logger.LogInformation("Connected to Google Play Billing");
+                    tcs.TrySetResult(true);
+                    return;
+                }
+
+                // Setup completing with a non-OK code is NOT the same as losing an established
+                // connection, and the code is the only thing that says why. Collapsing both into a
+                // bare "disconnected" message is what made an earlier failure undiagnosable:
+                // BillingUnavailable (app/account not recognised by Play yet, common right after an
+                // internal-track upload) looked identical to a genuine service drop.
+                _logger.LogWarning(
+                    "Google Play Billing setup failed. ResponseCode={ResponseCode}; DebugMessage={DebugMessage}",
+                    setupResult.ResponseCode,
+                    string.IsNullOrWhiteSpace(setupResult.DebugMessage) ? "(none)" : setupResult.DebugMessage);
+
+                _connectionGate.Invalidate();
+                tcs.TrySetResult(false);
             },
             onDisconnected: () =>
             {
@@ -446,12 +463,12 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
     /// </summary>
     private class BillingClientStateListener : Java.Lang.Object, IBillingClientStateListener
     {
-        private readonly Action _onConnected;
+        private readonly Action<BillingResult> _onSetupFinished;
         private readonly Action _onDisconnected;
 
-        public BillingClientStateListener(Action onConnected, Action onDisconnected)
+        public BillingClientStateListener(Action<BillingResult> onSetupFinished, Action onDisconnected)
         {
-            _onConnected = onConnected;
+            _onSetupFinished = onSetupFinished;
             _onDisconnected = onDisconnected;
         }
 
@@ -460,12 +477,14 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
             _onDisconnected();
         }
 
+        /// <summary>
+        /// Hands the whole <see cref="BillingResult"/> to the caller rather than reducing it to
+        /// success/failure — the response code and debug message are the only diagnosis available
+        /// when Play refuses to set up billing.
+        /// </summary>
         public void OnBillingSetupFinished(BillingResult billingResult)
         {
-            if (billingResult.ResponseCode == BillingResponseCode.Ok)
-                _onConnected();
-            else
-                _onDisconnected();
+            _onSetupFinished(billingResult);
         }
     }
 }
