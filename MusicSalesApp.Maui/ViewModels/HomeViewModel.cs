@@ -55,7 +55,7 @@ public partial class HomeViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowLoginRegister))]
     [NotifyPropertyChangedFor(nameof(ShowSubscribeNow))]
     [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferCard))]
-    [NotifyPropertyChangedFor(nameof(ShowSubscriptionPitch))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionAccessText))]
     public partial bool HasActiveSubscription { get; set; }
 
     [ObservableProperty]
@@ -146,11 +146,13 @@ public partial class HomeViewModel : ObservableObject
     public bool ShowLoginRegister => !IsAuthenticated && !ShowSubscriptionOfferCard;
     public bool ShowValidateEmail => IsAuthenticated && !IsEmailVerified;
     /// <summary>
-    /// The blurb pitching a subscription is only true for someone who does not have one. It was
-    /// previously hard-coded visible in the page, so an active subscriber was told to "subscribe for
-    /// unlimited access" — which reads as a contradiction next to their own active subscription.
+    /// The blurb above the featured songs. It was previously hard-coded in the page, so an active
+    /// subscriber was told to "subscribe for unlimited access" — a contradiction next to their own
+    /// active subscription. A subscriber is now told what they already have instead.
     /// </summary>
-    public bool ShowSubscriptionPitch => !HasActiveSubscription;
+    public string SubscriptionAccessText => HasActiveSubscription
+        ? "Listen to today's featured songs in full. You have unlimited access to the full library!"
+        : "Listen to today's featured songs in full. Subscribe for unlimited access to the full library!";
 
     public bool ShowSubscribeNow => IsAuthenticated && IsEmailVerified && !HasActiveSubscription && !ShowSubscriptionOfferCard;
     public bool ShowSubscriptionOfferCard => IsAndroidSubscriptionPlatform

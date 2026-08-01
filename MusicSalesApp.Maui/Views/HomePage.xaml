@@ -39,9 +39,8 @@
                     </Label>
                 </Grid>
 
-                <Label Text="Listen to today's featured songs in full. Subscribe for unlimited access to the full library!"
+                <Label Text="{Binding SubscriptionAccessText}"
                        FontSize="14"
-                       IsVisible="{Binding ShowSubscriptionPitch}"
                        TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
 
                 <!-- No MeasureFirstItem here: SongCardView size varies (AI badge row), so
