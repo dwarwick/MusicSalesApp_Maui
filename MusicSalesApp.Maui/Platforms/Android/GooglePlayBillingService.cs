@@ -101,6 +101,11 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
 
         var outcome = await QueryPurchasesAsync(client, queryParams).ConfigureAwait(false);
 
+        // A store that never answered has told us nothing about what the user owns, so this is
+        // retryable rather than final — the one reading that must never become "owns nothing".
+        if (outcome.TimedOut)
+            return BillingPurchaseResult.Unavailable("Google Play did not respond to the purchase lookup.");
+
         // A query that failed comes back with an empty purchase list, which is indistinguishable
         // from a genuine "owns nothing" unless the response code is checked. Reading a failure as
         // "owns nothing" is what would strand a subscriber on the free tier. Purchases in hand
@@ -371,6 +376,13 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
             return BillingPurchaseResult.Failed(CreateBillingFailureMessage(outcome.ResponseCode, outcome.DebugMessage));
         }
 
+        if (outcome.TimedOut)
+        {
+            // Distinct from the message below on purpose: "Play never answered" and "Play answered,
+            // and this product is not there" send you to completely different places.
+            return BillingPurchaseResult.Failed("Google Play did not respond to the subscription lookup. Please try again.");
+        }
+
         return BillingPurchaseResult.Failed($"Subscription product '{_productId}' not found in Google Play.");
     }
 
@@ -417,7 +429,10 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
             tcs.TrySetResult(new ProductQueryOutcome(responseCode, debugMessage, product));
         }));
 
-        return tcs.Task;
+        return WithQueryTimeoutAsync(
+            tcs.Task,
+            () => new ProductQueryOutcome(null, null, null, TimedOut: true),
+            "subscription product lookup");
     }
 
     /// <summary>
@@ -456,7 +471,10 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
             tcs.TrySetResult(new PurchaseQueryOutcome(responseCode, debugMessage, snapshots));
         }));
 
-        return tcs.Task;
+        return WithQueryTimeoutAsync(
+            tcs.Task,
+            () => new PurchaseQueryOutcome(null, null, [], TimedOut: true),
+            "purchase lookup");
     }
 
     private static ProductDetails.SubscriptionOfferDetails? FindFreeTrialOffer(IList<ProductDetails.SubscriptionOfferDetails> offerDetails)
@@ -529,11 +547,41 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
         return Java.Lang.Object.GetObject<T>(JNIEnv.NewGlobalRef(value.Handle), JniHandleOwnership.TransferGlobalRef);
     }
 
+    /// <summary>
+    /// How long to wait for Play to invoke a query callback. These calls normally answer in well
+    /// under a second — the point of the bound is that a callback which never arrives must not hold
+    /// a caller forever. Account Settings runs the offer lookup on appearing, so an unbounded wait
+    /// there is a page that never finishes loading.
+    /// </summary>
+    private static readonly TimeSpan QueryTimeout = TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// Bounds a query that answers through a listener. On timeout the underlying callback is left to
+    /// arrive whenever it likes — its TrySetResult simply finds the task already settled — so the
+    /// only cost is that this caller stops waiting.
+    /// </summary>
+    private async Task<T> WithQueryTimeoutAsync<T>(Task<T> query, Func<T> onTimedOut, string description)
+    {
+        try
+        {
+            return await query.WaitAsync(QueryTimeout).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            _logger.LogWarning(
+                "Google Play did not answer the {Description} within {TimeoutSeconds}s",
+                description,
+                QueryTimeout.TotalSeconds);
+            return onTimedOut();
+        }
+    }
+
     /// <summary>Everything worth keeping from a product-details query, already off the Java heap.</summary>
     private sealed record ProductQueryOutcome(
         BillingResponseCode? ResponseCode,
         string? DebugMessage,
-        ProductDetails? Product);
+        ProductDetails? Product,
+        bool TimedOut = false);
 
     /// <summary>A purchase reduced to plain values, so nothing Java-owned escapes the callback.</summary>
     private sealed record PurchaseSnapshot(
@@ -545,7 +593,8 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
     private sealed record PurchaseQueryOutcome(
         BillingResponseCode? ResponseCode,
         string? DebugMessage,
-        IReadOnlyList<PurchaseSnapshot> Purchases);
+        IReadOnlyList<PurchaseSnapshot> Purchases,
+        bool TimedOut = false);
 
     /// <summary>
     /// Replaces the cached product, disposing the global reference held for the previous one.
