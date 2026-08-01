@@ -37,7 +37,8 @@
                            FontAttributes="Bold"
                            TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
                     <views:SubscriptionInfoUnavailableBanner
-                        IsVisible="{Binding NetworkStatus.IsOffline}" />
+                        IsVisible="{Binding ShowSubscriptionUnavailableBanner}"
+                        Text="{Binding SubscriptionUnavailableBannerText}" />
                     <Label Text="{Binding SubscriptionStatusText}"
                            FontSize="15"
                            FontAttributes="Bold"

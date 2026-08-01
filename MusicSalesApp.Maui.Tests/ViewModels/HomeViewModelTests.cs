@@ -1141,4 +1141,64 @@ public class HomeViewModelTests
 
         _mockNavigationService.Verify(n => n.GoToAsync(It.IsAny<string>(), It.IsAny<IDictionary<string, object>>()), Times.Never);
     }
+
+    // --- The featured-songs blurb and the subscription banner ---
+
+    [Test]
+    public void SubscriptionAccessText_ForASubscriber_StatesWhatTheyHave()
+    {
+        // It used to be hard-coded in the page, so a subscriber was told to "subscribe for
+        // unlimited access" alongside their own active subscription.
+        _viewModel.HasActiveSubscription = true;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.SubscriptionAccessText, Does.Contain("You have unlimited access"));
+            Assert.That(_viewModel.SubscriptionAccessText, Does.Not.Contain("Subscribe for"));
+        });
+    }
+
+    [Test]
+    public void SubscriptionAccessText_ForANonSubscriber_AsksThemToSubscribe()
+    {
+        _viewModel.HasActiveSubscription = false;
+
+        Assert.That(_viewModel.SubscriptionAccessText, Does.Contain("Subscribe for unlimited access"));
+    }
+
+    [Test]
+    public void SubscriptionBanner_WhenTheServerConfirmedTheStatus_IsSilent()
+    {
+        // Home carried the same connectivity-driven banner that contradicted Account Settings, so
+        // going offline printed "subscription information is unavailable" above "You have unlimited
+        // access to the full library!".
+        _viewModel.SubscriptionVerification = SubscriptionVerificationState.Verified;
+
+        Assert.That(_viewModel.ShowSubscriptionUnavailableBanner, Is.False);
+    }
+
+    [Test]
+    public void SubscriptionBanner_WhenStandingOnACachedStatus_SaysItIsUnconfirmedNotPaused()
+    {
+        _viewModel.SubscriptionVerification = SubscriptionVerificationState.Cached;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.ShowSubscriptionUnavailableBanner, Is.True);
+            Assert.That(_viewModel.SubscriptionUnavailableBannerText, Does.Contain("last confirmed"));
+            Assert.That(_viewModel.SubscriptionUnavailableBannerText, Does.Not.Contain("paused"));
+        });
+    }
+
+    [Test]
+    public void SubscriptionBanner_WhenEntitlementCouldNotBeEstablished_SaysFeaturesArePaused()
+    {
+        _viewModel.SubscriptionVerification = SubscriptionVerificationState.Unverified;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.ShowSubscriptionUnavailableBanner, Is.True);
+            Assert.That(_viewModel.SubscriptionUnavailableBannerText, Does.Contain("paused"));
+        });
+    }
 }

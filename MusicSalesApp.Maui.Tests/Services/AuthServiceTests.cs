@@ -397,6 +397,94 @@ public class AuthServiceTests
         Assert.DoesNotThrowAsync(() => _authService.TryRestoreBillingAsync());
     }
 
+    // --- An unreachable store leaves the restore outstanding, so it is retried ---
+
+    [Test]
+    public async Task RefreshUserStatusAsync_AfterTheStoreCouldNotBeReached_AsksItAgain()
+    {
+        // "Could not ask the store" says nothing about what the user owns. Accepting it as
+        // "owns nothing" would leave a subscriber looking unsubscribed until the next app launch.
+        _mockBillingService.Setup(b => b.RestorePurchaseAsync())
+            .ReturnsAsync(BillingPurchaseResult.Unavailable("Could not connect to Google Play Billing."));
+        SetupMockSubscriptionStatusResponse(hasSubscription: false, billingSource: null);
+
+        await _authService.TryRestoreBillingAsync();
+        await _authService.RefreshUserStatusAsync();
+
+        _mockBillingService.Verify(b => b.RestorePurchaseAsync(), Times.Exactly(2));
+    }
+
+    [Test]
+    public async Task RefreshUserStatusAsync_WhenTheStoreSaidNothingIsOwned_DoesNotAskAgain()
+    {
+        // The store answered. That answer is final, so re-asking on every status refresh would be
+        // pure noise.
+        _mockBillingService.Setup(b => b.RestorePurchaseAsync())
+            .ReturnsAsync((BillingPurchaseResult?)null);
+        SetupMockSubscriptionStatusResponse(hasSubscription: false, billingSource: null);
+
+        await _authService.TryRestoreBillingAsync();
+        await _authService.RefreshUserStatusAsync();
+
+        _mockBillingService.Verify(b => b.RestorePurchaseAsync(), Times.Once);
+    }
+
+    [Test]
+    public async Task RefreshUserStatusAsync_WhenTheServerNowReportsASubscription_DoesNotAskAgain()
+    {
+        // The server is authoritative: if it reports a subscription there is nothing left to repair.
+        _mockBillingService.Setup(b => b.RestorePurchaseAsync())
+            .ReturnsAsync(BillingPurchaseResult.Unavailable("Could not connect to Google Play Billing."));
+
+        await _authService.TryRestoreBillingAsync();
+
+        SetupMockSubscriptionStatusResponse(hasSubscription: true, billingSource: "GooglePlay");
+        await _authService.RefreshUserStatusAsync();
+
+        _mockBillingService.Verify(b => b.RestorePurchaseAsync(), Times.Once);
+    }
+
+    [Test]
+    public async Task RefreshUserStatusAsync_WhenTheRetryReachesTheStore_VerifiesThePurchase()
+    {
+        // The whole point of retrying: a purchase the store knew about all along reaches the
+        // server on this launch instead of the next one.
+        _mockBillingService.SetupSequence(b => b.RestorePurchaseAsync())
+            .ReturnsAsync(BillingPurchaseResult.Unavailable("Could not connect to Google Play Billing."))
+            .ReturnsAsync(BillingPurchaseResult.Succeeded("token", "order"));
+        _mockMusicService.Setup(m => m.VerifySubscriptionPurchaseAsync(It.IsAny<BillingPurchaseVerificationRequest>()))
+            .ReturnsAsync((true, string.Empty));
+        SetupMockSubscriptionStatusResponse(hasSubscription: false, billingSource: null);
+
+        await _authService.TryRestoreBillingAsync();
+        await _authService.RefreshUserStatusAsync();
+
+        Assert.Multiple(() =>
+        {
+            _mockMusicService.Verify(
+                m => m.VerifySubscriptionPurchaseAsync(It.Is<BillingPurchaseVerificationRequest>(r => r.PurchaseToken == "token")),
+                Times.Once);
+            // The successful restore refreshes status again; that must not start another retry.
+            _mockBillingService.Verify(b => b.RestorePurchaseAsync(), Times.Exactly(2));
+        });
+    }
+
+    [Test]
+    public async Task LogoutAsync_DiscardsARestoreOwedToTheSignedOutUser()
+    {
+        // Retrying it after a different account signs in would attach the outgoing user's purchase
+        // to the incoming one.
+        _mockBillingService.Setup(b => b.RestorePurchaseAsync())
+            .ReturnsAsync(BillingPurchaseResult.Unavailable("Could not connect to Google Play Billing."));
+        SetupMockSubscriptionStatusResponse(hasSubscription: false, billingSource: null);
+
+        await _authService.TryRestoreBillingAsync();
+        await _authService.LogoutAsync();
+        await _authService.RefreshUserStatusAsync();
+
+        _mockBillingService.Verify(b => b.RestorePurchaseAsync(), Times.Once);
+    }
+
     [Test]
     public async Task LogoutAsync_ClearsPendingStreamRecords()
     {
@@ -829,6 +917,140 @@ public class AuthServiceTests
             expires: DateTime.UtcNow.AddDays(1));
 
         return handler.WriteToken(token);
+    }
+
+    // --- Cached subscription status keeps an offline subscriber on their subscription ---
+
+    private const string TokenKey = "auth_token";
+    private const string SubscriptionCacheKey = "auth_subscription_status";
+
+    /// <summary>
+    /// Puts a restorable session in secure storage, optionally alongside a cached entitlement.
+    /// The HTTP client is deliberately left unconfigured by callers that want the server to be
+    /// unreachable — <see cref="AuthService.RefreshUserStatusAsync"/> swallows that and leaves
+    /// whatever the cache restored in place, which is the behaviour under test.
+    /// </summary>
+    private void SetupRestorableSession(CachedSubscriptionStatus? cached)
+    {
+        _mockSecureStorage.Setup(storage => storage.GetAsync(TokenKey))
+            .ReturnsAsync(CreateUnexpiredJwt(userId: 42));
+
+        if (cached is not null)
+        {
+            _mockSecureStorage.Setup(storage => storage.GetAsync(SubscriptionCacheKey))
+                .ReturnsAsync(cached.Serialize());
+        }
+    }
+
+    [Test]
+    public async Task TryRestoreSessionAsync_WhenTheServerIsUnreachable_KeepsTheCachedSubscription()
+    {
+        // The whole point: a paying subscriber who opens the app offline must not land on the free tier.
+        SetupRestorableSession(new CachedSubscriptionStatus
+        {
+            HasActiveSubscription = true,
+            SubscriptionStatus = "ACTIVE",
+            SubscriptionEndDate = DateTime.UtcNow.AddDays(20),
+            BillingSource = BillingProviders.GooglePlay,
+            CachedAtUtc = DateTime.UtcNow.AddHours(-3)
+        });
+
+        await _authService.TryRestoreSessionAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_authService.HasActiveSubscription, Is.True);
+            Assert.That(_authService.BillingSource, Is.EqualTo(BillingProviders.GooglePlay));
+            Assert.That(_authService.SubscriptionVerification, Is.EqualTo(SubscriptionVerificationState.Cached));
+        });
+    }
+
+    [Test]
+    public async Task TryRestoreSessionAsync_WhenTheCachedSubscriptionHasExpired_FallsBackToTheFreeTier()
+    {
+        SetupRestorableSession(new CachedSubscriptionStatus
+        {
+            HasActiveSubscription = true,
+            SubscriptionEndDate = DateTime.UtcNow.AddDays(-1),
+            CachedAtUtc = DateTime.UtcNow.AddDays(-2)
+        });
+
+        await _authService.TryRestoreSessionAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_authService.HasActiveSubscription, Is.False);
+            Assert.That(_authService.SubscriptionVerification, Is.EqualTo(SubscriptionVerificationState.Unverified));
+        });
+    }
+
+    [Test]
+    public async Task TryRestoreSessionAsync_WithNoCacheAndNoServer_IsUnverified()
+    {
+        SetupRestorableSession(cached: null);
+
+        await _authService.TryRestoreSessionAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_authService.HasActiveSubscription, Is.False);
+            Assert.That(_authService.SubscriptionVerification, Is.EqualTo(SubscriptionVerificationState.Unverified));
+        });
+    }
+
+    [Test]
+    public async Task TryRestoreSessionAsync_WhenTheServerAnswers_TheServerWinsOverTheCache()
+    {
+        // The cache says subscribed; the server says otherwise. The server is authoritative.
+        SetupRestorableSession(new CachedSubscriptionStatus
+        {
+            HasActiveSubscription = true,
+            SubscriptionEndDate = DateTime.UtcNow.AddDays(20),
+            CachedAtUtc = DateTime.UtcNow
+        });
+        SetupMockSubscriptionStatusResponse(hasSubscription: false, billingSource: null);
+
+        await _authService.TryRestoreSessionAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_authService.HasActiveSubscription, Is.False);
+            Assert.That(_authService.SubscriptionVerification, Is.EqualTo(SubscriptionVerificationState.Verified));
+        });
+    }
+
+    [Test]
+    public async Task RefreshUserStatusAsync_WhenTheServerAnswers_WritesTheCache()
+    {
+        SetupMockSubscriptionStatusResponse(hasSubscription: true, billingSource: BillingProviders.GooglePlay);
+
+        await _authService.RefreshUserStatusAsync();
+
+        _mockSecureStorage.Verify(
+            storage => storage.SetAsync(SubscriptionCacheKey, It.IsAny<string>()), Times.Once);
+    }
+
+    [Test]
+    public async Task RefreshUserStatusAsync_WhenTheServerReportsNoSubscription_StillWritesTheCache()
+    {
+        // Write-through on negative answers too, or a subscription that genuinely lapsed would be
+        // resurrected by the previous cache at the next offline launch.
+        SetupMockSubscriptionStatusResponse(hasSubscription: false, billingSource: null);
+
+        await _authService.RefreshUserStatusAsync();
+
+        _mockSecureStorage.Verify(
+            storage => storage.SetAsync(SubscriptionCacheKey, It.IsAny<string>()), Times.Once);
+    }
+
+    [Test]
+    public async Task LogoutAsync_ClearsTheCachedSubscription()
+    {
+        // It is not namespaced by account, so leaving it would hand the outgoing user's entitlement
+        // to whoever signs in next and opens the app offline.
+        await _authService.LogoutAsync();
+
+        _mockSecureStorage.Verify(storage => storage.Remove(SubscriptionCacheKey), Times.Once);
     }
 
     private void SetupMockLoginResponse(bool isCreator, int? creatorId)

@@ -10,13 +10,26 @@ public static class PlaybackDiagnosticsLoggerFilter
     public const string AndroidPlaybackSessionCategoryPrefix = "MusicSalesApp.Maui.Platforms.Android.PlaybackMediaSessionService";
     public const string AndroidAudioVisualizerCategoryPrefix = "MusicSalesApp.Maui.Platforms.Android.AudioVisualizerService";
 
+    // Entitlement categories. Everything interesting about billing and session restore is logged at
+    // Information — "Connected to Google Play Billing", "Purchase acknowledged successfully", the
+    // offer lookup, and the pending-restore retry. Without these prefixes the file log records only
+    // the Warning-level failures, so a *successful* subscription leaves no trace at all and an
+    // absence of billing lines cannot be read as an absence of billing activity. The volume is
+    // negligible next to the playback diagnostics already being written.
+    public const string GooglePlayBillingCategoryPrefix = "MusicSalesApp.Maui.Platforms.Android.GooglePlayBillingService";
+    public const string AppStoreBillingCategoryPrefix = "MusicSalesApp.Maui.Platforms.iOS.AppStoreBillingService";
+    public const string AuthServiceCategoryPrefix = "MusicSalesApp.Maui.Services.AuthService";
+
     private static readonly string[] DiagnosticCategoryPrefixes =
     [
         PlaybackServiceCategoryPrefix,
         QueuePreparationServiceCategoryPrefix,
         AndroidMedia3CategoryPrefix,
         AndroidPlaybackSessionCategoryPrefix,
-        AndroidAudioVisualizerCategoryPrefix
+        AndroidAudioVisualizerCategoryPrefix,
+        GooglePlayBillingCategoryPrefix,
+        AppStoreBillingCategoryPrefix,
+        AuthServiceCategoryPrefix
     ];
 
     public static bool ShouldLog(string categoryName, LogLevel logLevel, LogLevel diagnosticMinimumLevel)

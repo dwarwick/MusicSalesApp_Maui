@@ -18,6 +18,12 @@ public interface IAuthService
     bool IsOnTrial { get; }
     DateTime? TrialEndDate { get; }
     string? BillingSource { get; }
+
+    /// <summary>
+    /// Whether the subscription fields above were confirmed by the server this session, are
+    /// standing on a cached snapshot, or could not be established at all.
+    /// </summary>
+    SubscriptionVerificationState SubscriptionVerification { get; }
     bool IsCreator { get; }
     int? CreatorId { get; }
 

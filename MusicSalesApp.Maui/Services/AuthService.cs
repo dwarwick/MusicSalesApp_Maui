@@ -23,11 +23,18 @@ public class AuthService : IAuthService
     private readonly SemaphoreSlim _biometricStateLock = new(1, 1);
     private int _biometricCredentialsState = -1;
 
+    /// <summary>
+    /// Set when a purchase restore could not reach the platform store, so the answer it would have
+    /// given is still outstanding. See <see cref="RetryPendingBillingRestoreAsync"/>.
+    /// </summary>
+    private bool _billingRestorePending;
+
     private const string TokenStorageKey = "auth_token";
     private const string EmailStorageKey = "auth_email";
     private const string EmailConfirmedStorageKey = "auth_email_confirmed";
     private const string IsCreatorStorageKey = "auth_is_creator";
     private const string CreatorIdStorageKey = "auth_creator_id";
+    private const string SubscriptionStatusStorageKey = "auth_subscription_status";
     private const string BioEmailKey = "bio_email";
     private const string BioPasswordKey = "bio_password";
 
@@ -47,6 +54,14 @@ public class AuthService : IAuthService
     public bool IsOnTrial { get; private set; }
     public DateTime? TrialEndDate { get; private set; }
     public string? BillingSource { get; private set; }
+
+    /// <summary>
+    /// Whether the entitlement above was confirmed by the server this session, is standing on a
+    /// cached snapshot, or could not be established at all. Drives the explanation on the account
+    /// screen so an offline subscriber is not silently shown the free tier.
+    /// </summary>
+    public SubscriptionVerificationState SubscriptionVerification { get; private set; }
+        = SubscriptionVerificationState.Unverified;
     // Creator status has no JWT claim — it comes from the Creators table, not a role — so it is
     // persisted alongside the token and restored with it. Without this a creator who relaunches the
     // app loses their own-song playback bypass until they log in again.
@@ -405,6 +420,9 @@ public class AuthService : IAuthService
         _secureStorage.Remove(EmailConfirmedStorageKey);
         _secureStorage.Remove(IsCreatorStorageKey);
         _secureStorage.Remove(CreatorIdStorageKey);
+        // Written by the same login that issued this token, so it must not outlive it — otherwise
+        // the next account to sign in on this device could inherit the outgoing user's entitlement.
+        _secureStorage.Remove(SubscriptionStatusStorageKey);
         ClearState();
         NotifyAuthStateChanged();
     }
@@ -479,6 +497,11 @@ public class AuthService : IAuthService
             IsCreator = string.Equals(storedIsCreator, "true", StringComparison.OrdinalIgnoreCase);
             var storedCreatorId = await _secureStorage.GetAsync(CreatorIdStorageKey);
             CreatorId = int.TryParse(storedCreatorId, out var creatorId) ? creatorId : null;
+
+            // Apply the cached entitlement first so a server that cannot be reached leaves a paying
+            // subscriber on their subscription rather than silently on the free tier. A successful
+            // refresh below overwrites all of it.
+            await RestoreSubscriptionStatusAsync();
 
             // Refresh subscription status from server
             await RefreshUserStatusAsync();
@@ -590,6 +613,7 @@ public class AuthService : IAuthService
         await _secureStorage.SetAsync(EmailStorageKey, data.Email);
         await _secureStorage.SetAsync(EmailConfirmedStorageKey, data.EmailConfirmed.ToString());
         await StoreCreatorStatusAsync(data.IsCreator, data.CreatorId);
+        await StoreSubscriptionStatusAsync();
 
         // Restore any unverified Google Play purchases after login
         if (!HasActiveSubscription)
@@ -627,6 +651,10 @@ public class AuthService : IAuthService
         IsOnTrial = data.IsOnTrial;
         TrialEndDate = data.TrialEndDate;
         BillingSource = data.BillingSource;
+        // The login response came from the server, so this entitlement is as verified as a status
+        // refresh. Caching it here means a user who logs in and immediately goes offline still has
+        // a snapshot to fall back on at the next launch.
+        SubscriptionVerification = SubscriptionVerificationState.Verified;
         IsCreator = data.IsCreator;
         CreatorId = data.CreatorId;
         IsLoggedIn = true;
@@ -648,6 +676,10 @@ public class AuthService : IAuthService
         CreatorId = null;
         Roles = [];
         IsLoggedIn = false;
+        SubscriptionVerification = SubscriptionVerificationState.Unverified;
+
+        // A restore owed to the signed-out user must not be retried against whoever signs in next.
+        _billingRestorePending = false;
     }
 
     public async Task RefreshUserStatusAsync()
@@ -668,12 +700,30 @@ public class AuthService : IAuthService
                 client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Token);
 
             var response = await client.GetFromJsonAsync<SubscriptionStatusDto>("api/subscription/status");
+
+            // A null body — a 204, or a literal JSON null, neither of which throws — says nothing
+            // about the subscription. Treating it as an authoritative "no subscription" would mark
+            // the session Verified and write an empty snapshot over a good cached one, silently
+            // dropping a paying subscriber to the free tier with the banner suppressed and nothing
+            // left to restore on the next offline launch.
+            if (response is null)
+            {
+                _logger.LogInformation(
+                    "The subscription status endpoint returned no content; keeping the last known entitlement");
+                return;
+            }
+
             HasActiveSubscription = response?.HasSubscription ?? false;
             SubscriptionStatus = response?.Status;
             SubscriptionEndDate = response?.EndDate;
             IsOnTrial = response?.IsOnTrial ?? false;
             TrialEndDate = response?.TrialEndDate;
             BillingSource = response?.BillingSource;
+            SubscriptionVerification = SubscriptionVerificationState.Verified;
+
+            // Write through on every answer, including a negative one — otherwise a subscription
+            // that genuinely lapsed would be resurrected by the old cache on the next offline launch.
+            await StoreSubscriptionStatusAsync();
 
             // Creator status is cached in secure storage so it survives app restarts, which means a
             // deactivation on the web would otherwise go unnoticed until the JWT expired. Only apply
@@ -715,8 +765,131 @@ public class AuthService : IAuthService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Could not refresh subscription status on session restore");
+            // Information, not Debug: the file logger's floor is Information, and a status refresh
+            // that failed is exactly what you need to see when entitlement looks wrong offline.
+            // Not a Warning — going offline is a supported state in this app, not a fault.
+            _logger.LogInformation(ex, "Could not refresh subscription status from the server; keeping the last known entitlement");
         }
+
+        // Deliberately not awaited. A status refresh is a cheap call that UI sits in front of —
+        // AccountSettingsViewModel awaits it before rendering — and the retry reaches the platform
+        // store, which can cost the connection timeout plus the query timeout on a wedged device.
+        // Joining the two turned every refresh into a call that could stall a page for ~25s.
+        _ = RetryPendingBillingRestoreAsync();
+    }
+
+    /// <summary>
+    /// Persists the server's latest subscription answer so an offline launch has something to fall
+    /// back on. Best-effort: a keystore failure must never cost the caller its refreshed state.
+    /// </summary>
+    private async Task StoreSubscriptionStatusAsync()
+    {
+        try
+        {
+            var snapshot = new CachedSubscriptionStatus
+            {
+                HasActiveSubscription = HasActiveSubscription,
+                SubscriptionStatus = SubscriptionStatus,
+                SubscriptionEndDate = SubscriptionEndDate,
+                IsOnTrial = IsOnTrial,
+                TrialEndDate = TrialEndDate,
+                BillingSource = BillingSource,
+                CachedAtUtc = DateTime.UtcNow
+            };
+
+            await _secureStorage.SetAsync(SubscriptionStatusStorageKey, snapshot.Serialize());
+            _logger.LogInformation(
+                "Cached subscription status for offline use. HasActiveSubscription={HasActiveSubscription}; Status={Status}; EndDate={EndDate}; IsOnTrial={IsOnTrial}; TrialEndDate={TrialEndDate}",
+                snapshot.HasActiveSubscription,
+                snapshot.SubscriptionStatus,
+                snapshot.SubscriptionEndDate,
+                snapshot.IsOnTrial,
+                snapshot.TrialEndDate);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInformation(ex, "Could not cache the subscription status for offline use");
+        }
+    }
+
+    /// <summary>
+    /// Applies the cached subscription answer during session restore, before the server is asked.
+    /// A successful refresh immediately overwrites whatever this sets, so the only time it decides
+    /// anything is when the server cannot be reached — which is exactly the case it exists for.
+    /// </summary>
+    private async Task RestoreSubscriptionStatusAsync()
+    {
+        SubscriptionVerification = SubscriptionVerificationState.Unverified;
+
+        try
+        {
+            var stored = await _secureStorage.GetAsync(SubscriptionStatusStorageKey);
+            if (string.IsNullOrWhiteSpace(stored))
+            {
+                // Distinguished from the cases below on purpose: "nothing was ever cached" and
+                // "what was cached is no longer good" call for completely different investigations.
+                _logger.LogInformation("No cached subscription status is stored for this session");
+                return;
+            }
+
+            if (!CachedSubscriptionStatus.TryParse(stored, out var snapshot) || snapshot is null)
+            {
+                _logger.LogInformation("The cached subscription status could not be read and was ignored");
+                return;
+            }
+
+            if (!snapshot.IsUsableAt(DateTime.UtcNow))
+            {
+                // Expired or too stale to trust. Leaving the defaults in place drops the user to the
+                // free tier, which is the safe direction to fail in.
+                _logger.LogInformation(
+                    "The cached subscription status is no longer usable and was ignored. HasActiveSubscription={HasActiveSubscription}; EndDate={EndDate}; IsOnTrial={IsOnTrial}; TrialEndDate={TrialEndDate}; CachedAtUtc={CachedAtUtc}",
+                    snapshot.HasActiveSubscription,
+                    snapshot.SubscriptionEndDate,
+                    snapshot.IsOnTrial,
+                    snapshot.TrialEndDate,
+                    snapshot.CachedAtUtc);
+                return;
+            }
+
+            HasActiveSubscription = snapshot.HasActiveSubscription;
+            SubscriptionStatus = snapshot.SubscriptionStatus;
+            SubscriptionEndDate = snapshot.SubscriptionEndDate;
+            IsOnTrial = snapshot.IsOnTrial;
+            TrialEndDate = snapshot.TrialEndDate;
+            BillingSource = snapshot.BillingSource;
+            SubscriptionVerification = SubscriptionVerificationState.Cached;
+            _logger.LogInformation(
+                "Applied the cached subscription status. HasActiveSubscription={HasActiveSubscription}; Status={Status}; CachedAtUtc={CachedAtUtc}",
+                snapshot.HasActiveSubscription,
+                snapshot.SubscriptionStatus,
+                snapshot.CachedAtUtc);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInformation(ex, "Could not read the cached subscription status");
+        }
+    }
+
+    /// <summary>
+    /// Re-runs a purchase restore that could not reach the store the first time.
+    ///
+    /// A restore that the store answered is final, but one that never got to ask leaves the user
+    /// looking unsubscribed — and, without this, would stay that way until the app was next
+    /// launched. Every surface that shows entitlement already refreshes status through
+    /// <see cref="RefreshUserStatusAsync"/>, so hanging the retry off that gets the user their
+    /// trial or subscription back as soon as the store becomes reachable.
+    /// </summary>
+    private async Task RetryPendingBillingRestoreAsync()
+    {
+        // The server is authoritative: if it now reports a subscription there is nothing to repair.
+        if (!_billingRestorePending || HasActiveSubscription)
+            return;
+
+        // Cleared before re-entering, so the success path inside TryRestoreBillingAsync — which
+        // calls back into RefreshUserStatusAsync — cannot start this retry a second time.
+        _billingRestorePending = false;
+        await TryRestoreBillingAsync();
     }
 
     private void NotifyAuthStateChanged()
@@ -752,6 +925,18 @@ public class AuthService : IAuthService
         try
         {
             var result = await _billingService.RestorePurchaseAsync();
+
+            // "Could not reach the store" carries no information about what the user owns, so it
+            // must not be accepted as "owns nothing". Remembering it is what lets the next status
+            // refresh ask again instead of writing the answer off until the next app launch.
+            _billingRestorePending = result is { BillingUnavailable: true };
+            if (_billingRestorePending)
+            {
+                _logger.LogInformation(
+                    "Could not reach the store to restore purchases ({ErrorMessage}); will retry on the next status refresh",
+                    result?.ErrorMessage);
+            }
+
             if (result is not { Success: true })
                 return;
 
@@ -771,7 +956,9 @@ public class AuthService : IAuthService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Could not restore subscription purchases");
+            // Same reasoning as the status refresh above — at Debug this was below the file
+            // logger's floor, so a restore that threw left no trace at all.
+            _logger.LogInformation(ex, "Could not restore subscription purchases");
         }
     }
 

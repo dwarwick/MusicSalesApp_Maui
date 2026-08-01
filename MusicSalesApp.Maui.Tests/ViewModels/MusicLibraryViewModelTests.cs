@@ -1423,9 +1423,11 @@ public class MusicLibraryViewModelTests
             new() { Id = 3, SongTitle = "Song C", Genre = "Rock", ArtistName = "C" },
         };
 
-        // Simulate loading songs into the ViewModel
+        // Simulate loading songs into the ViewModel. Awaited, like every other load in this file:
+        // the non-async Execute returns before the songs land, so whether the playlist had all three
+        // by the time PlaySong ran came down to timing.
         _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
-        _viewModel.LoadSongsCommand.Execute(null);
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
 
         // After loading, all 3 songs are in Songs collection
         // Play the second song

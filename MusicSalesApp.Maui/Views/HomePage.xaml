@@ -39,7 +39,7 @@
                     </Label>
                 </Grid>
 
-                <Label Text="Listen to today's featured songs in full. Subscribe for unlimited access to the full library!"
+                <Label Text="{Binding SubscriptionAccessText}"
                        FontSize="14"
                        TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
 
@@ -94,7 +94,8 @@
                 </FlexLayout>
 
                 <views:SubscriptionInfoUnavailableBanner
-                    IsVisible="{Binding NetworkStatus.IsOffline}"
+                    IsVisible="{Binding ShowSubscriptionUnavailableBanner}"
+                    Text="{Binding SubscriptionUnavailableBannerText}"
                     Margin="0,8,0,0" />
 
                 <!-- CTA: Not logged in -->

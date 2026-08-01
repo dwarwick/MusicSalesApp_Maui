@@ -9,7 +9,6 @@ namespace MusicSalesApp.Maui.ViewModels;
 public partial class AccountSettingsViewModel : ObservableObject
 {
     private readonly IAuthService _authService;
-    public INetworkStatusService NetworkStatus { get; }
     private readonly IAlertService _alertService;
     private readonly INavigationService _navigationService;
     private readonly IBrowserService _browserService;
@@ -19,10 +18,18 @@ public partial class AccountSettingsViewModel : ObservableObject
     private bool _hasBillingDerivedSubscriptionPrice;
     private bool _authSubscriptionAttached;
 
+    /// <summary>Guards against an appearance-driven load and an auth-event load duplicating work.</summary>
+    private int _loadsInFlight;
+
     private const string DefaultAppleSubscriptionManagementUrl = "https://account.apple.com/account/manage/section/subscriptions";
 
     [ObservableProperty]
     public partial string UserEmail { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionUnavailableBanner))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionUnavailableBannerText))]
+    public partial SubscriptionVerificationState SubscriptionVerification { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsActiveTrial))]
@@ -219,6 +226,25 @@ public partial class AccountSettingsViewModel : ObservableObject
             : SubscriptionEndDate.HasValue
                 ? $"Your previous subscription ended on {SubscriptionEndDate.Value.ToLocalTime():MMMM dd, yyyy h:mm tt}."
                 : "You do not currently have an active subscription.";
+    /// <summary>
+    /// Silent when the server confirmed the status this session, even if the device has gone offline
+    /// since. Showing "subscription information is unavailable" directly above a status reading
+    /// "Active" is a contradiction, and it is the status that is right — so the banner only appears
+    /// when the displayed status genuinely is not the server's latest word.
+    /// </summary>
+    public bool ShowSubscriptionUnavailableBanner
+        => SubscriptionVerification != SubscriptionVerificationState.Verified;
+
+    /// <summary>
+    /// The two non-verified cases need opposite things from the user, so they must not share copy:
+    /// a cached status is accurate and merely unconfirmed, while an unverified one means the
+    /// features they paid for are switched off.
+    /// </summary>
+    public string SubscriptionUnavailableBannerText
+        => SubscriptionVerification == SubscriptionVerificationState.Cached
+            ? "You're offline, so this is your subscription as we last confirmed it. It'll refresh automatically when you reconnect."
+            : "We couldn't confirm your subscription, so subscription features are paused. This usually means you're offline — reconnect and your subscription will be restored automatically.";
+
     public string SubscriptionEndDateText => SubscriptionEndDate.HasValue
         ? IsActiveTrial
             ? $"Trial Active Until: {GetTrialEndDateForDisplay():MMMM dd, yyyy h:mm tt}"
@@ -281,7 +307,6 @@ public partial class AccountSettingsViewModel : ObservableObject
 
     public AccountSettingsViewModel(
         IAuthService authService,
-        INetworkStatusService networkStatus,
         IAlertService alertService,
         INavigationService navigationService,
         IBrowserService browserService,
@@ -290,7 +315,6 @@ public partial class AccountSettingsViewModel : ObservableObject
         IBillingService billingService)
     {
         _authService = authService;
-        NetworkStatus = networkStatus;
         _alertService = alertService;
         _navigationService = navigationService;
         _browserService = browserService;
@@ -305,17 +329,38 @@ public partial class AccountSettingsViewModel : ObservableObject
     public async Task OnAppearingAsync()
     {
         Activate();
-        await _authService.RefreshUserStatusAsync();
-        ApplySubscriptionState(null);
-        await LoadAndroidSubscriptionOfferAsync();
+
+        // Refreshing status raises AuthStateChanged, which OnAuthStateChanged answers by running
+        // LoadAsync. Without the guard every appearance issued two identical status requests and two
+        // Google Play offer lookups — and the overlapping offer lookups were what made the
+        // ProductDetails lifetime race reachable at all.
+        Interlocked.Increment(ref _loadsInFlight);
+        try
+        {
+            await _authService.RefreshUserStatusAsync();
+            ApplySubscriptionState(null);
+            await LoadAndroidSubscriptionOfferAsync();
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _loadsInFlight);
+        }
     }
 
     [RelayCommand]
     private async Task LoadAsync()
     {
-        var status = await _musicService.GetSubscriptionStatusAsync();
-        ApplySubscriptionState(status);
-        await LoadAndroidSubscriptionOfferAsync();
+        Interlocked.Increment(ref _loadsInFlight);
+        try
+        {
+            var status = await _musicService.GetSubscriptionStatusAsync();
+            ApplySubscriptionState(status);
+            await LoadAndroidSubscriptionOfferAsync();
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _loadsInFlight);
+        }
     }
 
     [RelayCommand]
@@ -513,6 +558,11 @@ public partial class AccountSettingsViewModel : ObservableObject
         SubscriptionStatus = status?.Status ?? _authService.SubscriptionStatus ?? string.Empty;
         SubscriptionBillingSource = status?.BillingSource ?? _authService.BillingSource ?? string.Empty;
         IsActiveCreator = _authService.IsCreator;
+        // A status DTO in hand means the server just answered, so treat that as verified regardless
+        // of what the last session-restore concluded.
+        SubscriptionVerification = status is not null
+            ? SubscriptionVerificationState.Verified
+            : _authService.SubscriptionVerification;
     }
 
     private async Task LoadAndroidSubscriptionOfferAsync()
@@ -569,6 +619,14 @@ public partial class AccountSettingsViewModel : ObservableObject
 
     private void OnAuthStateChanged()
     {
+        // A load already under way will pick up this state; starting a second one only duplicates
+        // the server request and the store lookup. Auth changes originating elsewhere still land,
+        // because nothing is in flight then.
+        if (Volatile.Read(ref _loadsInFlight) != 0)
+        {
+            return;
+        }
+
         _ = LoadCommand.ExecuteAsync(null);
     }
 
