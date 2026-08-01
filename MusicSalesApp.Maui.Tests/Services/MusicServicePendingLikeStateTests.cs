@@ -36,9 +36,16 @@ public class MusicServicePendingLikeStateTests
         _connectivity = new TestConnectivity();
         _handler = new ScriptedHttpMessageHandler();
 
+        // Bind to this test's handler instance, not to the field. MusicService starts a background
+        // retry loop that outlives the service, and reading the field at call time meant a loop left
+        // running by an earlier test issued its requests into whichever handler the current test had
+        // just installed — consuming scripted responses and inflating request counts, which is what
+        // made this fixture fail intermittently and only when run alongside its siblings. Bound to
+        // its own handler, a leaked loop hits the disposed one, logs, and ends.
+        var handler = _handler;
         _httpClientFactory
             .Setup(f => f.CreateClient("MusicSalesApi"))
-            .Returns(() => new HttpClient(_handler, disposeHandler: false)
+            .Returns(() => new HttpClient(handler, disposeHandler: false)
             {
                 BaseAddress = new Uri("https://test.example.com/")
             });
@@ -219,11 +226,18 @@ public class MusicServicePendingLikeStateTests
     }
 
     [Test]
-    public async Task SetLikeStateAsync_WhenTheServerAcceptsIt_LeavesOtherSongsQueued()
+    public async Task SetLikeStateAsync_WhenTheServerAcceptsIt_SendsTheOtherQueuedSongsRatherThanDroppingThem()
     {
+        // This used to assert the other song stayed queued, which contradicts the opportunistic
+        // drain that SetLikeStateAsync performs on success — and which
+        // SetLikeStateAsync_SuccessfulCall_OpportunisticallyDrainsAnOlderQueue pins deliberately.
+        // The drain runs in the background, so the old assertion only held when it won a race, and
+        // lost it under the load of a full-suite run.
+        //
+        // The invariant actually worth holding is that the other song's intent leaves the queue by
+        // being *sent*, not by being discarded — which the drain test cannot distinguish, since it
+        // only watches the queue empty.
         GivenOffline();
-        // A long retry interval: a song deliberately left queued at the end of the test would otherwise
-        // keep its 20ms retry loop firing into whichever handler the next test installs.
         var service = CreateService(TimeSpan.FromMinutes(5));
         await service.SetLikeStateAsync(SongId, true);
         await service.SetLikeStateAsync(SongId + 1, false);
@@ -231,12 +245,8 @@ public class MusicServicePendingLikeStateTests
         GivenServerAccepts(null);
         await service.SetLikeStateAsync(SongId, null);
 
-        var pending = await service.GetPendingLikeStatesAsync();
-        Assert.Multiple(() =>
-        {
-            Assert.That(pending, Does.Not.ContainKey(SongId));
-            Assert.That(pending[SongId + 1], Is.False);
-        });
+        await WaitForAsync(() => _handler.RequestPaths.Contains($"/api/music/like-state/{SongId + 1}"));
+        await WaitForAsync(() => StoredQueue == null);
     }
 
     [Test]
@@ -509,9 +519,26 @@ internal sealed class ScriptedHttpMessageHandler : HttpMessageHandler
     private Func<HttpRequestMessage, HttpResponseMessage> _respond =
         _ => new HttpResponseMessage(HttpStatusCode.OK);
 
+    private readonly List<string> _requestPaths = [];
+
     public int RequestCount { get; private set; }
 
     public HttpRequestMessage? LastRequest { get; private set; }
+
+    /// <summary>
+    /// Every path this handler has been asked for. LastRequest alone cannot say whether a queued
+    /// intent was sent or quietly dropped when several requests are in flight.
+    /// </summary>
+    public IReadOnlyList<string> RequestPaths
+    {
+        get
+        {
+            lock (_requestPaths)
+            {
+                return _requestPaths.ToArray();
+            }
+        }
+    }
 
     public void RespondWith(Func<HttpRequestMessage, HttpResponseMessage> respond) => _respond = respond;
 
@@ -523,6 +550,11 @@ internal sealed class ScriptedHttpMessageHandler : HttpMessageHandler
     {
         RequestCount++;
         LastRequest = request;
+
+        lock (_requestPaths)
+        {
+            _requestPaths.Add(request.RequestUri?.AbsolutePath ?? string.Empty);
+        }
 
         try
         {
