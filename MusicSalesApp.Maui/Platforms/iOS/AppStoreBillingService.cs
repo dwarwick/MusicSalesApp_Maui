@@ -148,7 +148,7 @@ public class AppStoreBillingService : NSObject, IBillingService, ISKPaymentTrans
         }
 
         return error.Domain == StoreKitErrorDomain
-            && (SKErrorCode)(long)error.Code == SKErrorCode.CloudServiceNetworkConnectionFailed;
+            && (SKError)(long)error.Code == SKError.CloudServiceNetworkConnectionFailed;
     }
 
     private async Task<ProductLookupResult> QueryProductAsync()
