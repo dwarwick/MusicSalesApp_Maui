@@ -36,7 +36,8 @@
                            FontSize="18"
                            FontAttributes="Bold"
                            TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
-                    <views:SubscriptionInfoUnavailableBanner
+                    <views:InlineWarningBanner
+                        AutomationId="SubscriptionInfoUnavailableBanner"
                         IsVisible="{Binding ShowSubscriptionUnavailableBanner}"
                         Text="{Binding SubscriptionUnavailableBannerText}" />
                     <Label Text="{Binding SubscriptionStatusText}"
@@ -91,6 +92,33 @@
                                           IsVisible="{Binding IsSubscribing}"
                                           Color="#1db954"
                                           HorizontalOptions="Start" />
+
+                    <!-- Divider -->
+                    <BoxView HeightRequest="1"
+                             Color="{AppThemeBinding Light=#E0E0E0, Dark=#333333}" />
+                </VerticalStackLayout>
+
+                <!-- Sign-In Section (Android only - biometric login is not implemented on iOS) -->
+                <VerticalStackLayout Spacing="12"
+                                     IsVisible="{Binding IsBiometricLoginSupported}">
+                    <Label Text="Sign-In"
+                           FontSize="18"
+                           FontAttributes="Bold"
+                           TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+                    <Label Text="{Binding BiometricLoginStatusText}"
+                           FontSize="14"
+                           LineBreakMode="WordWrap"
+                           TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+                    <Button Text="Turn Off Fingerprint Sign-In"
+                            Command="{Binding TurnOffBiometricLoginCommand}"
+                            IsVisible="{Binding IsBiometricLoginEnabled}"
+                            BackgroundColor="#8e44ad"
+                            TextColor="White"
+                            FontAttributes="Bold"
+                            CornerRadius="8"
+                            HeightRequest="44"
+                            HorizontalOptions="Start"
+                            Padding="20,0" />
 
                     <!-- Divider -->
                     <BoxView HeightRequest="1"

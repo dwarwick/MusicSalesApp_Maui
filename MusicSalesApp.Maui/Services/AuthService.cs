@@ -29,6 +29,18 @@ public class AuthService : IAuthService
     /// </summary>
     private bool _billingRestorePending;
 
+    /// <summary>
+    /// Set by the paths in <see cref="TryRestoreSessionAsync"/> that end a session without the user
+    /// asking, and cleared when they sign back in.
+    ///
+    /// Deliberately not touched by <see cref="ClearState"/>: those paths set it and then call
+    /// <see cref="LogoutAsync"/>, so clearing it there would erase the notice on the way out.
+    ///
+    /// Volatile because the write happens on whatever thread the startup restore resumes on, while
+    /// the reads and the login-time clear come from the UI thread.
+    /// </summary>
+    private SessionExpiryNotice? _pendingSessionExpiryNotice;
+
     private const string TokenStorageKey = "auth_token";
     private const string EmailStorageKey = "auth_email";
     private const string EmailConfirmedStorageKey = "auth_email_confirmed";
@@ -350,9 +362,16 @@ public class AuthService : IAuthService
                 return (false, error);
             }
 
+            // Captured before the assignment below overwrites it: the biometric pair is only this
+            // user's to rewrite if it was saved under the address they are changing away from.
+            var previousEmail = Email;
+
             // Update locally stored email
             Email = newEmail;
             await _secureStorage.SetAsync(EmailStorageKey, newEmail);
+            // The biometric pair is a second copy of the login, and only this one was being kept in
+            // step. A stale bio_email meant the fingerprint replayed the old address at the server.
+            await UpdateBiometricEmailAsync(previousEmail, newEmail);
             NotifyAuthStateChanged();
 
             return (true, string.Empty);
@@ -386,7 +405,7 @@ public class AuthService : IAuthService
         }
     }
 
-    public async Task<(bool Success, string Error)> ResetPasswordAsync(int userId, string code, string newPassword)
+    public async Task<(bool Success, string Error)> ResetPasswordAsync(int userId, string code, string newPassword, string email)
     {
         var client = _httpClientFactory.CreateClient("MusicSalesApi");
         try
@@ -398,6 +417,17 @@ public class AuthService : IAuthService
                 var error = await ReadErrorMessageAsync(response);
                 return (false, error);
             }
+
+            // The saved biometric password is now the old one. Left in place it produces the worst
+            // kind of failure: a successful fingerprint prompt followed by a rejected login, which
+            // reads as the biometrics being broken rather than the credential being stale.
+            //
+            // Only for the account that was actually reset. This flow is reachable from the login
+            // screen with no session, so on a shared device it can just as easily be someone else
+            // resetting their own password, and their reset must not withdraw this device's owner's
+            // fingerprint sign-in.
+            await DisableBiometricLoginForAsync(email);
+
             return (true, string.Empty);
         }
         catch (Exception ex)
@@ -462,11 +492,15 @@ public class AuthService : IAuthService
             if (string.IsNullOrEmpty(token))
                 return;
 
-            // Validate token expiry
+            // Every sign-out from here on is one the user did not ask for, so each of the three ways
+            // out leaves a notice. Whichever one fires, the visible symptom is identical — the app
+            // simply comes up logged out — and an unexplained sign-out is the whole thing the notice
+            // exists to prevent. Only the reasons differ, and none of them is the user's doing.
             var handler = new JwtSecurityTokenHandler();
             if (!handler.CanReadToken(token))
             {
-                await LogoutAsync();
+                _logger.LogWarning("The stored token could not be read, clearing session");
+                await LogoutWithExpiryNoticeAsync();
                 return;
             }
 
@@ -474,7 +508,7 @@ public class AuthService : IAuthService
             if (jwt.ValidTo < DateTime.UtcNow)
             {
                 _logger.LogInformation("Stored JWT token has expired, clearing session");
-                await LogoutAsync();
+                await LogoutWithExpiryNoticeAsync();
                 return;
             }
 
@@ -485,6 +519,10 @@ public class AuthService : IAuthService
             Email = claims.FirstOrDefault(c => c.Type == ClaimTypes.Email || c.Type == "email")?.Value;
             Roles = claims.Where(c => c.Type == ClaimTypes.Role || c.Type == "role").Select(c => c.Value).ToList();
             IsLoggedIn = true;
+
+            // A restore that succeeds answers any notice left by an earlier one, the same way a login
+            // does. This path does not go through ApplyLoginResponse, so it clears the notice itself.
+            Volatile.Write(ref _pendingSessionExpiryNotice, null);
 
             // Restore EmailConfirmed from SecureStorage (defaults to false if not stored)
             var storedEmailConfirmed = await _secureStorage.GetAsync(EmailConfirmedStorageKey);
@@ -516,7 +554,7 @@ public class AuthService : IAuthService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to restore session");
-            await LogoutAsync();
+            await LogoutWithExpiryNoticeAsync();
         }
     }
 
@@ -546,6 +584,77 @@ public class AuthService : IAuthService
         }
     }
 
+    /// <summary>
+    /// Keeps the saved biometric email in step with an email change, but only when the saved pair is
+    /// the one being changed.
+    ///
+    /// The pair deliberately outlives a logout, so the account signed in now is not necessarily the
+    /// account it belongs to. Rewriting it unconditionally would pair one person's address with
+    /// another's password — a credential that passes the fingerprint prompt every time and is
+    /// rejected by the server every time, with no way back except turning the feature off.
+    ///
+    /// Also a no-op when biometric login was never enabled: writing the address on its own would
+    /// leave half a credential behind. Reads the keys directly rather than calling
+    /// <see cref="HasBiometricCredentialsAsync"/>, which takes the same lock.
+    /// </summary>
+    private async Task UpdateBiometricEmailAsync(string? previousEmail, string newEmail)
+    {
+        await _biometricStateLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var storedEmail = await _secureStorage.GetAsync(BioEmailKey).ConfigureAwait(false);
+            var storedPassword = await _secureStorage.GetAsync(BioPasswordKey).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(storedEmail)
+                || string.IsNullOrEmpty(storedPassword)
+                || !string.Equals(storedEmail, previousEmail, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            await _secureStorage.SetAsync(BioEmailKey, newEmail).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // An email change that succeeded on the server must not report failure over this.
+            _logger.LogWarning(ex, "Could not update the saved biometric email after an email change");
+        }
+        finally
+        {
+            _biometricStateLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Withdraws the saved credentials only when they belong to <paramref name="email"/>. For flows
+    /// that can run against an account other than the one this device saved — a password reset from
+    /// the login screen, with no session at all — where clearing unconditionally would take away a
+    /// bystander's fingerprint sign-in over someone else's password change.
+    /// </summary>
+    private async Task DisableBiometricLoginForAsync(string email)
+    {
+        string? storedEmail;
+        await _biometricStateLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            storedEmail = await _secureStorage.GetAsync(BioEmailKey).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not read the saved biometric email");
+            return;
+        }
+        finally
+        {
+            _biometricStateLock.Release();
+        }
+
+        if (!string.IsNullOrWhiteSpace(storedEmail)
+            && string.Equals(storedEmail, email, StringComparison.OrdinalIgnoreCase))
+        {
+            await DisableBiometricLoginAsync().ConfigureAwait(false);
+        }
+    }
+
     public async Task DisableBiometricLoginAsync()
     {
         await _biometricStateLock.WaitAsync().ConfigureAwait(false);
@@ -554,6 +663,14 @@ public class AuthService : IAuthService
             _secureStorage.Remove(BioEmailKey);
             _secureStorage.Remove(BioPasswordKey);
             Volatile.Write(ref _biometricCredentialsState, 0);
+        }
+        catch (Exception ex)
+        {
+            // A damaged keystore must not take the app down from a settings tap or an account
+            // deletion. The state is left unknown rather than claimed clear, so the next
+            // HasBiometricCredentialsAsync re-reads instead of trusting a removal that did not happen.
+            _logger.LogWarning(ex, "Could not remove the saved biometric credentials");
+            Volatile.Write(ref _biometricCredentialsState, -1);
         }
         finally
         {
@@ -658,6 +775,9 @@ public class AuthService : IAuthService
         IsCreator = data.IsCreator;
         CreatorId = data.CreatorId;
         IsLoggedIn = true;
+
+        // Whatever the previous session's expiry still had to say, signing in is the answer to it.
+        Volatile.Write(ref _pendingSessionExpiryNotice, null);
     }
 
     private void ClearState()
@@ -871,6 +991,52 @@ public class AuthService : IAuthService
         }
     }
 
+    public SessionExpiryNotice? PendingSessionExpiryNotice => Volatile.Read(ref _pendingSessionExpiryNotice);
+
+    /// <summary>
+    /// Records why a session ended without the user asking, from the same snapshot
+    /// <see cref="RestoreSubscriptionStatusAsync"/> reads, and then hands the caller the logout it
+    /// still has to perform.
+    ///
+    /// The snapshot is judged by age alone, not by <see cref="CachedSubscriptionStatus.IsUsableAt"/>,
+    /// and the difference matters: that method also demands unexpired entitlement, because it decides
+    /// what the user may *do*. This decides only what the user is *told*, and a subscriber whose
+    /// access lapsed while the token sat expired is precisely the person with something to hear. The
+    /// age guards still apply, so nobody is reminded of a subscription from months ago, and a snapshot
+    /// stamped in the future by a wound-back clock is refused rather than read as brand new.
+    /// </summary>
+    private async Task LogoutWithExpiryNoticeAsync()
+    {
+        Volatile.Write(ref _pendingSessionExpiryNotice, await BuildSessionExpiryNoticeAsync());
+
+        // Set before the logout, because LogoutAsync ends by raising AuthStateChanged and the handler
+        // on the other side is what reads it.
+        await LogoutAsync();
+    }
+
+    private async Task<SessionExpiryNotice> BuildSessionExpiryNoticeAsync()
+    {
+        try
+        {
+            var stored = await _secureStorage.GetAsync(SubscriptionStatusStorageKey);
+            if (!CachedSubscriptionStatus.TryParse(stored, out var snapshot) || snapshot is null
+                || !snapshot.IsFreshEnoughToDescribeAt(DateTime.UtcNow))
+            {
+                return new SessionExpiryNotice(HadConfirmedEntitlement: false, EntitlementEndDate: null);
+            }
+
+            return new SessionExpiryNotice(
+                snapshot.HasActiveSubscription || snapshot.IsOnTrial,
+                snapshot.SubscriptionEndDate ?? snapshot.TrialEndDate);
+        }
+        catch (Exception ex)
+        {
+            // The sign-out still has to be explained, just without the entitlement half of it.
+            _logger.LogInformation(ex, "Could not read the cached subscription status for the session-expiry notice");
+            return new SessionExpiryNotice(HadConfirmedEntitlement: false, EntitlementEndDate: null);
+        }
+    }
+
     /// <summary>
     /// Re-runs a purchase restore that could not reach the store the first time.
     ///
@@ -974,6 +1140,10 @@ public class AuthService : IAuthService
                 return (false, error);
             }
 
+            // Biometric credentials deliberately outlive a logout, so a fingerprint can get the user
+            // straight back in. There is nothing to get back into once the account is gone, and
+            // leaving them would keep offering a fingerprint button that replays a deleted login.
+            await DisableBiometricLoginAsync();
             await LogoutAsync();
             return (true, string.Empty);
         }

@@ -93,7 +93,14 @@
                                        WidthRequest="135" />
                 </FlexLayout>
 
-                <views:SubscriptionInfoUnavailableBanner
+                <views:InlineWarningBanner
+                    AutomationId="SessionExpiredNotice"
+                    IsVisible="{Binding ShowSessionExpiredNotice}"
+                    Text="{Binding SessionExpiredMessage}"
+                    Margin="0,8,0,0" />
+
+                <views:InlineWarningBanner
+                    AutomationId="SubscriptionInfoUnavailableBanner"
                     IsVisible="{Binding ShowSubscriptionUnavailableBanner}"
                     Text="{Binding SubscriptionUnavailableBannerText}"
                     Margin="0,8,0,0" />

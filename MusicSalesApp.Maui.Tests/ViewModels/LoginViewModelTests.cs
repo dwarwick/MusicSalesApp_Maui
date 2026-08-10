@@ -93,11 +93,32 @@ public class LoginViewModelTests
         _mockAuthService
             .Setup(a => a.HasBiometricCredentialsAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
-        var vm = new LoginViewModel(_mockAuthService.Object, _mockAlertService.Object, _mockNavigationService.Object);
+        var vm = new LoginViewModel(_mockAuthService.Object, _mockAlertService.Object, _mockNavigationService.Object)
+        {
+            IsBiometricLoginSupported = true
+        };
 
         await vm.InitializeAsync();
 
         Assert.That(vm.BiometricVisible, Is.True);
+    }
+
+    [Test]
+    public async Task InitializeAsync_OnAPlatformWithoutBiometrics_HidesBiometricLogin()
+    {
+        // AuthService.PromptBiometricAsync is #if ANDROID, so on iOS the button is chrome over a
+        // hard-coded "not supported on this platform" and every tap fails.
+        _mockAuthService
+            .Setup(a => a.HasBiometricCredentialsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        var vm = new LoginViewModel(_mockAuthService.Object, _mockAlertService.Object, _mockNavigationService.Object)
+        {
+            IsBiometricLoginSupported = false
+        };
+
+        await vm.InitializeAsync();
+
+        Assert.That(vm.BiometricVisible, Is.False);
     }
 
     [Test]

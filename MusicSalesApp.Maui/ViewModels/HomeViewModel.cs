@@ -48,6 +48,7 @@ public partial class HomeViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionUnavailableBanner))]
     public partial bool IsAuthenticated { get; set; }
 
     [ObservableProperty]
@@ -62,6 +63,15 @@ public partial class HomeViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowSubscriptionUnavailableBanner))]
     [NotifyPropertyChangedFor(nameof(SubscriptionUnavailableBannerText))]
     public partial SubscriptionVerificationState SubscriptionVerification { get; set; }
+
+    /// <summary>
+    /// Explains a sign-out the user did not ask for. There is no refresh-token flow, so an expired
+    /// token ends the session during startup with nothing on screen to say so — the user simply finds
+    /// themselves logged out. Empty in every other case.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowSessionExpiredNotice))]
+    public partial string? SessionExpiredMessage { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowLoginRegister))]
@@ -164,9 +174,17 @@ public partial class HomeViewModel : ObservableObject
     /// session. It was bound to connectivity here, so going offline put "Subscription information is
     /// unavailable" directly above "You have unlimited access to the full library!" — the same
     /// contradiction that was fixed on the other page and left standing on this one.
+    ///
+    /// Gated on <see cref="IsAuthenticated"/> because a signed-out user has no entitlement to confirm.
+    /// Logout resets the service flag to Unverified, so without the gate an expired token — or a first
+    /// launch by someone who never registered — printed "we couldn't confirm *your* subscription" at a
+    /// user who has none, and promised it would restore itself on reconnect. It never could: nothing on
+    /// this page re-hits the server, and with no token there is nothing to re-hit it with.
     /// </summary>
     public bool ShowSubscriptionUnavailableBanner
-        => SubscriptionVerification != SubscriptionVerificationState.Verified;
+        => IsAuthenticated && SubscriptionVerification != SubscriptionVerificationState.Verified;
+
+    public bool ShowSessionExpiredNotice => !string.IsNullOrEmpty(SessionExpiredMessage);
 
     public string SubscriptionUnavailableBannerText
         => SubscriptionVerification == SubscriptionVerificationState.Cached
@@ -810,11 +828,46 @@ public partial class HomeViewModel : ObservableObject
             _authService.SubscriptionEndDate,
             _authService.TrialEndDate);
         IsEmailVerified = _authService.EmailConfirmed;
+        RefreshSessionExpiredNotice();
         OnPropertyChanged(nameof(ShowPlaylists));
         OnPropertyChanged(nameof(ManageSubscriptionText));
         OnPropertyChanged(nameof(SubscriptionOfferPrimaryButtonText));
         OnPropertyChanged(nameof(SubscriptionOfferPrimaryCommand));
         OnPropertyChanged(nameof(ShowSubscriptionOfferSecondaryButton));
+    }
+
+    /// <summary>
+    /// Picks up the standing explanation for a sign-out the user did not ask for.
+    ///
+    /// Reads rather than consumes: this page is transient and rebuilt from a Shell DataTemplate, so a
+    /// consuming read could be taken by an off-screen instance the user never returns to, leaving the
+    /// one they do see with nothing to show. The service clears the notice on sign-in, which is the
+    /// only event that actually resolves it, and this clears the local copy to match.
+    ///
+    /// Three wordings, because the promise has to be one the app can keep. Telling someone whose
+    /// subscription lapsed while their token sat expired that signing in will "restore" it would be
+    /// false — signing in shows them an expired subscription.
+    /// </summary>
+    private void RefreshSessionExpiredNotice()
+    {
+        if (IsAuthenticated)
+        {
+            SessionExpiredMessage = null;
+            return;
+        }
+
+        var notice = _authService.PendingSessionExpiryNotice;
+        if (notice is null)
+        {
+            SessionExpiredMessage = null;
+            return;
+        }
+
+        SessionExpiredMessage = !notice.HadConfirmedEntitlement
+            ? "Your session has ended. Sign in again to get back into your account."
+            : notice.HasLapsedBy(DateTime.UtcNow)
+                ? "Your session has ended. Sign in again to renew your subscription."
+                : "Your session has ended. Sign in again to restore your subscription.";
     }
 
     private async Task LoadAndroidSubscriptionOfferAsync()

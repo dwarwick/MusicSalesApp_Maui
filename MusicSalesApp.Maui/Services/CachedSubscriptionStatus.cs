@@ -70,6 +70,19 @@ public sealed record CachedSubscriptionStatus
     /// which leaves the caller on the free tier — the safe direction to fail in.
     /// </summary>
     public bool IsUsableAt(DateTime utcNow, TimeSpan? maxStaleness = null)
+        => IsFreshEnoughToDescribeAt(utcNow, maxStaleness) && HasUnexpiredEntitlementAt(utcNow);
+
+    /// <summary>
+    /// The age half of <see cref="IsUsableAt"/> on its own: recent enough, and not stamped in the
+    /// future by a device clock that moved backwards.
+    ///
+    /// Exposed separately because deciding what to *say* about a past session is not the same as
+    /// deciding what the user may *do*. A caller describing a lapsed subscription still wants the age
+    /// guards — including the skew one, without which a snapshot written under a wildly forward clock
+    /// reads as negative-age and passes every staleness test — but must not require the entitlement
+    /// to still be live, which is the very thing it is reporting on.
+    /// </summary>
+    public bool IsFreshEnoughToDescribeAt(DateTime utcNow, TimeSpan? maxStaleness = null)
     {
         var age = utcNow - CachedAtUtc;
 
@@ -78,12 +91,7 @@ public sealed record CachedSubscriptionStatus
             return false;
         }
 
-        if (age < -ClockSkewTolerance)
-        {
-            return false;
-        }
-
-        return HasUnexpiredEntitlementAt(utcNow);
+        return age >= -ClockSkewTolerance;
     }
 
     /// <summary>
