@@ -230,7 +230,11 @@ public partial class VerifyEmailViewModel : ObservableObject
 
     private async Task PromptBiometricAsync()
     {
-        if (string.IsNullOrEmpty(Password) || await _authService.HasBiometricCredentialsAsync())
+        // Same platform gate as the login screen: biometric login is Android-only, so the offer must
+        // not appear on iOS where accepting it saves credentials the prompt can never use.
+        if (DeviceInfo.Platform != DevicePlatform.Android
+            || string.IsNullOrEmpty(Password)
+            || await _authService.HasBiometricCredentialsAsync())
             return;
 
         bool enable = await _alertService.ShowConfirmAsync(

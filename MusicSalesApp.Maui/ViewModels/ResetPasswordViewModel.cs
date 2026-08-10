@@ -66,7 +66,9 @@ public partial class ResetPasswordViewModel : ObservableObject
 
         try
         {
-            var (success, message) = await _authService.ResetPasswordAsync(UserId, Code.Trim(), NewPassword);
+            // Email identifies whose password this is, so the reset only withdraws biometric sign-in
+            // when the saved credentials are the ones it just invalidated.
+            var (success, message) = await _authService.ResetPasswordAsync(UserId, Code.Trim(), NewPassword, Email);
 
             if (success)
             {

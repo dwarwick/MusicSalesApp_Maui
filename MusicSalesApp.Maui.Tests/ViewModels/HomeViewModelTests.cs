@@ -1180,6 +1180,7 @@ public class HomeViewModelTests
     [Test]
     public void SubscriptionBanner_WhenStandingOnACachedStatus_SaysItIsUnconfirmedNotPaused()
     {
+        _viewModel.IsAuthenticated = true;
         _viewModel.SubscriptionVerification = SubscriptionVerificationState.Cached;
 
         Assert.Multiple(() =>
@@ -1193,12 +1194,144 @@ public class HomeViewModelTests
     [Test]
     public void SubscriptionBanner_WhenEntitlementCouldNotBeEstablished_SaysFeaturesArePaused()
     {
+        _viewModel.IsAuthenticated = true;
         _viewModel.SubscriptionVerification = SubscriptionVerificationState.Unverified;
 
         Assert.Multiple(() =>
         {
             Assert.That(_viewModel.ShowSubscriptionUnavailableBanner, Is.True);
             Assert.That(_viewModel.SubscriptionUnavailableBannerText, Does.Contain("paused"));
+        });
+    }
+
+    [Test]
+    public void SubscriptionBanner_WhenSignedOut_IsSilent()
+    {
+        // Logout resets the service flag to Unverified, so an expired token — or a first launch by
+        // someone who never registered — used to print "we couldn't confirm *your* subscription" at a
+        // user who has none, on a device with perfectly good Wi-Fi, and promise it would clear itself
+        // on reconnect. Nothing on this page re-hits the server, and with no token nothing could.
+        _viewModel.IsAuthenticated = false;
+        _viewModel.SubscriptionVerification = SubscriptionVerificationState.Unverified;
+
+        Assert.That(_viewModel.ShowSubscriptionUnavailableBanner, Is.False);
+    }
+
+    [Test]
+    public void SubscriptionBanner_WhenSigningIn_IsReEvaluated()
+    {
+        _viewModel.SubscriptionVerification = SubscriptionVerificationState.Unverified;
+        var raised = new List<string?>();
+        _viewModel.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        _viewModel.IsAuthenticated = true;
+
+        // RefreshAuthState assigns IsAuthenticated before SubscriptionVerification, so without this
+        // notification the banner would not appear until some later, unrelated change.
+        Assert.That(raised, Does.Contain(nameof(HomeViewModel.ShowSubscriptionUnavailableBanner)));
+    }
+
+    // --- An expired token signs the user out silently; the notice is the only thing that says so ---
+
+    private void SetupPendingSessionExpiry(bool hadEntitlement, DateTime? entitlementEndDate = null)
+    {
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(false);
+        _mockAuthService.SetupGet(a => a.PendingSessionExpiryNotice)
+            .Returns(new SessionExpiryNotice(hadEntitlement, entitlementEndDate));
+    }
+
+    [Test]
+    public async Task SessionExpiredNotice_ForASubscriberStillInTerm_OffersToRestoreTheSubscription()
+    {
+        SetupPendingSessionExpiry(hadEntitlement: true, entitlementEndDate: DateTime.UtcNow.AddDays(20));
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.ShowSessionExpiredNotice, Is.True);
+            Assert.That(_viewModel.SessionExpiredMessage, Does.Contain("restore your subscription"));
+        });
+    }
+
+    [Test]
+    public async Task SessionExpiredNotice_WithNoKnownEndDate_StillOffersToRestore()
+    {
+        // An active subscription with no end date is the server's own shape for an open-ended one.
+        SetupPendingSessionExpiry(hadEntitlement: true);
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.That(_viewModel.SessionExpiredMessage, Does.Contain("restore your subscription"));
+    }
+
+    [Test]
+    public async Task SessionExpiredNotice_ForALapsedSubscription_OffersToRenewNotRestore()
+    {
+        // "Restore" is a promise signing in cannot keep once the term has run out — they would land
+        // on an expired subscription. Renewing is the thing they can actually do.
+        SetupPendingSessionExpiry(hadEntitlement: true, entitlementEndDate: DateTime.UtcNow.AddDays(-3));
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.SessionExpiredMessage, Does.Contain("renew your subscription"));
+            Assert.That(_viewModel.SessionExpiredMessage, Does.Not.Contain("restore"));
+        });
+    }
+
+    [Test]
+    public async Task SessionExpiredNotice_ForSomeoneWhoNeverSubscribed_DoesNotMentionASubscription()
+    {
+        SetupPendingSessionExpiry(hadEntitlement: false);
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.ShowSessionExpiredNotice, Is.True);
+            Assert.That(_viewModel.SessionExpiredMessage, Does.Not.Contain("subscription"));
+        });
+    }
+
+    [Test]
+    public async Task SessionExpiredNotice_WhenTheSessionEndedSomeOtherWay_IsSilent()
+    {
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(false);
+        _mockAuthService.SetupGet(a => a.PendingSessionExpiryNotice).Returns((SessionExpiryNotice?)null);
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.That(_viewModel.ShowSessionExpiredNotice, Is.False);
+    }
+
+    [Test]
+    public async Task SessionExpiredNotice_SurvivesASecondLoad()
+    {
+        // The service keeps the notice standing rather than handing it over once, so a rebuilt page —
+        // Home is transient and comes from a Shell DataTemplate — still finds the explanation.
+        SetupPendingSessionExpiry(hadEntitlement: true);
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.That(_viewModel.SessionExpiredMessage, Does.Contain("restore your subscription"));
+    }
+
+    [Test]
+    public async Task SessionExpiredNotice_OnceSignedIn_IsCleared()
+    {
+        SetupPendingSessionExpiry(hadEntitlement: true);
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.ShowSessionExpiredNotice, Is.False);
+            Assert.That(_viewModel.SessionExpiredMessage, Is.Null);
         });
     }
 }

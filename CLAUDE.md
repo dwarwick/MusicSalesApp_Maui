@@ -36,7 +36,7 @@ There's **no shared library inside this repo**. Both projects reference the sibl
 ../../MusicSalesApp/MusicSalesApp.Common/MusicSalesApp.Common.csproj
 ```
 
-(`AuthStorageKeys`, `SubscriptionStatuses`, `BillingProviders`, etc.) — see "Sibling repo" below.
+(`SubscriptionStatuses`, `BillingProviders`, etc.) — see "Sibling repo" below. Note `AuthStorageKeys` is *not* one of them despite the name: it is local, at `MusicSalesApp.Maui/Services/AuthStorageKeys.cs`, and holds a single key. Every other auth/subscription storage key is a private `const` inside `AuthService`.
 
 ## Tech stack
 

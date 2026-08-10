@@ -35,6 +35,17 @@ public interface IAuthService
     /// <summary>Whether both biometric login credentials have been saved previously.</summary>
     Task<bool> HasBiometricCredentialsAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// The standing explanation for a session that ended without the user asking. Null when the
+    /// session ended some other way — an explicit logout, or a first launch with nothing stored.
+    ///
+    /// Readable rather than read-once on purpose: the home screen is transient and rebuilt from a
+    /// Shell <c>DataTemplate</c>, so a consuming read could be taken by an off-screen instance the
+    /// user never returns to, and the explanation would vanish. Signing in clears it instead, which
+    /// is the only event that actually resolves it.
+    /// </summary>
+    SessionExpiryNotice? PendingSessionExpiryNotice { get; }
+
     Task<(bool Success, string Error)> LoginAsync(string email, string password);
     Task<GoogleAuthResultDto> AuthenticateWithGoogleAsync();
     Task<(bool Success, string Error)> CompleteGoogleRegistrationAsync(string pendingRegistrationToken,
@@ -44,7 +55,13 @@ public interface IAuthService
     Task<(bool Success, string Error)> ResendCodeAsync(int userId);
     Task<(bool Success, string Error)> ChangeEmailAsync(int userId, string newEmail);
     Task<(bool Success, string Error, int UserId)> ForgotPasswordAsync(string email);
-    Task<(bool Success, string Error)> ResetPasswordAsync(int userId, string code, string newPassword);
+    /// <summary>
+    /// <paramref name="email"/> is the account being reset, which is not necessarily the account
+    /// whose credentials are saved for biometric login — the forgot-password flow is reachable from
+    /// the login screen with no session at all. It is used to decide whether the saved password has
+    /// just been invalidated, so one person's reset cannot wipe another's fingerprint sign-in.
+    /// </summary>
+    Task<(bool Success, string Error)> ResetPasswordAsync(int userId, string code, string newPassword, string email);
     Task LogoutAsync();
 
     /// <summary>Restore session from SecureStorage on app startup.</summary>

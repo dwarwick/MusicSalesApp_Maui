@@ -31,6 +31,36 @@ public partial class AccountSettingsViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SubscriptionUnavailableBannerText))]
     public partial SubscriptionVerificationState SubscriptionVerification { get; set; }
 
+    /// <summary>
+    /// Whether this device is holding saved sign-in details for the fingerprint/face prompt.
+    ///
+    /// They are deliberately kept across a logout, so a fingerprint gets the user straight back in
+    /// after the token expires. That makes an off switch the only way to withdraw them, and until now
+    /// there was none anywhere in the app — once enabled at login they lived until uninstall.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(BiometricLoginStatusText))]
+    public partial bool IsBiometricLoginEnabled { get; set; }
+
+    /// <summary>
+    /// Android only. <c>AuthService.PromptBiometricAsync</c> is <c>#if ANDROID</c> and returns "not
+    /// supported on this platform" everywhere else, so on iOS the whole feature is chrome over a
+    /// hard-coded failure: offering it here would invite the user to switch on something that cannot
+    /// work. Mirrors how <see cref="IsAndroidSubscriptionPlatform"/> gates the Play-only offer card.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool IsBiometricLoginSupported { get; set; } = DeviceInfo.Platform == DevicePlatform.Android;
+
+    /// <summary>
+    /// The flyout only offers this page to a signed-in user, but the session can end underneath it —
+    /// an auth event fires and this view model reloads in place. Tracked so the banner below can be
+    /// gated the same way Home's is, rather than telling someone who has just been signed out that
+    /// their subscription could not be confirmed.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionUnavailableBanner))]
+    public partial bool IsAuthenticated { get; set; }
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsActiveTrial))]
     [NotifyPropertyChangedFor(nameof(ShowCancelSubscription))]
@@ -233,7 +263,15 @@ public partial class AccountSettingsViewModel : ObservableObject
     /// when the displayed status genuinely is not the server's latest word.
     /// </summary>
     public bool ShowSubscriptionUnavailableBanner
-        => SubscriptionVerification != SubscriptionVerificationState.Verified;
+        => IsAuthenticated && SubscriptionVerification != SubscriptionVerificationState.Verified;
+
+    /// <summary>
+    /// Turning it back on is not offered here, because enabling needs the plaintext password and this
+    /// page never has it — that opt-in belongs to the login screen, so the copy says where to find it.
+    /// </summary>
+    public string BiometricLoginStatusText => IsBiometricLoginEnabled
+        ? "Your sign-in details are saved on this device so you can sign in with your fingerprint or face. They stay saved when you log out, so you can get straight back in."
+        : "Fingerprint sign-in is off. You can turn it on next time you sign in with your password.";
 
     /// <summary>
     /// The two non-verified cases need opposite things from the user, so they must not share copy:
@@ -339,7 +377,7 @@ public partial class AccountSettingsViewModel : ObservableObject
         {
             await _authService.RefreshUserStatusAsync();
             ApplySubscriptionState(null);
-            await LoadAndroidSubscriptionOfferAsync();
+            await Task.WhenAll(RefreshBiometricLoginStateAsync(), LoadAndroidSubscriptionOfferAsync());
         }
         finally
         {
@@ -355,11 +393,56 @@ public partial class AccountSettingsViewModel : ObservableObject
         {
             var status = await _musicService.GetSubscriptionStatusAsync();
             ApplySubscriptionState(status);
-            await LoadAndroidSubscriptionOfferAsync();
+            await Task.WhenAll(RefreshBiometricLoginStateAsync(), LoadAndroidSubscriptionOfferAsync());
         }
         finally
         {
             Interlocked.Decrement(ref _loadsInFlight);
+        }
+    }
+
+    /// <summary>
+    /// Two cold Android Keystore decryptions, so it is run alongside the Play offer lookup rather
+    /// than in front of it — neither needs the other's result, and this page is on the critical path
+    /// the perceived-ANR work is trying to keep clear.
+    /// </summary>
+    private async Task RefreshBiometricLoginStateAsync()
+    {
+        IsBiometricLoginEnabled = IsBiometricLoginSupported
+            && await _authService.HasBiometricCredentialsAsync();
+    }
+
+    [RelayCommand]
+    private async Task TurnOffBiometricLoginAsync()
+    {
+        var confirmed = await _alertService.ShowConfirmAsync(
+            "Turn Off Fingerprint Sign-In",
+            "Your saved sign-in details will be removed from this device. You will need your password the next time you sign in.",
+            "Turn Off",
+            "Keep It");
+
+        if (!confirmed)
+        {
+            return;
+        }
+
+        try
+        {
+            await _authService.DisableBiometricLoginAsync();
+
+            // Re-read rather than assume. A keystore that refused the removal leaves the credentials
+            // in place, and a switch that says "off" over credentials that are still saved is the one
+            // outcome this screen exists to rule out.
+            await RefreshBiometricLoginStateAsync();
+
+            if (IsBiometricLoginEnabled)
+            {
+                ErrorMessage = "Could not remove the saved sign-in details. Please try again.";
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Could not remove the saved sign-in details: {ex.Message}";
         }
     }
 
@@ -550,6 +633,7 @@ public partial class AccountSettingsViewModel : ObservableObject
 
     private void ApplySubscriptionState(SubscriptionStatusDto? status)
     {
+        IsAuthenticated = _authService.IsLoggedIn;
         UserEmail = _authService.Email ?? string.Empty;
         HasActiveSubscription = status?.HasSubscription ?? _authService.HasActiveSubscription;
         SubscriptionEndDate = status?.EndDate ?? _authService.SubscriptionEndDate;

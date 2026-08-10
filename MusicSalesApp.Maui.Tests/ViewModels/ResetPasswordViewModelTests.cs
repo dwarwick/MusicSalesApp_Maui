@@ -65,7 +65,7 @@ public class ResetPasswordViewModelTests
         _viewModel.Code = "123456";
         _viewModel.NewPassword = "Passw0rd!";
         _viewModel.ConfirmPassword = "Passw0rd!";
-        _mockAuthService.Setup(a => a.ResetPasswordAsync(1, "123456", "Passw0rd!"))
+        _mockAuthService.Setup(a => a.ResetPasswordAsync(1, "123456", "Passw0rd!", It.IsAny<string>()))
             .ReturnsAsync((false, "Invalid code."));
 
         await _viewModel.ResetPasswordCommand.ExecuteAsync(null);
@@ -79,7 +79,7 @@ public class ResetPasswordViewModelTests
         _viewModel.Code = "123456";
         _viewModel.NewPassword = "Passw0rd!";
         _viewModel.ConfirmPassword = "Passw0rd!";
-        _mockAuthService.Setup(a => a.ResetPasswordAsync(1, "123456", "Passw0rd!"))
+        _mockAuthService.Setup(a => a.ResetPasswordAsync(1, "123456", "Passw0rd!", It.IsAny<string>()))
             .ReturnsAsync((true, string.Empty));
 
         await _viewModel.ResetPasswordCommand.ExecuteAsync(null);
