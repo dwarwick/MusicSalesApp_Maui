@@ -55,6 +55,15 @@ public partial class VerifyEmailViewModel : ObservableObject
     [ObservableProperty]
     public partial bool ShowChangeEmail { get; set; }
 
+    /// <summary>
+    /// Android only; see <see cref="PromptBiometricAsync"/>. An overridable property rather than an
+    /// inline <c>DeviceInfo.Platform</c> check, matching <c>LoginViewModel</c> and
+    /// <c>AccountSettingsViewModel</c> — a static call here is unreachable from a test, and this
+    /// screen is one of only two places that can save biometric credentials.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool IsBiometricLoginSupported { get; set; } = DeviceInfo.Platform == DevicePlatform.Android;
+
     public string ChangeEmailToggleText => ShowChangeEmail ? "Cancel" : "Change Email";
 
     partial void OnShowChangeEmailChanged(bool value)
@@ -232,7 +241,7 @@ public partial class VerifyEmailViewModel : ObservableObject
     {
         // Same platform gate as the login screen: biometric login is Android-only, so the offer must
         // not appear on iOS where accepting it saves credentials the prompt can never use.
-        if (DeviceInfo.Platform != DevicePlatform.Android
+        if (!IsBiometricLoginSupported
             || string.IsNullOrEmpty(Password)
             || await _authService.HasBiometricCredentialsAsync())
             return;

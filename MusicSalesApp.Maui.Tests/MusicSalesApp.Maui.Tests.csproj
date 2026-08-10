@@ -35,6 +35,26 @@
     <Compile Include="..\MusicSalesApp.Maui\Views\NowPlayingDrawerController.cs" Link="Views\NowPlayingDrawerController.cs" />
   </ItemGroup>
 
+  <!--
+    The app's XAML, copied to the output so XamlBindingContractTests can check every binding path
+    against the ViewModel named by x:DataType. Views are not compiled here (they need the MAUI
+    platform heads), so the markup is validated as text - a mistyped binding path otherwise fails
+    silently at runtime with the whole suite green.
+  -->
+  <!--
+    An explicit copy rather than None/CopyToOutputDirectory: UseMaui reclassifies .xaml items out of
+    None into MauiXaml, which would try to compile these against a platform head this project has not
+    got.
+  -->
+  <Target Name="CopyAppXamlForBindingTests" AfterTargets="Build">
+    <ItemGroup>
+      <AppXamlForBindingTests Include="..\MusicSalesApp.Maui\Views\*.xaml" />
+    </ItemGroup>
+    <Copy SourceFiles="@(AppXamlForBindingTests)"
+          DestinationFolder="$(OutDir)AppXaml"
+          SkipUnchangedFiles="true" />
+  </Target>
+
   <ItemGroup>
     <ProjectReference Include="..\..\MusicSalesApp\MusicSalesApp.Common\MusicSalesApp.Common.csproj" />
   </ItemGroup>
