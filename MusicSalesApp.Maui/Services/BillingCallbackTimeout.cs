@@ -11,8 +11,12 @@ namespace MusicSalesApp.Maui.Services;
 /// with no bound at all, so a device where StoreKit never answered wedged session restore - and
 /// with it everything sequenced after it.
 ///
-/// On timeout the underlying callback is left to arrive whenever it likes: its TrySetResult finds
-/// the task already settled, so the only cost is that this caller stops waiting.
+/// IMPORTANT: timing out here does NOT complete the caller's TaskCompletionSource. Task.WaitAsync
+/// returns a proxy; the source task stays pending, and a late callback's TrySetResult still succeeds.
+/// A caller holding that source in a field must therefore settle it in its own <c>onTimedOut</c>
+/// factory, or the abandoned wait keeps looking like a caller waiting for a result — which on the
+/// App Store purchase path meant a late transaction was reported to a caller that had already given
+/// up, then finished and discarded without ever being verified.
 /// </summary>
 public static class BillingCallbackTimeout
 {
@@ -33,6 +37,18 @@ public static class BillingCallbackTimeout
     /// Matches Google Play's.
     /// </summary>
     public static readonly TimeSpan DefaultPurchaseFlowTimeout = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// An <c>onTimedOut</c> factory that settles the caller's own TaskCompletionSource as well as
+    /// answering the caller. Use this whenever the source is held in a field that something else
+    /// consults — an unsettled source goes on advertising a caller that has already given up.
+    /// </summary>
+    public static Func<T> Settling<T>(TaskCompletionSource<T> source, T timedOutResult)
+        => () =>
+        {
+            source.TrySetResult(timedOutResult);
+            return timedOutResult;
+        };
 
     public static async Task<T> WaitAsync<T>(
         Task<T> callback,

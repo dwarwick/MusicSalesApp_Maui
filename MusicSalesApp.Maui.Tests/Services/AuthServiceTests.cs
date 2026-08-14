@@ -38,6 +38,8 @@ public class AuthServiceTests
         _mockLogger = new Mock<ILogger<AuthService>>();
         _mockWebAuthenticatorService = new Mock<IWebAuthenticatorService>();
         _mockBillingService = new Mock<IBillingService>();
+        // So the handler AuthService assigns in its constructor can be read back and invoked.
+        _mockBillingService.SetupAllProperties();
         _mockMusicService = new Mock<IMusicService>();
         _mockSecureStorage = new Mock<ISecureStorage>();
         _mockSecureStorage.Setup(storage => storage.GetAsync(It.IsAny<string>())).ReturnsAsync((string?)null);
@@ -59,6 +61,76 @@ public class AuthServiceTests
             _mockSecureStorage.Object,
             _mockOfflinePlaylistStore.Object,
             _mockOfflineSongCatalogStore.Object);
+    }
+
+    // --- Recording a purchase the store delivered with nobody waiting for it ---
+
+    private static BillingPurchaseVerificationRequest AnUnsolicitedApplePurchase()
+        => BillingPurchaseVerificationRequest.ForApple("2000001221161618", null, "streamtunes_monthly_sub_ios", "22");
+
+    [Test]
+    public void AuthService_SuppliesTheBillingServiceAVerificationHandler()
+    {
+        // Without this the billing service has no way to record an unsolicited purchase, so it can
+        // only hold the transaction unfinished forever.
+        Assert.That(_mockBillingService.Object.UnverifiedPurchaseHandler, Is.Not.Null);
+    }
+
+    [Test]
+    public async Task RecordUnverifiedPurchase_WhenSignedOut_ReportsNotRecorded()
+    {
+        // Nothing to attach it to, so the transaction must stay queued rather than be finished.
+        var handler = _mockBillingService.Object.UnverifiedPurchaseHandler!;
+
+        var recorded = await handler(AnUnsolicitedApplePurchase());
+
+        Assert.That(recorded, Is.False);
+        _mockMusicService.Verify(
+            m => m.VerifySubscriptionPurchaseAsync(It.IsAny<BillingPurchaseVerificationRequest>()),
+            Times.Never);
+    }
+
+    [Test]
+    public async Task RecordUnverifiedPurchase_WhenTheServerAcceptsIt_ReportsRecorded()
+    {
+        SetBackingField(nameof(AuthService.IsLoggedIn), true);
+        _mockMusicService
+            .Setup(m => m.VerifySubscriptionPurchaseAsync(It.IsAny<BillingPurchaseVerificationRequest>()))
+            .ReturnsAsync((true, string.Empty));
+        var handler = _mockBillingService.Object.UnverifiedPurchaseHandler!;
+
+        var recorded = await handler(AnUnsolicitedApplePurchase());
+
+        Assert.That(recorded, Is.True, "Only a recorded purchase is safe for the store to finish.");
+    }
+
+    [Test]
+    public async Task RecordUnverifiedPurchase_WhenTheServerRejectsIt_ReportsNotRecorded()
+    {
+        SetBackingField(nameof(AuthService.IsLoggedIn), true);
+        _mockMusicService
+            .Setup(m => m.VerifySubscriptionPurchaseAsync(It.IsAny<BillingPurchaseVerificationRequest>()))
+            .ReturnsAsync((false, "Subscription is not active."));
+        var handler = _mockBillingService.Object.UnverifiedPurchaseHandler!;
+
+        var recorded = await handler(AnUnsolicitedApplePurchase());
+
+        Assert.That(recorded, Is.False);
+    }
+
+    [Test]
+    public async Task RecordUnverifiedPurchase_WhenVerificationThrows_ReportsNotRecorded()
+    {
+        // Left unrecorded is the recoverable direction: the store replays the transaction.
+        SetBackingField(nameof(AuthService.IsLoggedIn), true);
+        _mockMusicService
+            .Setup(m => m.VerifySubscriptionPurchaseAsync(It.IsAny<BillingPurchaseVerificationRequest>()))
+            .ThrowsAsync(new HttpRequestException("offline"));
+        var handler = _mockBillingService.Object.UnverifiedPurchaseHandler!;
+
+        var recorded = await handler(AnUnsolicitedApplePurchase());
+
+        Assert.That(recorded, Is.False);
     }
 
     // --- Logout clears the offline snapshots ---

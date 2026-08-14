@@ -26,6 +26,9 @@ public class AppStoreBillingService : NSObject, IBillingService, ISKPaymentTrans
     private readonly List<RestoredTransaction> _restoredTransactions = [];
     private readonly object _restoredTransactionsLock = new();
 
+    /// <inheritdoc />
+    public Func<BillingPurchaseVerificationRequest, Task<bool>>? UnverifiedPurchaseHandler { get; set; }
+
     /// <summary>True while a restore has been asked for and the store has not finished answering.</summary>
     private bool IsRestoreInFlight => _restoreTcs is { Task.IsCompleted: false };
 
@@ -89,8 +92,17 @@ public class AppStoreBillingService : NSObject, IBillingService, ISKPaymentTrans
             // Failed, not Unavailable: nothing consumes BillingUnavailable on the purchase side, so
             // the only thing that matters here is that the caller gets an answer and a message that
             // does not claim the purchase did or did not happen.
-            () => BillingPurchaseResult.Failed(
-                "The App Store did not report the result of the purchase. If you completed it, it will be restored automatically."),
+            //
+            // Settling: bounding the wait does not complete the source task, it only stops this
+            // caller listening. Left pending, _purchaseTcs goes on looking like a caller waiting for
+            // a result, so a transaction arriving later in the session was reported to a caller that
+            // had already given up, then finished and dropped - unverified and never replayed. That
+            // is the money-taken-with-no-record failure the unsolicited-purchase path exists to
+            // prevent, reached on a path that could never consult it.
+            BillingCallbackTimeout.Settling(
+                purchaseTcs,
+                BillingPurchaseResult.Failed(
+                    "The App Store did not report the result of the purchase. If you completed it, it will be restored automatically.")),
             "purchase result",
             _logger);
     }
@@ -119,7 +131,13 @@ public class AppStoreBillingService : NSObject, IBillingService, ISKPaymentTrans
             // about ownership: null would be read as "you own nothing" and Failed as final, either
             // of which strands a subscriber on the free tier. Unavailable is what sets the pending
             // flag in AuthService that earns the retry on the next status refresh.
-            () => BillingPurchaseResult.Unavailable("The App Store did not respond to the restore request."),
+            //
+            // Settling for the same reason as the purchase above: while restoreTcs stays pending
+            // IsRestoreInFlight keeps reporting true, and every Restored transaction after that is
+            // filed against a restore nobody is listening to, then silently discarded.
+            BillingCallbackTimeout.Settling<BillingPurchaseResult?>(
+                restoreTcs,
+                BillingPurchaseResult.Unavailable("The App Store did not respond to the restore request.")),
             "restore request",
             _logger);
     }
@@ -440,17 +458,83 @@ public class AppStoreBillingService : NSObject, IBillingService, ISKPaymentTrans
             return;
         }
 
-        // Nobody was waiting - this is a purchase delivered at launch because it was interrupted, or
-        // one made before the app could attribute it to an account. Deliberately left UNFINISHED:
-        // finishing it here told StoreKit we had dealt with a purchase the server was never told
-        // about, and the customer's money was gone with nothing to show for it. Left open, the store
-        // re-delivers it, and the restore that runs after sign-in verifies it.
-        _logger.LogWarning(
-            "An App Store purchase arrived with no caller waiting for it and was left unfinished for a later restore. TransactionId={TransactionId}",
-            transactionId);
-        Console.WriteLine(
-            "[AppStoreBillingService] Purchase '{0}' arrived unsolicited; leaving it unfinished for a later restore.",
-            transactionId);
+        // Nobody was waiting. That is routine for a renewal and suspicious for anything else, so the
+        // two are told apart rather than lumped together - see UnsolicitedPurchasePolicy.
+        var action = UnsolicitedPurchasePolicy.Decide(
+            transactionId,
+            originalTransactionId,
+            canVerify: UnverifiedPurchaseHandler is not null);
+
+        switch (action)
+        {
+            case UnsolicitedPurchaseAction.Finish:
+                _logger.LogInformation(
+                    "Finished a subscription renewal delivered by the App Store. TransactionId={TransactionId}; OriginalTransactionId={OriginalTransactionId}",
+                    transactionId,
+                    originalTransactionId);
+                queue.FinishTransaction(transaction);
+                return;
+
+            case UnsolicitedPurchaseAction.Verify:
+                _ = VerifyAndFinishAsync(queue, transaction, result, transactionId);
+                return;
+
+            default:
+                // No way to attach it to an account right now. Left UNFINISHED on purpose: finishing
+                // would tell StoreKit we had dealt with a purchase the server has never heard of,
+                // and the customer's money would be gone with nothing to show for it. The store
+                // re-delivers it, and a later launch with someone signed in can record it.
+                _logger.LogWarning(
+                    "An App Store purchase arrived that cannot be verified yet and was left unfinished. TransactionId={TransactionId}",
+                    transactionId);
+                return;
+        }
+    }
+
+    /// <summary>
+    /// Records an unsolicited purchase with the server before finishing it. Finishing is what tells
+    /// the store the customer has had what they paid for, so it must not happen until the server has
+    /// the purchase - and must still happen once it does, or the transaction is replayed forever.
+    /// </summary>
+    private async Task VerifyAndFinishAsync(
+        SKPaymentQueue queue,
+        SKPaymentTransaction transaction,
+        BillingPurchaseResult result,
+        string transactionId)
+    {
+        try
+        {
+            var handler = UnverifiedPurchaseHandler;
+            if (handler is null)
+            {
+                _logger.LogWarning(
+                    "An unsolicited App Store purchase could not be verified and was left unfinished. TransactionId={TransactionId}",
+                    transactionId);
+                return;
+            }
+
+            var verified = await handler(result.ToVerificationRequest()).ConfigureAwait(false);
+            if (!verified)
+            {
+                _logger.LogWarning(
+                    "The server did not record an unsolicited App Store purchase, so it was left unfinished for a later attempt. TransactionId={TransactionId}",
+                    transactionId);
+                return;
+            }
+
+            _logger.LogInformation(
+                "Recorded an unsolicited App Store purchase with the server and finished it. TransactionId={TransactionId}",
+                transactionId);
+            queue.FinishTransaction(transaction);
+        }
+        catch (Exception ex)
+        {
+            // Left unfinished, which is the recoverable direction: the store replays it.
+            _logger.LogWarning(
+                ex,
+                "Verifying an unsolicited App Store purchase failed; it was left unfinished. TransactionId={TransactionId}",
+                transactionId);
+        }
     }
 
     private void HandleFailedTransaction(SKPaymentQueue queue, SKPaymentTransaction transaction)

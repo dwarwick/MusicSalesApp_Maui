@@ -98,6 +98,17 @@ public interface IBillingService
     /// share a single connection attempt, so startup ordering does not affect correctness.
     /// </summary>
     Task InitializeAsync();
+
+    /// <summary>
+    /// Records a purchase the store delivered when nothing was waiting for one — an interrupted
+    /// purchase replayed at launch, say. Returns true once the server has it, which is what makes it
+    /// safe to finish the transaction; false means it must stay queued for a later attempt.
+    ///
+    /// A callback rather than a direct dependency because the verification path runs through
+    /// AuthService, which already depends on this service — injecting it the other way round would
+    /// close a cycle. AuthService assigns this at construction.
+    /// </summary>
+    Func<BillingPurchaseVerificationRequest, Task<bool>>? UnverifiedPurchaseHandler { get; set; }
 }
 
 /// <summary>
