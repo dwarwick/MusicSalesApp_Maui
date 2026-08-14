@@ -33,6 +33,13 @@ public class GooglePlayBillingService : Java.Lang.Object, IBillingService, IPurc
         _connectionGate = new BillingConnectionGate(ConnectAsync, connectTimeout: null, logger: logger);
     }
 
+    /// <summary>
+    /// Assigned by AuthService but not used here. Play does not push transactions at a listener the
+    /// way StoreKit does: an unacknowledged purchase is found by querying, which the restore path
+    /// already does, so there is no unsolicited arrival to handle.
+    /// </summary>
+    public Func<BillingPurchaseVerificationRequest, Task<bool>>? UnverifiedPurchaseHandler { get; set; }
+
     public Task InitializeAsync() => _connectionGate.EnsureConnectedAsync();
 
     public async Task<BillingPurchaseResult> PurchaseSubscriptionAsync()

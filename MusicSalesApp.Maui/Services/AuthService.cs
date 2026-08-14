@@ -102,6 +102,50 @@ public class AuthService : IAuthService
         _secureStorage = secureStorage;
         _offlinePlaylistStore = offlinePlaylistStore;
         _offlineSongCatalogStore = offlineSongCatalogStore;
+
+        // The store can hand the app a purchase nobody asked for - an interrupted one replayed at
+        // launch. Only this service can record it, and the billing service cannot depend on it
+        // without closing a cycle, so it borrows the verification path through this callback.
+        _billingService.UnverifiedPurchaseHandler = RecordUnverifiedPurchaseAsync;
+    }
+
+    /// <summary>
+    /// Records a purchase the store delivered without anyone waiting for it. Returns true once the
+    /// server has it, which is the billing service's signal that the transaction is safe to finish.
+    /// </summary>
+    private async Task<bool> RecordUnverifiedPurchaseAsync(BillingPurchaseVerificationRequest request)
+    {
+        if (!IsLoggedIn)
+        {
+            // Nothing to attach it to. Reported as not recorded so the transaction stays queued for
+            // a launch where somebody is signed in.
+            _logger.LogInformation(
+                "An unsolicited {Provider} purchase arrived while signed out and was left for a later session",
+                request.Provider);
+            return false;
+        }
+
+        try
+        {
+            var verificationResult = await _musicService.VerifySubscriptionPurchaseAsync(request);
+            if (!verificationResult.Success)
+            {
+                _logger.LogWarning(
+                    "Server verification of an unsolicited {Provider} purchase failed: {Error}",
+                    request.Provider,
+                    verificationResult.ErrorMessage);
+                return false;
+            }
+
+            _logger.LogInformation("Recorded an unsolicited {Provider} purchase with the server", request.Provider);
+            await RefreshUserStatusAsync();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not record an unsolicited {Provider} purchase", request.Provider);
+            return false;
+        }
     }
 
     public async Task<bool> HasBiometricCredentialsAsync(CancellationToken cancellationToken = default)
