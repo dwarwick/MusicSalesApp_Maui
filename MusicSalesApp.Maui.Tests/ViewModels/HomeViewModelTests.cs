@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Moq;
+using MusicSalesApp.Common.Helpers;
 using MusicSalesApp.Maui.Services;
 using MusicSalesApp.Maui.ViewModels;
 using System.Collections.ObjectModel;
@@ -886,6 +887,8 @@ public class HomeViewModelTests
     [Test]
     public async Task SubscribeCommand_SuccessfulPurchase_VerifiesWithServerAndRefreshesStatus()
     {
+        // A purchase can only be made signed in - see SubscriptionPurchaseGate.
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
         _mockBillingService.Setup(b => b.PurchaseSubscriptionAsync())
             .ReturnsAsync(BillingPurchaseResult.Succeeded("test-token", "order-123"));
         _mockMusicService.Setup(m => m.VerifySubscriptionPurchaseAsync(It.Is<BillingPurchaseVerificationRequest>(r =>
@@ -904,9 +907,32 @@ public class HomeViewModelTests
         _mockAlertService.Verify(a => a.DisplayAlertAsync("Success", It.IsAny<string>(), "OK"), Times.Once);
     }
 
+    /// <summary>
+    /// A purchase made while signed out carries no app account token and cannot be verified, because
+    /// the server's verify endpoint is authenticated — the customer is charged and gets nothing.
+    /// </summary>
+    [Test]
+    public async Task SubscribeCommand_WhenSignedOut_NeverReachesTheStore()
+    {
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(false);
+        _mockAlertService
+            .Setup(a => a.ShowConfirmAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(true);
+
+        await _viewModel.SubscribeCommand.ExecuteAsync(null);
+
+        _mockBillingService.Verify(b => b.PurchaseSubscriptionAsync(), Times.Never);
+        _mockNavigationService.Verify(
+            n => n.GoToAsync(NavigationRoutes.LoginEntry, It.Is<IDictionary<string, object>>(p =>
+                p.ContainsKey(NavigationRoutes.ReturnToHomeAfterAuthParameter))),
+            Times.Once);
+    }
+
     [Test]
     public async Task SubscribeCommand_PurchaseFailed_ShowsErrorAlert()
     {
+        // A purchase can only be made signed in - see SubscriptionPurchaseGate.
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
         _mockBillingService.Setup(b => b.PurchaseSubscriptionAsync())
             .ReturnsAsync(BillingPurchaseResult.Failed("Connection error"));
 
@@ -930,6 +956,8 @@ public class HomeViewModelTests
     [Test]
     public async Task SubscribeCommand_ServerVerificationFails_ShowsError()
     {
+        // A purchase can only be made signed in - see SubscriptionPurchaseGate.
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
         _mockBillingService.Setup(b => b.PurchaseSubscriptionAsync())
             .ReturnsAsync(BillingPurchaseResult.Succeeded("test-token", "order-123"));
         _mockMusicService.Setup(m => m.VerifySubscriptionPurchaseAsync(It.Is<BillingPurchaseVerificationRequest>(r =>
@@ -1172,6 +1200,7 @@ public class HomeViewModelTests
         // Home carried the same connectivity-driven banner that contradicted Account Settings, so
         // going offline printed "subscription information is unavailable" above "You have unlimited
         // access to the full library!".
+        _viewModel.IsAuthenticated = true;
         _viewModel.SubscriptionVerification = SubscriptionVerificationState.Verified;
 
         Assert.That(_viewModel.ShowSubscriptionUnavailableBanner, Is.False);
@@ -1204,17 +1233,177 @@ public class HomeViewModelTests
         });
     }
 
+    /// <summary>
+    /// The reported bug. A fresh install sits at the default Unverified, and Home was telling a
+    /// user who had never signed in that their subscription features were paused - on wifi, with
+    /// no subscription and no account in play at all.
+    /// </summary>
     [Test]
-    public void SubscriptionBanner_WhenSignedOut_IsSilent()
+    public void SubscriptionBanner_WhenSignedOut_IsSilent(
+        [Values(SubscriptionVerificationState.Unverified,
+                SubscriptionVerificationState.Cached,
+                SubscriptionVerificationState.Verified)] SubscriptionVerificationState verification)
     {
-        // Logout resets the service flag to Unverified, so an expired token — or a first launch by
-        // someone who never registered — used to print "we couldn't confirm *your* subscription" at a
-        // user who has none, on a device with perfectly good Wi-Fi, and promise it would clear itself
-        // on reconnect. Nothing on this page re-hits the server, and with no token nothing could.
         _viewModel.IsAuthenticated = false;
-        _viewModel.SubscriptionVerification = SubscriptionVerificationState.Unverified;
+        _viewModel.SubscriptionVerification = verification;
 
         Assert.That(_viewModel.ShowSubscriptionUnavailableBanner, Is.False);
+    }
+
+    [Test]
+    public void SubscriptionBanner_WhileOnline_DoesNotClaimTheUserIsOffline(
+        [Values(SubscriptionVerificationState.Cached, SubscriptionVerificationState.Unverified)]
+        SubscriptionVerificationState verification)
+    {
+        _mockNetworkStatus.SetupGet(n => n.IsOffline).Returns(false);
+        _viewModel.IsAuthenticated = true;
+        _viewModel.SubscriptionVerification = verification;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.ShowSubscriptionUnavailableBanner, Is.True);
+            Assert.That(_viewModel.SubscriptionUnavailableBannerText, Does.Not.Contain("offline"));
+        });
+    }
+
+    [Test]
+    public void SubscriptionBanner_WhileOffline_SaysSo(
+        [Values(SubscriptionVerificationState.Cached, SubscriptionVerificationState.Unverified)]
+        SubscriptionVerificationState verification)
+    {
+        _mockNetworkStatus.SetupGet(n => n.IsOffline).Returns(true);
+        _viewModel.IsAuthenticated = true;
+        _viewModel.SubscriptionVerification = verification;
+
+        Assert.That(_viewModel.SubscriptionUnavailableBannerText, Does.Contain("offline"));
+    }
+
+    // --- Home re-asks the server when the entitlement was never confirmed ---
+
+    [Test]
+    public async Task LoadCommand_WhenSignedInAndUnverified_AsksTheServerAgain()
+    {
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.SubscriptionVerification)
+            .Returns(SubscriptionVerificationState.Unverified);
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        _mockAuthService.Verify(a => a.RefreshUserStatusAsync(), Times.Once);
+    }
+
+    [Test]
+    public async Task LoadCommand_WhenAlreadyVerified_DoesNotAskTheServerAgain()
+    {
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.SubscriptionVerification)
+            .Returns(SubscriptionVerificationState.Verified);
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        _mockAuthService.Verify(a => a.RefreshUserStatusAsync(), Times.Never);
+    }
+
+    [Test]
+    public async Task LoadCommand_WhenSignedOut_DoesNotAskTheServer()
+    {
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(false);
+        _mockAuthService.Setup(a => a.SubscriptionVerification)
+            .Returns(SubscriptionVerificationState.Unverified);
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        _mockAuthService.Verify(a => a.RefreshUserStatusAsync(), Times.Never);
+    }
+
+    [Test]
+    public async Task LoadCommand_WithNoNetworkAccess_DoesNotAskTheServer()
+    {
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.SubscriptionVerification)
+            .Returns(SubscriptionVerificationState.Unverified);
+        _mockNetworkStatus.SetupGet(n => n.HasNoNetworkAccess).Returns(true);
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        _mockAuthService.Verify(a => a.RefreshUserStatusAsync(), Times.Never);
+    }
+
+    /// <summary>
+    /// Home used only to re-read whatever AuthService had already decided, so the reload on
+    /// reconnect could not repair an entitlement that was never confirmed - the banner stayed up
+    /// until the user happened to open Account Settings or play a song.
+    /// </summary>
+    [Test]
+    public void NetworkStatusChanged_OnReconnect_AsksTheServerAgain()
+    {
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.SubscriptionVerification)
+            .Returns(SubscriptionVerificationState.Unverified);
+        _viewModel.Activate();
+        _viewModel.IsLoading = false;
+
+        _mockNetworkStatus.Raise(
+            n => n.PropertyChanged += null,
+            new System.ComponentModel.PropertyChangedEventArgs(nameof(INetworkStatusService.HasNoNetworkAccess)));
+
+        _mockAuthService.Verify(a => a.RefreshUserStatusAsync(), Times.Once);
+    }
+
+    // --- Manage-subscription routing follows the billing source, not the device ---
+
+    [Test]
+    public void ManageSubscriptionLink_ForAPayPalSubscription_IsHidden()
+    {
+        // Neither store page can manage a PayPal subscription, and this card has no cancel flow of
+        // its own. Account Settings does, and that is where such a subscriber is served.
+        _mockAuthService.Setup(a => a.BillingSource).Returns(BillingSources.PayPal);
+
+        Assert.That(_viewModel.ShowManageSubscriptionLink, Is.False);
+    }
+
+    [Test]
+    public void ManageSubscriptionLink_ForAStoreSubscription_IsShown(
+        [Values(BillingProviders.Apple, BillingProviders.GooglePlay)] string billingSource)
+    {
+        _mockAuthService.Setup(a => a.BillingSource).Returns(billingSource);
+
+        Assert.That(_viewModel.ShowManageSubscriptionLink, Is.True);
+    }
+
+    [Test]
+    public void ManageSubscriptionLink_WithNoBillingSourceYet_IsShown()
+    {
+        // A non-subscriber being told where they would cancel - the platform default is right here.
+        _mockAuthService.Setup(a => a.BillingSource).Returns((string?)null);
+
+        Assert.That(_viewModel.ShowManageSubscriptionLink, Is.True);
+    }
+
+    [Test]
+    public async Task OpenSubscriptionManagement_ForAnApplePurchase_OpensApple()
+    {
+        _mockAuthService.Setup(a => a.BillingSource).Returns(BillingProviders.Apple);
+
+        await _viewModel.OpenSubscriptionManagementCommand.ExecuteAsync(null);
+
+        _mockBrowserService.Verify(
+            b => b.OpenExternalAsync(It.Is<string>(url => url.Contains("apple.com"))),
+            Times.Once);
+    }
+
+    [Test]
+    public async Task OpenSubscriptionManagement_ForAGooglePlayPurchase_OpensGooglePlay()
+    {
+        // Keyed on the billing source rather than the device: this must stay true on an iPhone,
+        // where the old platform-only rule sent every user to Apple.
+        _mockAuthService.Setup(a => a.BillingSource).Returns(BillingProviders.GooglePlay);
+
+        await _viewModel.OpenSubscriptionManagementCommand.ExecuteAsync(null);
+
+        _mockBrowserService.Verify(
+            b => b.OpenExternalAsync(It.Is<string>(url => url.Contains("play.google.com"))),
+            Times.Once);
     }
 
     [Test]

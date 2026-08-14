@@ -379,6 +379,7 @@
                                FontSize="14" HorizontalTextAlignment="Center"
                                TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
                         <Label Text="{Binding ManageSubscriptionText}"
+                               IsVisible="{Binding ShowManageSubscriptionLink}"
                                FontSize="13"
                                FontAttributes="Bold"
                                HorizontalTextAlignment="Center"

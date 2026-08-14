@@ -21,7 +21,11 @@ fi
 
 mlaunch_path="$(printf '%s\n' "${mlaunch_candidates[@]}" | sort -V | tail -n 1)"
 
-device_lines="$(xcrun xctrace list devices | sed -n '/== Devices ==/,/== Simulators ==/p' | grep -E 'iPhone|iPad|iPod' || true)"
+# Only the connected "== Devices ==" block counts. The previous sed range ran to
+# "== Simulators ==", which swallowed the "== Devices Offline ==" section in
+# between, so any offline iPhone/iPad inflated the count and tripped the
+# "Multiple physical iOS devices detected" bail-out below.
+device_lines="$(xcrun xctrace list devices | awk '/^== Devices ==$/{f=1;next} /^== /{f=0} f' | grep -E 'iPhone|iPad|iPod' || true)"
 device_count="$(printf '%s\n' "$device_lines" | sed '/^$/d' | wc -l | tr -d ' ')"
 
 if [[ "$device_count" -eq 0 ]]; then

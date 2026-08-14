@@ -35,6 +35,8 @@ public class AccountSettingsViewModelTests
             .Returns("https://developer.apple.com/documentation/storekit/testing-disabling-auto-renew");
 
         _mockAuthService.Setup(a => a.Email).Returns("test@example.com");
+        // This page is only reachable signed in, so that is the state the fixture models.
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
         _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
         _mockAuthService.Setup(a => a.IsCreator).Returns(false);
         _mockMusicService.Setup(m => m.GetSubscriptionStatusAsync())
@@ -52,7 +54,8 @@ public class AccountSettingsViewModelTests
             _mockBrowserService.Object,
             _mockConfiguration.Object,
             _mockMusicService.Object,
-            _mockBillingService.Object);
+            _mockBillingService.Object,
+            _mockNetworkStatus.Object);
     }
 
     [Test]
@@ -123,6 +126,22 @@ public class AccountSettingsViewModelTests
         _viewModel.SubscriptionVerification = SubscriptionVerificationState.Unverified;
 
         Assert.That(_viewModel.ShowSubscriptionUnavailableBanner, Is.False);
+    }
+
+    [Test]
+    public void SubscriptionBanner_WhileOnline_DoesNotClaimTheUserIsOffline(
+        [Values(SubscriptionVerificationState.Cached, SubscriptionVerificationState.Unverified)]
+        SubscriptionVerificationState verification)
+    {
+        _mockNetworkStatus.Setup(n => n.IsOffline).Returns(false);
+        _viewModel.IsAuthenticated = true;
+        _viewModel.SubscriptionVerification = verification;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.ShowSubscriptionUnavailableBanner, Is.True);
+            Assert.That(_viewModel.SubscriptionUnavailableBannerText, Does.Not.Contain("offline"));
+        });
     }
 
     [Test]

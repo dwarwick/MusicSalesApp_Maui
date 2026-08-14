@@ -356,11 +356,21 @@ public partial class SongPlayerViewModel : ObservableObject
 
     private async Task OnShowSubscribeCta()
     {
-        var subscribe = await _alertService.ShowConfirmAsync("Preview Limit",
-            "Subscribe for unlimited listening!", "Subscribe Now", "Not Now");
+        var isSignedIn = _authService.IsLoggedIn;
+        var accepted = await _alertService.ShowConfirmAsync(
+            SubscriptionPurchaseGate.PreviewLimitTitle,
+            SubscriptionPurchaseGate.PreviewLimitMessage(isSignedIn),
+            SubscriptionPurchaseGate.PreviewLimitAccept(isSignedIn),
+            SubscriptionPurchaseGate.PreviewLimitDecline);
 
-        if (!subscribe)
+        if (!accepted)
             return;
+
+        if (!isSignedIn)
+        {
+            await SubscriptionPurchaseGate.GoToSignInAsync(_navigationService);
+            return;
+        }
 
         var result = await _billingService.PurchaseSubscriptionAsync();
 

@@ -15,6 +15,7 @@ public partial class AccountSettingsViewModel : ObservableObject
     private readonly IConfiguration _configuration;
     private readonly IMusicService _musicService;
     private readonly IBillingService _billingService;
+    private readonly INetworkStatusService _networkStatus;
     private bool _hasBillingDerivedSubscriptionPrice;
     private bool _authSubscriptionAttached;
 
@@ -59,6 +60,7 @@ public partial class AccountSettingsViewModel : ObservableObject
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowSubscriptionUnavailableBanner))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionUnavailableBannerText))]
     public partial bool IsAuthenticated { get; set; }
 
     [ObservableProperty]
@@ -260,10 +262,16 @@ public partial class AccountSettingsViewModel : ObservableObject
     /// Silent when the server confirmed the status this session, even if the device has gone offline
     /// since. Showing "subscription information is unavailable" directly above a status reading
     /// "Active" is a contradiction, and it is the status that is right — so the banner only appears
-    /// when the displayed status genuinely is not the server's latest word.
+    /// when the displayed status genuinely is not the server's latest word. Shared with Home so the
+    /// two pages cannot tell the user different things; see SubscriptionBannerDisplayBuilder for
+    /// the rules, including the signed-in check that matters here when a logout happens with this
+    /// page open.
     /// </summary>
-    public bool ShowSubscriptionUnavailableBanner
-        => IsAuthenticated && SubscriptionVerification != SubscriptionVerificationState.Verified;
+    private SubscriptionBannerDisplay CurrentSubscriptionBanner
+        => SubscriptionBannerDisplayBuilder.Create(
+            IsAuthenticated,
+            SubscriptionVerification,
+            _networkStatus.IsOffline);
 
     /// <summary>
     /// Turning it back on is not offered here, because enabling needs the plaintext password and this
@@ -273,15 +281,9 @@ public partial class AccountSettingsViewModel : ObservableObject
         ? "Your sign-in details are saved on this device so you can sign in with your fingerprint or face. They stay saved when you log out, so you can get straight back in."
         : "Fingerprint sign-in is off. You can turn it on next time you sign in with your password.";
 
-    /// <summary>
-    /// The two non-verified cases need opposite things from the user, so they must not share copy:
-    /// a cached status is accurate and merely unconfirmed, while an unverified one means the
-    /// features they paid for are switched off.
-    /// </summary>
-    public string SubscriptionUnavailableBannerText
-        => SubscriptionVerification == SubscriptionVerificationState.Cached
-            ? "You're offline, so this is your subscription as we last confirmed it. It'll refresh automatically when you reconnect."
-            : "We couldn't confirm your subscription, so subscription features are paused. This usually means you're offline — reconnect and your subscription will be restored automatically.";
+    public bool ShowSubscriptionUnavailableBanner => CurrentSubscriptionBanner.IsVisible;
+
+    public string SubscriptionUnavailableBannerText => CurrentSubscriptionBanner.Text;
 
     public string SubscriptionEndDateText => SubscriptionEndDate.HasValue
         ? IsActiveTrial
@@ -350,7 +352,8 @@ public partial class AccountSettingsViewModel : ObservableObject
         IBrowserService browserService,
         IConfiguration configuration,
         IMusicService musicService,
-        IBillingService billingService)
+        IBillingService billingService,
+        INetworkStatusService networkStatus)
     {
         _authService = authService;
         _alertService = alertService;
@@ -359,6 +362,7 @@ public partial class AccountSettingsViewModel : ObservableObject
         _configuration = configuration;
         _musicService = musicService;
         _billingService = billingService;
+        _networkStatus = networkStatus;
 
         AttachAuthSubscription();
         ApplySubscriptionState(null);
