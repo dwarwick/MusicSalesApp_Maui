@@ -23,6 +23,111 @@ public class VerifyEmailViewModelTests
         _viewModel.Email = "test@test.com";
     }
 
+    // --- Biometric enrolment: this screen is one of only two places that can save credentials ---
+
+    private void ArrangeSuccessfulVerification()
+    {
+        _viewModel.Code = "123456";
+        _viewModel.Password = "Passw0rd!";
+        _mockAuthService.Setup(a => a.VerifyCodeAsync(1, "123456"))
+            .ReturnsAsync((true, string.Empty, (LoginResponseDto?)null));
+        _mockAuthService.Setup(a => a.HasBiometricCredentialsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        _mockAlertService.Setup(a => a.ShowConfirmAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(true);
+    }
+
+    [Test]
+    public async Task VerifyAsync_OnAndroid_OffersBiometricEnrolment()
+    {
+        _viewModel.IsBiometricLoginSupported = true;
+        ArrangeSuccessfulVerification();
+
+        await _viewModel.VerifyCommand.ExecuteAsync(null);
+
+        _mockAuthService.Verify(a => a.EnableBiometricLoginAsync("test@test.com", "Passw0rd!"), Times.Once);
+    }
+
+    [Test]
+    public async Task VerifyAsync_OnAPlatformWithoutBiometrics_NeverSavesCredentials()
+    {
+        // AuthService.PromptBiometricAsync is #if ANDROID and answers "not supported on this
+        // platform" elsewhere. Accepting the offer on iOS would write a plaintext password to the
+        // keychain for a prompt that can never consume it.
+        _viewModel.IsBiometricLoginSupported = false;
+        ArrangeSuccessfulVerification();
+
+        await _viewModel.VerifyCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            _mockAuthService.Verify(
+                a => a.EnableBiometricLoginAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+            _mockAlertService.Verify(
+                a => a.ShowConfirmAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()),
+                Times.Never);
+        });
+    }
+
+    [Test]
+    public async Task VerifyAsync_WhenCredentialsAreAlreadySaved_DoesNotAskAgain()
+    {
+        _viewModel.IsBiometricLoginSupported = true;
+        ArrangeSuccessfulVerification();
+        _mockAuthService.Setup(a => a.HasBiometricCredentialsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        await _viewModel.VerifyCommand.ExecuteAsync(null);
+
+        _mockAuthService.Verify(
+            a => a.EnableBiometricLoginAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Test]
+    public async Task VerifyAsync_WithNoPasswordInHand_DoesNotOfferBiometrics()
+    {
+        // Arriving here from a deep link rather than registration leaves Password empty, and there is
+        // nothing to save.
+        _viewModel.IsBiometricLoginSupported = true;
+        ArrangeSuccessfulVerification();
+        _viewModel.Password = string.Empty;
+
+        await _viewModel.VerifyCommand.ExecuteAsync(null);
+
+        _mockAuthService.Verify(
+            a => a.EnableBiometricLoginAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Test]
+    public async Task VerifyAsync_WhenTheUserDeclinesTheOffer_SavesNothing()
+    {
+        _viewModel.IsBiometricLoginSupported = true;
+        ArrangeSuccessfulVerification();
+        _mockAlertService.Setup(a => a.ShowConfirmAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(false);
+
+        await _viewModel.VerifyCommand.ExecuteAsync(null);
+
+        _mockAuthService.Verify(
+            a => a.EnableBiometricLoginAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Test]
+    public async Task VerifyAsync_WhenVerificationFails_DoesNotOfferBiometrics()
+    {
+        _viewModel.IsBiometricLoginSupported = true;
+        ArrangeSuccessfulVerification();
+        _mockAuthService.Setup(a => a.VerifyCodeAsync(1, "123456"))
+            .ReturnsAsync((false, "Invalid code.", (LoginResponseDto?)null));
+
+        await _viewModel.VerifyCommand.ExecuteAsync(null);
+
+        _mockAuthService.Verify(
+            a => a.EnableBiometricLoginAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
     [Test]
     public async Task VerifyAsync_EmptyCode_SetsErrorMessage()
     {

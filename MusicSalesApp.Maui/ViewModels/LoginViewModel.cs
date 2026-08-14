@@ -22,6 +22,10 @@ public partial class LoginViewModel : ObservableObject
     [ObservableProperty]
     public partial bool BiometricVisible { get; set; }
 
+    /// <summary>Android only; see <see cref="PromptBiometricAsync"/>.</summary>
+    [ObservableProperty]
+    public partial bool IsBiometricLoginSupported { get; set; } = DeviceInfo.Platform == DevicePlatform.Android;
+
     [ObservableProperty]
     public partial string? ErrorMessage { get; set; }
 
@@ -36,7 +40,8 @@ public partial class LoginViewModel : ObservableObject
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        BiometricVisible = await _authService.HasBiometricCredentialsAsync(cancellationToken);
+        BiometricVisible = IsBiometricLoginSupported
+            && await _authService.HasBiometricCredentialsAsync(cancellationToken);
     }
 
     [RelayCommand]
@@ -194,7 +199,10 @@ public partial class LoginViewModel : ObservableObject
 
     private async Task PromptBiometricAsync()
     {
-        if (await _authService.HasBiometricCredentialsAsync())
+        // AuthService.PromptBiometricAsync is #if ANDROID and answers "not supported on this
+        // platform" everywhere else, so accepting this offer on iOS would write the credentials,
+        // show the fingerprint button, and fail on every tap.
+        if (!IsBiometricLoginSupported || await _authService.HasBiometricCredentialsAsync())
             return;
 
         bool enable = await _alertService.ShowConfirmAsync(

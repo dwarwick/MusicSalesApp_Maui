@@ -653,7 +653,7 @@ public class AuthServiceTests
     [Test]
     public async Task TryRestoreSessionAsync_RestoresCreatorStatusFromSecureStorage()
     {
-        _mockSecureStorage.Setup(storage => storage.GetAsync("auth_token")).ReturnsAsync(CreateUnexpiredJwt(userId: 42));
+        _mockSecureStorage.Setup(storage => storage.GetAsync("auth_token")).ReturnsAsync(CreateJwt(userId: 42));
         _mockSecureStorage.Setup(storage => storage.GetAsync("auth_is_creator")).ReturnsAsync(bool.TrueString);
         _mockSecureStorage.Setup(storage => storage.GetAsync("auth_creator_id")).ReturnsAsync("7");
         // The status refresh must not be what satisfies this assertion, or the test would pass even
@@ -673,7 +673,7 @@ public class AuthServiceTests
     [Test]
     public async Task TryRestoreSessionAsync_RestoredCreatorHearsOwnSongInFull()
     {
-        _mockSecureStorage.Setup(storage => storage.GetAsync("auth_token")).ReturnsAsync(CreateUnexpiredJwt(userId: 42));
+        _mockSecureStorage.Setup(storage => storage.GetAsync("auth_token")).ReturnsAsync(CreateJwt(userId: 42));
         _mockSecureStorage.Setup(storage => storage.GetAsync("auth_is_creator")).ReturnsAsync(bool.TrueString);
         SetupUnreachableServer();
 
@@ -694,7 +694,7 @@ public class AuthServiceTests
     public async Task TryRestoreSessionAsync_WhenCreatorStatusWasNeverStored_LeavesCreatorFalse()
     {
         // Sessions stored before creator status was persisted have neither key.
-        _mockSecureStorage.Setup(storage => storage.GetAsync("auth_token")).ReturnsAsync(CreateUnexpiredJwt(userId: 42));
+        _mockSecureStorage.Setup(storage => storage.GetAsync("auth_token")).ReturnsAsync(CreateJwt(userId: 42));
         SetupUnreachableServer();
 
         await _authService.TryRestoreSessionAsync();
@@ -865,7 +865,7 @@ public class AuthServiceTests
     {
         // End-to-end shape of the actual bug: the cached flag is restored on launch, then corrected
         // by the very next status refresh instead of surviving for the JWT's remaining lifetime.
-        _mockSecureStorage.Setup(storage => storage.GetAsync("auth_token")).ReturnsAsync(CreateUnexpiredJwt(userId: 42));
+        _mockSecureStorage.Setup(storage => storage.GetAsync("auth_token")).ReturnsAsync(CreateJwt(userId: 42));
         _mockSecureStorage.Setup(storage => storage.GetAsync("auth_is_creator")).ReturnsAsync(bool.TrueString);
         _mockSecureStorage.Setup(storage => storage.GetAsync("auth_creator_id")).ReturnsAsync("7");
         SetupMockSubscriptionStatusResponse(hasSubscription: false, billingSource: null, isCreator: false);
@@ -902,7 +902,12 @@ public class AuthServiceTests
         });
     }
 
-    private static string CreateUnexpiredJwt(int userId)
+    /// <summary>
+    /// A session token for <paramref name="userId"/>. <paramref name="expired"/> backdates both the
+    /// validity window and the expiry, which is the only thing that separates a restorable session
+    /// from one <see cref="AuthService.TryRestoreSessionAsync"/> throws away.
+    /// </summary>
+    private static string CreateJwt(int userId, bool expired = false)
     {
         var handler = new JwtSecurityTokenHandler();
         var token = handler.CreateJwtSecurityToken(
@@ -914,7 +919,8 @@ public class AuthServiceTests
                 new Claim(ClaimTypes.Email, "user@test.com"),
                 new Claim(ClaimTypes.Role, Roles.User)
             ]),
-            expires: DateTime.UtcNow.AddDays(1));
+            notBefore: expired ? DateTime.UtcNow.AddDays(-2) : null,
+            expires: expired ? DateTime.UtcNow.AddDays(-1) : DateTime.UtcNow.AddDays(1));
 
         return handler.WriteToken(token);
     }
@@ -925,15 +931,15 @@ public class AuthServiceTests
     private const string SubscriptionCacheKey = "auth_subscription_status";
 
     /// <summary>
-    /// Puts a restorable session in secure storage, optionally alongside a cached entitlement.
+    /// Puts a session in secure storage, optionally alongside a cached entitlement.
     /// The HTTP client is deliberately left unconfigured by callers that want the server to be
     /// unreachable — <see cref="AuthService.RefreshUserStatusAsync"/> swallows that and leaves
     /// whatever the cache restored in place, which is the behaviour under test.
     /// </summary>
-    private void SetupRestorableSession(CachedSubscriptionStatus? cached)
+    private void SetupStoredSession(CachedSubscriptionStatus? cached, bool expired = false)
     {
         _mockSecureStorage.Setup(storage => storage.GetAsync(TokenKey))
-            .ReturnsAsync(CreateUnexpiredJwt(userId: 42));
+            .ReturnsAsync(CreateJwt(userId: 42, expired));
 
         if (cached is not null)
         {
@@ -941,6 +947,12 @@ public class AuthServiceTests
                 .ReturnsAsync(cached.Serialize());
         }
     }
+
+    private void SetupRestorableSession(CachedSubscriptionStatus? cached)
+        => SetupStoredSession(cached);
+
+    private void SetupExpiredSession(CachedSubscriptionStatus? cached)
+        => SetupStoredSession(cached, expired: true);
 
     [Test]
     public async Task TryRestoreSessionAsync_WhenTheServerIsUnreachable_KeepsTheCachedSubscription()
@@ -1109,35 +1121,421 @@ public class AuthServiceTests
         _mockSecureStorage.Verify(storage => storage.Remove(SubscriptionCacheKey), Times.Once);
     }
 
-    private void SetupMockLoginResponse(bool isCreator, int? creatorId)
+    // --- An expired token ends the session silently; the notice is what explains it ---
+
+    private const string BioEmailKey = "bio_email";
+    private const string BioPasswordKey = "bio_password";
+
+    [Test]
+    public async Task TryRestoreSessionAsync_WhenTheTokenHasExpired_LeavesANoticeForASubscriber()
+    {
+        SetupExpiredSession(new CachedSubscriptionStatus
+        {
+            HasActiveSubscription = true,
+            SubscriptionEndDate = DateTime.UtcNow.AddDays(20),
+            CachedAtUtc = DateTime.UtcNow.AddHours(-3)
+        });
+
+        await _authService.TryRestoreSessionAsync();
+        var notice = _authService.PendingSessionExpiryNotice;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_authService.IsLoggedIn, Is.False);
+            Assert.That(notice, Is.Not.Null);
+            Assert.That(notice!.HadConfirmedEntitlement, Is.True);
+        });
+        // Read before the logout, but the logout must still delete it.
+        _mockSecureStorage.Verify(storage => storage.Remove(SubscriptionCacheKey), Times.Once);
+    }
+
+    [Test]
+    public async Task TryRestoreSessionAsync_WhenTheStoredTokenIsUnreadable_AlsoLeavesANotice()
+    {
+        // A corrupt keystore entry signs the user out exactly as silently as an expiry does. It used
+        // to take the one branch that said nothing, which is the bug the notice exists to close.
+        _mockSecureStorage.Setup(storage => storage.GetAsync(TokenKey)).ReturnsAsync("not-a-jwt");
+
+        await _authService.TryRestoreSessionAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_authService.IsLoggedIn, Is.False);
+            Assert.That(_authService.PendingSessionExpiryNotice, Is.Not.Null);
+        });
+    }
+
+    [Test]
+    public async Task TryRestoreSessionAsync_WhenTheRestoreThrows_AlsoLeavesANotice()
+    {
+        SetupStoredSession(cached: null);
+        _mockSecureStorage.Setup(storage => storage.GetAsync("auth_email_confirmed"))
+            .ThrowsAsync(new InvalidOperationException("keystore unavailable"));
+
+        await _authService.TryRestoreSessionAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_authService.IsLoggedIn, Is.False);
+            Assert.That(_authService.PendingSessionExpiryNotice, Is.Not.Null);
+        });
+    }
+
+    [Test]
+    public async Task TryRestoreSessionAsync_WhenTheCachedStatusIsStampedInTheFuture_ClaimsNoEntitlement()
+    {
+        // A device clock wound forward and back leaves a negative age, which every upper-bound
+        // staleness test waves through. IsUsableAt has always refused these; so must this.
+        SetupExpiredSession(new CachedSubscriptionStatus
+        {
+            HasActiveSubscription = true,
+            CachedAtUtc = DateTime.UtcNow.AddDays(2)
+        });
+
+        await _authService.TryRestoreSessionAsync();
+
+        Assert.That(_authService.PendingSessionExpiryNotice!.HadConfirmedEntitlement, Is.False);
+    }
+
+    [Test]
+    public async Task TryRestoreSessionAsync_WhenTheTokenHasExpired_CarriesTheEntitlementEndDate()
+    {
+        var endDate = DateTime.UtcNow.AddDays(-3);
+        SetupExpiredSession(new CachedSubscriptionStatus
+        {
+            HasActiveSubscription = true,
+            SubscriptionEndDate = endDate,
+            CachedAtUtc = DateTime.UtcNow.AddDays(-4)
+        });
+
+        await _authService.TryRestoreSessionAsync();
+        var notice = _authService.PendingSessionExpiryNotice;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(notice!.EntitlementEndDate, Is.EqualTo(endDate).Within(TimeSpan.FromSeconds(1)));
+            Assert.That(notice.HasLapsedBy(DateTime.UtcNow), Is.True);
+        });
+    }
+
+    [Test]
+    public async Task TryRestoreSessionAsync_WhenTheTokenHasExpiredForANonSubscriber_ClaimsNoEntitlement()
+    {
+        SetupExpiredSession(new CachedSubscriptionStatus
+        {
+            HasActiveSubscription = false,
+            CachedAtUtc = DateTime.UtcNow.AddHours(-3)
+        });
+
+        await _authService.TryRestoreSessionAsync();
+        var notice = _authService.PendingSessionExpiryNotice;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(notice, Is.Not.Null);
+            Assert.That(notice!.HadConfirmedEntitlement, Is.False);
+        });
+    }
+
+    [Test]
+    public async Task TryRestoreSessionAsync_WhenTheTokenHasExpiredOnALapsedSubscription_StillClaimsEntitlement()
+    {
+        // Distinct from IsUsableAt, which would refuse this snapshot. That method decides what the
+        // user may do; this decides what they are told, and a subscriber whose access ran out while
+        // the token sat expired still has something to hear — worded as a renewal, not a restore.
+        SetupExpiredSession(new CachedSubscriptionStatus
+        {
+            HasActiveSubscription = true,
+            SubscriptionEndDate = DateTime.UtcNow.AddDays(-1),
+            CachedAtUtc = DateTime.UtcNow.AddDays(-2)
+        });
+
+        await _authService.TryRestoreSessionAsync();
+
+        Assert.That(_authService.PendingSessionExpiryNotice!.HadConfirmedEntitlement, Is.True);
+    }
+
+    [Test]
+    public async Task TryRestoreSessionAsync_WhenTheCachedStatusIsTooOld_ClaimsNoEntitlement()
+    {
+        // Nobody should be reminded of a subscription from months ago.
+        SetupExpiredSession(new CachedSubscriptionStatus
+        {
+            HasActiveSubscription = true,
+            CachedAtUtc = DateTime.UtcNow - CachedSubscriptionStatus.DefaultMaxStaleness - TimeSpan.FromDays(1)
+        });
+
+        await _authService.TryRestoreSessionAsync();
+
+        Assert.That(_authService.PendingSessionExpiryNotice!.HadConfirmedEntitlement, Is.False);
+    }
+
+    [Test]
+    public async Task TryRestoreSessionAsync_WhenTheTokenHasExpiredWithNoCache_StillLeavesANotice()
+    {
+        SetupExpiredSession(cached: null);
+
+        await _authService.TryRestoreSessionAsync();
+        var notice = _authService.PendingSessionExpiryNotice;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(notice, Is.Not.Null);
+            Assert.That(notice!.HadConfirmedEntitlement, Is.False);
+        });
+    }
+
+    [Test]
+    public async Task PendingSessionExpiryNotice_SurvivesBeingRead()
+    {
+        // Not read-once: the home page is transient and rebuilt from a Shell DataTemplate, so a
+        // consuming read could be taken by an off-screen instance and the explanation lost for good.
+        SetupExpiredSession(cached: null);
+        await _authService.TryRestoreSessionAsync();
+
+        _ = _authService.PendingSessionExpiryNotice;
+
+        Assert.That(_authService.PendingSessionExpiryNotice, Is.Not.Null);
+    }
+
+    [Test]
+    public async Task LogoutAsync_OnAnExplicitLogout_LeavesNoNotice()
+    {
+        // Only an unasked-for sign-out is unexplained. Whoever tapped Logout knows why they are out.
+        await _authService.LogoutAsync();
+
+        Assert.That(_authService.PendingSessionExpiryNotice, Is.Null);
+    }
+
+    [Test]
+    public async Task LoginAsync_DropsAPendingExpiryNotice()
+    {
+        SetupExpiredSession(cached: null);
+        await _authService.TryRestoreSessionAsync();
+        SetupMockLoginResponse(isCreator: false, creatorId: null);
+
+        await _authService.LoginAsync("user@test.com", "password");
+
+        Assert.That(_authService.PendingSessionExpiryNotice, Is.Null);
+    }
+
+    [Test]
+    public async Task TryRestoreSessionAsync_WhenTheSessionRestoresCleanly_DropsAPendingNotice()
+    {
+        // This path does not go through ApplyLoginResponse, so it has to clear the notice itself.
+        SetupExpiredSession(cached: null);
+        await _authService.TryRestoreSessionAsync();
+
+        _mockSecureStorage.Setup(storage => storage.GetAsync(TokenKey)).ReturnsAsync(CreateJwt(userId: 42));
+        SetupMockSubscriptionStatusResponse(hasSubscription: false, billingSource: null);
+        await _authService.TryRestoreSessionAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_authService.IsLoggedIn, Is.True);
+            Assert.That(_authService.PendingSessionExpiryNotice, Is.Null);
+        });
+    }
+
+    // --- Biometric credentials outlive a logout on purpose, but not the account they sign in to ---
+
+    [Test]
+    public async Task LogoutAsync_KeepsTheBiometricCredentials()
+    {
+        // Deliberate: there is no refresh-token flow, so a token expiry signs the user out routinely.
+        // A fingerprint is what gets them straight back in, and wiping the pair here would mean
+        // retyping the password every time.
+        await _authService.LogoutAsync();
+
+        Assert.Multiple(() =>
+        {
+            _mockSecureStorage.Verify(storage => storage.Remove(BioEmailKey), Times.Never);
+            _mockSecureStorage.Verify(storage => storage.Remove(BioPasswordKey), Times.Never);
+        });
+    }
+
+    [Test]
+    public async Task TryRestoreSessionAsync_WhenTheTokenHasExpired_KeepsTheBiometricCredentials()
+    {
+        SetupExpiredSession(cached: null);
+
+        await _authService.TryRestoreSessionAsync();
+
+        Assert.Multiple(() =>
+        {
+            _mockSecureStorage.Verify(storage => storage.Remove(BioEmailKey), Times.Never);
+            _mockSecureStorage.Verify(storage => storage.Remove(BioPasswordKey), Times.Never);
+        });
+    }
+
+    [Test]
+    public async Task DeleteAccountAsync_ClearsTheBiometricCredentials()
+    {
+        // There is nothing left to sign in to, and leaving them keeps offering a fingerprint button
+        // that replays a deleted login.
+        SetupMockHttpResponse(HttpStatusCode.OK);
+
+        await _authService.DeleteAccountAsync();
+
+        Assert.Multiple(() =>
+        {
+            _mockSecureStorage.Verify(storage => storage.Remove(BioEmailKey), Times.Once);
+            _mockSecureStorage.Verify(storage => storage.Remove(BioPasswordKey), Times.Once);
+        });
+    }
+
+    [Test]
+    public async Task ResetPasswordAsync_ForTheAccountThatSavedThem_ClearsTheBiometricCredentials()
+    {
+        // The saved password is now the old one. Left in place it produces a successful fingerprint
+        // prompt followed by a rejected login, which reads as broken biometrics.
+        _mockSecureStorage.Setup(storage => storage.GetAsync(BioEmailKey)).ReturnsAsync("user@test.com");
+        SetupMockHttpResponse(HttpStatusCode.OK);
+
+        await _authService.ResetPasswordAsync(42, "123456", "NewPassword1!", "user@test.com");
+
+        Assert.Multiple(() =>
+        {
+            _mockSecureStorage.Verify(storage => storage.Remove(BioEmailKey), Times.Once);
+            _mockSecureStorage.Verify(storage => storage.Remove(BioPasswordKey), Times.Once);
+        });
+    }
+
+    [Test]
+    public async Task ResetPasswordAsync_ForSomeoneElsesAccount_KeepsTheBiometricCredentials()
+    {
+        // Forgot-password is reachable from the login screen with no session, so on a shared device
+        // this is a bystander resetting their own password. It must not withdraw the device owner's
+        // fingerprint sign-in, whose password is untouched and still valid.
+        _mockSecureStorage.Setup(storage => storage.GetAsync(BioEmailKey)).ReturnsAsync("owner@test.com");
+        SetupMockHttpResponse(HttpStatusCode.OK);
+
+        await _authService.ResetPasswordAsync(99, "123456", "NewPassword1!", "someone.else@test.com");
+
+        Assert.Multiple(() =>
+        {
+            _mockSecureStorage.Verify(storage => storage.Remove(BioEmailKey), Times.Never);
+            _mockSecureStorage.Verify(storage => storage.Remove(BioPasswordKey), Times.Never);
+        });
+    }
+
+    [Test]
+    public async Task ResetPasswordAsync_WhenTheServerRejectsIt_KeepsTheBiometricCredentials()
+    {
+        _mockSecureStorage.Setup(storage => storage.GetAsync(BioEmailKey)).ReturnsAsync("user@test.com");
+        SetupMockHttpResponse(HttpStatusCode.BadRequest);
+
+        await _authService.ResetPasswordAsync(42, "wrong", "NewPassword1!", "user@test.com");
+
+        _mockSecureStorage.Verify(storage => storage.Remove(BioPasswordKey), Times.Never);
+    }
+
+    [Test]
+    public void DisableBiometricLoginAsync_WhenTheKeystoreRefuses_DoesNotThrow()
+    {
+        // It is reached from a settings tap and from account deletion; a throw out of either is a
+        // crash. Enabling already guards its storage writes, and this is the mirror of that.
+        _mockSecureStorage.Setup(storage => storage.Remove(BioEmailKey))
+            .Throws(new InvalidOperationException("keystore unavailable"));
+
+        Assert.That(async () => await _authService.DisableBiometricLoginAsync(), Throws.Nothing);
+    }
+
+    [Test]
+    public async Task DisableBiometricLoginAsync_WhenTheKeystoreRefuses_DoesNotClaimTheCredentialsAreGone()
+    {
+        // The removal did not happen, so the cached answer must not say it did — the next read has to
+        // go back to storage rather than report a clear that failed.
+        _mockSecureStorage.Setup(storage => storage.Remove(BioEmailKey))
+            .Throws(new InvalidOperationException("keystore unavailable"));
+        _mockSecureStorage.Setup(storage => storage.GetAsync(BioEmailKey)).ReturnsAsync("user@test.com");
+        _mockSecureStorage.Setup(storage => storage.GetAsync(BioPasswordKey)).ReturnsAsync("password");
+
+        await _authService.DisableBiometricLoginAsync();
+
+        Assert.That(await _authService.HasBiometricCredentialsAsync(), Is.True);
+    }
+
+    [Test]
+    public async Task ChangeEmailAsync_ForTheAccountThatSavedThem_KeepsTheBiometricEmailInStep()
+    {
+        SetBackingField(nameof(AuthService.Email), "old@test.com");
+        _mockSecureStorage.Setup(storage => storage.GetAsync(BioEmailKey)).ReturnsAsync("old@test.com");
+        _mockSecureStorage.Setup(storage => storage.GetAsync(BioPasswordKey)).ReturnsAsync("password");
+        SetupMockHttpResponse(HttpStatusCode.OK);
+
+        await _authService.ChangeEmailAsync(userId: 42, newEmail: "new@test.com");
+
+        _mockSecureStorage.Verify(storage => storage.SetAsync(BioEmailKey, "new@test.com"), Times.Once);
+    }
+
+    [Test]
+    public async Task ChangeEmailAsync_ForADifferentAccount_LeavesTheBiometricPairIntact()
+    {
+        // The pair outlives a logout, so the account signed in now need not be the one that saved it.
+        // Rewriting the address regardless would pair this user's email with the other user's
+        // password: a credential that passes the fingerprint prompt and is rejected by the server
+        // every single time, with no way back except turning the feature off.
+        SetBackingField(nameof(AuthService.Email), "current@test.com");
+        _mockSecureStorage.Setup(storage => storage.GetAsync(BioEmailKey)).ReturnsAsync("someone.else@test.com");
+        _mockSecureStorage.Setup(storage => storage.GetAsync(BioPasswordKey)).ReturnsAsync("their-password");
+        SetupMockHttpResponse(HttpStatusCode.OK);
+
+        await _authService.ChangeEmailAsync(userId: 42, newEmail: "new@test.com");
+
+        _mockSecureStorage.Verify(storage => storage.SetAsync(BioEmailKey, It.IsAny<string>()), Times.Never);
+    }
+
+    [Test]
+    public async Task ChangeEmailAsync_WithNoBiometricCredentials_WritesNoHalfCredential()
+    {
+        SetBackingField(nameof(AuthService.Email), "old@test.com");
+        SetupMockHttpResponse(HttpStatusCode.OK);
+
+        await _authService.ChangeEmailAsync(userId: 42, newEmail: "new@test.com");
+
+        _mockSecureStorage.Verify(storage => storage.SetAsync(BioEmailKey, It.IsAny<string>()), Times.Never);
+    }
+
+    /// <summary>
+    /// The single place the named HttpClient is wired up. Every response helper below funnels through
+    /// here, so the client name and base address exist once rather than in a handler block copied per
+    /// scenario. The response is built per request, not shared, so a test that issues two calls does
+    /// not hand the second one an already-consumed content stream.
+    /// </summary>
+    private void SetupMockHttpResponse(HttpStatusCode statusCode, object? jsonBody = null)
     {
         var messageHandler = new Mock<HttpMessageHandler>();
         messageHandler.Protected()
             .Setup<Task<HttpResponseMessage>>("SendAsync",
                 ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
-            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
+            .ReturnsAsync(() => new HttpResponseMessage(statusCode)
             {
-                Content = JsonContent.Create(new
-                {
-                    Token = CreateUnexpiredJwt(userId: 42),
-                    UserId = 42,
-                    Email = "user@test.com",
-                    Roles = new[] { Roles.User },
-                    EmailConfirmed = true,
-                    HasActiveSubscription = true,
-                    IsCreator = isCreator,
-                    CreatorId = creatorId
-                })
+                Content = jsonBody is null
+                    ? new StringContent(string.Empty, Encoding.UTF8, "application/json")
+                    : JsonContent.Create(jsonBody)
             });
 
-        var httpClient = new HttpClient(messageHandler.Object)
-        {
-            BaseAddress = new Uri("https://test.example.com/")
-        };
-
-        _mockHttpClientFactory.Setup(f => f.CreateClient("MusicSalesApi")).Returns(httpClient);
+        UseMessageHandler(messageHandler);
     }
+
+    private void UseMessageHandler(Mock<HttpMessageHandler> messageHandler)
+        => _mockHttpClientFactory.Setup(f => f.CreateClient("MusicSalesApi")).Returns(
+            new HttpClient(messageHandler.Object) { BaseAddress = new Uri("https://test.example.com/") });
+
+    private void SetupMockLoginResponse(bool isCreator, int? creatorId)
+        => SetupMockHttpResponse(HttpStatusCode.OK, new
+        {
+            Token = CreateJwt(userId: 42),
+            UserId = 42,
+            Email = "user@test.com",
+            Roles = new[] { Roles.User },
+            EmailConfirmed = true,
+            HasActiveSubscription = true,
+            IsCreator = isCreator,
+            CreatorId = creatorId
+        });
 
     private void SetBackingField(string propertyName, object value)
     {
@@ -1179,22 +1577,7 @@ public class AuthServiceTests
                 TrialEndDate = trialEndDate
             };
 
-        var messageHandler = new Mock<HttpMessageHandler>();
-        messageHandler.Protected()
-            .Setup<Task<HttpResponseMessage>>("SendAsync",
-                ItExpr.IsAny<HttpRequestMessage>(),
-                ItExpr.IsAny<CancellationToken>())
-            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = JsonContent.Create(payload)
-            });
-
-        var httpClient = new HttpClient(messageHandler.Object)
-        {
-            BaseAddress = new Uri("https://test.example.com/")
-        };
-
-        _mockHttpClientFactory.Setup(f => f.CreateClient("MusicSalesApi")).Returns(httpClient);
+        SetupMockHttpResponse(HttpStatusCode.OK, payload);
     }
 
     /// <summary>
@@ -1210,11 +1593,6 @@ public class AuthServiceTests
                 ItExpr.IsAny<CancellationToken>())
             .ThrowsAsync(new HttpRequestException("offline"));
 
-        _mockHttpClientFactory
-            .Setup(factory => factory.CreateClient("MusicSalesApi"))
-            .Returns(new HttpClient(messageHandler.Object)
-            {
-                BaseAddress = new Uri("https://test.example.com/")
-            });
+        UseMessageHandler(messageHandler);
     }
 }

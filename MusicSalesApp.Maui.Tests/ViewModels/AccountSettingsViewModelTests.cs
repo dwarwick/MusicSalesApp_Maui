@@ -93,6 +93,7 @@ public class AccountSettingsViewModelTests
     [Test]
     public void SubscriptionBanner_WhenStandingOnACachedStatus_SaysItIsUnconfirmedNotPaused()
     {
+        _viewModel.IsAuthenticated = true;
         _viewModel.SubscriptionVerification = SubscriptionVerificationState.Cached;
 
         Assert.Multiple(() =>
@@ -106,6 +107,7 @@ public class AccountSettingsViewModelTests
     [Test]
     public void SubscriptionBanner_WhenEntitlementCouldNotBeEstablished_SaysFeaturesArePaused()
     {
+        _viewModel.IsAuthenticated = true;
         _viewModel.SubscriptionVerification = SubscriptionVerificationState.Unverified;
 
         Assert.Multiple(() =>
@@ -116,11 +118,10 @@ public class AccountSettingsViewModelTests
     }
 
     [Test]
-    public void SubscriptionBanner_WhenSignedOut_IsSilent()
+    public void SubscriptionBanner_WhenTheSessionEndedUnderneathThePage_IsSilent()
     {
-        // Reaching this page signed out only happens by logging out with it open, which reloads
-        // into an Unverified state - and used to flash "features are paused" at someone who had
-        // just signed out and has no subscription to confirm.
+        // The flyout only offers this page while signed in, but an expiry can sign the user out with
+        // the page already open. Nobody signed out has a subscription to confirm.
         _viewModel.IsAuthenticated = false;
         _viewModel.SubscriptionVerification = SubscriptionVerificationState.Unverified;
 
@@ -148,6 +149,123 @@ public class AccountSettingsViewModelTests
     {
         // The safe default: an uninitialised value must not claim the server confirmed anything.
         Assert.That(default(SubscriptionVerificationState), Is.EqualTo(SubscriptionVerificationState.Unverified));
+    }
+
+    // --- Biometric sign-in is kept across logout, so this page is the only way to withdraw it ---
+
+    [Test]
+    public async Task LoadCommand_ReportsWhetherBiometricCredentialsAreSaved()
+    {
+        _viewModel.IsBiometricLoginSupported = true;
+        _mockAuthService.Setup(a => a.HasBiometricCredentialsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.IsBiometricLoginEnabled, Is.True);
+            Assert.That(_viewModel.BiometricLoginStatusText, Does.Contain("saved on this device"));
+        });
+    }
+
+    [Test]
+    public async Task LoadCommand_OnAPlatformWithoutBiometrics_DoesNotOfferIt()
+    {
+        // AuthService.PromptBiometricAsync is #if ANDROID and answers "not supported on this
+        // platform" elsewhere, so offering the feature on iOS invites the user to switch on something
+        // hard-coded to fail. It is also two Keystore reads that platform has no use for.
+        _viewModel.IsBiometricLoginSupported = false;
+        _mockAuthService.Setup(a => a.HasBiometricCredentialsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.That(_viewModel.IsBiometricLoginEnabled, Is.False);
+        _mockAuthService.Verify(a => a.HasBiometricCredentialsAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Test]
+    public async Task TurnOffBiometricLogin_WhenTheRemovalFails_SaysSoInsteadOfCrashing()
+    {
+        // A RelayCommand rethrows onto the sync context, so an unguarded keystore failure here is an
+        // app crash from a settings tap — and the switch would still have flipped to "off" over
+        // credentials that are all still there.
+        _viewModel.IsBiometricLoginSupported = true;
+        _viewModel.IsBiometricLoginEnabled = true;
+        _mockAlertService.Setup(a => a.ShowConfirmAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(true);
+        _mockAuthService.Setup(a => a.DisableBiometricLoginAsync())
+            .ThrowsAsync(new InvalidOperationException("keystore unavailable"));
+
+        await _viewModel.TurnOffBiometricLoginCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.ErrorMessage, Does.Contain("Could not remove"));
+            Assert.That(_viewModel.IsBiometricLoginEnabled, Is.True);
+        });
+    }
+
+    [Test]
+    public async Task TurnOffBiometricLogin_WhenTheCredentialsSurvive_DoesNotClaimTheyAreGone()
+    {
+        _viewModel.IsBiometricLoginSupported = true;
+        _viewModel.IsBiometricLoginEnabled = true;
+        _mockAlertService.Setup(a => a.ShowConfirmAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(true);
+        // The service swallowed a keystore failure, so the credentials are still readable.
+        _mockAuthService.Setup(a => a.HasBiometricCredentialsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        await _viewModel.TurnOffBiometricLoginCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.IsBiometricLoginEnabled, Is.True);
+            Assert.That(_viewModel.ErrorMessage, Does.Contain("Could not remove"));
+        });
+    }
+
+    [Test]
+    public void BiometricLoginStatusText_WhenOff_PointsAtTheLoginScreen()
+    {
+        // Enabling needs the plaintext password, which this page never has, so the copy has to send
+        // the user somewhere that does rather than offering a switch that cannot be switched on.
+        _viewModel.IsBiometricLoginEnabled = false;
+
+        Assert.That(_viewModel.BiometricLoginStatusText, Does.Contain("sign in with your password"));
+    }
+
+    [Test]
+    public async Task TurnOffBiometricLogin_WhenConfirmed_ClearsTheSavedCredentials()
+    {
+        _viewModel.IsBiometricLoginSupported = true;
+        _viewModel.IsBiometricLoginEnabled = true;
+        _mockAlertService.Setup(a => a.ShowConfirmAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(true);
+
+        await _viewModel.TurnOffBiometricLoginCommand.ExecuteAsync(null);
+
+        _mockAuthService.Verify(a => a.DisableBiometricLoginAsync(), Times.Once);
+        Assert.That(_viewModel.IsBiometricLoginEnabled, Is.False);
+    }
+
+    [Test]
+    public async Task TurnOffBiometricLogin_WhenDeclined_LeavesTheCredentialsAlone()
+    {
+        _viewModel.IsBiometricLoginEnabled = true;
+        _mockAlertService.Setup(a => a.ShowConfirmAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(false);
+
+        await _viewModel.TurnOffBiometricLoginCommand.ExecuteAsync(null);
+
+        _mockAuthService.Verify(a => a.DisableBiometricLoginAsync(), Times.Never);
+        Assert.That(_viewModel.IsBiometricLoginEnabled, Is.True);
     }
 
     [Test]
