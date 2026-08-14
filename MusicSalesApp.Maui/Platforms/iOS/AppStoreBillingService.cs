@@ -92,8 +92,17 @@ public class AppStoreBillingService : NSObject, IBillingService, ISKPaymentTrans
             // Failed, not Unavailable: nothing consumes BillingUnavailable on the purchase side, so
             // the only thing that matters here is that the caller gets an answer and a message that
             // does not claim the purchase did or did not happen.
-            () => BillingPurchaseResult.Failed(
-                "The App Store did not report the result of the purchase. If you completed it, it will be restored automatically."),
+            //
+            // Settling: bounding the wait does not complete the source task, it only stops this
+            // caller listening. Left pending, _purchaseTcs goes on looking like a caller waiting for
+            // a result, so a transaction arriving later in the session was reported to a caller that
+            // had already given up, then finished and dropped - unverified and never replayed. That
+            // is the money-taken-with-no-record failure the unsolicited-purchase path exists to
+            // prevent, reached on a path that could never consult it.
+            BillingCallbackTimeout.Settling(
+                purchaseTcs,
+                BillingPurchaseResult.Failed(
+                    "The App Store did not report the result of the purchase. If you completed it, it will be restored automatically.")),
             "purchase result",
             _logger);
     }
@@ -122,7 +131,13 @@ public class AppStoreBillingService : NSObject, IBillingService, ISKPaymentTrans
             // about ownership: null would be read as "you own nothing" and Failed as final, either
             // of which strands a subscriber on the free tier. Unavailable is what sets the pending
             // flag in AuthService that earns the retry on the next status refresh.
-            () => BillingPurchaseResult.Unavailable("The App Store did not respond to the restore request."),
+            //
+            // Settling for the same reason as the purchase above: while restoreTcs stays pending
+            // IsRestoreInFlight keeps reporting true, and every Restored transaction after that is
+            // filed against a restore nobody is listening to, then silently discarded.
+            BillingCallbackTimeout.Settling<BillingPurchaseResult?>(
+                restoreTcs,
+                BillingPurchaseResult.Unavailable("The App Store did not respond to the restore request.")),
             "restore request",
             _logger);
     }

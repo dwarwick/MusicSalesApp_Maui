@@ -40,12 +40,13 @@ public class BillingCallbackTimeoutTests
     }
 
     /// <summary>
-    /// The store callback is left to arrive whenever it likes — its TrySetResult simply finds the
-    /// task already settled. This is what makes the bound safe to apply to a native callback we
-    /// cannot cancel.
+    /// Pins the behaviour that matters to callers: timing out does NOT settle the source task, so a
+    /// late TrySetResult still succeeds. A caller that keeps its TaskCompletionSource in a field has
+    /// to settle it itself on timeout, or an abandoned wait goes on looking live. The comment on
+    /// this test used to claim the opposite while the assertion below proved otherwise.
     /// </summary>
     [Test]
-    public async Task WaitAsync_WhenTheCallbackArrivesLate_DoesNotThrowOrChangeTheResult()
+    public async Task WaitAsync_WhenItTimesOut_LeavesTheSourceTaskUnsettled()
     {
         var late = new TaskCompletionSource<string>();
 
@@ -60,6 +61,51 @@ public class BillingCallbackTimeoutTests
         {
             Assert.That(result, Is.EqualTo("timed out"));
             Assert.That(late.Task.Result, Is.EqualTo("late answer"));
+        });
+    }
+
+    // --- Settling: the fix for a timed-out purchase still looking like a live one ---
+
+    /// <summary>
+    /// The defect this exists for: a purchase that timed out left its TaskCompletionSource pending,
+    /// so a transaction arriving later in the session was reported to a caller that had already
+    /// given up, then finished and discarded without ever being verified.
+    /// </summary>
+    [Test]
+    public async Task Settling_OnTimeout_LeavesTheSourceCompletedSoNothingLooksLikeItIsWaiting()
+    {
+        var source = new TaskCompletionSource<string>();
+
+        var result = await BillingCallbackTimeout.WaitAsync(
+            source.Task,
+            ShortTimeout,
+            BillingCallbackTimeout.Settling(source, "timed out"),
+            "test callback");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Is.EqualTo("timed out"));
+            Assert.That(source.Task.IsCompleted, Is.True, "The source must not go on advertising a waiting caller.");
+            Assert.That(source.TrySetResult("late answer"), Is.False, "A late callback must not find a waiter.");
+        });
+    }
+
+    [Test]
+    public async Task Settling_WhenTheCallbackAnswersInTime_LeavesTheRealResultAlone()
+    {
+        var source = new TaskCompletionSource<string>();
+        source.SetResult("answered");
+
+        var result = await BillingCallbackTimeout.WaitAsync(
+            source.Task,
+            ShortTimeout,
+            BillingCallbackTimeout.Settling(source, "timed out"),
+            "test callback");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Is.EqualTo("answered"));
+            Assert.That(source.Task.Result, Is.EqualTo("answered"));
         });
     }
 
