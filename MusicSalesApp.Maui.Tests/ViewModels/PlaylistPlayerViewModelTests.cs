@@ -241,6 +241,8 @@ public class PlaylistPlayerViewModelTests
         [Test]
         public async Task OnShowSubscribeCta_WhenServerVerificationFails_ShowsSpecificErrorMessage()
         {
+            // A purchase can only be made signed in - see SubscriptionPurchaseGate.
+            _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
             _mockAlertService.Setup(a => a.ShowConfirmAsync("Preview Limit", It.IsAny<string>(), "Subscribe Now", "Not Now"))
                 .ReturnsAsync(true);
             _mockBillingService.Setup(b => b.PurchaseSubscriptionAsync())

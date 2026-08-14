@@ -19,6 +19,19 @@ public class AppStoreBillingService : NSObject, IBillingService, ISKPaymentTrans
     private ProductRequestDelegate? _productRequestDelegate;
     private SKProductsRequest? _productRequest;
 
+    /// <summary>
+    /// Transactions delivered by the current restore, kept until the store says it has finished so
+    /// the most recent one can be chosen. Guarded because StoreKit delivers on its own thread.
+    /// </summary>
+    private readonly List<RestoredTransaction> _restoredTransactions = [];
+    private readonly object _restoredTransactionsLock = new();
+
+    /// <summary>True while a restore has been asked for and the store has not finished answering.</summary>
+    private bool IsRestoreInFlight => _restoreTcs is { Task.IsCompleted: false };
+
+    /// <summary>True while a purchase has been started and no result has been delivered yet.</summary>
+    private bool IsPurchaseWaiting => _purchaseTcs is { Task.IsCompleted: false };
+
     public AppStoreBillingService(IConfiguration configuration, ILogger<AppStoreBillingService> logger)
     {
         _logger = logger;
@@ -60,19 +73,55 @@ public class AppStoreBillingService : NSObject, IBillingService, ISKPaymentTrans
         }
 
         Console.WriteLine("[AppStoreBillingService] Product lookup succeeded for '{0}'. Queueing payment.", _productId);
-        _purchaseTcs = new TaskCompletionSource<BillingPurchaseResult>();
+
+        // Settle whoever was waiting on the previous attempt rather than abandoning them: the field
+        // assignment alone left the earlier caller awaiting a task nothing would ever complete.
+        var purchaseTcs = new TaskCompletionSource<BillingPurchaseResult>();
+        Interlocked.Exchange(ref _purchaseTcs, purchaseTcs)
+            ?.TrySetResult(BillingPurchaseResult.Failed("Superseded by another purchase attempt."));
+
         var payment = await CreatePaymentAsync(lookupResult.Product);
         SKPaymentQueue.DefaultQueue.AddPayment(payment);
-        return await _purchaseTcs.Task;
+
+        return await BillingCallbackTimeout.WaitAsync(
+            purchaseTcs.Task,
+            BillingCallbackTimeout.DefaultPurchaseFlowTimeout,
+            // Failed, not Unavailable: nothing consumes BillingUnavailable on the purchase side, so
+            // the only thing that matters here is that the caller gets an answer and a message that
+            // does not claim the purchase did or did not happen.
+            () => BillingPurchaseResult.Failed(
+                "The App Store did not report the result of the purchase. If you completed it, it will be restored automatically."),
+            "purchase result",
+            _logger);
     }
 
     public async Task<BillingPurchaseResult?> RestorePurchaseAsync()
     {
         await InitializeAsync();
 
-        _restoreTcs = new TaskCompletionSource<BillingPurchaseResult?>();
+        var restoreTcs = new TaskCompletionSource<BillingPurchaseResult?>();
+        Interlocked.Exchange(ref _restoreTcs, restoreTcs)
+            ?.TrySetResult(BillingPurchaseResult.Unavailable("Superseded by another restore attempt."));
+
+        // Anything left over belongs to a restore that timed out or was superseded; carrying it into
+        // this one could answer with a transaction the store is no longer talking about.
+        lock (_restoredTransactionsLock)
+        {
+            _restoredTransactions.Clear();
+        }
+
         SKPaymentQueue.DefaultQueue.RestoreCompletedTransactions();
-        return await _restoreTcs.Task;
+
+        return await BillingCallbackTimeout.WaitAsync(
+            restoreTcs.Task,
+            BillingCallbackTimeout.DefaultRestoreTimeout,
+            // Unavailable, not null and not Failed. A store that never answered has told us nothing
+            // about ownership: null would be read as "you own nothing" and Failed as final, either
+            // of which strands a subscriber on the free tier. Unavailable is what sets the pending
+            // flag in AuthService that earns the retry on the next status refresh.
+            () => BillingPurchaseResult.Unavailable("The App Store did not respond to the restore request."),
+            "restore request",
+            _logger);
     }
 
     public Task<SubscriptionOfferInfo> GetSubscriptionOfferAsync()
@@ -82,6 +131,19 @@ public class AppStoreBillingService : NSObject, IBillingService, ISKPaymentTrans
     {
         foreach (var transaction in transactions)
         {
+            // Logged through ILogger, not just Console.WriteLine, because Console output never
+            // reaches the rolling device log — so from the log's point of view this observer did not
+            // exist. A purchase that produced no visible transaction at all was indistinguishable
+            // from one where the store never called back.
+            _logger.LogInformation(
+                "StoreKit transaction update. State={State}; ProductId={ProductId}; TransactionId={TransactionId}; OriginalTransactionId={OriginalTransactionId}; RestoreInFlight={RestoreInFlight}; PurchaseWaiting={PurchaseWaiting}",
+                transaction.TransactionState,
+                transaction.Payment?.ProductIdentifier ?? _productId,
+                transaction.TransactionIdentifier ?? "<none>",
+                transaction.OriginalTransaction?.TransactionIdentifier ?? "<none>",
+                IsRestoreInFlight,
+                IsPurchaseWaiting);
+
             switch (transaction.TransactionState)
             {
                 case SKPaymentTransactionState.Purchased:
@@ -89,7 +151,12 @@ public class AppStoreBillingService : NSObject, IBillingService, ISKPaymentTrans
                     break;
 
                 case SKPaymentTransactionState.Restored:
-                    HandlePurchasedTransaction(queue, transaction, isRestore: true);
+                    // A Restored transaction only belongs to a restore if one actually asked for it.
+                    // Re-buying a subscription the Apple Account already owns delivers the purchase
+                    // in this state, and treating that as restore traffic parked it in the pending
+                    // list waiting for a RestoreCompletedTransactionsFinished that was never coming
+                    // — so the Subscribe sheet was confirmed and then nothing happened at all.
+                    HandlePurchasedTransaction(queue, transaction, isRestore: IsRestoreInFlight);
                     break;
 
                 case SKPaymentTransactionState.Failed:
@@ -103,10 +170,67 @@ public class AppStoreBillingService : NSObject, IBillingService, ISKPaymentTrans
     {
     }
 
+    /// <summary>
+    /// Answers the restore with the customer's most recent transaction, once the store has finished
+    /// delivering all of them.
+    ///
+    /// The restore used to be settled by whichever transaction arrived first. A restore replays the
+    /// entire renewal history oldest-first, so for anyone who had renewed even once that was a
+    /// long-expired transaction — the server would look it up, correctly report the end of that old
+    /// billing period, and refuse to grant entitlement to a subscription that was in fact current.
+    /// </summary>
     public void RestoreCompletedTransactionsFinished(SKPaymentQueue queue)
     {
-        _restoreTcs?.TrySetResult(null);
+        RestoredTransaction[] restored;
+        lock (_restoredTransactionsLock)
+        {
+            restored = _restoredTransactions.ToArray();
+            _restoredTransactions.Clear();
+        }
+
+        if (restored.Length == 0)
+        {
+            _logger.LogInformation("App Store restore finished with no transactions to restore");
+            Console.WriteLine("[AppStoreBillingService] Restore finished with no transactions.");
+            // Null, not a failure: the store answered, and this customer owns nothing.
+            _restoreTcs?.TrySetResult(null);
+            return;
+        }
+
+        // Date first, then transaction ID as a tiebreak. A sandbox account replays its whole history
+        // with near-identical dates — 88 transactions all stamped within the same second — and
+        // ordering on the date alone picks arbitrarily among them. Apple's transaction identifiers
+        // increase over time, so the highest is the best available answer when the dates tie.
+        var latest = restored
+            .OrderByDescending(transaction => transaction.TransactionDateUtc)
+            .ThenByDescending(transaction => long.TryParse(transaction.TransactionId, out var id) ? id : 0L)
+            .First();
+
+        _logger.LogInformation(
+            "App Store restore finished. Reporting the most recent of {Count} restored transactions. TransactionId={TransactionId}; TransactionDateUtc={TransactionDateUtc}",
+            restored.Length,
+            latest.TransactionId,
+            latest.TransactionDateUtc);
+        Console.WriteLine(
+            "[AppStoreBillingService] Restore finished with {0} transaction(s). Reporting '{1}' dated {2:u}.",
+            restored.Length,
+            latest.TransactionId,
+            latest.TransactionDateUtc);
+
+        _restoreTcs?.TrySetResult(ApplePurchaseResultFactory.CreateSuccess(
+            latest.TransactionId,
+            latest.OriginalTransactionId,
+            latest.ProductId,
+            latest.AppAccountToken));
     }
+
+    /// <summary>What is worth keeping from a restored transaction once its native peer is gone.</summary>
+    private readonly record struct RestoredTransaction(
+        string TransactionId,
+        string? OriginalTransactionId,
+        string ProductId,
+        string? AppAccountToken,
+        DateTime TransactionDateUtc);
 
     public void RestoreCompletedTransactionsFailedWithError(SKPaymentQueue queue, NSError error)
     {
@@ -114,6 +238,11 @@ public class AppStoreBillingService : NSObject, IBillingService, ISKPaymentTrans
         Console.WriteLine("[AppStoreBillingService] Restore failed: {0} {1}", error.Code, error.LocalizedDescription ?? "<no description>");
 
         var message = error.LocalizedDescription ?? "Failed to restore App Store purchases.";
+
+        lock (_restoredTransactionsLock)
+        {
+            _restoredTransactions.Clear();
+        }
 
         // "We could not ask the store" has to be distinguishable from "the store answered and you
         // own nothing", or AuthService accepts it as final and never retries — leaving a subscriber
@@ -200,7 +329,14 @@ public class AppStoreBillingService : NSObject, IBillingService, ISKPaymentTrans
 
         try
         {
-            return await productRequestTcs.Task;
+            // An SKProductsRequest that never calls back used to hold the Subscribe button forever.
+            // An empty result falls into the existing "no matching product" branch in the caller.
+            return await BillingCallbackTimeout.WaitAsync(
+                productRequestTcs.Task,
+                BillingCallbackTimeout.DefaultQueryTimeout,
+                () => new ProductLookupResult(null, []),
+                "product lookup",
+                _logger);
         }
         catch (Exception ex)
         {
@@ -244,6 +380,11 @@ public class AppStoreBillingService : NSObject, IBillingService, ISKPaymentTrans
         var originalTransactionId = transaction.OriginalTransaction?.TransactionIdentifier;
         var transactionId = transaction.TransactionIdentifier ?? originalTransactionId;
         var productId = transaction.Payment?.ProductIdentifier ?? _productId;
+        // DateTime.MinValue for a transaction the store dated as unknown: it sorts last, so it can
+        // never win the "most recent" comparison over a transaction that has a real date.
+        var transactionDateUtc = transaction.TransactionDate is { } date
+            ? (DateTime)date
+            : DateTime.MinValue;
 
         Console.WriteLine(
             "[AppStoreBillingService] Transaction update. State={0}, ProductId={1}, TransactionId={2}, OriginalTransactionId={3}, IsRestore={4}",
@@ -255,37 +396,72 @@ public class AppStoreBillingService : NSObject, IBillingService, ISKPaymentTrans
 
         if (string.IsNullOrWhiteSpace(transactionId))
         {
-            var failure = BillingPurchaseResult.Failed("App Store purchase completed without a transaction ID.");
-            if (isRestore)
+            // A restore that hands back a transaction with no identifier has nothing to report, but
+            // it must not fail the whole restore - the transactions either side of it may be fine.
+            if (!isRestore)
             {
-                _restoreTcs?.TrySetResult(failure);
-            }
-            else
-            {
-                _purchaseTcs?.TrySetResult(failure);
+                _purchaseTcs?.TrySetResult(
+                    BillingPurchaseResult.Failed("App Store purchase completed without a transaction ID."));
             }
 
             queue.FinishTransaction(transaction);
             return;
         }
 
-        var result = ApplePurchaseResultFactory.CreateSuccess(transactionId, originalTransactionId, productId, transaction.Payment?.ApplicationUsername);
-
         if (isRestore)
         {
-            _restoreTcs?.TrySetResult(result);
-        }
-        else
-        {
-            _purchaseTcs?.TrySetResult(result);
+            // Collected rather than answered. RestoreCompletedTransactionsFinished picks the most
+            // recent of them, because a restore replays the whole renewal history oldest-first and
+            // answering with the first arrival reported a long-expired transaction as the purchase.
+            lock (_restoredTransactionsLock)
+            {
+                _restoredTransactions.Add(new RestoredTransaction(
+                    transactionId,
+                    originalTransactionId,
+                    productId,
+                    transaction.Payment?.ApplicationUsername,
+                    transactionDateUtc));
+            }
+
+            queue.FinishTransaction(transaction);
+            return;
         }
 
-        queue.FinishTransaction(transaction);
+        var result = ApplePurchaseResultFactory.CreateSuccess(
+            transactionId, originalTransactionId, productId, transaction.Payment?.ApplicationUsername);
+
+        if (_purchaseTcs?.TrySetResult(result) == true)
+        {
+            _logger.LogInformation(
+                "Reported an App Store purchase to the waiting caller. TransactionId={TransactionId}; OriginalTransactionId={OriginalTransactionId}",
+                transactionId,
+                originalTransactionId ?? "<none>");
+            queue.FinishTransaction(transaction);
+            return;
+        }
+
+        // Nobody was waiting - this is a purchase delivered at launch because it was interrupted, or
+        // one made before the app could attribute it to an account. Deliberately left UNFINISHED:
+        // finishing it here told StoreKit we had dealt with a purchase the server was never told
+        // about, and the customer's money was gone with nothing to show for it. Left open, the store
+        // re-delivers it, and the restore that runs after sign-in verifies it.
+        _logger.LogWarning(
+            "An App Store purchase arrived with no caller waiting for it and was left unfinished for a later restore. TransactionId={TransactionId}",
+            transactionId);
+        Console.WriteLine(
+            "[AppStoreBillingService] Purchase '{0}' arrived unsolicited; leaving it unfinished for a later restore.",
+            transactionId);
     }
 
     private void HandleFailedTransaction(SKPaymentQueue queue, SKPaymentTransaction transaction)
     {
         var error = transaction.Error;
+        _logger.LogWarning(
+            "StoreKit transaction failed. ProductId={ProductId}; Domain={Domain}; Code={Code}; Description={Description}",
+            transaction.Payment?.ProductIdentifier ?? _productId,
+            error?.Domain ?? "<none>",
+            error?.Code,
+            error?.LocalizedDescription ?? "<no description>");
         Console.WriteLine(
             "[AppStoreBillingService] Transaction failed. ProductId={0}, Code={1}, Description={2}",
             transaction.Payment?.ProductIdentifier ?? _productId,
@@ -295,8 +471,11 @@ public class AppStoreBillingService : NSObject, IBillingService, ISKPaymentTrans
             ? BillingPurchaseResult.Cancelled()
             : BillingPurchaseResult.Failed(error?.LocalizedDescription ?? "App Store purchase failed.");
 
+        // Only the purchase waiter. A failed transaction reaches this observer callback, whereas a
+        // restore reports through RestoreCompletedTransactionsFinished/FailedWithError — so
+        // settling the restore here resolved an unrelated in-flight restore with a purchase's
+        // error, and could report a cancelled payment as a failed restore.
         _purchaseTcs?.TrySetResult(result);
-        _restoreTcs?.TrySetResult(result);
         queue.FinishTransaction(transaction);
     }
 

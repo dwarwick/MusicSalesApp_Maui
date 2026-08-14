@@ -965,6 +965,62 @@ public class AuthServiceTests
         });
     }
 
+    /// <summary>
+    /// The offline snapshot is deliberately provider-agnostic — it caches whatever the server
+    /// answered. That matters most for the providers with no store to fall back on: an Apple
+    /// subscriber in airplane mode cannot reach StoreKit either, and a PayPal subscriber has no
+    /// device store at all, so the cache is the only thing standing between them and the free tier.
+    /// </summary>
+    [Test]
+    public async Task TryRestoreSessionAsync_WhenTheServerIsUnreachable_KeepsTheCachedSubscriptionForAnyProvider(
+        [Values(BillingSources.Apple, BillingSources.PayPal, BillingSources.GooglePlay)] string billingSource)
+    {
+        SetupRestorableSession(new CachedSubscriptionStatus
+        {
+            HasActiveSubscription = true,
+            SubscriptionStatus = "ACTIVE",
+            SubscriptionEndDate = DateTime.UtcNow.AddDays(20),
+            BillingSource = billingSource,
+            CachedAtUtc = DateTime.UtcNow.AddHours(-3)
+        });
+
+        await _authService.TryRestoreSessionAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_authService.HasActiveSubscription, Is.True);
+            Assert.That(_authService.BillingSource, Is.EqualTo(billingSource));
+            Assert.That(_authService.SubscriptionVerification, Is.EqualTo(SubscriptionVerificationState.Cached));
+        });
+    }
+
+    /// <summary>
+    /// A trial has no SubscriptionEndDate, so it survives offline only through the trial dates.
+    /// Apple and PayPal trials must not be treated differently from Google Play ones.
+    /// </summary>
+    [Test]
+    public async Task TryRestoreSessionAsync_WhenOfflineDuringATrial_KeepsTheTrialForAnyProvider(
+        [Values(BillingSources.Apple, BillingSources.PayPal, BillingSources.GooglePlay)] string billingSource)
+    {
+        SetupRestorableSession(new CachedSubscriptionStatus
+        {
+            HasActiveSubscription = false,
+            IsOnTrial = true,
+            TrialEndDate = DateTime.UtcNow.AddDays(2),
+            BillingSource = billingSource,
+            CachedAtUtc = DateTime.UtcNow.AddHours(-1)
+        });
+
+        await _authService.TryRestoreSessionAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_authService.IsOnTrial, Is.True);
+            Assert.That(_authService.BillingSource, Is.EqualTo(billingSource));
+            Assert.That(_authService.SubscriptionVerification, Is.EqualTo(SubscriptionVerificationState.Cached));
+        });
+    }
+
     [Test]
     public async Task TryRestoreSessionAsync_WhenTheCachedSubscriptionHasExpired_FallsBackToTheFreeTier()
     {

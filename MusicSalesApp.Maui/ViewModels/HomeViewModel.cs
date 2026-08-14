@@ -29,6 +29,9 @@ public partial class HomeViewModel : ObservableObject
     private bool _networkSubscriptionAttached;
     private bool _hasBillingDerivedSubscriptionPrice;
 
+    /// <summary>Guards against an appearance-driven load and an auth-event load duplicating work.</summary>
+    private int _loadsInFlight;
+
     private const string DefaultAppleSubscriptionManagementUrl = "https://account.apple.com/account/manage/section/subscriptions";
 
     [ObservableProperty]
@@ -48,6 +51,8 @@ public partial class HomeViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferTitleText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferBodyText))]
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionUnavailableBanner))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionUnavailableBannerText))]
     public partial bool IsAuthenticated { get; set; }
 
     [ObservableProperty]
@@ -160,18 +165,19 @@ public partial class HomeViewModel : ObservableObject
         : "Listen to today's featured songs in full. Subscribe for unlimited access to the full library!";
 
     /// <summary>
-    /// Mirrors Account Settings: the banner is silent whenever the server confirmed the status this
-    /// session. It was bound to connectivity here, so going offline put "Subscription information is
-    /// unavailable" directly above "You have unlimited access to the full library!" — the same
-    /// contradiction that was fixed on the other page and left standing on this one.
+    /// Shared with Account Settings so the two pages can never tell the user different things. The
+    /// signed-in check is load-bearing: the verification state defaults to Unverified, and a
+    /// signed-out user was being told their subscription features were paused.
     /// </summary>
-    public bool ShowSubscriptionUnavailableBanner
-        => SubscriptionVerification != SubscriptionVerificationState.Verified;
+    private SubscriptionBannerDisplay CurrentSubscriptionBanner
+        => SubscriptionBannerDisplayBuilder.Create(
+            IsAuthenticated,
+            SubscriptionVerification,
+            NetworkStatus.IsOffline);
 
-    public string SubscriptionUnavailableBannerText
-        => SubscriptionVerification == SubscriptionVerificationState.Cached
-            ? "You're offline, so this is your subscription as we last confirmed it. It'll refresh automatically when you reconnect."
-            : "We couldn't confirm your subscription, so subscription features are paused. This usually means you're offline — reconnect and your subscription will be restored automatically.";
+    public bool ShowSubscriptionUnavailableBanner => CurrentSubscriptionBanner.IsVisible;
+
+    public string SubscriptionUnavailableBannerText => CurrentSubscriptionBanner.Text;
 
     public bool ShowSubscribeNow => IsAuthenticated && IsEmailVerified && !HasActiveSubscription && !ShowSubscriptionOfferCard;
     public bool ShowSubscriptionOfferCard => IsAndroidSubscriptionPlatform
@@ -339,6 +345,11 @@ public partial class HomeViewModel : ObservableObject
 
         OnPropertyChanged(nameof(CanUseServerActions));
 
+        // The banner copy changes wording with connectivity, so it has to be re-read here or a
+        // device that goes offline keeps claiming it is still trying to reach the server.
+        OnPropertyChanged(nameof(ShowSubscriptionUnavailableBanner));
+        OnPropertyChanged(nameof(SubscriptionUnavailableBannerText));
+
         if (IsLoading)
             return;
 
@@ -373,6 +384,7 @@ public partial class HomeViewModel : ObservableObject
     private async Task LoadAsync()
     {
         IsLoading = true;
+        Interlocked.Increment(ref _loadsInFlight);
         try
         {
             RefreshAuthState();
@@ -380,11 +392,36 @@ public partial class HomeViewModel : ObservableObject
             await LoadStreamQualifyingSecondsAsync();
             await LoadHomePlaylistsAsync();
             await LoadFeaturedSongsAsync();
+            await TryReconfirmSubscriptionAsync();
         }
         finally
         {
+            Interlocked.Decrement(ref _loadsInFlight);
             IsLoading = false;
         }
+    }
+
+    /// <summary>
+    /// Asks the server again when the entitlement was never confirmed this session. Home previously
+    /// only copied whatever AuthService had already decided, so an unconfirmed subscription stayed
+    /// unconfirmed - and the reload on reconnect could not repair it - until the user happened to
+    /// open Account Settings or play a song. Runs last so it never delays the featured row.
+    /// </summary>
+    private async Task TryReconfirmSubscriptionAsync()
+    {
+        if (!_authService.IsLoggedIn)
+            return;
+
+        if (_authService.SubscriptionVerification == SubscriptionVerificationState.Verified)
+            return;
+
+        // HasNoNetworkAccess, not IsOffline: this is a request that has to reach the server, so the
+        // pessimistic reading (which includes Unknown) would skip refreshes that would have worked.
+        if (NetworkStatus.HasNoNetworkAccess)
+            return;
+
+        await _authService.RefreshUserStatusAsync();
+        RefreshAuthState();
     }
 
     private async Task LoadHomePlaylistsAsync()
@@ -762,6 +799,9 @@ public partial class HomeViewModel : ObservableObject
     {
         try
         {
+            if (!await SubscriptionPurchaseGate.EnsureSignedInAsync(_authService, _alertService, _navigationService))
+                return;
+
             var result = await _billingService.PurchaseSubscriptionAsync();
 
             if (!result.Success)
@@ -812,6 +852,7 @@ public partial class HomeViewModel : ObservableObject
         IsEmailVerified = _authService.EmailConfirmed;
         OnPropertyChanged(nameof(ShowPlaylists));
         OnPropertyChanged(nameof(ManageSubscriptionText));
+        OnPropertyChanged(nameof(ShowManageSubscriptionLink));
         OnPropertyChanged(nameof(SubscriptionOfferPrimaryButtonText));
         OnPropertyChanged(nameof(SubscriptionOfferPrimaryCommand));
         OnPropertyChanged(nameof(ShowSubscriptionOfferSecondaryButton));
@@ -879,9 +920,25 @@ public partial class HomeViewModel : ObservableObject
             || string.Equals(subscriptionStatus, SubscriptionStatuses.Canceled, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// The platform fallback applies only when the server has told us nothing about where the
+    /// subscription is billed - that case is a non-subscriber being shown where they would cancel,
+    /// and on an iPhone that is Apple. It used to apply to every iOS device, which sent someone
+    /// billed through PayPal to an Apple page where their subscription does not exist.
+    /// </summary>
     private bool ShouldUseAppleSubscriptionManagement
         => string.Equals(_authService.BillingSource, BillingProviders.Apple, StringComparison.Ordinal) ||
-           DeviceInfo.Platform == DevicePlatform.iOS;
+           (string.IsNullOrWhiteSpace(_authService.BillingSource) && DeviceInfo.Platform == DevicePlatform.iOS);
+
+    /// <summary>
+    /// Hidden for a subscription billed outside the two stores (PayPal today): neither store page
+    /// can manage it, and this card has no cancel flow of its own. Account Settings does, and that
+    /// is where such a subscriber is served.
+    /// </summary>
+    public bool ShowManageSubscriptionLink
+        => string.IsNullOrWhiteSpace(_authService.BillingSource)
+           || string.Equals(_authService.BillingSource, BillingProviders.Apple, StringComparison.Ordinal)
+           || string.Equals(_authService.BillingSource, BillingProviders.GooglePlay, StringComparison.Ordinal);
 
     private string GetSubscriptionManagementUrl()
         => ShouldUseAppleSubscriptionManagement
@@ -890,6 +947,15 @@ public partial class HomeViewModel : ObservableObject
 
     private void OnAuthStateChanged()
     {
+        // LoadAsync now refreshes the subscription status, which raises AuthStateChanged, which
+        // lands back here — so without the guard every unconfirmed load ran the whole page twice.
+        // IsLoading cannot stand in for this: LoadAsync's finally clears it before the outer call
+        // returns. Auth changes originating elsewhere still land, because nothing is in flight then.
+        if (Volatile.Read(ref _loadsInFlight) != 0)
+        {
+            return;
+        }
+
         _ = LoadCommand.ExecuteAsync(null);
     }
 }

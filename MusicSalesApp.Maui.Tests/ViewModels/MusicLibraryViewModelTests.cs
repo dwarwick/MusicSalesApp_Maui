@@ -491,8 +491,55 @@ public class MusicLibraryViewModelTests
     }
 
     [Test]
+    public async Task OnShowSubscribeCta_WhenSignedOut_AsksForSignInAndNeverReachesTheStore()
+    {
+        // The preview-limit prompt was the path that let a signed-out listener buy a subscription
+        // the server could never be told about. It now asks for sign-in up front rather than
+        // offering to subscribe and then refusing.
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(false);
+        _mockAlertService.Setup(a => a.ShowConfirmAsync(
+                SubscriptionPurchaseGate.PreviewLimitTitle,
+                SubscriptionPurchaseGate.PreviewLimitSignInMessage,
+                SubscriptionPurchaseGate.SignInRequiredAccept,
+                SubscriptionPurchaseGate.PreviewLimitDecline))
+            .ReturnsAsync(true);
+
+        var method = typeof(MusicLibraryViewModel).GetMethod(
+            "OnShowSubscribeCta",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        await (Task)method!.Invoke(_viewModel, null)!;
+
+        _mockBillingService.Verify(b => b.PurchaseSubscriptionAsync(), Times.Never);
+        _mockNavigationService.Verify(
+            n => n.GoToAsync(NavigationRoutes.LoginEntry, It.Is<IDictionary<string, object>>(p =>
+                p.ContainsKey(NavigationRoutes.ReturnToHomeAfterAuthParameter))),
+            Times.Once);
+    }
+
+    [Test]
+    public async Task OnShowSubscribeCta_WhenSignedOutAndDeclined_DoesNothing()
+    {
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(false);
+        _mockAlertService.Setup(a => a.ShowConfirmAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(false);
+
+        var method = typeof(MusicLibraryViewModel).GetMethod(
+            "OnShowSubscribeCta",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        await (Task)method!.Invoke(_viewModel, null)!;
+
+        _mockBillingService.Verify(b => b.PurchaseSubscriptionAsync(), Times.Never);
+        _mockNavigationService.Verify(
+            n => n.GoToAsync(It.IsAny<string>(), It.IsAny<IDictionary<string, object>>()), Times.Never);
+        _mockNavigationService.Verify(n => n.GoToAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    [Test]
     public async Task OnShowSubscribeCta_WhenServerVerificationFails_ShowsSpecificErrorMessage()
     {
+        // A purchase can only be made signed in - see SubscriptionPurchaseGate.
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
         _mockAlertService.Setup(a => a.ShowConfirmAsync("Preview Limit", It.IsAny<string>(), "Subscribe Now", "Not Now"))
             .ReturnsAsync(true);
         _mockBillingService.Setup(b => b.PurchaseSubscriptionAsync())
@@ -529,6 +576,9 @@ public class MusicLibraryViewModelTests
     [Test]
     public async Task Activate_ReattachesPlaybackSubscribeCta_AfterCleanup()
     {
+        // Signed in, so the prompt is the subscribe variant. This test is about the CTA staying
+        // wired up across Cleanup/Activate, not about which copy it shows.
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
         _viewModel.Cleanup();
         _viewModel.Activate();
         _mockAlertService.Setup(a => a.ShowConfirmAsync("Preview Limit", It.IsAny<string>(), "Subscribe Now", "Not Now"))

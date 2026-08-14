@@ -15,6 +15,7 @@ public partial class AccountSettingsViewModel : ObservableObject
     private readonly IConfiguration _configuration;
     private readonly IMusicService _musicService;
     private readonly IBillingService _billingService;
+    private readonly INetworkStatusService _networkStatus;
     private bool _hasBillingDerivedSubscriptionPrice;
     private bool _authSubscriptionAttached;
 
@@ -25,6 +26,17 @@ public partial class AccountSettingsViewModel : ObservableObject
 
     [ObservableProperty]
     public partial string UserEmail { get; set; } = string.Empty;
+
+    /// <summary>
+    /// This page is only reachable signed in, so the banner's signed-in check is defensive here -
+    /// but it is not dead: logging out with this page open raises AuthStateChanged, which reloads
+    /// into an Unverified state and used to flash "subscription features are paused" at someone who
+    /// had just signed out.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptionUnavailableBanner))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionUnavailableBannerText))]
+    public partial bool IsAuthenticated { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowSubscriptionUnavailableBanner))]
@@ -230,20 +242,20 @@ public partial class AccountSettingsViewModel : ObservableObject
     /// Silent when the server confirmed the status this session, even if the device has gone offline
     /// since. Showing "subscription information is unavailable" directly above a status reading
     /// "Active" is a contradiction, and it is the status that is right — so the banner only appears
-    /// when the displayed status genuinely is not the server's latest word.
+    /// when the displayed status genuinely is not the server's latest word. Shared with Home so the
+    /// two pages cannot tell the user different things; see SubscriptionBannerDisplayBuilder for
+    /// the rules, including the signed-in check that matters here when a logout happens with this
+    /// page open.
     /// </summary>
-    public bool ShowSubscriptionUnavailableBanner
-        => SubscriptionVerification != SubscriptionVerificationState.Verified;
+    private SubscriptionBannerDisplay CurrentSubscriptionBanner
+        => SubscriptionBannerDisplayBuilder.Create(
+            IsAuthenticated,
+            SubscriptionVerification,
+            _networkStatus.IsOffline);
 
-    /// <summary>
-    /// The two non-verified cases need opposite things from the user, so they must not share copy:
-    /// a cached status is accurate and merely unconfirmed, while an unverified one means the
-    /// features they paid for are switched off.
-    /// </summary>
-    public string SubscriptionUnavailableBannerText
-        => SubscriptionVerification == SubscriptionVerificationState.Cached
-            ? "You're offline, so this is your subscription as we last confirmed it. It'll refresh automatically when you reconnect."
-            : "We couldn't confirm your subscription, so subscription features are paused. This usually means you're offline — reconnect and your subscription will be restored automatically.";
+    public bool ShowSubscriptionUnavailableBanner => CurrentSubscriptionBanner.IsVisible;
+
+    public string SubscriptionUnavailableBannerText => CurrentSubscriptionBanner.Text;
 
     public string SubscriptionEndDateText => SubscriptionEndDate.HasValue
         ? IsActiveTrial
@@ -312,7 +324,8 @@ public partial class AccountSettingsViewModel : ObservableObject
         IBrowserService browserService,
         IConfiguration configuration,
         IMusicService musicService,
-        IBillingService billingService)
+        IBillingService billingService,
+        INetworkStatusService networkStatus)
     {
         _authService = authService;
         _alertService = alertService;
@@ -321,6 +334,7 @@ public partial class AccountSettingsViewModel : ObservableObject
         _configuration = configuration;
         _musicService = musicService;
         _billingService = billingService;
+        _networkStatus = networkStatus;
 
         AttachAuthSubscription();
         ApplySubscriptionState(null);
@@ -551,6 +565,7 @@ public partial class AccountSettingsViewModel : ObservableObject
     private void ApplySubscriptionState(SubscriptionStatusDto? status)
     {
         UserEmail = _authService.Email ?? string.Empty;
+        IsAuthenticated = _authService.IsLoggedIn;
         HasActiveSubscription = status?.HasSubscription ?? _authService.HasActiveSubscription;
         SubscriptionEndDate = status?.EndDate ?? _authService.SubscriptionEndDate;
         IsOnTrial = status?.IsOnTrial ?? _authService.IsOnTrial;
