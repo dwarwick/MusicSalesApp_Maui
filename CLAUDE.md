@@ -103,6 +103,25 @@ Related gotchas when working with a device:
 - Invoke `adb` by its literal full path from the **PowerShell** tool. Git Bash rewrites device paths (`/sdcard/...` becomes `C:/Program Files/Git/sdcard/...`), and invoking adb through a shell variable defeats the permission allowlist.
 - Google Play Billing only answers properly for a build Play recognises — same package name and signing key, installed from a track. A locally-signed Release build (plain `dotnet publish` signs with the **debug** keystore) gets errors from every billing query, and Play rejects such an AAB on upload. Use the `create-aab-for-upload` task, which signs with the upload key and also emits `native-debug-symbols.zip` — upload that too, or native ANR traces come back as bare addresses in `libmonosgen-2.0.so`.
 
+## Launch-crash gates (run before publishing)
+
+Three scripts at the repo root install the app and launch/force-close it 3× per target, scoring the logs for startup crashes. They exist because App Store review has rejected releases with "we couldn't test your app because it crashed on startup". They share `test_launch_common.sh` — **the scoring patterns live there, so change them once, not three times**.
+
+| Script | Target | Codegen exercised |
+| --- | --- | --- |
+| `test_sims.sh` | every iPhone/iPad simulator (`--profile quick` = 6, `full` = 22) | `MtouchRegistrar=static` + `MtouchLink=SdkOnly`, **JIT — not LLVM AOT** |
+| `test_device.sh` | the paired iPhone, Release `ios-arm64` | the real App Store codegen, **including LLVM AOT** |
+| `test_emulators.sh` | every Android AVD | full AOT, i.e. the real Release codegen |
+
+Two things about this split are easy to get wrong:
+
+- **The iOS simulator gate cannot catch an LLVM-AOT bug** — simulator builds JIT, so `MtouchUseLlvm` is inert. It is still the *only* pre-submission iPad signal, because there is no iPad hardware here, and iPad is the form factor review rejected before. Neither gate substitutes for the other. The Android emulator gate has no such gap: Android Release AOT runs on the emulator.
+- **Scoring is calibrated, not naive.** A healthy run contains ~250 lines matching a bare `System.*Exception:` (SignalR reconnects logged at Warning) and ~20 `[Warning]` lines, so neither is a failure. On Android, Google Play Billing errors are filtered out entirely — Play only answers for a build it recognises, so those errors are expected on a locally-signed APK (this is the same trap described under "Reading device logs").
+
+`.vscode/publish-and-upload-ios-appstore-macos.sh` runs the simulator gate before bumping `ApplicationVersion` (so a failure doesn't burn a build number) — `quick` for Test, `full` for Production — plus the device gate for Production. Override with `--skip-smoke-test` / `--skip-device-test`. The device gate signs `ios-arm64` with the Apple **Development** identity, so the publish deletes that output afterwards to stop an incremental build reusing a development-signed artifact.
+
+Tasks: `maui-smoke-test-ios-simulators[-quick]`, `maui-smoke-test-ios-device`, `maui-smoke-test-android-emulators`. Artifacts land in `DeviceLogs/{simulator,device,emulator}-smoke/latest/` — read `summary.txt`, then the failing target's `launch-N.stdio.log`, which is where Mono prints `Unhandled managed exception:` and the managed stack trace.
+
 ## Conventions (see `AGENTS.md` for the full list — two rules worth restating since they're easy to violate by habit)
 
 - **No `Models/` folder** — this app has no database entities; DTOs live in `ViewModels/`.

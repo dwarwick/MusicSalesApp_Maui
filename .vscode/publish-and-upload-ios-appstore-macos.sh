@@ -17,9 +17,12 @@ codesign_team_id="K7ZGP97YV6"
 
 environment="Production"
 dry_run=false
+skip_smoke_test=false
+skip_device_test=false
+smoke_profile=""
 
 usage() {
-  print -u2 "Usage: ${0:t} [Production|Test] [--dry-run]"
+  print -u2 "Usage: ${0:t} [Production|Test] [--dry-run] [--skip-smoke-test] [--skip-device-test] [--smoke-profile quick|full]"
 }
 
 for arg in "$@"; do
@@ -30,12 +33,31 @@ for arg in "$@"; do
     --dry-run)
       dry_run=true
       ;;
+    --skip-smoke-test)
+      skip_smoke_test=true
+      ;;
+    --skip-device-test)
+      skip_device_test=true
+      ;;
+    --smoke-profile=*)
+      smoke_profile="${arg#*=}"
+      ;;
     *)
       usage
       exit 1
       ;;
   esac
 done
+
+# A Production upload goes to App Store review, which launches the app on real
+# hardware we cannot all test on, so it gets the full simulator matrix.
+if [[ -z "$smoke_profile" ]]; then
+  if [[ "$environment" == "Production" ]]; then
+    smoke_profile="full"
+  else
+    smoke_profile="quick"
+  fi
+fi
 
 if [[ ! -f "$csproj" ]]; then
   print -u2 "Project file not found: $csproj"
@@ -58,6 +80,54 @@ print "Preparing version: $display_version ($next_build)"
 if [[ "$dry_run" == true ]]; then
   exit 0
 fi
+
+# Launch-crash gate. Deliberately runs BEFORE the ApplicationVersion bump so a
+# failure does not burn a build number, and before the keychain read so it can
+# fail without touching credentials.
+if [[ "$skip_smoke_test" == true ]]; then
+  print "Skipping the iOS simulator launch-crash gate (--skip-smoke-test)."
+else
+  print "Running the iOS simulator launch-crash gate (profile: $smoke_profile)..."
+  if ! "$workspace_dir/test_sims.sh" --environment "$environment" --profile "$smoke_profile"; then
+    print -u2 ""
+    print -u2 "Simulator launch-crash gate FAILED - not publishing."
+    print -u2 "See DeviceLogs/simulator-smoke/latest/summary.txt, then the failing"
+    print -u2 "device's launch-N.stdio.log for the managed stack trace."
+    print -u2 "Re-run with --skip-smoke-test to override."
+    exit 1
+  fi
+  print "Launch-crash gate passed."
+fi
+
+# The simulator gate JITs and so cannot exercise LLVM AOT. This one builds
+# ios-arm64 Release - the same codegen App Store review runs - and launch-tests
+# it on the paired iPhone. Production goes to review, so it is gated; Test does
+# not, so it is only advisory.
+if [[ "$skip_device_test" == true ]]; then
+  print "Skipping the physical-device launch-crash gate (--skip-device-test)."
+elif [[ "$environment" != "Production" ]]; then
+  print "Skipping the physical-device gate (only enforced for Production)."
+else
+  print "Running the physical-device launch-crash gate on the paired iPhone..."
+  if ! "$workspace_dir/test_device.sh" --environment "$environment"; then
+    print -u2 ""
+    print -u2 "Physical-device launch-crash gate FAILED - not publishing."
+    print -u2 "See DeviceLogs/device-smoke/latest/summary.txt."
+    print -u2 "If no iPhone is paired, connect and unlock it, or re-run with"
+    print -u2 "--skip-device-test to override."
+    exit 1
+  fi
+  print "Physical-device gate passed."
+
+  # That gate signed ios-arm64 Release with the Apple Development identity. Wipe
+  # it so the distribution publish below cannot reuse a development-signed
+  # artifact through incremental build.
+  print "Clearing the development-signed device build before the distribution publish..."
+  rm -rf "$project_dir/bin/Release/net10.0-ios/ios-arm64"
+fi
+
+print "Reminder: this validates launch, not full functionality. The simulator gate"
+print "covers iPad, which we own no hardware for."
 
 backup_file=$(mktemp)
 cp "$csproj" "$backup_file"

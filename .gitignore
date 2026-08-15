@@ -24,6 +24,9 @@ msbuild.wrn
 
 ## Runtime diagnostic logs pulled from devices
 DeviceLogs/ios-runtime/
+DeviceLogs/simulator-smoke/
+DeviceLogs/device-smoke/
+DeviceLogs/emulator-smoke/
 DeviceLogs/temp_sysdiagnose/
 DeviceLogs/sysdiagnose-*/
 streamtunes-*.log
