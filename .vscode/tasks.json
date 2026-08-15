@@ -397,6 +397,79 @@
       "group": "build"
     },
     {
+      "label": "maui-smoke-test-ios-simulators",
+      "detail": "Launch-crash gate: installs the Release build on every available iPhone/iPad simulator and launches/force-closes it 3 times, scoring the logs for startup crashes.",
+      "type": "process",
+      "command": "bash",
+      "args": [
+        "${workspaceFolder:MusicSalesApp_Maui}/test_sims.sh",
+        "--profile",
+        "full"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder:MusicSalesApp_Maui}"
+      },
+      "problemMatcher": "$msCompile",
+      "group": "test"
+    },
+    {
+      "label": "maui-smoke-test-ios-simulators-quick",
+      "detail": "Launch-crash gate against one iPhone and two iPads per runtime instead of the full matrix.",
+      "type": "process",
+      "command": "bash",
+      "args": [
+        "${workspaceFolder:MusicSalesApp_Maui}/test_sims.sh",
+        "--profile",
+        "quick"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder:MusicSalesApp_Maui}"
+      },
+      "problemMatcher": "$msCompile",
+      "group": "test"
+    },
+    {
+      "label": "maui-smoke-test-ios-device",
+      "detail": "Launch-crash gate on the paired iPhone using a Release ios-arm64 build (LLVM AOT - the same codegen App Store review runs). Launches and force-closes the app 3 times.",
+      "type": "process",
+      "command": "bash",
+      "args": [
+        "${workspaceFolder:MusicSalesApp_Maui}/test_device.sh"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder:MusicSalesApp_Maui}"
+      },
+      "problemMatcher": "$msCompile",
+      "group": "test"
+    },
+    {
+      "label": "maui-smoke-test-android-emulators",
+      "detail": "Launch-crash gate across every Android AVD: installs the Release APK and launches/force-stops the app 3 times, scoring logcat and the app's rolling log.",
+      "type": "process",
+      "command": "bash",
+      "args": [
+        "${workspaceFolder:MusicSalesApp_Maui}/test_emulators.sh"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder:MusicSalesApp_Maui}"
+      },
+      "problemMatcher": "$msCompile",
+      "group": "test"
+    },
+    {
+      "label": "maui-open-simulator-smoke-results",
+      "detail": "Opens the artifacts from the most recent simulator launch-crash gate run.",
+      "type": "process",
+      "command": "open",
+      "args": [
+        "${workspaceFolder:MusicSalesApp_Maui}/DeviceLogs/simulator-smoke/latest"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder:MusicSalesApp_Maui}"
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "maui-publish-and-upload-testflight-test",
       "detail": "Bumps ApplicationVersion, builds a signed IPA, and uploads it to App Store Connect via Transporter for the Test environment.",
       "type": "process",
