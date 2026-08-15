@@ -3308,7 +3308,7 @@ public class PlaybackService : IPlaybackService
         var mediaUri = string.IsNullOrWhiteSpace(playbackUri)
             ? song.StreamUrl ?? string.Empty
             : playbackUri;
-        var artworkUri = ResolveAlbumImageUri(song);
+        var (artworkUri, nowPlayingArtworkUri, nowPlayingArtworkVersion) = ResolveArtworkUris(song);
         RegisterSongPlaybackUri(song, mediaUri);
 
         var isLocal = IsLocalPlaybackUri(mediaUri);
@@ -3317,7 +3317,8 @@ public class PlaybackService : IPlaybackService
             Title = song.SongTitle ?? string.Empty,
             Artist = song.ArtistName ?? string.Empty,
             ImageUri = artworkUri,
-            AlbumImageUri = artworkUri,
+            AlbumImageUri = nowPlayingArtworkUri,
+            AlbumImageContentVersion = nowPlayingArtworkVersion,
             IsLocal = isLocal,
             IsSleepSafe = cacheStatus.IsLocalReady || isLocal
         };
@@ -3326,7 +3327,9 @@ public class PlaybackService : IPlaybackService
     }
 
     /// <summary>
-    /// The artwork URI handed to the platform media session for the lock screen and notification.
+    /// The artwork URI handed to Android's Media3 media session for the notification and lock screen.
+    /// Apple's now-playing surface takes a different rendition - see
+    /// <see cref="ResolveNowPlayingArtworkUri"/>.
     ///
     /// <para>
     /// A locally cached file:// URI is preferred so notification artwork renders offline - Media3's
@@ -3343,61 +3346,163 @@ public class PlaybackService : IPlaybackService
     /// thumb is both cheaper and entirely sufficient.
     /// </para>
     /// </summary>
-    internal string ResolveAlbumImageUri(SongDto song)
+    internal string ResolveAlbumImageUri(SongDto song, ArtworkProbeCache? probeCache = null) =>
+        ResolveMediaImageUri(
+            [
+                (song.AlbumArtThumbUrl, song.AlbumArtVersion),
+                (song.AlbumArtUrl, song.AlbumArtVersion),
+                (song.PersonaImageThumbUrl, song.PersonaImageVersion),
+                (song.PersonaImageUrl, song.PersonaImageVersion)
+            ],
+            suppressRemoteWhenOffline: true,
+            probeCache).Uri;
+
+    /// <summary>
+    /// Both artwork URIs for one queue item, sharing a single set of cache probes.
+    ///
+    /// <para>
+    /// The two ladders overlap in four of their six candidates, and every probe is a real
+    /// <c>File.Exists</c>. Sharing the results keeps building a long queue to one stat per distinct
+    /// rendition instead of re-checking the same files twice per track.
+    /// </para>
+    ///
+    /// <para>
+    /// Android walks both ladders too, even though <c>ToMedia3Item</c> reads only <c>ImageUri</c> and
+    /// the now-playing value is discarded there. That is deliberate: with the probes shared the extra
+    /// cost is a handful of stats per queue item, and it buys a single code path instead of an
+    /// <c>#if ANDROID</c> branch that no test running on the net10.0 test host could ever reach.
+    /// Android's guarantee rests on <c>ImageUri</c>'s ladder, which is pinned by tests.
+    /// </para>
+    /// </summary>
+    internal (string MediaSessionUri, string NowPlayingUri, int NowPlayingContentVersion) ResolveArtworkUris(SongDto song)
     {
-        if (TryResolveCachedMediaImageUri(song.AlbumArtThumbUrl, song.AlbumArtVersion, out var cachedAlbumThumbUri))
-        {
-            return cachedAlbumThumbUri;
-        }
-
-        if (TryResolveCachedMediaImageUri(song.AlbumArtUrl, song.AlbumArtVersion, out var cachedAlbumImageUri))
-        {
-            return cachedAlbumImageUri;
-        }
-
-        if (TryResolveCachedMediaImageUri(song.PersonaImageThumbUrl, song.PersonaImageVersion, out var cachedPersonaThumbUri))
-        {
-            return cachedPersonaThumbUri;
-        }
-
-        if (TryResolveCachedMediaImageUri(song.PersonaImageUrl, song.PersonaImageVersion, out var cachedPersonaImageUri))
-        {
-            return cachedPersonaImageUri;
-        }
-
-        if (_networkStatusService?.HasNoNetworkAccess == true)
-        {
-            return string.Empty;
-        }
-
-        if (TryResolveMediaImageUri(song.AlbumArtThumbUrl, out var albumThumbUri))
-        {
-            return albumThumbUri;
-        }
-
-        if (TryResolveMediaImageUri(song.AlbumArtUrl, out var albumImageUri))
-        {
-            return albumImageUri;
-        }
-
-        if (TryResolveMediaImageUri(song.PersonaImageThumbUrl, out var personaThumbUri))
-        {
-            return personaThumbUri;
-        }
-
-        if (TryResolveMediaImageUri(song.PersonaImageUrl, out var personaImageUri))
-        {
-            return personaImageUri;
-        }
-
-        return string.Empty;
+        var probeCache = new ArtworkProbeCache();
+        var mediaSessionUri = ResolveAlbumImageUri(song, probeCache);
+        var nowPlaying = ResolveNowPlayingArtwork(song, probeCache);
+        return (mediaSessionUri, nowPlaying.Uri, nowPlaying.ContentVersion);
     }
 
-    private bool TryResolveCachedMediaImageUri(string? remoteImageUrl, int contentVersion, out string resolvedUri)
+    /// <summary>
+    /// The now-playing artwork URI together with the content version of the rendition that won.
+    ///
+    /// <para>
+    /// The version travels with the URI because a remote artwork URL alone cannot be cached correctly:
+    /// <c>StableRemoteAssetKey</c> keys on the blob path plus the version, so caching a hero under
+    /// version 0 would write a duplicate file under the wrong key, waste budget, and still serve
+    /// pre-crop artwork after a re-crop. It also differs per candidate - album renditions carry
+    /// <c>AlbumArtVersion</c>, persona ones <c>PersonaImageVersion</c> - so it cannot be inferred
+    /// downstream from the URI.
+    /// </para>
+    /// </summary>
+    internal ResolvedArtwork ResolveNowPlayingArtwork(SongDto song, ArtworkProbeCache? probeCache = null) =>
+        ResolveMediaImageUri(
+            [
+                (song.AlbumArtHeroUrl, song.AlbumArtVersion),
+                (song.AlbumArtThumbUrl, song.AlbumArtVersion),
+                (song.AlbumArtUrl, song.AlbumArtVersion),
+                (song.PersonaImageHeroUrl, song.PersonaImageVersion),
+                (song.PersonaImageThumbUrl, song.PersonaImageVersion),
+                (song.PersonaImageUrl, song.PersonaImageVersion)
+            ],
+            suppressRemoteWhenOffline: false,
+            probeCache);
+
+    /// <summary>An artwork URI and the content version of the rendition it came from.</summary>
+    internal readonly record struct ResolvedArtwork(string Uri, int ContentVersion)
+    {
+        public static ResolvedArtwork None => new(string.Empty, 0);
+    }
+
+    /// <summary>Memoises <c>TryGetCachedImagePath</c> results for one queue item.</summary>
+    internal sealed class ArtworkProbeCache
+    {
+        private readonly Dictionary<(string Url, int Version), string?> _probes = [];
+
+        public string? GetOrProbe(string url, int version, Func<string, int, string?> probe)
+        {
+            if (_probes.TryGetValue((url, version), out var cachedPath))
+            {
+                return cachedPath;
+            }
+
+            cachedPath = probe(url, version);
+            _probes[(url, version)] = cachedPath;
+            return cachedPath;
+        }
+    }
+
+    /// <summary>
+    /// The artwork URI for a now-playing surface that renders it large - Apple's lock screen and
+    /// Control Center. Two deliberate differences from <see cref="ResolveAlbumImageUri"/>:
+    ///
+    /// <para>
+    /// The 640px hero rendition is preferred over the 320px thumb. The thumb exists because Media3
+    /// decodes whatever URI it is given on the media thread for a notification icon a couple of
+    /// hundred pixels wide. Apple's surface draws artwork near full-screen, where a thumb is visibly
+    /// soft, and the decode happens on a thread pool thread in <c>AppleNowPlayingArtworkLoader</c>
+    /// rather than anywhere that could stall playback.
+    /// </para>
+    ///
+    /// <para>
+    /// There is no offline gate. Returning empty while offline is right for Media3, whose bitmap
+    /// loader would otherwise stall on the media thread. Nothing analogous applies here:
+    /// <c>NowPlayingArtworkCoordinator</c> declines to fetch a remote URI with no network access, and
+    /// does so without consuming a retry attempt, so keeping the URL means artwork appears on its own
+    /// when connectivity returns mid-track instead of staying blank until the queue is next rebuilt.
+    /// </para>
+    /// </summary>
+    internal string ResolveNowPlayingArtworkUri(SongDto song, ArtworkProbeCache? probeCache = null) =>
+        ResolveNowPlayingArtwork(song, probeCache).Uri;
+
+    private ResolvedArtwork ResolveMediaImageUri(
+        ReadOnlySpan<(string? Url, int Version)> candidates,
+        bool suppressRemoteWhenOffline,
+        ArtworkProbeCache? probeCache = null)
+    {
+        foreach (var (url, version) in candidates)
+        {
+            if (TryResolveCachedMediaImageUri(url, version, out var cachedUri, probeCache))
+            {
+                return new ResolvedArtwork(cachedUri, version);
+            }
+        }
+
+        if (suppressRemoteWhenOffline && _networkStatusService?.HasNoNetworkAccess == true)
+        {
+            return ResolvedArtwork.None;
+        }
+
+        foreach (var (url, version) in candidates)
+        {
+            if (TryResolveMediaImageUri(url, out var remoteUri))
+            {
+                return new ResolvedArtwork(remoteUri, version);
+            }
+        }
+
+        return ResolvedArtwork.None;
+    }
+
+    private bool TryResolveCachedMediaImageUri(
+        string? remoteImageUrl,
+        int contentVersion,
+        out string resolvedUri,
+        ArtworkProbeCache? probeCache = null)
     {
         resolvedUri = string.Empty;
 
-        var cachedPath = _imageCacheService?.TryGetCachedImagePath(remoteImageUrl, contentVersion);
+        if (string.IsNullOrWhiteSpace(remoteImageUrl))
+        {
+            return false;
+        }
+
+        var cachedPath = probeCache is null
+            ? _imageCacheService?.TryGetCachedImagePath(remoteImageUrl, contentVersion)
+            : probeCache.GetOrProbe(
+                remoteImageUrl,
+                contentVersion,
+                (url, version) => _imageCacheService?.TryGetCachedImagePath(url, version));
+
         if (string.IsNullOrWhiteSpace(cachedPath))
         {
             return false;

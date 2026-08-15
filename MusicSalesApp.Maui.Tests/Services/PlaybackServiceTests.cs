@@ -328,6 +328,33 @@ public class PlaybackServiceTests
     }
 
     [Test]
+    public void PlaySong_GivesTheNowPlayingSurfaceTheHeroRenditionAndMedia3TheThumb()
+    {
+        // Apple's lock screen draws artwork near full-screen, so it gets the 640px hero; Media3
+        // decodes ImageUri on the media thread for a small notification icon, so it keeps the thumb.
+        PlaybackMediaItem? capturedMediaItem = null;
+        _mockMediaManager
+            .Setup(m => m.PlayAsync(It.IsAny<PlaybackMediaItem>()))
+            .Callback<PlaybackMediaItem>(mediaItem => capturedMediaItem = mediaItem)
+            .ReturnsAsync((PlaybackMediaItem?)null);
+
+        var song = new SongDto
+        {
+            Id = 1,
+            SongTitle = "Test",
+            StreamUrl = "https://test.com/song1.mp3",
+            AlbumArtUrl = "https://test.com/art.jpg",
+            AlbumArtThumbUrl = "https://test.com/art_320.jpg",
+            AlbumArtHeroUrl = "https://test.com/art_640.jpg"
+        };
+
+        _service.PlaySong(song);
+
+        Assert.That(capturedMediaItem?.ImageUri, Is.EqualTo("https://test.com/art_320.jpg"));
+        Assert.That(capturedMediaItem?.AlbumImageUri, Is.EqualTo("https://test.com/art_640.jpg"));
+    }
+
+    [Test]
     public void PlaySong_ActivatesPlaybackKeepAlive()
     {
         var song = new SongDto { Id = 1, SongTitle = "Test", StreamUrl = "https://test.com/song1.mp3" };
