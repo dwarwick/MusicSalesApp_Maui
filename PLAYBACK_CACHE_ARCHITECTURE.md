@@ -532,6 +532,12 @@ returns a `file://` URI for cached art, which Media3's default `DataSourceBitmap
 `FileDataSource` with no network. Offline with nothing cached it returns empty rather than a remote URL,
 so the loader cannot stall on the media thread.
 
+The two platforms are handed different renditions, and `PlaybackMediaItem` carries both. `ImageUri` is the
+320px thumb, because Media3 decodes whatever it is given **on the media thread** for a notification icon a
+couple of hundred pixels wide. `AlbumImageUri` — which Android never reads — is the 640px hero, resolved by
+`PlaybackService.ResolveNowPlayingArtworkUri` for Apple's now-playing surface, which draws artwork near
+full-screen and decodes it on a thread pool thread. See "Apple lock-screen artwork" below.
+
 ### Offline like/dislike queue
 
 `api/music/like/{id}` and `dislike/{id}` are true toggles — they flip whatever the DB holds — so replaying
@@ -672,6 +678,90 @@ Important differences from Android:
 - The generic file cache does not use Media3 and does not have Media3 cache-span verification.
 - iOS background playback behavior must be verified separately with AVAudioSession/background modes.
 
+#### Apple lock-screen artwork
+
+Title and artist reach the lock screen for free, because Plugin.MediaManager's Apple `NotificationManager`
+maps them from plain strings. Artwork does not: `UpdateNotification()` takes it **only** from
+`IMediaItem.DisplayImage`, an already-decoded `UIImage`, and never from `ImageUri`. The only thing that
+populates `DisplayImage` is `MediaExtractorBase.UpdateMediaItem()`, and the `Play(IMediaItem)` /
+`Play(IEnumerable<IMediaItem>)` overloads this app calls never invoke the extractor — only
+`Play(string)` and `Play(FileInfo)` do. So artwork was permanently null.
+
+`Services/NowPlayingArtworkCoordinator.cs` fills `DisplayImage` in, with
+`Services/AppleNowPlayingArtworkLoader.cs` doing the decode. Three things make it work:
+
+- **The one-second heartbeat is the engine.** `MediaManagerBase` runs a `System.Timers.Timer` whose
+  `PositionChanged` and `StateChanged` both call `Notification.UpdateNotification()`, which rebuilds
+  `MPNowPlayingInfoCenter.NowPlaying` from `Queue.Current`. Assigning the image at *any* later moment is
+  therefore picked up on the next tick — so the load is fully asynchronous, nothing blocks `Play()`, and
+  the same tick drives retries. `MediaManagerPlaybackRuntime.ObserveNowPlayingArtwork` must always read
+  `Queue.Current`, never the event's own `MediaItem`: an image set on any other instance is invisible.
+- **Plugin.MediaManager's own image provider is deliberately unused.** `AVAssetImageProvider` reaches the
+  network through `NSData.FromUrl`, which blocks the calling thread.
+- **Exactly one decoded image is live**, whatever the queue length; the previous item's is released on
+  every track change. It is nulled but *not* disposed — `UpdateNotification()` wraps `DisplayImage` in a
+  fresh `MPMediaItemArtwork` from a timer thread, so disposing the managed peer would risk an unhandled
+  `ObjectDisposedException` on a pool thread.
+
+Offline behaviour differs from Android on purpose. `ResolveNowPlayingArtworkUri` keeps the remote URL when
+nothing is cached, rather than returning empty as `ResolveAlbumImageUri` does, because there is no media
+thread to stall; the coordinator declines to fetch a remote URI with no network access, and does so
+*without consuming a retry attempt*, so artwork appears on its own when connectivity returns mid-track.
+
+A remote hero is fetched **through `IImageCacheService`, not straight into memory**, and that is what makes
+lock-screen artwork survive airplane mode: the download lands on disk, so the next play resolves a
+`file://` URI and needs no network at all. It also inherits the cache's budget accounting, magic-byte
+validation and versioned `StableRemoteAssetKey` naming.
+
+That last point is why the artwork **content version** is plumbed all the way from `SongDto` to the
+loader, via `PlaybackService.ResolvedArtwork` → `PlaybackMediaItem.AlbumImageContentVersion` →
+`INowPlayingArtworkTarget.ArtworkContentVersion`. The version cannot be recovered downstream from the URL:
+`StableRemoteAssetKey` hashes the blob path *plus* the version, album and persona renditions version
+independently, and caching under version 0 would both duplicate the file and keep serving pre-crop artwork
+after a re-crop — a re-crop overwrites the same blob path in place. `MediaItem` has nowhere to carry it, so
+`MediaManagerPlaybackRuntime` holds the association in a `ConditionalWeakTable` keyed by the media item,
+which keeps it without extending the media library's type or pinning items that leave the queue.
+
+`ImageCacheResult.Declined` is the one case that still fetches into memory without persisting: the hero
+budget is deliberately capped so heroes can never crowd out the thumbs every list row needs, but the lock
+screen should still show something. An 8 MB streaming ceiling applies either way, because the ladder can
+fall through to a full-size master when a server generated no renditions.
+
+#### Apple transport controls, and the ordering that makes them work
+
+`Services/AppleRemoteCommandBridge.cs` owns two things that both hang off `MPRemoteCommandCenter`, and the
+sequence inside its `Start()` is load-bearing in **both** directions. Each half was established by getting
+it wrong on a device, so do not reorder it:
+
+1. **Register the pause/stop/toggle targets first.** They exist so a lock-screen pause can be reported as
+   `PlaybackRuntimeStateChangeReason.UserRequest`. Plugin.MediaManager's `NotificationManager.PauseCommand`
+   calls `MediaManager.Pause()` **synchronously** and never tells `PlaybackService`, so the resulting
+   `StateChanged` — where `ResolveStateChangeReason` reads the timestamp — is raised before any
+   later-registered target runs. Register after the library's handler and the stamp lands too late: the
+   pause reaches `PlaybackService` as `Reason=Unknown` with `IsPlaying` still true, is read as an
+   unexplained stall, and `ScheduleTerminalPlaybackStateConfirmation` restarts the queue ~2s later. That is
+   a direct breach of the "user-requested pause must never be treated as a failure" invariant above.
+2. **Then force `Notification` into existence, and only then disable the skip commands.**
+   `AppleMediaManagerBase.Notification` constructs its `NotificationManager` lazily, and that constructor
+   sets `Enabled = true`, which through the `ShowNavigationControls` setter enables
+   `SkipForwardCommand`/`SkipBackwardCommand` with `PreferredIntervals` from `MediaManagerBase`'s
+   10-second `StepSize` defaults. iOS renders the skip-interval buttons **in preference to**
+   next/previous-track when both families are enabled. Disabling them before that lazy construction is
+   silently overwritten the moment playback starts. The policy is also re-asserted from the runtime on
+   every state change, because anything that assigns `Enabled`/`ShowNavigationControls` again re-runs the
+   setter that turned them on.
+
+The in-app pause button never hit problem 1, because `PlaybackService.Pause()` sets `IsPlaying = false`
+before the state change arrives. Note also that only the transport controls stamp the timestamp —
+deliberately **not** the runtime's own `PauseAsync`/`StopAsync`, which the app also calls during failure
+recovery; marking those as user requests would suppress the recovery they are part of, which is why the
+Android runtime carries a matching `SuppressAppCommandUserReason` escape hatch.
+
+`Paused` alone cannot be taken to mean "the user paused": Plugin.MediaManager maps
+`AVPlayerStatus.ReadyToPlay` to `Paused` as well as `AVPlayerTimeControlStatus.Paused`, so the state fires
+transiently while an item loads. Hence a 2-second window keyed off an explicit command, matching
+`AndroidMedia3PlaybackRuntime.UserTerminalStateReasonWindow`.
+
 ### Recommended iOS Runtime Direction
 
 For production-quality iOS parity, implement an iOS native runtime behind `IPlatformPlaybackRuntime`, likely using:
@@ -683,7 +773,8 @@ For production-quality iOS parity, implement an iOS native runtime behind `IPlat
 - `MPRemoteCommandCenter`
 - interruption handling
 - route-change handling
-- lock-screen metadata and controls
+- lock-screen metadata and controls (title, artist and artwork already work through Plugin.MediaManager —
+  see "Apple lock-screen artwork" above — so a native runtime must not regress them)
 - remote-command pause and stop semantics
 - explicit queue index reporting
 - failure events mapped into `PlaybackMediaItemFailedEventArgs`

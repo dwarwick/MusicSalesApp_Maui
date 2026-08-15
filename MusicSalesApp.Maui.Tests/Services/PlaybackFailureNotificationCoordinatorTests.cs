@@ -151,13 +151,4 @@ public class PlaybackFailureNotificationCoordinatorTests
         playback.Raise(service => service.PlaybackRequestFailed += null,
             playback.Object,
             new PlaybackRequestFailedEventArgs(songId, PlaybackRequestFailureReason.UnexpectedError));
-
-    private sealed class ManualTimeProvider(DateTimeOffset now) : TimeProvider
-    {
-        private DateTimeOffset _now = now;
-
-        public override DateTimeOffset GetUtcNow() => _now;
-
-        public void Advance(TimeSpan duration) => _now += duration;
-    }
 }

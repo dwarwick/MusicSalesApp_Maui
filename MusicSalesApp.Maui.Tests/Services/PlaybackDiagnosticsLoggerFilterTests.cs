@@ -50,6 +50,10 @@ public class PlaybackDiagnosticsLoggerFilterTests
     [TestCase(PlaybackDiagnosticsLoggerFilter.AndroidMedia3CategoryPrefix)]
     [TestCase(PlaybackDiagnosticsLoggerFilter.AndroidPlaybackSessionCategoryPrefix)]
     [TestCase(PlaybackDiagnosticsLoggerFilter.AndroidAudioVisualizerCategoryPrefix)]
+    [TestCase(PlaybackDiagnosticsLoggerFilter.NowPlayingArtworkCategoryPrefix)]
+    [TestCase("MusicSalesApp.Maui.Services.NowPlayingArtworkCoordinator")]
+    [TestCase(PlaybackDiagnosticsLoggerFilter.AppleNowPlayingArtworkCategoryPrefix)]
+    [TestCase(PlaybackDiagnosticsLoggerFilter.AppleRemoteCommandCategoryPrefix)]
     public void ShouldLog_InformationFromAPlaybackCategory_Logs(string categoryPrefix)
     {
         var logged = PlaybackDiagnosticsLoggerFilter.ShouldLog(categoryPrefix, LogLevel.Information, LogLevel.Information);

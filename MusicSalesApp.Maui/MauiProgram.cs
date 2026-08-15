@@ -209,6 +209,19 @@ public static class MauiProgram
 	#if ANDROID
 		builder.Services.AddSingleton<IPlatformPlaybackRuntime, MusicSalesApp.Maui.Platforms.Android.AndroidMedia3PlaybackRuntime>();
 	#else
+		// Plugin.MediaManager's Apple notification manager takes lock-screen artwork from
+		// IMediaItem.Image - a decoded UIImage - and never from ImageUri, and nothing populates it for
+		// the Play(IMediaItem) overloads MediaManagerPlaybackRuntime uses. This fills that gap.
+	#if IOS || MACCATALYST
+		builder.Services.AddSingleton<INowPlayingArtworkLoader, AppleNowPlayingArtworkLoader>();
+		// Also swaps the lock screen's 10-second skip buttons for previous/next track, and reports
+		// transport-control pauses so they are not mistaken for a stall and "recovered" by a restart.
+		builder.Services.AddSingleton<IPlaybackRemoteCommandBridge, AppleRemoteCommandBridge>();
+	#else
+		builder.Services.AddSingleton<INowPlayingArtworkLoader, NoOpNowPlayingArtworkLoader>();
+		builder.Services.AddSingleton<IPlaybackRemoteCommandBridge, NoOpPlaybackRemoteCommandBridge>();
+	#endif
+		builder.Services.AddSingleton<NowPlayingArtworkCoordinator>();
 		builder.Services.AddSingleton<IMediaManager>(CrossMediaManager.Current);
 		builder.Services.AddSingleton<IPlatformPlaybackRuntime, MediaManagerPlaybackRuntime>();
 	#endif

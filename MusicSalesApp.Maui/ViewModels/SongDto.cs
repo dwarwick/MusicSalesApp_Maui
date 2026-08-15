@@ -151,8 +151,13 @@ public partial class SongDto : ObservableObject
         CachedPersonaImagePath ?? (SuppressRemoteArtwork ? null : PersonaImageUrl);
 
     /// <summary>
-    /// Artwork for the small surfaces - the 48-unit playlist track rows and the 36-unit mini player -
-    /// and the source Media3 is handed for lock-screen artwork.
+    /// Artwork for the small surfaces - the 48-unit playlist track rows and the 36-unit mini player.
+    ///
+    /// <para>
+    /// Media3's notification artwork prefers the same rendition but does not read this property:
+    /// <c>PlaybackService.ResolveAlbumImageUri</c> re-derives the chain from <c>IImageCacheService</c>
+    /// so it can emit a <c>file://</c> URI rather than a bare path.
+    /// </para>
     ///
     /// <para>
     /// Each step down the chain is a real fallback, not a formality: the cached thumb, then the

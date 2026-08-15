@@ -10,6 +10,14 @@ public static class PlaybackDiagnosticsLoggerFilter
     public const string AndroidPlaybackSessionCategoryPrefix = "MusicSalesApp.Maui.Platforms.Android.PlaybackMediaSessionService";
     public const string AndroidAudioVisualizerCategoryPrefix = "MusicSalesApp.Maui.Platforms.Android.AudioVisualizerService";
 
+    // Apple lock-screen artwork and transport controls. Both success paths are Information-only, so
+    // without these prefixes a working load and a load that never ran look identical in the device
+    // log. Three constants rather than one because the class names do not share a usable prefix -
+    // "...Services.NowPlayingArtwork" does not match AppleNowPlayingArtworkLoader.
+    public const string NowPlayingArtworkCategoryPrefix = "MusicSalesApp.Maui.Services.NowPlayingArtwork";
+    public const string AppleNowPlayingArtworkCategoryPrefix = "MusicSalesApp.Maui.Services.AppleNowPlayingArtworkLoader";
+    public const string AppleRemoteCommandCategoryPrefix = "MusicSalesApp.Maui.Services.AppleRemoteCommandBridge";
+
     // Entitlement categories. Everything interesting about billing and session restore is logged at
     // Information — "Connected to Google Play Billing", "Purchase acknowledged successfully", the
     // offer lookup, and the pending-restore retry. Without these prefixes the file log records only
@@ -27,6 +35,9 @@ public static class PlaybackDiagnosticsLoggerFilter
         AndroidMedia3CategoryPrefix,
         AndroidPlaybackSessionCategoryPrefix,
         AndroidAudioVisualizerCategoryPrefix,
+        NowPlayingArtworkCategoryPrefix,
+        AppleNowPlayingArtworkCategoryPrefix,
+        AppleRemoteCommandCategoryPrefix,
         GooglePlayBillingCategoryPrefix,
         AppStoreBillingCategoryPrefix,
         AuthServiceCategoryPrefix
