@@ -747,10 +747,22 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
         return RunOnPlayerThread(CreatePlayerSnapshotOnPlayerThread);
     }
 
+    /// <summary>
+    /// One line describing the player's state, for the runtime log.
+    /// </summary>
+    /// <remarks>
+    /// PlayerMediaId and PlayerQueueIds are the player's OWN answers and are the fields to read
+    /// first. Everything named CurrentItem here - and everything named Native* in PlaybackService's
+    /// snapshot - comes from <c>_queue</c>, which is this class's item list indexed by the player's
+    /// index. Those fields report what the app believes whatever the player is really holding, so a
+    /// player holding a different playlist from the app looks perfectly consistent in them. That is
+    /// not hypothetical: it hid a wrong-song fault through two rounds of diagnosis, where the only
+    /// field that gave it away was DurationMs disagreeing with the reported song's known length.
+    /// </remarks>
     private string CreatePlayerSnapshotOnPlayerThread()
     {
         var durationMs = _player.Duration == C.TimeUnset ? "TimeUnset" : _player.Duration.ToString();
-        return $"RawState={PlaybackStateName(_player.PlaybackState)}; PlayWhenReady={_player.PlayWhenReady}; IsPlaying={_lastIsPlaying}; CurrentIndex={_player.CurrentMediaItemIndex}; QueueCount={_queue.Count}; PlayerMediaItemCount={_player.MediaItemCount}; PositionMs={Math.Max(0, _player.CurrentPosition)}; DurationMs={durationMs}; AudioSessionId={AudioSessionId}; BecamePlayable={_currentItemBecamePlayable}; CurrentItem={DescribeMediaItem(_queue.Current)}";
+        return $"RawState={PlaybackStateName(_player.PlaybackState)}; PlayWhenReady={_player.PlayWhenReady}; IsPlaying={_lastIsPlaying}; CurrentIndex={_player.CurrentMediaItemIndex}; QueueCount={_queue.Count}; PlayerMediaItemCount={_player.MediaItemCount}; PositionMs={Math.Max(0, _player.CurrentPosition)}; DurationMs={durationMs}; AudioSessionId={AudioSessionId}; BecamePlayable={_currentItemBecamePlayable}; CurrentItem={DescribeMediaItem(_queue.Current)}; PlayerMediaId={_player.CurrentMediaItem?.MediaId}; PlayerQueueIds=[{string.Join("|", ReadPlayerMediaIds())}]";
     }
 
     private static string DescribeMediaItem(MauiMediaItem? item)
