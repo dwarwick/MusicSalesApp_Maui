@@ -61,6 +61,8 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         Songs.CollectionChanged += (_, _) =>
         {
             HasSongs = Songs.Count > 0;
+            OnPropertyChanged(nameof(TrackCountLabel));
+            OnPropertyChanged(nameof(TotalStreamsLabel));
         };
     }
 
@@ -95,6 +97,8 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         OnPropertyChanged(nameof(ShareUrl));
         OnPropertyChanged(nameof(ShowAboutPanel));
         OnPropertyChanged(nameof(ShowArtistPanel));
+        OnPropertyChanged(nameof(HasUnlimitedAccess));
+        OnPropertyChanged(nameof(PersonaWebsiteUrl));
         MarkNowPlayingRow();
     }
 
@@ -110,9 +114,11 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     private void MarkNowPlayingRow()
     {
         var playingId = CurrentSong?.Id;
-        foreach (var song in Songs)
+        for (var index = 0; index < Songs.Count; index++)
         {
+            var song = Songs[index];
             song.IsNowPlaying = song.Id == playingId;
+            song.TrackNumber = index + 1;
         }
     }
 
@@ -243,6 +249,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     partial void OnArtistNameChanged(string? value)
     {
         OnPropertyChanged(nameof(IsArtistTreatment));
+        OnPropertyChanged(nameof(ModeLabel));
         OnPropertyChanged(nameof(ShowAboutPanel));
         OnPropertyChanged(nameof(ShowArtistPanel));
         if (!string.IsNullOrEmpty(value))
@@ -278,6 +285,37 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     /// Showing both would print the bio twice.
     /// </remarks>
     public bool IsArtistTreatment => !string.IsNullOrWhiteSpace(ArtistName);
+
+    /// <summary>
+    /// The violet chip above the title - what KIND of page this is.
+    /// </summary>
+    /// <remarks>
+    /// Mirrors the web's GetModeLabel(). Uppercased here rather than in the markup so the label and
+    /// its accessibility text are the same string.
+    /// </remarks>
+    public string ModeLabel =>
+        IsArtistTreatment ? "ARTIST"
+        : !string.IsNullOrWhiteSpace(GenreName) ? "GENRE"
+        : "PLAYLIST";
+
+    /// <summary>"1 track" / "12 tracks", pluralised.</summary>
+    public string TrackCountLabel => Songs.Count == 1 ? "1 track" : $"{Songs.Count} tracks";
+
+    /// <summary>
+    /// Plays across every track on the page, which is what the web's artist header counts.
+    /// </summary>
+    /// <remarks>
+    /// The sum of the visible list, not of the artist's whole catalogue: going offline narrows the
+    /// list to downloaded songs, and a total that disagreed with the rows under it would read as a
+    /// bug rather than as a filter.
+    /// </remarks>
+    public string TotalStreamsLabel => $"{Songs.Sum(song => song.StreamCount):N0} streams";
+
+    /// <summary>Whether to say "Unlimited Access" rather than the preview warning.</summary>
+    public bool HasUnlimitedAccess => !IsCurrentTrackPreviewLimited;
+
+    /// <summary>The artist's own picture, for the round hero image.</summary>
+    public string? PersonaWebsiteUrl => CurrentSong?.PersonaWebsiteUrl;
 
     /// <summary>The full-bio panel, on an artist's own page and only when there is a bio.</summary>
     public bool ShowAboutPanel =>

@@ -87,6 +87,18 @@ public partial class SongDto : ObservableObject
     public int? CreatorUserId { get; set; }
 
     /// <summary>
+    /// This song's 1-based position in the list it is being shown in.
+    /// </summary>
+    /// <remarks>
+    /// Assigned by the owning view model rather than derived in the row, because a DataTemplate has
+    /// no access to its own index and IndexOf per row is quadratic. Not serialized: it belongs to a
+    /// particular listing, not to the song.
+    /// </remarks>
+    [JsonIgnore]
+    [ObservableProperty]
+    public partial int TrackNumber { get; set; }
+
+    /// <summary>
     /// Whether this row is the track the player is currently on.
     /// </summary>
     /// <remarks>

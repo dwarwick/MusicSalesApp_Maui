@@ -109,6 +109,28 @@ public partial class PlaylistPlayerPage : ContentPage
         }
     }
 
+    /// <summary>The artist's own site, from the hero header.</summary>
+    /// <remarks>
+    /// Guarded rather than handed straight to the launcher: the server stores this field with
+    /// nothing but a Trim, so it may well arrive as a bare host. See <see cref="WebsiteUri"/>.
+    /// </remarks>
+    private async void OnHeroWebsiteTapped(object? sender, TappedEventArgs e)
+    {
+        if (!WebsiteUri.TryParse(_viewModel.PersonaWebsiteUrl, out var uri) || uri is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Launcher.Default.OpenAsync(uri);
+        }
+        catch
+        {
+            // No browser, or the launcher refused. The rest of the page is unaffected.
+        }
+    }
+
     private void OnShowLyricsClicked(object? sender, EventArgs e) => ShowLyrics();
 
     private void OnShowArtClicked(object? sender, EventArgs e) => ShowArt();

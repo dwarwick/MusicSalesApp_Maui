@@ -71,6 +71,12 @@
     <Color x:Key="PlayerBg">#070D16</Color>
     <Color x:Key="PlayerSurface">#0D1727</Color>
     <Color x:Key="PlayerSurface2">#142338</Color>
+    <!-- The ARTIST chip on the players' hero. The web builds it from StViolet at three opacities
+         over the player background; these are those, as MAUI #AARRGGBB. -->
+    <Color x:Key="ChipVioletFill">#3D9B87F5</Color>
+    <Color x:Key="ChipVioletLine">#739B87F5</Color>
+    <Color x:Key="OnChipViolet">#C8B9FF</Color>
+
     <Color x:Key="PlayerLine">#17FFFFFF</Color>
     <Color x:Key="PlayerLineStrong">#24FFFFFF</Color>
     <Color x:Key="PlayerText">#FFFFFF</Color>

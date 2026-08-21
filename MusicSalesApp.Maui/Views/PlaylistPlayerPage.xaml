@@ -41,137 +41,207 @@
                                      Padding="20,24,20,16"
                                      IsVisible="{Binding CurrentSong, Converter={toolkit:IsNotNullConverter}}">
 
-                    <!-- THE STAGE PANEL - the web's .playlist-stage-panel. A bordered section
-                         whose header names what is on show and, per TRACK rather than per
-                         playlist, offers the switch: it comes and goes as the queue moves between
-                         songs that have published lyrics and songs that do not.
+                    <!-- ARTIST HERO - the web's .playlist-hero-inner in artist treatment. The
+                         picture is a CIRCLE here and a rounded square everywhere else (the web's
+                         .player-art-shell.is-round), the violet chip names what kind of page this
+                         is, and the meta line carries the counts, the website and the access badge.
 
-                         Fixed size in both states: this block is a CollectionView header, and a
-                         header that changes height re-measures the whole list under it. -->
+                         Left-aligned beside the picture rather than centred: a centred column next
+                         to a 96px circle leaves the text ragged on both edges. -->
                     <Border Style="{StaticResource PlayerPanel}"
-                            Padding="{StaticResource Space3}">
-                        <VerticalStackLayout Spacing="{StaticResource Space3}">
+                            Margin="16,4,16,0"
+                            IsVisible="{Binding IsArtistTreatment}">
+                        <VerticalStackLayout Spacing="{StaticResource Space4}">
 
-                            <Grid ColumnDefinitions="*,Auto">
-                                <Label x:Name="StageCaption"
-                                       Grid.Column="0"
-                                       Style="{StaticResource PlayerPanelCaption}"
-                                       Text="COVER ART" />
+                            <Grid ColumnDefinitions="Auto,*"
+                                  ColumnSpacing="{StaticResource Space4}">
+                                <Border Grid.Column="0"
+                                        HeightRequest="96"
+                                        WidthRequest="96"
+                                        StrokeThickness="0"
+                                        StrokeShape="RoundRectangle 48"
+                                        VerticalOptions="Start"
+                                        IsVisible="{Binding CurrentSong.PersonaImageHeroDisplaySource, Converter={toolkit:IsNotNullConverter}}">
+                                    <Image Source="{Binding CurrentSong.PersonaImageHeroDisplaySource}"
+                                           Aspect="AspectFill"
+                                           HeightRequest="96"
+                                           WidthRequest="96" />
+                                </Border>
 
-                                <Border x:Name="StageSwitch"
-                                        Grid.Column="1"
-                                        IsVisible="False"
-                                        Padding="0"
+                                <VerticalStackLayout Grid.Column="1"
+                                                     Spacing="{StaticResource Space2}"
+                                                     VerticalOptions="Start">
+
+                                    <HorizontalStackLayout Spacing="{StaticResource Space2}">
+                                        <Border Padding="10,3"
+                                                StrokeShape="RoundRectangle 999"
+                                                StrokeThickness="{StaticResource StrokeThin}"
+                                                Stroke="{StaticResource ChipVioletLine}"
+                                                BackgroundColor="{StaticResource ChipVioletFill}"
+                                                VerticalOptions="Center">
+                                            <Label Text="{Binding ModeLabel}"
+                                                   FontSize="{StaticResource FontSizeNano}"
+                                                   FontAttributes="Bold"
+                                                   CharacterSpacing="1"
+                                                   TextColor="{StaticResource OnChipViolet}" />
+                                        </Border>
+                                        <views:AiContentBadgesView IsAiMusic="{Binding CurrentSong.IsAiGenerated}"
+                                                                   IsAiVocals="{Binding CurrentSong.IsAiVocals}"
+                                                                   IsAiLyrics="{Binding CurrentSong.IsAiLyrics}"
+                                                                   BadgeSize="24"
+                                                                   VerticalOptions="Center" />
+                                    </HorizontalStackLayout>
+
+                                    <Label Text="{Binding PlaylistTitle}"
+                                           FontSize="{StaticResource FontSizeH1}"
+                                           FontAttributes="Bold"
+                                           TextColor="{StaticResource PlayerText}"
+                                           LineBreakMode="WordWrap"
+                                           MaxLines="2" />
+
+                                    <HorizontalStackLayout Spacing="{StaticResource Space2}">
+                                        <Label Text="{Binding TrackCountLabel}"
+                                               FontSize="{StaticResource FontSizeSmall}"
+                                               TextColor="{StaticResource PlayerText2}"
+                                               VerticalOptions="Center" />
+                                        <Path Data="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"
+                                              Fill="{StaticResource PlayerText3}"
+                                              Aspect="Uniform"
+                                              HeightRequest="14"
+                                              WidthRequest="14"
+                                              VerticalOptions="Center" />
+                                        <Label Text="{Binding TotalStreamsLabel}"
+                                               FontSize="{StaticResource FontSizeSmall}"
+                                               TextColor="{StaticResource PlayerText2}"
+                                               VerticalOptions="Center" />
+                                    </HorizontalStackLayout>
+
+                                    <Label Text="{Binding PersonaWebsiteUrl}"
+                                           FontSize="{StaticResource FontSizeSmall}"
+                                           TextColor="{StaticResource StBlueBright}"
+                                           TextDecorations="Underline"
+                                           LineBreakMode="TailTruncation"
+                                           MaxLines="1"
+                                           IsVisible="{Binding PersonaWebsiteUrl, Converter={toolkit:IsStringNotNullOrEmptyConverter}}">
+                                        <Label.GestureRecognizers>
+                                            <TapGestureRecognizer Tapped="OnHeroWebsiteTapped" />
+                                        </Label.GestureRecognizers>
+                                    </Label>
+
+                                    <HorizontalStackLayout Spacing="{StaticResource SpaceTight}"
+                                                           IsVisible="{Binding HasUnlimitedAccess}">
+                                        <Path Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
+                                              Fill="{StaticResource StBlueBright}"
+                                              Aspect="Uniform"
+                                              HeightRequest="14"
+                                              WidthRequest="14"
+                                              VerticalOptions="Center" />
+                                        <Label Text="Unlimited Access"
+                                               FontSize="{StaticResource FontSizeCardMeta}"
+                                               TextColor="{StaticResource StBlueBright}"
+                                               VerticalOptions="Center" />
+                                    </HorizontalStackLayout>
+                                </VerticalStackLayout>
+                            </Grid>
+
+                            <HorizontalStackLayout Spacing="{StaticResource Space3}">
+                                <views:EqualizerPlayButton SongId="{Binding CurrentSong.Id}"
+                                                           Command="{Binding PlayTrackCommand}"
+                                                           CommandParameter="{Binding CurrentSong}"
+                                                           ButtonSize="52"
+                                                           VerticalOptions="Center" />
+                                <Border Padding="12,6"
+                                        StrokeShape="RoundRectangle 999"
                                         StrokeThickness="{StaticResource StrokeThin}"
                                         Stroke="{StaticResource PlayerLine}"
-                                        StrokeShape="RoundRectangle 999"
-                                        BackgroundColor="Transparent">
-                                    <HorizontalStackLayout>
-                                        <Button x:Name="LyricsSegment"
-                                                Text="Lyrics"
-                                                Style="{StaticResource PlayerSwitchSegment}"
-                                                Clicked="OnShowLyricsClicked" />
-                                        <Button x:Name="ArtSegment"
-                                                Text="Art"
-                                                Style="{StaticResource PlayerSwitchSegmentActive}"
-                                                Clicked="OnShowArtClicked" />
+                                        BackgroundColor="Transparent"
+                                        VerticalOptions="Center">
+                                    <HorizontalStackLayout Spacing="{StaticResource SpaceTight}">
+                                        <Path Data="{Binding CurrentSong.UserLikeStatus, Converter={StaticResource LikeGlyphConverter}}"
+                                              Fill="{Binding CurrentSong.UserLikeStatus, Converter={StaticResource LikeFillConverter}}"
+                                              Aspect="Uniform"
+                                              HeightRequest="18" WidthRequest="18"
+                                              VerticalOptions="Center" />
+                                        <Label Text="{Binding CurrentSong.LikeCount}"
+                                               FontSize="{StaticResource FontSizeCardMeta}"
+                                               TextColor="{StaticResource PlayerText2}"
+                                               VerticalOptions="Center" />
                                     </HorizontalStackLayout>
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding LikeSongCommand}" />
+                                    </Border.GestureRecognizers>
                                 </Border>
-                            </Grid>
-
-                            <Grid HorizontalOptions="Center"
-                                  HeightRequest="{StaticResource PlayerHeroArtSize}"
-                                  WidthRequest="{StaticResource PlayerHeroArtSize}">
-                                <Border x:Name="HeroArt"
-                                        HorizontalOptions="Center"
-                                        StrokeShape="RoundRectangle 12"
-                                        StrokeThickness="0">
-                                    <views:SongArtworkView AlbumArtUrl="{Binding CurrentSong.AlbumArtHeroDisplaySource}"
-                                                           HeightRequest="{StaticResource PlayerHeroArtSize}"
-                                                           WidthRequest="{StaticResource PlayerHeroArtSize}" />
+                                <Border Padding="12,6"
+                                        StrokeShape="RoundRectangle 999"
+                                        StrokeThickness="{StaticResource StrokeThin}"
+                                        Stroke="{StaticResource PlayerLine}"
+                                        BackgroundColor="Transparent"
+                                        VerticalOptions="Center">
+                                    <HorizontalStackLayout Spacing="{StaticResource SpaceTight}">
+                                        <Path Data="{Binding CurrentSong.UserLikeStatus, Converter={StaticResource DislikeGlyphConverter}}"
+                                              Fill="{Binding CurrentSong.UserLikeStatus, Converter={StaticResource DislikeFillConverter}}"
+                                              Aspect="Uniform"
+                                              HeightRequest="18" WidthRequest="18"
+                                              VerticalOptions="Center" />
+                                        <Label Text="{Binding CurrentSong.DislikeCount}"
+                                               FontSize="{StaticResource FontSizeCardMeta}"
+                                               TextColor="{StaticResource PlayerText2}"
+                                               VerticalOptions="Center" />
+                                    </HorizontalStackLayout>
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding DislikeSongCommand}" />
+                                    </Border.GestureRecognizers>
                                 </Border>
-
-                                <views:LyricsView x:Name="LyricsPanel"
-                                                  IsVisible="False"
-                                                  OnDarkSurface="True"
-                                                  TextSize="{StaticResource FontSizeLyricsPlaylist}" />
-                            </Grid>
+                            </HorizontalStackLayout>
                         </VerticalStackLayout>
                     </Border>
 
-                    <views:AiContentBadgesView IsAiMusic="{Binding CurrentSong.IsAiGenerated}"
-                                                IsAiVocals="{Binding CurrentSong.IsAiVocals}"
-                                                IsAiLyrics="{Binding CurrentSong.IsAiLyrics}"
-                                                BadgeSize="34"
-                                                HorizontalOptions="Center" />
+                    <!-- The centred title block stays for genre and user playlists, which have no
+                         persona picture and no artist identity to lead with. -->
+                    <VerticalStackLayout Spacing="{StaticResource Space4}"
+                                         IsVisible="{Binding IsArtistTreatment, Converter={toolkit:InvertedBoolConverter}}">
+                        <views:AiContentBadgesView IsAiMusic="{Binding CurrentSong.IsAiGenerated}"
+                                                        IsAiVocals="{Binding CurrentSong.IsAiVocals}"
+                                                        IsAiLyrics="{Binding CurrentSong.IsAiLyrics}"
+                                                        BadgeSize="34"
+                                                        HorizontalOptions="Center" />
 
-                    <!-- Song Title -->
-                    <Label Text="{Binding CurrentSong.SongTitle}"
-                           FontSize="{StaticResource FontSizeH2}"
-                           FontAttributes="Bold"
-                           TextColor="{StaticResource PlayerText}"
-                           HorizontalTextAlignment="Center"
-                           LineBreakMode="WordWrap"
-                           MaxLines="2" />
+                        <!-- Song Title -->
+                        <Label Text="{Binding CurrentSong.SongTitle}"
+                               FontSize="{StaticResource FontSizeH2}"
+                               FontAttributes="Bold"
+                               TextColor="{StaticResource PlayerText}"
+                               HorizontalTextAlignment="Center"
+                               LineBreakMode="WordWrap"
+                               MaxLines="2" />
 
-                    <!-- Artist Name (tappable → artist playlist) -->
-                    <HorizontalStackLayout HorizontalOptions="Center"
-                                           Spacing="{StaticResource Space2}">
-                        <Border StrokeShape="RoundRectangle 12"
-                                StrokeThickness="0"
-                                HeightRequest="24"
-                                WidthRequest="24"
-                                VerticalOptions="Center"
-                                IsVisible="{Binding CurrentSong.PersonaImageThumbDisplaySource, Converter={toolkit:IsNotNullConverter}}">
-                            <Image Source="{Binding CurrentSong.PersonaImageThumbDisplaySource}"
-                                   Aspect="AspectFill"
-                                   HeightRequest="24"
-                                   WidthRequest="24" />
-                        </Border>
-                        <Label Text="{Binding CurrentSong.ArtistName}"
-                               FontSize="{StaticResource FontSizeBodyLarge}"
-                               TextColor="{StaticResource PlayerText2}"
-                               VerticalOptions="Center"
-                               TextDecorations="Underline">
-                            <Label.GestureRecognizers>
-                                <TapGestureRecognizer Command="{Binding NavigateToArtistCommand}"
-                                                      CommandParameter="{Binding CurrentSong.ArtistName}" />
-                            </Label.GestureRecognizers>
-                        </Label>
-                    </HorizontalStackLayout>
+                        <!-- Artist Name (tappable → artist playlist) -->
+                        <HorizontalStackLayout HorizontalOptions="Center"
+                                                   Spacing="{StaticResource Space2}">
+                            <Border StrokeShape="RoundRectangle 12"
+                                    StrokeThickness="0"
+                                    HeightRequest="24"
+                                    WidthRequest="24"
+                                    VerticalOptions="Center"
+                                    IsVisible="{Binding CurrentSong.PersonaImageThumbDisplaySource, Converter={toolkit:IsNotNullConverter}}">
+                                <Image Source="{Binding CurrentSong.PersonaImageThumbDisplaySource}"
+                                       Aspect="AspectFill"
+                                       HeightRequest="24"
+                                       WidthRequest="24" />
+                            </Border>
+                            <Label Text="{Binding CurrentSong.ArtistName}"
+                                   FontSize="{StaticResource FontSizeBodyLarge}"
+                                   TextColor="{StaticResource PlayerText2}"
+                                   VerticalOptions="Center"
+                                   TextDecorations="Underline">
+                                <Label.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding NavigateToArtistCommand}"
+                                                              CommandParameter="{Binding CurrentSong.ArtistName}" />
+                                </Label.GestureRecognizers>
+                            </Label>
+                        </HorizontalStackLayout>
 
-                    <!-- ABOUT - the web's .playlist-about-panel, and ONLY on an artist's own page.
-                         There the bio is the subject of the page rather than a note about someone
-                         else, so it gets the full text and no repeat of the name and picture the
-                         header already carries. -->
-                    <Border Style="{StaticResource PlayerPanel}"
-                            Padding="{StaticResource Space3}"
-                            IsVisible="{Binding ShowAboutPanel}">
-                        <VerticalStackLayout Spacing="{StaticResource Space3}">
-                            <Label Style="{StaticResource PlayerPanelCaption}"
-                                   Text="ABOUT" />
-                            <Label Style="{StaticResource PlayerBodyText}"
-                                   Text="{Binding CurrentSong.PersonaBio}"
-                                   LineBreakMode="WordWrap" />
-                        </VerticalStackLayout>
-                    </Border>
-
-                    <!-- THE ARTIST PANEL - the web's .playlist-artist-panel. Suppressed on an
-                         artist's own page, where ABOUT above says the same thing in full. -->
-                    <Border Style="{StaticResource PlayerPanel}"
-                            Padding="{StaticResource Space3}"
-                            IsVisible="{Binding ShowArtistPanel}">
-                        <VerticalStackLayout Spacing="{StaticResource Space3}">
-                            <Label Style="{StaticResource PlayerPanelCaption}"
-                                   Text="THE ARTIST" />
-                            <views:PersonaSectionView x:Name="ArtistSection"
-                                                      PersonaName="{Binding CurrentSong.ArtistName}"
-                                                      Bio="{Binding CurrentSong.PersonaBio}"
-                                                      WebsiteUrl="{Binding CurrentSong.PersonaWebsiteUrl}"
-                                                      ImageSource="{Binding CurrentSong.PersonaImageHeroDisplaySource}"
-                                                      NavigateCommand="{Binding NavigateToArtistCommand}" />
-                        </VerticalStackLayout>
-                    </Border>
+                    </VerticalStackLayout>
 
                     <!-- Genre (tappable → genre playlist) · Stream Count · Duration -->
                     <HorizontalStackLayout HorizontalOptions="Center"
@@ -297,17 +367,45 @@
                     </HorizontalStackLayout>
                 </VerticalStackLayout>
 
-                <!-- Track List Header -->
-                <Grid ColumnDefinitions="*,Auto"
-                      Padding="20,8,20,4"
-                      IsVisible="{Binding ShowTracksHeader}">
-                    <Label Grid.Column="0"
-                           Text="Tracks"
-                           FontSize="{StaticResource FontSizeH4}"
-                           FontAttributes="Bold"
-                           VerticalOptions="Center"
-                           TextColor="{StaticResource PlayerText}" />
-                </Grid>
+                <!-- SONGS - the web's track-list panel head: the caption on the left, the count
+                     on the right, and a column rule naming what each column holds. The column
+                     widths here MUST match the row template's below, or the headings sit over the
+                     wrong columns. -->
+                <VerticalStackLayout Padding="16,16,16,4"
+                                     Spacing="{StaticResource Space3}"
+                                     IsVisible="{Binding ShowTracksHeader}">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Grid.Column="0"
+                               Style="{StaticResource PlayerPanelCaption}"
+                               Text="SONGS" />
+                        <Label Grid.Column="1"
+                               Text="{Binding TrackCountLabel}"
+                               FontSize="{StaticResource FontSizeCardMeta}"
+                               TextColor="{StaticResource PlayerText3}"
+                               VerticalOptions="Center" />
+                    </Grid>
+
+                    <Grid ColumnDefinitions="28,44,*,Auto"
+                          ColumnSpacing="{StaticResource Space2}"
+                          Padding="12,0">
+                        <Label Grid.Column="0"
+                               Text="#"
+                               FontSize="{StaticResource FontSizeNano}"
+                               TextColor="{StaticResource PlayerText3}" />
+                        <Label Grid.Column="2"
+                               Text="TITLE"
+                               FontSize="{StaticResource FontSizeNano}"
+                               CharacterSpacing="1"
+                               TextColor="{StaticResource PlayerText3}" />
+                        <Label Grid.Column="3"
+                               Text="TIME"
+                               FontSize="{StaticResource FontSizeNano}"
+                               CharacterSpacing="1"
+                               TextColor="{StaticResource PlayerText3}" />
+                    </Grid>
+                    <BoxView HeightRequest="1"
+                             Color="{StaticResource PlayerLine}" />
+                </VerticalStackLayout>
 
                 <!-- Editing a playlist needs the server, so say so rather than silently hiding the controls -->
                 <views:InlineWarningBanner IsVisible="{Binding ShowOfflineEditingNotice}"
@@ -341,14 +439,115 @@
                 </VerticalStackLayout>
                 </CollectionView.Header>
 
+                <!-- Below the tracks, as on the web: the stage and the bio follow the song list
+                     rather than pushing it off the screen. A CollectionView renders header, then
+                     items, then footer - so anything that belongs UNDER the rows has to live here,
+                     not at the end of the header. -->
+                <CollectionView.Footer>
+                    <VerticalStackLayout Spacing="{StaticResource Space4}"
+                                         Padding="16,8,16,20">
+                        <!-- THE STAGE PANEL - the web's .playlist-stage-panel. A bordered section
+                             whose header names what is on show and, per TRACK rather than per
+                             playlist, offers the switch: it comes and goes as the queue moves between
+                             songs that have published lyrics and songs that do not.
+
+                             Fixed size in both states: this block is a CollectionView header, and a
+                             header that changes height re-measures the whole list under it. -->
+                        <Border Style="{StaticResource PlayerPanel}"
+                                Padding="{StaticResource Space3}">
+                            <VerticalStackLayout Spacing="{StaticResource Space3}">
+
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <Label x:Name="StageCaption"
+                                           Grid.Column="0"
+                                           Style="{StaticResource PlayerPanelCaption}"
+                                           Text="COVER ART" />
+
+                                    <Border x:Name="StageSwitch"
+                                                Grid.Column="1"
+                                                IsVisible="False"
+                                                Padding="0"
+                                                StrokeThickness="{StaticResource StrokeThin}"
+                                                Stroke="{StaticResource PlayerLine}"
+                                                StrokeShape="RoundRectangle 999"
+                                                BackgroundColor="Transparent">
+                                        <HorizontalStackLayout>
+                                                <Button x:Name="LyricsSegment"
+                                                        Text="Lyrics"
+                                                        Style="{StaticResource PlayerSwitchSegment}"
+                                                        Clicked="OnShowLyricsClicked" />
+                                                <Button x:Name="ArtSegment"
+                                                        Text="Art"
+                                                        Style="{StaticResource PlayerSwitchSegmentActive}"
+                                                        Clicked="OnShowArtClicked" />
+                                        </HorizontalStackLayout>
+                                    </Border>
+                                </Grid>
+
+                                <Grid HorizontalOptions="Center"
+                                      HeightRequest="{StaticResource PlayerHeroArtSize}"
+                                      WidthRequest="{StaticResource PlayerHeroArtSize}">
+                                    <Border x:Name="HeroArt"
+                                                HorizontalOptions="Center"
+                                                StrokeShape="RoundRectangle 12"
+                                                StrokeThickness="0">
+                                        <views:SongArtworkView AlbumArtUrl="{Binding CurrentSong.AlbumArtHeroDisplaySource}"
+                                                                   HeightRequest="{StaticResource PlayerHeroArtSize}"
+                                                                   WidthRequest="{StaticResource PlayerHeroArtSize}" />
+                                    </Border>
+
+                                    <views:LyricsView x:Name="LyricsPanel"
+                                                          IsVisible="False"
+                                                          OnDarkSurface="True"
+                                                          TextSize="{StaticResource FontSizeLyricsPlaylist}" />
+                                </Grid>
+                            </VerticalStackLayout>
+                        </Border>
+
+                        <!-- ABOUT - the web's .playlist-about-panel, and ONLY on an artist's own page.
+                             There the bio is the subject of the page rather than a note about someone
+                             else, so it gets the full text and no repeat of the name and picture the
+                             header already carries. -->
+                        <Border Style="{StaticResource PlayerPanel}"
+                                Padding="{StaticResource Space3}"
+                                IsVisible="{Binding ShowAboutPanel}">
+                            <VerticalStackLayout Spacing="{StaticResource Space3}">
+                                <Label Style="{StaticResource PlayerPanelCaption}"
+                                       Text="ABOUT" />
+                                <Label Style="{StaticResource PlayerBodyText}"
+                                       Text="{Binding CurrentSong.PersonaBio}"
+                                       LineBreakMode="WordWrap" />
+                            </VerticalStackLayout>
+                        </Border>
+
+                        <!-- THE ARTIST PANEL - the web's .playlist-artist-panel. Suppressed on an
+                             artist's own page, where ABOUT above says the same thing in full. -->
+                        <Border Style="{StaticResource PlayerPanel}"
+                                Padding="{StaticResource Space3}"
+                                IsVisible="{Binding ShowArtistPanel}">
+                            <VerticalStackLayout Spacing="{StaticResource Space3}">
+                                <Label Style="{StaticResource PlayerPanelCaption}"
+                                       Text="THE ARTIST" />
+                                <views:PersonaSectionView x:Name="ArtistSection"
+                                                              PersonaName="{Binding CurrentSong.ArtistName}"
+                                                              Bio="{Binding CurrentSong.PersonaBio}"
+                                                              WebsiteUrl="{Binding CurrentSong.PersonaWebsiteUrl}"
+                                                              ImageSource="{Binding CurrentSong.PersonaImageHeroDisplaySource}"
+                                                              NavigateCommand="{Binding NavigateToArtistCommand}" />
+                            </VerticalStackLayout>
+                        </Border>
+
+                    </VerticalStackLayout>
+                </CollectionView.Footer>
+
                 <CollectionView.ItemTemplate>
                         <DataTemplate x:DataType="vm:SongDto">
                             <!-- The playing row is marked the way the web marks it: an accent edge
                                  and a lifted surface, so the list answers "which one is this?"
                                  without having to read the header. -->
-                            <Border Margin="8,2"
-                                    Padding="12,10"
-                                    StrokeShape="RoundRectangle 6"
+                            <Border Margin="16,2"
+                                    Padding="12,8"
+                                    StrokeShape="RoundRectangle 8"
                                     Stroke="Transparent"
                                     StrokeThickness="{StaticResource StrokeThin}"
                                     BackgroundColor="{StaticResource PlayerSurface2}">
@@ -366,41 +565,25 @@
                                         CommandParameter="{Binding .}" />
                                 </Border.GestureRecognizers>
 
-                                  <Grid ColumnDefinitions="Auto,48,*,Auto,Auto,Auto"
+                                <!-- Column widths track the SONGS heading above, which is a
+                                     separate Grid - a CollectionView cannot span one grid across a
+                                     header and its rows, so the two are kept in step by hand. -->
+                                <Grid ColumnDefinitions="28,44,*,Auto,Auto,Auto,Auto"
                                       ColumnSpacing="{StaticResource Space2}">
 
-                                    <!-- Reorder up/down (only for custom playlists + subscription) -->
-                                    <VerticalStackLayout Grid.Column="0"
-                                                         Spacing="0"
-                                                         VerticalOptions="Center"
-                                                         IsVisible="{Binding Source={RelativeSource AncestorType={x:Type vm:PlaylistPlayerViewModel}}, Path=IsReorderEnabled}">
-                                        <Button Text="▲"
-                                                FontSize="{StaticResource FontSizeCardMeta}"
-                                                HeightRequest="22"
-                                                WidthRequest="28"
-                                                Padding="0"
-                                                BackgroundColor="Transparent"
-                                                TextColor="{StaticResource PlayerText}"
-                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:PlaylistPlayerViewModel}}, Path=MoveTrackUpCommand}"
-                                                CommandParameter="{Binding .}" />
-                                        <Button Text="▼"
-                                                FontSize="{StaticResource FontSizeCardMeta}"
-                                                HeightRequest="22"
-                                                WidthRequest="28"
-                                                Padding="0"
-                                                BackgroundColor="Transparent"
-                                                TextColor="{StaticResource PlayerText}"
-                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:PlaylistPlayerViewModel}}, Path=MoveTrackDownCommand}"
-                                                CommandParameter="{Binding .}" />
-                                    </VerticalStackLayout>
+                                    <!-- The number, replaced by the equalizer on the playing row -
+                                         the web's track-number cell, which swaps the same way. -->
+                                    <Label Grid.Column="0"
+                                           Text="{Binding TrackNumber}"
+                                           FontSize="{StaticResource FontSizeCardMeta}"
+                                           TextColor="{StaticResource PlayerText3}"
+                                           HorizontalTextAlignment="Center"
+                                           VerticalOptions="Center"
+                                           IsVisible="{Binding IsNowPlaying, Converter={toolkit:InvertedBoolConverter}}" />
 
-                                    <!-- Mini Album Art -->
-                                    <!-- Only on the playing row, so the list is not a wall of play
-                                         buttons. It doubles as pause/resume for that track. -->
-                                    <views:EqualizerPlayButton Grid.Column="1"
+                                    <views:EqualizerPlayButton Grid.Column="0"
                                                                SongId="{Binding Id}"
-                                                               ButtonSize="28"
-                                                               ZIndex="2"
+                                                               ButtonSize="24"
                                                                HorizontalOptions="Center"
                                                                VerticalOptions="Center"
                                                                IsVisible="{Binding IsNowPlaying}"
@@ -411,13 +594,16 @@
                                             StrokeShape="RoundRectangle 6"
                                             StrokeThickness="0"
                                             HeightRequest="{StaticResource ArtSizeThumb}"
-                                            WidthRequest="{StaticResource ArtSizeThumb}">
+                                            WidthRequest="{StaticResource ArtSizeThumb}"
+                                            VerticalOptions="Center">
                                         <views:SongArtworkView AlbumArtUrl="{Binding AlbumArtThumbDisplaySource}"
                                                HeightRequest="{StaticResource ArtSizeThumb}"
                                                WidthRequest="{StaticResource ArtSizeThumb}" />
                                     </Border>
 
-                                    <!-- Song Info -->
+                                    <!-- Title, and beneath it the genre - which is what the web
+                                         shows on an artist's page, where every row has the same
+                                         artist and naming them again says nothing. -->
                                     <VerticalStackLayout Grid.Column="2"
                                                          VerticalOptions="Center"
                                                          Spacing="{StaticResource SpaceHair}">
@@ -426,22 +612,35 @@
                                                FontAttributes="Bold"
                                                TextColor="{StaticResource PlayerText}"
                                                LineBreakMode="TailTruncation"
-                                               MaxLines="1" />
+                                               MaxLines="1">
+                                            <Label.Triggers>
+                                                <DataTrigger TargetType="Label"
+                                                             Binding="{Binding IsNowPlaying}"
+                                                             Value="True">
+                                                    <Setter Property="TextColor" Value="{StaticResource StBlueBright}" />
+                                                </DataTrigger>
+                                            </Label.Triggers>
+                                        </Label>
+                                        <Label Text="{Binding Genre}"
+                                               FontSize="{StaticResource FontSizeCardMeta}"
+                                               TextColor="{StaticResource PlayerText3}"
+                                               LineBreakMode="TailTruncation"
+                                               MaxLines="1"
+                                               IsVisible="{Binding Source={RelativeSource AncestorType={x:Type vm:PlaylistPlayerViewModel}}, Path=IsArtistTreatment}" />
                                         <Label Text="{Binding ArtistName}"
                                                FontSize="{StaticResource FontSizeCardMeta}"
-                                               TextColor="{StaticResource PlayerText2}"
+                                               TextColor="{StaticResource PlayerText3}"
                                                LineBreakMode="TailTruncation"
-                                               MaxLines="1" />
+                                               MaxLines="1"
+                                               IsVisible="{Binding Source={RelativeSource AncestorType={x:Type vm:PlaylistPlayerViewModel}}, Path=IsArtistTreatment, Converter={toolkit:InvertedBoolConverter}}" />
                                     </VerticalStackLayout>
 
-                                    <!-- Duration -->
                                     <Label Grid.Column="3"
                                            FontSize="{StaticResource FontSizeCardMeta}"
                                            TextColor="{StaticResource PlayerText3}"
                                            VerticalOptions="Center"
                                            Text="{Binding TrackLengthSeconds, Converter={StaticResource DurationConverter}}" />
 
-                                     <!-- Tip Button -->
                                      <views:TipButton Grid.Column="4"
                                                 SongId="{Binding Id}"
                                                 SongTitle="{Binding SongTitle}"
@@ -449,9 +648,33 @@
                                                 CreatorUserId="{Binding CreatorUserId}"
                                                 VerticalOptions="Center" />
 
-                                    <!-- Remove from playlist (custom playlists only) -->
-                                     <Button Grid.Column="5"
-                                            Text="✕"
+                                    <!-- Reorder, custom playlists with a subscription only. -->
+                                    <VerticalStackLayout Grid.Column="5"
+                                                         Spacing="0"
+                                                         VerticalOptions="Center"
+                                                         IsVisible="{Binding Source={RelativeSource AncestorType={x:Type vm:PlaylistPlayerViewModel}}, Path=IsReorderEnabled}">
+                                        <Button Text="&#x25B2;"
+                                                FontSize="{StaticResource FontSizeCardMeta}"
+                                                HeightRequest="22"
+                                                WidthRequest="28"
+                                                Padding="0"
+                                                BackgroundColor="Transparent"
+                                                TextColor="{StaticResource PlayerText}"
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:PlaylistPlayerViewModel}}, Path=MoveTrackUpCommand}"
+                                                CommandParameter="{Binding .}" />
+                                        <Button Text="&#x25BC;"
+                                                FontSize="{StaticResource FontSizeCardMeta}"
+                                                HeightRequest="22"
+                                                WidthRequest="28"
+                                                Padding="0"
+                                                BackgroundColor="Transparent"
+                                                TextColor="{StaticResource PlayerText}"
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:PlaylistPlayerViewModel}}, Path=MoveTrackDownCommand}"
+                                                CommandParameter="{Binding .}" />
+                                    </VerticalStackLayout>
+
+                                     <Button Grid.Column="6"
+                                            Text="&#x2715;"
                                             FontSize="{StaticResource FontSizeCardTitle}"
                                             HeightRequest="{StaticResource ControlHeightSmall}"
                                             WidthRequest="{StaticResource ControlHeightSmall}"

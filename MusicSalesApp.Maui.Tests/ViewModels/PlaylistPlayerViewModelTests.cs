@@ -1348,4 +1348,79 @@ public class PlaylistPlayerViewModelTests
             Assert.That(_viewModel.ShowArtistPanel, Is.False);
         });
     }
+
+    // --- The artist header ---
+
+    [Test]
+    public void ModeLabel_NamesAnArtistPage()
+    {
+        _viewModel.ArtistName = "Test Band";
+
+        Assert.That(_viewModel.ModeLabel, Is.EqualTo("ARTIST"));
+    }
+
+    [Test]
+    public void ModeLabel_NamesAGenrePage()
+    {
+        _viewModel.GenreName = "Country";
+
+        Assert.That(_viewModel.ModeLabel, Is.EqualTo("GENRE"));
+    }
+
+    [Test]
+    public void ModeLabel_FallsBackToPlaylist()
+    {
+        Assert.That(_viewModel.ModeLabel, Is.EqualTo("PLAYLIST"));
+    }
+
+    [Test]
+    public void TrackCountLabel_IsSingularForOneTrack()
+    {
+        _viewModel.Songs.Add(new SongDto { Id = 1 });
+
+        Assert.That(_viewModel.TrackCountLabel, Is.EqualTo("1 track"));
+    }
+
+    [Test]
+    public void TrackCountLabel_IsPluralOtherwise()
+    {
+        _viewModel.Songs.Add(new SongDto { Id = 1 });
+        _viewModel.Songs.Add(new SongDto { Id = 2 });
+
+        Assert.That(_viewModel.TrackCountLabel, Is.EqualTo("2 tracks"));
+    }
+
+    /// <summary>
+    /// The total counts the VISIBLE list, not the artist's whole catalogue.
+    /// </summary>
+    /// <remarks>
+    /// Going offline narrows the list to downloaded songs. A total that disagreed with the rows
+    /// under it would read as a bug rather than as a filter.
+    /// </remarks>
+    [Test]
+    public void TotalStreamsLabel_SumsTheVisibleRows()
+    {
+        _viewModel.Songs.Add(new SongDto { Id = 1, StreamCount = 1200 });
+        _viewModel.Songs.Add(new SongDto { Id = 2, StreamCount = 340 });
+
+        Assert.That(_viewModel.TotalStreamsLabel, Is.EqualTo("1,540 streams"));
+    }
+
+    [Test]
+    public void TrackNumbers_AreOneBasedAndFollowTheListOrder()
+    {
+        var first = new SongDto { Id = 10 };
+        var second = new SongDto { Id = 20 };
+        _viewModel.Songs.Add(first);
+        _viewModel.Songs.Add(second);
+        _mockPlaybackService.SetupGet(p => p.CurrentSong).Returns((SongDto?)null);
+
+        _viewModel.Activate();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(first.TrackNumber, Is.EqualTo(1));
+            Assert.That(second.TrackNumber, Is.EqualTo(2));
+        });
+    }
 }
