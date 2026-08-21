@@ -107,11 +107,26 @@ public partial class PersonaSectionView : ContentView
     /// </remarks>
     public bool HasContent => !string.IsNullOrWhiteSpace(PersonaName);
 
+    /// <summary>"More about Test Band" - the web's .persona-more link.</summary>
+    public string MoreAboutLabel =>
+        string.IsNullOrWhiteSpace(PersonaName) ? string.Empty : $"More about {PersonaName} ›";
+
+    /// <summary>
+    /// Whether there is more to read on the artist's own page.
+    /// </summary>
+    /// <remarks>
+    /// Needs a bio: with nothing clamped there is nothing being cut off, and the name above is
+    /// already a link to the same place, so a second one would just be repetition.
+    /// </remarks>
+    public bool ShowMoreLink => HasContent && !string.IsNullOrWhiteSpace(Bio);
+
     private static void OnContentChanged(BindableObject bindable, object oldValue, object newValue)
     {
         if (bindable is PersonaSectionView view)
         {
             view.OnPropertyChanged(nameof(HasContent));
+            view.OnPropertyChanged(nameof(MoreAboutLabel));
+            view.OnPropertyChanged(nameof(ShowMoreLink));
         }
     }
 }

@@ -62,6 +62,20 @@
                    LineBreakMode="WordWrap"
                    IsVisible="{Binding Bio, Source={x:Reference Root}, Converter={toolkit:IsStringNotNullOrEmptyConverter}}" />
 
+            <!-- The bio is clamped on the players, so this sends anyone who wants the rest to the
+                 artist's own page, which shows it in full. Hidden when there is no bio to continue
+                 reading, and on the artist page itself, where the link would point at this page. -->
+            <Label Text="{Binding MoreAboutLabel, Source={x:Reference Root}}"
+                   FontSize="{StaticResource FontSizeSmall}"
+                   FontAttributes="Bold"
+                   TextColor="{StaticResource StBlueBright}"
+                   IsVisible="{Binding ShowMoreLink, Source={x:Reference Root}}">
+                <Label.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding NavigateCommand, Source={x:Reference Root}}"
+                                          CommandParameter="{Binding PersonaName, Source={x:Reference Root}}" />
+                </Label.GestureRecognizers>
+            </Label>
+
             <Label Style="{StaticResource PlayerBodyText}"
                    TextColor="{StaticResource StBlueBright}"
                    FontAttributes="Bold"

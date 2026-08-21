@@ -579,4 +579,50 @@ public class SongPlayerViewModelTests
         Assert.That(song.DislikeCount, Is.EqualTo(2));
         Assert.That(_viewModel.IsRefreshing, Is.False);
     }
+
+    // --- The hero header ---
+
+    [Test]
+    public void StreamsLabel_SeparatesThousands()
+    {
+        _viewModel.Song = new SongDto { Id = 1, StreamCount = 12345 };
+
+        Assert.That(_viewModel.StreamsLabel, Is.EqualTo("12,345 streams"));
+    }
+
+    [Test]
+    public void StreamsLabel_ReadsZero_WithNoSongLoaded()
+    {
+        // The header renders before the song arrives; it must not throw or show a blank count.
+        Assert.That(_viewModel.StreamsLabel, Is.EqualTo("0 streams"));
+    }
+
+    [Test]
+    public void MoreAboutArtistLabel_NamesTheArtist()
+    {
+        _viewModel.Song = new SongDto { Id = 1, ArtistName = "Test Band" };
+
+        Assert.That(_viewModel.MoreAboutArtistLabel, Is.EqualTo("More about Test Band"));
+    }
+
+    [Test]
+    public void MoreAboutArtistLabel_IsEmpty_WhenThereIsNoArtist()
+    {
+        _viewModel.Song = new SongDto { Id = 1 };
+
+        Assert.That(_viewModel.MoreAboutArtistLabel, Is.Empty);
+    }
+
+    /// <summary>
+    /// The access badge and the preview warning are exact opposites - never both, never neither.
+    /// </summary>
+    [Test]
+    public void UnlimitedAccess_IsTheInverseOfPreviewLimited()
+    {
+        _viewModel.Song = new SongDto { Id = 1 };
+
+        Assert.That(
+            _viewModel.HasUnlimitedAccess,
+            Is.EqualTo(!_viewModel.IsCurrentSongPreviewLimited));
+    }
 }

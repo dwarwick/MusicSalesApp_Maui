@@ -19,6 +19,219 @@
                 <VerticalStackLayout Spacing="{StaticResource Space4}"
                                      Padding="20,24,20,16">
 
+                <!-- SONG HERO - the web's .song-hero-inner. The cover art is a SMALL square
+                     here beside the details; the large one lives in the stage panel below, which is
+                     also where the lyrics go. The chip is the GENRE (the artist page's is the page
+                     kind), and it navigates, as the web's genre-link does. -->
+                <Border Style="{StaticResource PlayerPanel}">
+                    <VerticalStackLayout Spacing="{StaticResource Space4}">
+
+                        <Grid ColumnDefinitions="Auto,*"
+                              ColumnSpacing="{StaticResource Space4}">
+                            <Border Grid.Column="0"
+                                    HeightRequest="100"
+                                    WidthRequest="100"
+                                    StrokeThickness="0"
+                                    StrokeShape="RoundRectangle 10"
+                                    VerticalOptions="Start">
+                                <views:SongArtworkView AlbumArtUrl="{Binding Song.AlbumArtHeroDisplaySource}"
+                                                       HeightRequest="100"
+                                                       WidthRequest="100" />
+                            </Border>
+
+                            <VerticalStackLayout Grid.Column="1"
+                                                 Spacing="{StaticResource Space2}"
+                                                 VerticalOptions="Start">
+
+                                <HorizontalStackLayout Spacing="{StaticResource Space2}">
+                                    <Border Padding="10,3"
+                                            StrokeShape="RoundRectangle 999"
+                                            StrokeThickness="{StaticResource StrokeThin}"
+                                            Stroke="{StaticResource ChipVioletLine}"
+                                            BackgroundColor="{StaticResource ChipVioletFill}"
+                                            VerticalOptions="Center"
+                                            IsVisible="{Binding Song.Genre, Converter={toolkit:IsStringNotNullOrEmptyConverter}}">
+                                        <Label Text="{Binding Song.Genre}"
+                                               FontSize="{StaticResource FontSizeNano}"
+                                               FontAttributes="Bold"
+                                               CharacterSpacing="1"
+                                               TextColor="{StaticResource OnChipViolet}" />
+                                        <Border.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding NavigateToGenreCommand}"
+                                                                  CommandParameter="{Binding Song.Genre}" />
+                                        </Border.GestureRecognizers>
+                                    </Border>
+                                    <views:AiContentBadgesView IsAiMusic="{Binding Song.IsAiGenerated}"
+                                                               IsAiVocals="{Binding Song.IsAiVocals}"
+                                                               IsAiLyrics="{Binding Song.IsAiLyrics}"
+                                                               BadgeSize="24"
+                                                               VerticalOptions="Center" />
+                                </HorizontalStackLayout>
+
+                                <Label Text="{Binding Song.SongTitle}"
+                                       FontSize="{StaticResource FontSizeH1}"
+                                       FontAttributes="Bold"
+                                       TextColor="{StaticResource PlayerText}"
+                                       LineBreakMode="WordWrap"
+                                       MaxLines="3" />
+
+                                <FlexLayout Wrap="Wrap"
+                                            Direction="Row"
+                                            AlignItems="Center">
+                                    <Label Text="{Binding Song.ArtistName}"
+                                           FontSize="{StaticResource FontSizeSmall}"
+                                           FontAttributes="Bold"
+                                           TextColor="{StaticResource StBlueBright}"
+                                           TextDecorations="Underline"
+                                           Margin="0,0,8,0"
+                                           VerticalOptions="Center">
+                                        <Label.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding NavigateToArtistCommand}"
+                                                                  CommandParameter="{Binding Song.ArtistName}" />
+                                        </Label.GestureRecognizers>
+                                    </Label>
+                                    <Path Data="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"
+                                          Fill="{StaticResource PlayerText3}"
+                                          Aspect="Uniform"
+                                          HeightRequest="14"
+                                          WidthRequest="14"
+                                          Margin="0,0,4,0"
+                                          VerticalOptions="Center" />
+                                    <Label Text="{Binding StreamsLabel}"
+                                           FontSize="{StaticResource FontSizeSmall}"
+                                           TextColor="{StaticResource PlayerText2}"
+                                           Margin="0,0,8,0"
+                                           VerticalOptions="Center" />
+                                    <Label Text="{Binding Song.TrackLengthSeconds, Converter={StaticResource DurationConverter}}"
+                                           FontSize="{StaticResource FontSizeSmall}"
+                                           TextColor="{StaticResource PlayerText2}"
+                                           VerticalOptions="Center" />
+                                </FlexLayout>
+
+                                <HorizontalStackLayout Spacing="{StaticResource SpaceTight}"
+                                                       IsVisible="{Binding HasUnlimitedAccess}">
+                                    <Path Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
+                                          Fill="{StaticResource StBlueBright}"
+                                          Aspect="Uniform"
+                                          HeightRequest="14"
+                                          WidthRequest="14"
+                                          VerticalOptions="Center" />
+                                    <Label Text="Unlimited Access"
+                                           FontSize="{StaticResource FontSizeCardMeta}"
+                                           TextColor="{StaticResource StBlueBright}"
+                                           VerticalOptions="Center" />
+                                </HorizontalStackLayout>
+
+                                <Border Padding="10,4"
+                                        StrokeShape="RoundRectangle 999"
+                                        StrokeThickness="0"
+                                        HorizontalOptions="Start"
+                                        IsVisible="{Binding IsCurrentSongPreviewLimited}"
+                                        BackgroundColor="{StaticResource StAmber}">
+                                    <Label FontSize="{StaticResource FontSizeCardMeta}"
+                                           FontAttributes="Bold"
+                                           TextColor="{StaticResource OnWarn}"
+                                           Text="Preview Only (60 seconds)" />
+                                </Border>
+                            </VerticalStackLayout>
+                        </Grid>
+
+                        <!-- Play leads, then the actions. Wrapped rather than a single row: there
+                             are seven of them and a phone is not wide enough for one line. -->
+                        <FlexLayout Wrap="Wrap"
+                                    Direction="Row"
+                                    AlignItems="Center">
+                            <views:EqualizerPlayButton SongId="{Binding Song.Id}"
+                                                       Command="{Binding PlaySongCommand}"
+                                                       ButtonSize="52"
+                                                       Margin="0,0,12,0"
+                                                       VerticalOptions="Center" />
+
+                        <!-- Like Button -->
+                        <VerticalStackLayout VerticalOptions="Center"
+                                             Spacing="{StaticResource SpaceHair}">
+                            <Grid HeightRequest="40" WidthRequest="40"
+                                  HorizontalOptions="Center">
+                                <Grid.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding LikeSongCommand}" />
+                                </Grid.GestureRecognizers>
+                                <Path Data="{Binding Song.UserLikeStatus, Converter={StaticResource LikeGlyphConverter}}"
+                                      Fill="{Binding Song.UserLikeStatus, Converter={StaticResource LikeFillConverter}}"
+                                      Aspect="Uniform"
+                                      HeightRequest="24" WidthRequest="24"
+                                      HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Grid>
+                            <Label Text="{Binding Song.LikeCount}"
+                                   FontSize="{StaticResource FontSizeMicro}"
+                                   TextColor="{StaticResource PlayerText3}"
+                                   HorizontalTextAlignment="Center" />
+                        </VerticalStackLayout>
+
+                        <!-- Dislike Button -->
+                        <VerticalStackLayout VerticalOptions="Center"
+                                             Spacing="{StaticResource SpaceHair}">
+                            <Grid HeightRequest="40" WidthRequest="40"
+                                  HorizontalOptions="Center">
+                                <Grid.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding DislikeSongCommand}" />
+                                </Grid.GestureRecognizers>
+                                <Path Data="{Binding Song.UserLikeStatus, Converter={StaticResource DislikeGlyphConverter}}"
+                                      Fill="{Binding Song.UserLikeStatus, Converter={StaticResource DislikeFillConverter}}"
+                                      Aspect="Uniform"
+                                      HeightRequest="24" WidthRequest="24"
+                                      HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Grid>
+                            <Label Text="{Binding Song.DislikeCount}"
+                                   FontSize="{StaticResource FontSizeMicro}"
+                                   TextColor="{StaticResource PlayerText3}"
+                                   HorizontalTextAlignment="Center" />
+                        </VerticalStackLayout>
+
+                        <!-- Facebook Share Button -->
+                        <views:FacebookShareButton ShareUrl="{Binding ShareUrl}"
+                                                   VerticalOptions="Center" />
+
+                        <!-- Share Button -->
+                        <views:ShareButton ShareTitle="{Binding Song.SongTitle}"
+                                           ShareUrl="{Binding ShareUrl}"
+                                           VerticalOptions="Center" />
+
+                        <!-- Add to Playlist Button -->
+                        <views:AddToPlaylistButton SongId="{Binding Song.Id}"
+                                                   SongTitle="{Binding Song.SongTitle}"
+                                                   VerticalOptions="Center" />
+
+                        <!-- Tip Button -->
+                        <views:TipButton SongId="{Binding Song.Id}"
+                                         SongTitle="{Binding Song.SongTitle}"
+                                         CreatorId="{Binding Song.CreatorId}"
+                                         CreatorUserId="{Binding Song.CreatorUserId}"
+                                         VerticalOptions="Center" />
+
+                        <!-- Report Button (hidden offline - reporting needs the server) -->
+                        <VerticalStackLayout VerticalOptions="Center"
+                                             IsVisible="{Binding CanUseServerActions}"
+                                             Spacing="{StaticResource SpaceHair}">
+                            <Grid HeightRequest="40" WidthRequest="40"
+                                  HorizontalOptions="Center">
+                                <Grid.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding ReportSongCommand}" />
+                                </Grid.GestureRecognizers>
+                                <Path Data="M3 3v18h2V3H3zm4 0v12h8l-2-6 2-6H7z"
+                                      Fill="{StaticResource PlayerText3}"
+                                      Aspect="Uniform"
+                                      HeightRequest="20" WidthRequest="20"
+                                      HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Grid>
+                            <Label Text="Report"
+                                   FontSize="{StaticResource FontSizeNano}"
+                                   TextColor="{StaticResource PlayerText3}"
+                                   HorizontalTextAlignment="Center" />
+                        </VerticalStackLayout>
+                        </FlexLayout>
+                    </VerticalStackLayout>
+                </Border>
+
                 <!-- THE STAGE PANEL. Mirrors the web's .playlist-stage-panel: a bordered section
                      whose header carries an uppercase caption naming what is on show, and - only
                      when the song HAS lyrics a listener may see - a segmented switch between them.
@@ -79,47 +292,6 @@
                     </VerticalStackLayout>
                 </Border>
 
-                <views:AiContentBadgesView IsAiMusic="{Binding Song.IsAiGenerated}"
-                                            IsAiVocals="{Binding Song.IsAiVocals}"
-                                            IsAiLyrics="{Binding Song.IsAiLyrics}"
-                                            BadgeSize="34"
-                                            HorizontalOptions="Center" />
-
-                <!-- Song Title -->
-                <Label Text="{Binding Song.SongTitle}"
-                       FontSize="{StaticResource FontSizeH2}"
-                       FontAttributes="Bold"
-                       TextColor="{StaticResource PlayerText}"
-                       HorizontalTextAlignment="Center"
-                       LineBreakMode="WordWrap"
-                       MaxLines="2" />
-
-                <!-- Artist Name -->
-                <HorizontalStackLayout HorizontalOptions="Center"
-                                        Spacing="{StaticResource Space2}">
-                    <Border StrokeShape="RoundRectangle 12"
-                            StrokeThickness="0"
-                            HeightRequest="24"
-                            WidthRequest="24"
-                            VerticalOptions="Center"
-                            IsVisible="{Binding Song.PersonaImageThumbDisplaySource, Converter={toolkit:IsNotNullConverter}}">
-                        <Image Source="{Binding Song.PersonaImageThumbDisplaySource}"
-                               Aspect="AspectFill"
-                               HeightRequest="24"
-                               WidthRequest="24" />
-                    </Border>
-                    <Label Text="{Binding Song.ArtistName}"
-                           FontSize="{StaticResource FontSizeBodyLarge}"
-                           TextColor="{StaticResource PlayerText2}"
-                           VerticalOptions="Center"
-                           TextDecorations="Underline">
-                        <Label.GestureRecognizers>
-                            <TapGestureRecognizer Command="{Binding NavigateToArtistCommand}"
-                                                  CommandParameter="{Binding Song.ArtistName}" />
-                        </Label.GestureRecognizers>
-                    </Label>
-                </HorizontalStackLayout>
-
                 <!-- THE ARTIST PANEL - the web's .playlist-artist-panel. Collapses with its
                      caption when the song has no artist to show, rather than leaving a captioned
                      empty box. -->
@@ -138,152 +310,6 @@
                     </VerticalStackLayout>
                 </Border>
 
-                <!-- Genre · Stream Count · Duration -->
-                <HorizontalStackLayout HorizontalOptions="Center"
-                                        Spacing="{StaticResource SpaceTight}">
-                    <Border Padding="8,4"
-                            StrokeShape="RoundRectangle 12"
-                            StrokeThickness="1"
-                            Stroke="{StaticResource PlayerLine}"
-                            BackgroundColor="Transparent"
-                            IsVisible="{Binding Song.Genre, Converter={toolkit:IsStringNotNullOrEmptyConverter}}">
-                        <Label Text="{Binding Song.Genre}"
-                               FontSize="{StaticResource FontSizeCardMeta}"
-                               TextColor="{StaticResource StBlueBright}"
-                               TextDecorations="Underline">
-                            <Label.GestureRecognizers>
-                                <TapGestureRecognizer Command="{Binding NavigateToGenreCommand}"
-                                                      CommandParameter="{Binding Song.Genre}" />
-                            </Label.GestureRecognizers>
-                        </Label>
-                    </Border>
-                    <Label Text="·"
-                           FontSize="{StaticResource FontSizeCardTitle}"
-                           TextColor="{StaticResource PlayerText3}"
-                           VerticalOptions="Center"
-                           IsVisible="{Binding Song.Genre, Converter={toolkit:IsStringNotNullOrEmptyConverter}}" />
-                          <views:EqualizerPlayButton SongId="{Binding Song.Id}"
-                                         Command="{Binding PlaySongCommand}"
-                                         ButtonSize="40"
-                                         VerticalOptions="Center" />
-                    <Label FontSize="{StaticResource FontSizeSmall}"
-                           TextColor="{StaticResource PlayerText3}"
-                           VerticalOptions="Center">
-                        <Label.Text>
-                            <Binding Path="Song.StreamCount"
-                                     StringFormat="{}{0:N0} streams" />
-                        </Label.Text>
-                    </Label>
-                    <Label Text="·"
-                           FontSize="{StaticResource FontSizeCardTitle}"
-                           TextColor="{StaticResource PlayerText3}"
-                           VerticalOptions="Center" />
-                    <Label FontSize="{StaticResource FontSizeSmall}"
-                           TextColor="{StaticResource PlayerText3}"
-                           VerticalOptions="Center"
-                           Text="{Binding Song.TrackLengthSeconds, Converter={StaticResource DurationConverter}}" />
-                </HorizontalStackLayout>
-
-                <!-- Subscription Badge (hidden for subscribers) -->
-                <Border HorizontalOptions="Center"
-                        Padding="12,6"
-                        StrokeShape="RoundRectangle 16"
-                        StrokeThickness="0"
-                        IsVisible="{Binding IsCurrentSongPreviewLimited}"
-                        BackgroundColor="{StaticResource StAmber}">
-                    <Label FontSize="{StaticResource FontSizeCardMeta}"
-                           FontAttributes="Bold"
-                           TextColor="{StaticResource OnWarn}"
-                           HorizontalTextAlignment="Center"
-                           Text="Preview Only (60 seconds)" />
-                </Border>
-
-                <!-- Action Row: Like, Dislike, Share -->
-                <HorizontalStackLayout HorizontalOptions="Center"
-                                        Spacing="{StaticResource Space4}">
-
-                    <!-- Like Button -->
-                    <VerticalStackLayout VerticalOptions="Center"
-                                         Spacing="{StaticResource SpaceHair}">
-                        <Grid HeightRequest="40" WidthRequest="40"
-                              HorizontalOptions="Center">
-                            <Grid.GestureRecognizers>
-                                <TapGestureRecognizer Command="{Binding LikeSongCommand}" />
-                            </Grid.GestureRecognizers>
-                            <Path Data="{Binding Song.UserLikeStatus, Converter={StaticResource LikeGlyphConverter}}"
-                                  Fill="{Binding Song.UserLikeStatus, Converter={StaticResource LikeFillConverter}}"
-                                  Aspect="Uniform"
-                                  HeightRequest="24" WidthRequest="24"
-                                  HorizontalOptions="Center" VerticalOptions="Center" />
-                        </Grid>
-                        <Label Text="{Binding Song.LikeCount}"
-                               FontSize="{StaticResource FontSizeMicro}"
-                               TextColor="{StaticResource PlayerText3}"
-                               HorizontalTextAlignment="Center" />
-                    </VerticalStackLayout>
-
-                    <!-- Dislike Button -->
-                    <VerticalStackLayout VerticalOptions="Center"
-                                         Spacing="{StaticResource SpaceHair}">
-                        <Grid HeightRequest="40" WidthRequest="40"
-                              HorizontalOptions="Center">
-                            <Grid.GestureRecognizers>
-                                <TapGestureRecognizer Command="{Binding DislikeSongCommand}" />
-                            </Grid.GestureRecognizers>
-                            <Path Data="{Binding Song.UserLikeStatus, Converter={StaticResource DislikeGlyphConverter}}"
-                                  Fill="{Binding Song.UserLikeStatus, Converter={StaticResource DislikeFillConverter}}"
-                                  Aspect="Uniform"
-                                  HeightRequest="24" WidthRequest="24"
-                                  HorizontalOptions="Center" VerticalOptions="Center" />
-                        </Grid>
-                        <Label Text="{Binding Song.DislikeCount}"
-                               FontSize="{StaticResource FontSizeMicro}"
-                               TextColor="{StaticResource PlayerText3}"
-                               HorizontalTextAlignment="Center" />
-                    </VerticalStackLayout>
-
-                    <!-- Facebook Share Button -->
-                    <views:FacebookShareButton ShareUrl="{Binding ShareUrl}"
-                                               VerticalOptions="Center" />
-
-                    <!-- Share Button -->
-                    <views:ShareButton ShareTitle="{Binding Song.SongTitle}"
-                                       ShareUrl="{Binding ShareUrl}"
-                                       VerticalOptions="Center" />
-
-                    <!-- Add to Playlist Button -->
-                    <views:AddToPlaylistButton SongId="{Binding Song.Id}"
-                                               SongTitle="{Binding Song.SongTitle}"
-                                               VerticalOptions="Center" />
-
-                    <!-- Tip Button -->
-                    <views:TipButton SongId="{Binding Song.Id}"
-                                     SongTitle="{Binding Song.SongTitle}"
-                                     CreatorId="{Binding Song.CreatorId}"
-                                     CreatorUserId="{Binding Song.CreatorUserId}"
-                                     VerticalOptions="Center" />
-
-                    <!-- Report Button (hidden offline - reporting needs the server) -->
-                    <VerticalStackLayout VerticalOptions="Center"
-                                         IsVisible="{Binding CanUseServerActions}"
-                                         Spacing="{StaticResource SpaceHair}">
-                        <Grid HeightRequest="40" WidthRequest="40"
-                              HorizontalOptions="Center">
-                            <Grid.GestureRecognizers>
-                                <TapGestureRecognizer Command="{Binding ReportSongCommand}" />
-                            </Grid.GestureRecognizers>
-                            <Path Data="M3 3v18h2V3H3zm4 0v12h8l-2-6 2-6H7z"
-                                  Fill="{StaticResource PlayerText3}"
-                                  Aspect="Uniform"
-                                  HeightRequest="20" WidthRequest="20"
-                                  HorizontalOptions="Center" VerticalOptions="Center" />
-                        </Grid>
-                        <Label Text="Report"
-                               FontSize="{StaticResource FontSizeNano}"
-                               TextColor="{StaticResource PlayerText3}"
-                               HorizontalTextAlignment="Center" />
-                    </VerticalStackLayout>
-                </HorizontalStackLayout>
                 </VerticalStackLayout>
             </ScrollView>
         </RefreshView>

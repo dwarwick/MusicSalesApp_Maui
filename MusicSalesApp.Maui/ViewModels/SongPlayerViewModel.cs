@@ -90,10 +90,14 @@ public partial class SongPlayerViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsCurrentSongPreviewLimited))]
+    [NotifyPropertyChangedFor(nameof(HasUnlimitedAccess))]
+    [NotifyPropertyChangedFor(nameof(StreamsLabel))]
+    [NotifyPropertyChangedFor(nameof(MoreAboutArtistLabel))]
     public partial SongDto? Song { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsCurrentSongPreviewLimited))]
+    [NotifyPropertyChangedFor(nameof(HasUnlimitedAccess))]
     public partial bool HasActiveSubscription { get; set; }
 
     [ObservableProperty]
@@ -151,6 +155,16 @@ public partial class SongPlayerViewModel : ObservableObject
     }
 
     public string ShareUrl => Song?.ShareUrl ?? string.Empty;
+
+    /// <summary>Whether to show "Unlimited Access" rather than the preview warning.</summary>
+    public bool HasUnlimitedAccess => !IsCurrentSongPreviewLimited;
+
+    /// <summary>"8 streams", with a thousands separator, for the hero meta line.</summary>
+    public string StreamsLabel => $"{Song?.StreamCount ?? 0:N0} streams";
+
+    /// <summary>The web's "More about {artist}" link on the artist panel.</summary>
+    public string MoreAboutArtistLabel =>
+        string.IsNullOrWhiteSpace(Song?.ArtistName) ? string.Empty : $"More about {Song!.ArtistName}";
 
     public bool IsCurrentSongPreviewLimited => PreviewAccessPolicy.ShouldLimitPreview(_authService, Song);
 
