@@ -1,7 +1,8 @@
-using System.Windows.Input;
+﻿using System.Windows.Input;
 using MusicSalesApp.Maui.Services;
 using SkiaSharp;
 using SkiaSharp.Views.Maui;
+using MusicSalesApp.Maui.Resources.Styles;
 
 namespace MusicSalesApp.Maui.Views;
 
@@ -22,7 +23,7 @@ public partial class EqualizerPlayButton : ContentView
         BindableProperty.Create(nameof(ButtonSize), typeof(double), typeof(EqualizerPlayButton), 40d, propertyChanged: OnButtonSizePropertyChanged);
 
     public static readonly BindableProperty AccentColorProperty =
-        BindableProperty.Create(nameof(AccentColor), typeof(Color), typeof(EqualizerPlayButton), Color.FromArgb("#1DB954"), propertyChanged: OnVisualPropertyChanged);
+        BindableProperty.Create(nameof(AccentColor), typeof(Color), typeof(EqualizerPlayButton), AppColors.BlueBright, propertyChanged: OnVisualPropertyChanged);
 
     public static readonly BindableProperty IconColorProperty =
         BindableProperty.Create(nameof(IconColor), typeof(Color), typeof(EqualizerPlayButton), Colors.Black, propertyChanged: OnVisualPropertyChanged);

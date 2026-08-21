@@ -1,5 +1,6 @@
-using Microsoft.Maui.Controls.Shapes;
+﻿using Microsoft.Maui.Controls.Shapes;
 using MusicSalesApp.Maui.ViewModels;
+using MusicSalesApp.Maui.Resources.Styles;
 
 namespace MusicSalesApp.Maui.Services;
 
@@ -30,7 +31,7 @@ public class TipAmountPickerPage : ContentPage
     {
         var backdrop = new Grid
         {
-            BackgroundColor = Color.FromArgb("#A6000000")
+            BackgroundColor = AppColors.Get("Scrim", "#CC000000")
         };
         backdrop.GestureRecognizers.Add(new TapGestureRecognizer
         {
@@ -66,7 +67,7 @@ public class TipAmountPickerPage : ContentPage
             Padding = 24,
             Shadow = new Shadow
             {
-                Brush = new SolidColorBrush(Color.FromArgb("#60000000")),
+                Brush = new SolidColorBrush(Colors.Black.WithAlpha(0.38f)),
                 Offset = new Point(0, 10),
                 Radius = 18,
                 Opacity = 0.35f,
@@ -85,7 +86,7 @@ public class TipAmountPickerPage : ContentPage
                 }
             }
         };
-        dialog.SetAppThemeColor(Border.BackgroundColorProperty, Colors.White, Color.FromArgb("#202020"));
+        dialog.SetAppThemeColor(Border.BackgroundColorProperty, AppColors.Get("SurfaceLight", "#FFFFFF"), AppColors.Get("SurfaceDark", "#2A323D"));
 
         return dialog;
     }
@@ -104,7 +105,7 @@ public class TipAmountPickerPage : ContentPage
         {
             Text = "Support the artist directly",
             FontSize = 13,
-            TextColor = GetThemeColor("#6E6E6E", "#ACACAC")
+            TextColor = AppColors.Text2
         };
 
         var heart = new Label
@@ -139,7 +140,7 @@ public class TipAmountPickerPage : ContentPage
             Text = "✕",
             FontSize = 14,
             BackgroundColor = Colors.Transparent,
-            TextColor = GetThemeColor("#6E6E6E", "#ACACAC"),
+            TextColor = AppColors.Text2,
             Padding = 6,
             WidthRequest = 36,
             HeightRequest = 36,
@@ -186,13 +187,13 @@ public class TipAmountPickerPage : ContentPage
         {
             Text = "Choose a quick amount or enter your own.",
             FontSize = 13,
-            TextColor = GetThemeColor("#6E6E6E", "#ACACAC")
+            TextColor = AppColors.Text2
         };
 
         var card = new Border
         {
             Stroke = Colors.Transparent,
-            BackgroundColor = GetThemeColor("#F6F6F6", "#2A2A2A"),
+            BackgroundColor = AppColors.SurfaceHover,
             StrokeShape = new RoundRectangle { CornerRadius = 18 },
             Padding = new Thickness(16, 14),
             Content = new VerticalStackLayout
@@ -252,9 +253,9 @@ public class TipAmountPickerPage : ContentPage
         {
             Text = "Custom Amount",
             BackgroundColor = Colors.Transparent,
-            BorderColor = GetThemeColor("#E0E0E0", "#3A3A3A"),
+            BorderColor = AppColors.Line,
             BorderWidth = 1,
-            TextColor = GetThemeColor("#404040", "#C8C8C8"),
+            TextColor = AppColors.Text,
             CornerRadius = 18
         };
         customButton.Clicked += (_, _) => _viewModel.RevealCustomInput();
@@ -294,8 +295,8 @@ public class TipAmountPickerPage : ContentPage
 
         var entryBorder = new Border
         {
-            Stroke = GetThemeColor("#E0E0E0", "#3A3A3A"),
-            BackgroundColor = GetThemeColor("#FAFAFA", "#252525"),
+            Stroke = AppColors.Line,
+            BackgroundColor = AppColors.SurfaceHover,
             StrokeShape = new RoundRectangle { CornerRadius = 18 },
             Padding = new Thickness(16, 4),
             Content = entryGrid
@@ -304,7 +305,7 @@ public class TipAmountPickerPage : ContentPage
         var sendButton = new Button
         {
             Text = "Send Tip",
-            BackgroundColor = GetColorFromResources("Primary", "#1DB954"),
+            BackgroundColor = AppColors.AccentFill,
             TextColor = Colors.White,
             FontAttributes = FontAttributes.Bold,
             CornerRadius = 18
@@ -337,7 +338,7 @@ public class TipAmountPickerPage : ContentPage
         return new Border
         {
             Stroke = Colors.Transparent,
-            BackgroundColor = GetThemeColor("#F7F7F7", "#252525"),
+            BackgroundColor = AppColors.SurfaceHover,
             StrokeShape = new RoundRectangle { CornerRadius = 16 },
             Padding = new Thickness(14, 12),
             Content = new Label
@@ -345,7 +346,7 @@ public class TipAmountPickerPage : ContentPage
                 Text = "Tips are processed via PayPal. Minimum $1, maximum $50.",
                 FontSize = 12,
                 HorizontalTextAlignment = TextAlignment.Center,
-                TextColor = GetThemeColor("#6E6E6E", "#ACACAC")
+                TextColor = AppColors.Text2
             }
         };
     }
@@ -356,14 +357,14 @@ public class TipAmountPickerPage : ContentPage
         {
             FontSize = 12,
             HorizontalTextAlignment = TextAlignment.Center,
-            TextColor = GetThemeColor("#B00020", "#FFB4AB")
+            TextColor = AppColors.Danger
         };
         errorLabel.SetBinding(Label.TextProperty, nameof(TipAmountPickerViewModel.ErrorMessage));
 
         var errorCard = new Border
         {
             Stroke = Colors.Transparent,
-            BackgroundColor = GetThemeColor("#FDECEC", "#4B1F1F"),
+            BackgroundColor = AppColors.DangerSoft,
             StrokeShape = new RoundRectangle { CornerRadius = 14 },
             Padding = new Thickness(12, 10),
             IsVisible = false,
@@ -393,7 +394,7 @@ public class TipAmountPickerPage : ContentPage
 
     private static Color GetAccentSurfaceColor()
     {
-        var accent = GetColorFromResources("Primary", "#1DB954");
+        var accent = AppColors.AccentFill;
         return Application.Current?.RequestedTheme == AppTheme.Dark
             ? accent.WithAlpha(0.28f)
             : accent.WithAlpha(0.12f);
@@ -402,8 +403,8 @@ public class TipAmountPickerPage : ContentPage
     private static Color GetAccentTextColor()
     {
         return Application.Current?.RequestedTheme == AppTheme.Dark
-            ? GetColorFromResources("SpotifyGreenLight", "#1ED760")
-            : GetColorFromResources("Primary", "#1DB954");
+            ? AppColors.BlueBright
+            : AppColors.AccentFill;
     }
 
     private static Color GetColorFromResources(string key, string fallback)

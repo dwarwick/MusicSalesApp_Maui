@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8" ?>
+﻿<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
@@ -10,12 +10,12 @@
              BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
 
     <ScrollView>
-        <VerticalStackLayout Spacing="16"
+        <VerticalStackLayout Spacing="{StaticResource Space4}"
                              Padding="20,24,20,16">
 
             <!-- Persona Name -->
             <Label Text="{Binding PersonaName}"
-                   FontSize="24"
+                   FontSize="{StaticResource FontSizeH2}"
                    FontAttributes="Bold"
                    TextColor="{AppThemeBinding Light=Black, Dark=White}"
                    HorizontalTextAlignment="Center" />
@@ -46,7 +46,7 @@
                     BackgroundColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray600}}"
                     IsVisible="{Binding HasImage, Converter={toolkit:InvertedBoolConverter}}">
                 <Label Text="&#x266B;"
-                       FontSize="48"
+                       FontSize="{StaticResource GlyphSizeHero}"
                        HorizontalOptions="Center"
                        VerticalOptions="Center"
                        TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray300}}" />
@@ -54,7 +54,7 @@
 
             <!-- Bio -->
             <Label Text="{Binding PersonaBio}"
-                   FontSize="15"
+                   FontSize="{StaticResource FontSizeBody}"
                    TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
                    LineBreakMode="WordWrap"
                    Margin="8,0"
@@ -62,7 +62,7 @@
 
             <!-- No bio available -->
             <Label Text="No bio available."
-                   FontSize="15"
+                   FontSize="{StaticResource FontSizeBody}"
                    FontAttributes="Italic"
                    TextColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray500}}"
                    HorizontalTextAlignment="Center"

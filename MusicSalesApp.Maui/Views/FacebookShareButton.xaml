@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8" ?>
+﻿<?xml version="1.0" encoding="utf-8" ?>
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="MusicSalesApp.Maui.Views.FacebookShareButton">
@@ -6,10 +6,10 @@
     <Border x:Name="FbShareBorder"
             StrokeShape="RoundRectangle 4"
             Stroke="Transparent"
-            BackgroundColor="#3b5998"
+            BackgroundColor="{StaticResource FacebookBrand}"
             Padding="0"
-            HeightRequest="32"
-            WidthRequest="32"
+            HeightRequest="{StaticResource ControlHeightSmall}"
+            WidthRequest="{StaticResource ControlHeightSmall}"
             VerticalOptions="Center">
         <Border.GestureRecognizers>
             <TapGestureRecognizer Tapped="OnFbShareClicked" />
@@ -19,14 +19,14 @@
             <!-- Facebook "f" logo area -->
             <Border StrokeShape="RoundRectangle 3"
                     Stroke="Transparent"
-                    BackgroundColor="#334b82"
+                    BackgroundColor="{StaticResource FacebookBrandPressed}"
                     HeightRequest="22"
                     WidthRequest="22"
                     Padding="0"
                     HorizontalOptions="Center"
                     VerticalOptions="Center">
                 <Label Text="f"
-                       FontSize="16"
+                       FontSize="{StaticResource FontSizeBodyLarge}"
                        FontAttributes="Bold"
                        TextColor="White"
                        HorizontalOptions="Center"

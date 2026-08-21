@@ -1,7 +1,8 @@
-using System.Globalization;
+﻿using System.Globalization;
 using Microsoft.Extensions.Logging;
 using MusicSalesApp.Maui.Services;
 using MusicSalesApp.Maui.ViewModels;
+using MusicSalesApp.Maui.Resources.Styles;
 
 namespace MusicSalesApp.Maui.Views;
 
@@ -145,10 +146,9 @@ public class ActivePillBgConverter : IValueConverter
 {
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
-        if (value is true)
-            return Color.FromArgb("#1ED760");
-
-        return Color.FromArgb("#1DB954");
+        return value is true
+            ? AppColors.AccentFill
+            : AppColors.Surface;
     }
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
@@ -164,7 +164,11 @@ public class ActivePillTextConverter : IValueConverter
 {
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
-        return Colors.White;
+        // Was unconditionally white. On the dark theme's bright fill that measures 2.26:1 and
+        // fails AA - the On* family is the only foreground allowed on top of a fill.
+        return value is true
+            ? AppColors.OnAccent
+            : AppColors.Text2;
     }
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
@@ -180,10 +184,9 @@ public class ActivePillBorderConverter : IValueConverter
 {
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
-        if (value is true)
-            return Color.FromArgb("#A855F7");
-
-        return Colors.Transparent;
+        return value is true
+            ? AppColors.AccentFill
+            : AppColors.Line;
     }
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)

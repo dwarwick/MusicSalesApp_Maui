@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8" ?>
+﻿<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
@@ -32,12 +32,12 @@
                 <Label Text="{Binding ErrorMessage}"
                        IsVisible="{Binding ErrorMessage, Converter={toolkit:IsNotNullConverter}}"
                        TextColor="Red"
-                       FontSize="14"
+                       FontSize="{StaticResource FontSizeCardTitle}"
                        HorizontalTextAlignment="Center"
                        Margin="20,16" />
 
                 <!-- Now-Playing Hero Section -->
-                <VerticalStackLayout Spacing="16"
+                <VerticalStackLayout Spacing="{StaticResource Space4}"
                                      Padding="20,24,20,16"
                                      IsVisible="{Binding CurrentSong, Converter={toolkit:IsNotNullConverter}}">
 
@@ -62,7 +62,7 @@
 
                     <!-- Song Title -->
                     <Label Text="{Binding CurrentSong.SongTitle}"
-                           FontSize="24"
+                           FontSize="{StaticResource FontSizeH2}"
                            FontAttributes="Bold"
                            TextColor="{AppThemeBinding Light=Black, Dark=White}"
                            HorizontalTextAlignment="Center"
@@ -71,7 +71,7 @@
 
                     <!-- Artist Name (tappable → artist playlist) -->
                     <HorizontalStackLayout HorizontalOptions="Center"
-                                           Spacing="8">
+                                           Spacing="{StaticResource Space2}">
                         <Border StrokeShape="RoundRectangle 12"
                                 StrokeThickness="0"
                                 HeightRequest="24"
@@ -84,7 +84,7 @@
                                    WidthRequest="24" />
                         </Border>
                         <Label Text="{Binding CurrentSong.ArtistName}"
-                               FontSize="16"
+                               FontSize="{StaticResource FontSizeBodyLarge}"
                                TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
                                VerticalOptions="Center"
                                TextDecorations="Underline">
@@ -114,7 +114,7 @@
                                 BackgroundColor="Transparent"
                                 IsVisible="{Binding CurrentSong.Genre, Converter={toolkit:IsStringNotNullOrEmptyConverter}}">
                             <Label Text="{Binding CurrentSong.Genre}"
-                                   FontSize="12"
+                                   FontSize="{StaticResource FontSizeCardMeta}"
                                    TextColor="{StaticResource Primary}"
                                    TextDecorations="Underline">
                                 <Label.GestureRecognizers>
@@ -124,7 +124,7 @@
                             </Label>
                         </Border>
                         <Label Text="·"
-                               FontSize="14"
+                               FontSize="{StaticResource FontSizeCardTitle}"
                                TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}"
                                VerticalOptions="Center"
                                IsVisible="{Binding CurrentSong.Genre, Converter={toolkit:IsStringNotNullOrEmptyConverter}}" />
@@ -133,7 +133,7 @@
                                           CommandParameter="{Binding CurrentSong}"
                                           ButtonSize="40"
                                           VerticalOptions="Center" />
-                        <Label FontSize="13"
+                        <Label FontSize="{StaticResource FontSizeSmall}"
                                TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}"
                                VerticalOptions="Center">
                             <Label.Text>
@@ -142,10 +142,10 @@
                             </Label.Text>
                         </Label>
                         <Label Text="·"
-                               FontSize="14"
+                               FontSize="{StaticResource FontSizeCardTitle}"
                                TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}"
                                VerticalOptions="Center" />
-                        <Label FontSize="13"
+                        <Label FontSize="{StaticResource FontSizeSmall}"
                                TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}"
                                VerticalOptions="Center"
                                Text="{Binding CurrentSong.TrackLengthSeconds, Converter={StaticResource DurationConverter}}" />
@@ -157,17 +157,17 @@
                             StrokeShape="RoundRectangle 16"
                             StrokeThickness="0"
                             IsVisible="{Binding IsCurrentTrackPreviewLimited}"
-                            BackgroundColor="#FFA500">
-                        <Label FontSize="12"
+                            BackgroundColor="{StaticResource StAmber}">
+                        <Label FontSize="{StaticResource FontSizeCardMeta}"
                                FontAttributes="Bold"
-                               TextColor="White"
+                               TextColor="{StaticResource OnWarn}"
                                HorizontalTextAlignment="Center"
                                Text="Preview Only (60 seconds)" />
                     </Border>
 
                     <!-- Action Row: Like, Dislike, Share, Report -->
                     <HorizontalStackLayout HorizontalOptions="Center"
-                                           Spacing="16">
+                                           Spacing="{StaticResource Space4}">
 
                         <!-- Like Button -->
                         <VerticalStackLayout VerticalOptions="Center" Spacing="2">
@@ -182,7 +182,7 @@
                                       HorizontalOptions="Center" VerticalOptions="Center" />
                             </Grid>
                             <Label Text="{Binding CurrentSong.LikeCount}"
-                                   FontSize="11"
+                                   FontSize="{StaticResource FontSizeMicro}"
                                    TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource LikeButtonDarkText}}"
                                    HorizontalTextAlignment="Center" />
                         </VerticalStackLayout>
@@ -200,7 +200,7 @@
                                       HorizontalOptions="Center" VerticalOptions="Center" />
                             </Grid>
                             <Label Text="{Binding CurrentSong.DislikeCount}"
-                                   FontSize="11"
+                                   FontSize="{StaticResource FontSizeMicro}"
                                    TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource LikeButtonDarkText}}"
                                    HorizontalTextAlignment="Center" />
                         </VerticalStackLayout>
@@ -234,49 +234,33 @@
                       IsVisible="{Binding ShowTracksHeader}">
                     <Label Grid.Column="0"
                            Text="Tracks"
-                           FontSize="18"
+                           FontSize="{StaticResource FontSizeH4}"
                            FontAttributes="Bold"
                            VerticalOptions="Center"
                            TextColor="{AppThemeBinding Light=Black, Dark=White}" />
                 </Grid>
 
                 <!-- Editing a playlist needs the server, so say so rather than silently hiding the controls -->
-                <Border IsVisible="{Binding ShowOfflineEditingNotice}"
-                        AutomationId="OfflinePlaylistEditingNotice"
-                        Margin="20,4"
-                        StrokeShape="RoundRectangle 8"
-                        Stroke="{AppThemeBinding Light={StaticResource OfflineBannerLightBorder}, Dark={StaticResource OfflineBannerDarkBorder}}"
-                        BackgroundColor="{AppThemeBinding Light={StaticResource OfflineBannerLightBackground}, Dark={StaticResource OfflineBannerDarkBackground}}"
-                        Padding="12,10">
-                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
-                        <Label Text="⚠"
-                               FontSize="16"
-                               VerticalOptions="Start"
-                               TextColor="{AppThemeBinding Light={StaticResource OfflineBannerLightText}, Dark={StaticResource OfflineBannerDarkText}}" />
-                        <Label Grid.Column="1"
-                               Text="Editing playlists isn't available offline. Reconnect to add, remove or reorder tracks."
-                               FontSize="13"
-                               LineBreakMode="WordWrap"
-                               VerticalOptions="Center"
-                               TextColor="{AppThemeBinding Light={StaticResource OfflineBannerLightText}, Dark={StaticResource OfflineBannerDarkText}}" />
-                    </Grid>
-                </Border>
+                <views:InlineWarningBanner IsVisible="{Binding ShowOfflineEditingNotice}"
+                                           AutomationId="OfflinePlaylistEditingNotice"
+                                           Margin="20,4"
+                                           Text="Editing playlists isn&apos;t available offline. Reconnect to add, remove or reorder tracks." />
 
                 <!-- Empty custom-playlist call-to-action -->
                 <VerticalStackLayout IsVisible="{Binding ShowEmptyPlaylistPrompt}"
                                      Padding="20,12"
-                                     Spacing="12"
+                                     Spacing="{StaticResource Space3}"
                                      HorizontalOptions="Center">
                     <Label Text="This playlist is empty."
-                           FontSize="15"
+                           FontSize="{StaticResource FontSizeBody}"
                            HorizontalTextAlignment="Center"
                            TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}" />
                     <Label Text="Browse the Music Library and tap the add-to-playlist icon on any song to add it here."
-                           FontSize="13"
+                           FontSize="{StaticResource FontSizeSmall}"
                            HorizontalTextAlignment="Center"
                            TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray400}}" />
                     <Button Text="Open Music Library"
-                            FontSize="14"
+                            FontSize="{StaticResource FontSizeCardTitle}"
                             Padding="16,8"
                             HeightRequest="40"
                             BackgroundColor="{StaticResource Primary}"
@@ -302,7 +286,7 @@
                                 </Border.GestureRecognizers>
 
                                   <Grid ColumnDefinitions="Auto,48,*,Auto,Auto,Auto"
-                                      ColumnSpacing="8">
+                                      ColumnSpacing="{StaticResource Space2}">
 
                                     <!-- Reorder up/down (only for custom playlists + subscription) -->
                                     <VerticalStackLayout Grid.Column="0"
@@ -310,7 +294,7 @@
                                                          VerticalOptions="Center"
                                                          IsVisible="{Binding Source={RelativeSource AncestorType={x:Type vm:PlaylistPlayerViewModel}}, Path=IsReorderEnabled}">
                                         <Button Text="▲"
-                                                FontSize="12"
+                                                FontSize="{StaticResource FontSizeCardMeta}"
                                                 HeightRequest="22"
                                                 WidthRequest="28"
                                                 Padding="0"
@@ -319,7 +303,7 @@
                                                 Command="{Binding Source={RelativeSource AncestorType={x:Type vm:PlaylistPlayerViewModel}}, Path=MoveTrackUpCommand}"
                                                 CommandParameter="{Binding .}" />
                                         <Button Text="▼"
-                                                FontSize="12"
+                                                FontSize="{StaticResource FontSizeCardMeta}"
                                                 HeightRequest="22"
                                                 WidthRequest="28"
                                                 Padding="0"
@@ -333,11 +317,11 @@
                                     <Border Grid.Column="1"
                                             StrokeShape="RoundRectangle 6"
                                             StrokeThickness="0"
-                                            HeightRequest="48"
-                                            WidthRequest="48">
+                                            HeightRequest="{StaticResource ArtSizeThumb}"
+                                            WidthRequest="{StaticResource ArtSizeThumb}">
                                         <views:SongArtworkView AlbumArtUrl="{Binding AlbumArtThumbDisplaySource}"
-                                               HeightRequest="48"
-                                               WidthRequest="48" />
+                                               HeightRequest="{StaticResource ArtSizeThumb}"
+                                               WidthRequest="{StaticResource ArtSizeThumb}" />
                                     </Border>
 
                                     <!-- Song Info -->
@@ -345,13 +329,13 @@
                                                          VerticalOptions="Center"
                                                          Spacing="2">
                                         <Label Text="{Binding SongTitle}"
-                                               FontSize="14"
+                                               FontSize="{StaticResource FontSizeCardTitle}"
                                                FontAttributes="Bold"
                                                TextColor="{AppThemeBinding Light=Black, Dark=White}"
                                                LineBreakMode="TailTruncation"
                                                MaxLines="1" />
                                         <Label Text="{Binding ArtistName}"
-                                               FontSize="12"
+                                               FontSize="{StaticResource FontSizeCardMeta}"
                                                TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
                                                LineBreakMode="TailTruncation"
                                                MaxLines="1" />
@@ -359,7 +343,7 @@
 
                                     <!-- Duration -->
                                     <Label Grid.Column="3"
-                                           FontSize="12"
+                                           FontSize="{StaticResource FontSizeCardMeta}"
                                            TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray400}}"
                                            VerticalOptions="Center"
                                            Text="{Binding TrackLengthSeconds, Converter={StaticResource DurationConverter}}" />
@@ -375,9 +359,9 @@
                                     <!-- Remove from playlist (custom playlists only) -->
                                      <Button Grid.Column="5"
                                             Text="✕"
-                                            FontSize="14"
-                                            HeightRequest="32"
-                                            WidthRequest="32"
+                                            FontSize="{StaticResource FontSizeCardTitle}"
+                                            HeightRequest="{StaticResource ControlHeightSmall}"
+                                            WidthRequest="{StaticResource ControlHeightSmall}"
                                             Padding="0"
                                             BackgroundColor="Transparent"
                                             TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"

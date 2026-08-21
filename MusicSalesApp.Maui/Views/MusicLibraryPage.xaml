@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8" ?>
+﻿<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
@@ -37,96 +37,54 @@
     <Grid RowDefinitions="Auto,Auto,*,Auto">
         <!-- Filter Pill Bar -->
         <VerticalStackLayout Grid.Row="0"
-                     Spacing="8"
+                     Spacing="{StaticResource Space2}"
                      Padding="8,8,8,4">
 
             <!-- Offline banner. Sits inside the existing Row 0 stack so the grid's row definitions
                  don't have to be renumbered. -->
-            <Border IsVisible="{Binding IsOfflineCatalog}"
-                    AutomationId="OfflineLibraryBanner"
-                    StrokeShape="RoundRectangle 8"
-                    Stroke="{AppThemeBinding Light={StaticResource OfflineBannerLightBorder}, Dark={StaticResource OfflineBannerDarkBorder}}"
-                    BackgroundColor="{AppThemeBinding Light={StaticResource OfflineBannerLightBackground}, Dark={StaticResource OfflineBannerDarkBackground}}"
-                    Padding="12,10">
-                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
-                    <Label Text="⚠"
-                           FontSize="16"
-                           VerticalOptions="Start"
-                           TextColor="{AppThemeBinding Light={StaticResource OfflineBannerLightText}, Dark={StaticResource OfflineBannerDarkText}}" />
-                    <Label Grid.Column="1"
-                           Text="You're offline. Showing only downloaded songs — reconnect to browse the full library."
-                           FontSize="13"
-                           LineBreakMode="WordWrap"
-                           VerticalOptions="Center"
-                           TextColor="{AppThemeBinding Light={StaticResource OfflineBannerLightText}, Dark={StaticResource OfflineBannerDarkText}}" />
-                </Grid>
-            </Border>
+            <views:InlineWarningBanner IsVisible="{Binding IsOfflineCatalog}"
+                                       AutomationId="OfflineLibraryBanner"
+                                       Text="You&apos;re offline. Showing only downloaded songs &#8212; reconnect to browse the full library." />
 
             <HorizontalStackLayout Spacing="6">
-                <Button Command="{Binding ToggleAiPanelCommand}"
+                <Button Style="{StaticResource FilterPill}" Command="{Binding ToggleAiPanelCommand}"
                         Clicked="OnFilterChromeClicked"
                         Text="{Binding AiPillText}"
-                        FontSize="12"
-                        FontAttributes="Bold"
-                        HeightRequest="32"
-                        Padding="10,0"
-                        CornerRadius="16"
-                        BorderWidth="1.5"
                         BorderColor="{Binding HasActiveAiFilter, Converter={StaticResource ActivePillBorderConverter}}"
                         BackgroundColor="{Binding HasActiveAiFilter, Converter={StaticResource ActivePillBgConverter}}"
                         TextColor="{Binding HasActiveAiFilter, Converter={StaticResource ActivePillTextConverter}}" />
 
             <!-- Genre Pill -->
-            <Button Command="{Binding ToggleGenrePanelCommand}"
+            <Button Style="{StaticResource FilterPill}" Command="{Binding ToggleGenrePanelCommand}"
                     Clicked="OnFilterChromeClicked"
                     Text="{Binding GenrePillText}"
-                    FontSize="12"
-                    FontAttributes="Bold"
-                    HeightRequest="32"
-                    Padding="10,0"
-                    CornerRadius="16"
-                    BorderWidth="1.5"
                     BorderColor="{Binding HasActiveGenreFilters, Converter={StaticResource ActivePillBorderConverter}}"
                     BackgroundColor="{Binding HasActiveGenreFilters, Converter={StaticResource ActivePillBgConverter}}"
                     TextColor="{Binding HasActiveGenreFilters, Converter={StaticResource ActivePillTextConverter}}" />
 
             <!-- Artist Pill -->
-            <Button Command="{Binding ToggleArtistPanelCommand}"
+            <Button Style="{StaticResource FilterPill}" Command="{Binding ToggleArtistPanelCommand}"
                     Clicked="OnFilterChromeClicked"
                     Text="{Binding ArtistPillText}"
-                    FontSize="12"
-                    FontAttributes="Bold"
-                    HeightRequest="32"
-                    Padding="10,0"
-                    CornerRadius="16"
-                    BorderWidth="1.5"
                     BorderColor="{Binding HasActiveArtistFilters, Converter={StaticResource ActivePillBorderConverter}}"
                     BackgroundColor="{Binding HasActiveArtistFilters, Converter={StaticResource ActivePillBgConverter}}"
                     TextColor="{Binding HasActiveArtistFilters, Converter={StaticResource ActivePillTextConverter}}" />
 
             <!-- Downloaded-only filter -->
-            <Button Command="{Binding ToggleDownloadedFilterCommand}"
+            <Button Style="{StaticResource FilterPill}" Command="{Binding ToggleDownloadedFilterCommand}"
                     Clicked="OnFilterChromeClicked"
                     Text="Downloaded"
-                    FontSize="12"
-                    FontAttributes="Bold"
-                    HeightRequest="32"
-                    Padding="10,0"
-                    CornerRadius="16"
-                    BorderWidth="1.5"
                     BorderColor="{Binding IsDownloadedFilterActive, Converter={StaticResource ActivePillBorderConverter}}"
                     BackgroundColor="{Binding IsDownloadedFilterActive, Converter={StaticResource ActivePillBgConverter}}"
                     TextColor="{Binding IsDownloadedFilterActive, Converter={StaticResource ActivePillTextConverter}}" />
 
             <!-- Clear Filters Button -->
-            <Button Command="{Binding ClearFiltersCommand}"
+            <Button Style="{StaticResource FilterPill}" Command="{Binding ClearFiltersCommand}"
                     Clicked="OnFilterChromeClicked"
                     Text="✕"
-                    FontSize="13"
-                    HeightRequest="32"
-                    WidthRequest="32"
+                    FontSize="{StaticResource FontSizeSmall}"
+                    WidthRequest="{StaticResource ControlHeightSmall}"
                     Padding="0"
-                    CornerRadius="16"
                     IsVisible="{Binding HasAnyActiveFilters}"
                     BackgroundColor="{Binding HasAnyActiveFilters, Converter={StaticResource ActivePillBgConverter}}"
                     TextColor="{Binding HasAnyActiveFilters, Converter={StaticResource ActivePillTextConverter}}"
@@ -144,7 +102,7 @@
                 Padding="8"
                 BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource CardBackgroundDark}}">
             <VerticalStackLayout Spacing="2">
-                <Grid ColumnDefinitions="Auto,*" Padding="4,8" ColumnSpacing="8">
+                <Grid ColumnDefinitions="Auto,*" Padding="4,8" ColumnSpacing="{StaticResource Space2}">
                     <Grid.GestureRecognizers>
                         <TapGestureRecognizer Command="{Binding SelectAiFilterCommand}"
                                               Tapped="OnFilterOptionTapped"
@@ -157,11 +115,11 @@
                               VerticalOptions="Center" />
                     <Label Grid.Column="1"
                            Text="All Music"
-                           FontSize="14"
+                           FontSize="{StaticResource FontSizeCardTitle}"
                            TextColor="{AppThemeBinding Light=Black, Dark=White}"
                            VerticalOptions="Center" />
                 </Grid>
-                <Grid ColumnDefinitions="Auto,*" Padding="4,8" ColumnSpacing="8">
+                <Grid ColumnDefinitions="Auto,*" Padding="4,8" ColumnSpacing="{StaticResource Space2}">
                     <Grid.GestureRecognizers>
                         <TapGestureRecognizer Command="{Binding SelectAiFilterCommand}"
                                               Tapped="OnFilterOptionTapped"
@@ -174,11 +132,11 @@
                               VerticalOptions="Center" />
                     <Label Grid.Column="1"
                            Text="Any AI"
-                           FontSize="14"
+                           FontSize="{StaticResource FontSizeCardTitle}"
                            TextColor="{AppThemeBinding Light=Black, Dark=White}"
                            VerticalOptions="Center" />
                 </Grid>
-                <Grid ColumnDefinitions="Auto,Auto,*" Padding="4,8" ColumnSpacing="8">
+                <Grid ColumnDefinitions="Auto,Auto,*" Padding="4,8" ColumnSpacing="{StaticResource Space2}">
                     <Grid.GestureRecognizers>
                         <TapGestureRecognizer Command="{Binding SelectAiFilterCommand}"
                                               Tapped="OnFilterOptionTapped"
@@ -198,11 +156,11 @@
                            VerticalOptions="Center" />
                     <Label Grid.Column="2"
                            Text="AI Music"
-                           FontSize="14"
+                           FontSize="{StaticResource FontSizeCardTitle}"
                            TextColor="{AppThemeBinding Light=Black, Dark=White}"
                            VerticalOptions="Center" />
                 </Grid>
-                <Grid ColumnDefinitions="Auto,Auto,*" Padding="4,8" ColumnSpacing="8">
+                <Grid ColumnDefinitions="Auto,Auto,*" Padding="4,8" ColumnSpacing="{StaticResource Space2}">
                     <Grid.GestureRecognizers>
                         <TapGestureRecognizer Command="{Binding SelectAiFilterCommand}"
                                               Tapped="OnFilterOptionTapped"
@@ -222,11 +180,11 @@
                            VerticalOptions="Center" />
                     <Label Grid.Column="2"
                            Text="AI Vocals"
-                           FontSize="14"
+                           FontSize="{StaticResource FontSizeCardTitle}"
                            TextColor="{AppThemeBinding Light=Black, Dark=White}"
                            VerticalOptions="Center" />
                 </Grid>
-                <Grid ColumnDefinitions="Auto,Auto,*" Padding="4,8" ColumnSpacing="8">
+                <Grid ColumnDefinitions="Auto,Auto,*" Padding="4,8" ColumnSpacing="{StaticResource Space2}">
                     <Grid.GestureRecognizers>
                         <TapGestureRecognizer Command="{Binding SelectAiFilterCommand}"
                                               Tapped="OnFilterOptionTapped"
@@ -246,11 +204,11 @@
                            VerticalOptions="Center" />
                     <Label Grid.Column="2"
                            Text="AI Lyrics"
-                           FontSize="14"
+                           FontSize="{StaticResource FontSizeCardTitle}"
                            TextColor="{AppThemeBinding Light=Black, Dark=White}"
                            VerticalOptions="Center" />
                 </Grid>
-                <Grid ColumnDefinitions="Auto,*" Padding="4,8" ColumnSpacing="8">
+                <Grid ColumnDefinitions="Auto,*" Padding="4,8" ColumnSpacing="{StaticResource Space2}">
                     <Grid.GestureRecognizers>
                         <TapGestureRecognizer Command="{Binding SelectAiFilterCommand}"
                                               Tapped="OnFilterOptionTapped"
@@ -263,7 +221,7 @@
                               VerticalOptions="Center" />
                     <Label Grid.Column="1"
                            Text="Non-AI Music"
-                           FontSize="14"
+                           FontSize="{StaticResource FontSizeCardTitle}"
                            TextColor="{AppThemeBinding Light=Black, Dark=White}"
                            VerticalOptions="Center" />
                 </Grid>
@@ -279,7 +237,7 @@
                 Padding="8"
                 BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource CardBackgroundDark}}"
                 MaximumHeightRequest="260">
-            <VerticalStackLayout Spacing="4">
+            <VerticalStackLayout Spacing="{StaticResource Space1}">
                 <Border Style="{StaticResource FilterSearchContainerStyle}">
                     <Entry x:Name="GenreSearchEntry"
                            Style="{StaticResource FilterSearchEntryStyle}"
@@ -292,7 +250,7 @@
                                 MaximumHeightRequest="200">
                     <CollectionView.ItemTemplate>
                         <DataTemplate x:DataType="vm:FilterItem">
-                            <Grid ColumnDefinitions="Auto,*,Auto" Padding="4,6" ColumnSpacing="8">
+                            <Grid ColumnDefinitions="Auto,*,Auto" Padding="4,6" ColumnSpacing="{StaticResource Space2}">
                                 <Grid.GestureRecognizers>
                                     <TapGestureRecognizer
                                         Tapped="OnFilterOptionTapped"
@@ -306,12 +264,12 @@
                                           VerticalOptions="Center" />
                                 <Label Grid.Column="1"
                                        Text="{Binding Name}"
-                                       FontSize="14"
+                                       FontSize="{StaticResource FontSizeCardTitle}"
                                        TextColor="{AppThemeBinding Light=Black, Dark=White}"
                                        VerticalOptions="Center" />
                                 <Label Grid.Column="2"
                                        Text="{Binding Count}"
-                                       FontSize="12"
+                                       FontSize="{StaticResource FontSizeCardMeta}"
                                        TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray400}}"
                                        VerticalOptions="Center" />
                             </Grid>
@@ -330,7 +288,7 @@
                 Padding="8"
                 BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource CardBackgroundDark}}"
                 MaximumHeightRequest="260">
-            <VerticalStackLayout Spacing="4">
+            <VerticalStackLayout Spacing="{StaticResource Space1}">
                 <Border Style="{StaticResource FilterSearchContainerStyle}">
                     <Entry x:Name="ArtistSearchEntry"
                            Style="{StaticResource FilterSearchEntryStyle}"
@@ -343,7 +301,7 @@
                                 MaximumHeightRequest="200">
                     <CollectionView.ItemTemplate>
                         <DataTemplate x:DataType="vm:FilterItem">
-                            <Grid ColumnDefinitions="Auto,*,Auto" Padding="4,6" ColumnSpacing="8">
+                            <Grid ColumnDefinitions="Auto,*,Auto" Padding="4,6" ColumnSpacing="{StaticResource Space2}">
                                 <Grid.GestureRecognizers>
                                     <TapGestureRecognizer
                                         Tapped="OnFilterOptionTapped"
@@ -357,12 +315,12 @@
                                           VerticalOptions="Center" />
                                 <Label Grid.Column="1"
                                        Text="{Binding Name}"
-                                       FontSize="14"
+                                       FontSize="{StaticResource FontSizeCardTitle}"
                                        TextColor="{AppThemeBinding Light=Black, Dark=White}"
                                        VerticalOptions="Center" />
                                 <Label Grid.Column="2"
                                        Text="{Binding Count}"
-                                       FontSize="12"
+                                       FontSize="{StaticResource FontSizeCardMeta}"
                                        TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray400}}"
                                        VerticalOptions="Center" />
                             </Grid>
@@ -387,15 +345,15 @@
                                          Spacing="6"
                                          Padding="20">
                         <Label Text="{Binding EmptyStateTitle}"
-                               FontSize="18"
+                               FontSize="{StaticResource FontSizeH4}"
                                HorizontalTextAlignment="Center"
                                TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray300}}" />
                         <Label Text="{Binding EmptyStateDetail}"
-                               FontSize="14"
+                               FontSize="{StaticResource FontSizeCardTitle}"
                                HorizontalTextAlignment="Center"
                                TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray300}}" />
                         <Label Text="{Binding ErrorMessage}"
-                               FontSize="14"
+                               FontSize="{StaticResource FontSizeCardTitle}"
                                HorizontalTextAlignment="Center"
                                TextColor="Red"
                                IsVisible="{Binding ErrorMessage, Converter={toolkit:IsNotNullConverter}}" />

@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8" ?>
+﻿<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
@@ -11,25 +11,25 @@
              BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
 
     <ScrollView>
-        <VerticalStackLayout Spacing="16" Padding="24,40,24,24" MaximumWidthRequest="400"
+        <VerticalStackLayout Spacing="{StaticResource Space4}" Padding="24,40,24,24" MaximumWidthRequest="400"
                              HorizontalOptions="Center" VerticalOptions="Center">
 
             <Image Source="{AppThemeBinding Light=logo_light_small.png, Dark=logo_dark_small.png}"
                    HeightRequest="50" Aspect="AspectFit" HorizontalOptions="Center" Margin="0,0,0,16" />
 
             <Label Text="Create an Account"
-                   FontSize="22" FontAttributes="Bold"
+                   FontSize="{StaticResource FontSizeH2Compact}" FontAttributes="Bold"
                    HorizontalOptions="Center"
                    TextColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}" />
 
             <!-- Error Message -->
             <Label Text="{Binding ErrorMessage}"
                    IsVisible="{Binding ErrorMessage, Converter={toolkit:IsNotNullConverter}}"
-                   TextColor="Red" FontSize="13" HorizontalOptions="Center" />
+                   TextColor="Red" FontSize="{StaticResource FontSizeSmall}" HorizontalOptions="Center" />
 
                  <Label Text="Finish creating your Google account by accepting the policies below."
                      IsVisible="{Binding IsGoogleRegistrationPending}"
-                     FontSize="13"
+                     FontSize="{StaticResource FontSizeSmall}"
                      HorizontalTextAlignment="Center"
                      TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}" />
 
@@ -79,13 +79,13 @@
             </Grid>
 
             <!-- Legal Agreements -->
-            <VerticalStackLayout Spacing="8" Margin="0,4,0,0">
+            <VerticalStackLayout Spacing="{StaticResource Space2}" Margin="0,4,0,0">
 
                 <!-- Terms of Use -->
-                <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
+                <HorizontalStackLayout Spacing="{StaticResource Space2}" VerticalOptions="Center">
                     <CheckBox IsChecked="{Binding AcceptTermsOfUse}"
                               Color="{StaticResource Primary}" />
-                    <Label VerticalOptions="Center" FontSize="13"
+                    <Label VerticalOptions="Center" FontSize="{StaticResource FontSizeSmall}"
                            TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}">
                         <Label.FormattedText>
                             <FormattedString>
@@ -103,10 +103,10 @@
                 </HorizontalStackLayout>
 
                 <!-- Privacy Policy -->
-                <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
+                <HorizontalStackLayout Spacing="{StaticResource Space2}" VerticalOptions="Center">
                     <CheckBox IsChecked="{Binding AcceptPrivacyPolicy}"
                               Color="{StaticResource Primary}" />
-                    <Label VerticalOptions="Center" FontSize="13"
+                    <Label VerticalOptions="Center" FontSize="{StaticResource FontSizeSmall}"
                            TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}">
                         <Label.FormattedText>
                             <FormattedString>
@@ -124,10 +124,10 @@
                 </HorizontalStackLayout>
 
                 <!-- Refund Policy -->
-                <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
+                <HorizontalStackLayout Spacing="{StaticResource Space2}" VerticalOptions="Center">
                     <CheckBox IsChecked="{Binding AcceptRefundPolicy}"
                               Color="{StaticResource Primary}" />
-                    <Label VerticalOptions="Center" FontSize="13"
+                    <Label VerticalOptions="Center" FontSize="{StaticResource FontSizeSmall}"
                            TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}">
                         <Label.FormattedText>
                             <FormattedString>
@@ -153,18 +153,18 @@
                     BackgroundColor="{StaticResource Primary}"
                     TextColor="White"
                     FontAttributes="Bold"
-                    CornerRadius="8"
-                    HeightRequest="48" />
+                    CornerRadius="{StaticResource RadiusSmInt}"
+                    HeightRequest="{StaticResource ArtSizeThumb}" />
 
 
             <ImageButton Source="google_logo.png"
                          Command="{Binding RegisterWithGoogleCommand}"
                          IsEnabled="{Binding IsBusy, Converter={toolkit:InvertedBoolConverter}}"
                          BackgroundColor="White"
-                         BorderColor="{AppThemeBinding Light=#DADCE0, Dark=#DADCE0}"
+                         BorderColor="{StaticResource GoogleButtonBorder}"
                          BorderWidth="1"
-                         CornerRadius="8"
-                         HeightRequest="48"
+                         CornerRadius="{StaticResource RadiusSmInt}"
+                         HeightRequest="{StaticResource ArtSizeThumb}"
                          Padding="12"
                          Aspect="AspectFit"
                          HorizontalOptions="Fill"
@@ -176,12 +176,12 @@
                                HorizontalOptions="Center" />
 
             <!-- Login Link -->
-            <HorizontalStackLayout HorizontalOptions="Center" Spacing="4">
+            <HorizontalStackLayout HorizontalOptions="Center" Spacing="{StaticResource Space1}">
                 <Label Text="Already have an account?"
-                       FontSize="14"
+                       FontSize="{StaticResource FontSizeCardTitle}"
                        TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray300}}" />
                 <Label Text="Login"
-                       FontSize="14"
+                       FontSize="{StaticResource FontSizeCardTitle}"
                        FontAttributes="Bold"
                        TextColor="{StaticResource Primary}">
                     <Label.GestureRecognizers>

@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8" ?>
+﻿<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
@@ -9,10 +9,10 @@
              SafeAreaEdges="Container"
              BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
 
-    <Grid RowDefinitions="Auto,Auto,*" Padding="16,12,16,16" RowSpacing="12">
+    <Grid RowDefinitions="Auto,Auto,*" Padding="16,12,16,16" RowSpacing="{StaticResource Space3}">
 
         <!-- Create button + subscription banner -->
-        <VerticalStackLayout Grid.Row="0" Spacing="8">
+        <VerticalStackLayout Grid.Row="0" Spacing="{StaticResource Space2}">
             <!-- Creating a playlist needs the server, so the control is hidden offline -->
             <Button Text="+ Create Playlist"
                     IsVisible="{Binding CanUseServerActions}"
@@ -21,19 +21,19 @@
                     TextColor="White"
                     FontAttributes="Bold"
                     CornerRadius="20"
-                    HeightRequest="44"
+                    HeightRequest="{StaticResource ControlHeight}"
                     HorizontalOptions="Start"
                     Padding="20,0" />
 
             <Border IsVisible="{Binding HasActiveSubscription, Converter={toolkit:InvertedBoolConverter}}"
                     StrokeShape="RoundRectangle 8"
-                    Stroke="#FFB300"
+                    Stroke="{StaticResource StAmber}"
                     StrokeThickness="1"
-                    BackgroundColor="{AppThemeBinding Light=#FFF8E1, Dark=#3A2E12}"
+                    BackgroundColor="{AppThemeBinding Light={StaticResource WarnSoftLight}, Dark={StaticResource WarnSoftDark}}"
                     Padding="12,10">
                 <Label Text="{Binding SubscriptionBannerText}"
-                       FontSize="13"
-                       TextColor="{AppThemeBinding Light=#5D4037, Dark=#FFE082}" />
+                       FontSize="{StaticResource FontSizeSmall}"
+                       TextColor="{AppThemeBinding Light={StaticResource TestingBannerLightText}, Dark={StaticResource TestingBannerDarkText}}" />
             </Border>
         </VerticalStackLayout>
 
@@ -41,8 +41,8 @@
         <Label Grid.Row="1"
                Text="{Binding ErrorMessage}"
                IsVisible="{Binding ErrorMessage, Converter={toolkit:IsStringNotNullOrEmptyConverter}}"
-               TextColor="#e74c3c"
-               FontSize="13" />
+               TextColor="{StaticResource DangerLight}"
+               FontSize="{StaticResource FontSizeSmall}" />
 
         <!-- Playlist list -->
         <RefreshView Grid.Row="2"
@@ -55,14 +55,14 @@
                                      Spacing="6"
                                      Padding="24">
                     <Label Text="{Binding EmptyStateTitle}"
-                           FontSize="16"
+                           FontSize="{StaticResource FontSizeBodyLarge}"
                            FontAttributes="Bold"
                            HorizontalTextAlignment="Center"
-                           TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+                           TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
                     <Label Text="{Binding EmptyStateDetail}"
-                           FontSize="14"
+                           FontSize="{StaticResource FontSizeCardTitle}"
                            HorizontalTextAlignment="Center"
-                           TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+                           TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
                 </VerticalStackLayout>
 
                 <!-- Playlist cards -->
@@ -74,7 +74,7 @@
                         <DataTemplate x:DataType="vm:PlaylistDto">
                             <Border StrokeShape="RoundRectangle 12"
                                     Stroke="Transparent"
-                                    BackgroundColor="{AppThemeBinding Light=White, Dark=#2a2a2a}"
+                                    BackgroundColor="{AppThemeBinding Light={StaticResource SurfaceLight}, Dark={StaticResource SurfaceDark}}"
                                     Margin="0,0,0,10"
                                     Padding="14"
                                     MinimumHeightRequest="72">
@@ -82,40 +82,40 @@
                                     <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MyPlaylistsViewModel}}, Path=OpenPlaylistCommand}"
                                                           CommandParameter="{Binding .}" />
                                 </Border.GestureRecognizers>
-                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" VerticalOptions="Center">
+                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="{StaticResource Space2}" VerticalOptions="Center">
                                     <VerticalStackLayout Grid.Column="0" Spacing="2" VerticalOptions="Center">
                                         <Label Text="{Binding Name}"
-                                               FontSize="16"
+                                               FontSize="{StaticResource FontSizeBodyLarge}"
                                                FontAttributes="Bold"
-                                               TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+                                               TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
                                         <Label Text="{Binding SongCount, StringFormat='{0} songs'}"
-                                               FontSize="12"
-                                               TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+                                               FontSize="{StaticResource FontSizeCardMeta}"
+                                               TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
                                     </VerticalStackLayout>
                                     <!-- Edit controls: hidden for system playlists, and hidden entirely
                                          while offline since renaming and deleting both need the server. -->
                                     <HorizontalStackLayout Grid.Column="1"
-                                                           Spacing="8"
+                                                           Spacing="{StaticResource Space2}"
                                                            IsVisible="{Binding Source={RelativeSource AncestorType={x:Type vm:MyPlaylistsViewModel}}, Path=CanUseServerActions}">
                                         <!-- Rename (hidden for system playlists) -->
                                         <Button Text="✎"
-                                                FontSize="18"
-                                                HeightRequest="36"
+                                                FontSize="{StaticResource FontSizeH4}"
+                                                HeightRequest="{StaticResource ArtSizeMini}"
                                                 WidthRequest="40"
                                                 Padding="0"
                                                 BackgroundColor="Transparent"
-                                                TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}"
+                                                TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}"
                                                 IsVisible="{Binding IsSystemGenerated, Converter={toolkit:InvertedBoolConverter}}"
                                                 Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MyPlaylistsViewModel}}, Path=RenamePlaylistCommand}"
                                                 CommandParameter="{Binding .}" />
                                         <!-- Delete (hidden for system playlists) -->
                                         <Button Text="🗑"
-                                                FontSize="16"
-                                                HeightRequest="36"
+                                                FontSize="{StaticResource FontSizeBodyLarge}"
+                                                HeightRequest="{StaticResource ArtSizeMini}"
                                                 WidthRequest="40"
                                                 Padding="0"
                                                 BackgroundColor="Transparent"
-                                                TextColor="#e74c3c"
+                                                TextColor="{StaticResource DangerLight}"
                                                 IsVisible="{Binding IsSystemGenerated, Converter={toolkit:InvertedBoolConverter}}"
                                                 Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MyPlaylistsViewModel}}, Path=DeletePlaylistCommand}"
                                                 CommandParameter="{Binding .}" />
@@ -123,7 +123,7 @@
                                     <!-- Play -->
                                     <Label Grid.Column="2"
                                            Text="▶"
-                                           FontSize="22"
+                                           FontSize="{StaticResource FontSizeH2Compact}"
                                            TextColor="{StaticResource Primary}"
                                            VerticalTextAlignment="Center"
                                            Margin="8,0,0,0" />

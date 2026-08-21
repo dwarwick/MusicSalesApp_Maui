@@ -1,4 +1,5 @@
-using MusicSalesApp.Maui.Services;
+﻿using MusicSalesApp.Maui.Services;
+using MusicSalesApp.Maui.Resources.Styles;
 
 namespace MusicSalesApp.Maui.Views;
 
@@ -243,17 +244,15 @@ public partial class NowPlayingView : ContentView
         var isRepeat = _playbackService?.IsRepeatEnabled == true;
         if (isRepeat)
         {
-            RepeatIcon.Fill = new SolidColorBrush(Color.FromArgb("#1DB954"));
+            RepeatIcon.Fill = new SolidColorBrush(AppColors.AccentFill);
             RepeatBorder.BackgroundColor = Application.Current?.RequestedTheme == AppTheme.Dark
-                ? Color.FromArgb("#1DB95433")
-                : Color.FromArgb("#1DB95422");
+                ? AppColors.AccentFill.WithAlpha(0.20f)
+                : AppColors.AccentFill.WithAlpha(0.13f);
         }
         else
         {
             RepeatIcon.Fill = new SolidColorBrush(
-                Application.Current?.RequestedTheme == AppTheme.Dark
-                    ? Color.FromArgb("#B3B3B3")
-                    : Colors.Black);
+AppColors.Text3);
             RepeatBorder.BackgroundColor = Colors.Transparent;
         }
     }
@@ -272,17 +271,15 @@ public partial class NowPlayingView : ContentView
         var isShuffle = _playbackService?.IsShuffleEnabled == true;
         if (isShuffle)
         {
-            ShuffleIcon.Fill = new SolidColorBrush(Color.FromArgb("#1DB954"));
+            ShuffleIcon.Fill = new SolidColorBrush(AppColors.AccentFill);
             ShuffleBorder.BackgroundColor = Application.Current?.RequestedTheme == AppTheme.Dark
-                ? Color.FromArgb("#1DB95433")
-                : Color.FromArgb("#1DB95422");
+                ? AppColors.AccentFill.WithAlpha(0.20f)
+                : AppColors.AccentFill.WithAlpha(0.13f);
         }
         else
         {
             ShuffleIcon.Fill = new SolidColorBrush(
-                Application.Current?.RequestedTheme == AppTheme.Dark
-                    ? Color.FromArgb("#B3B3B3")
-                    : Colors.Black);
+AppColors.Text3);
             ShuffleBorder.BackgroundColor = Colors.Transparent;
         }
     }

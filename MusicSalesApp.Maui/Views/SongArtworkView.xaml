@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8" ?>
+﻿<?xml version="1.0" encoding="utf-8" ?>
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="MusicSalesApp.Maui.Views.SongArtworkView"
@@ -14,8 +14,8 @@
               BackgroundColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray600}}">
             <Image Source="music_icon_24.png"
                    Aspect="AspectFit"
-                   HeightRequest="48"
-                   WidthRequest="48"
+                   HeightRequest="{StaticResource ArtSizeThumb}"
+                   WidthRequest="{StaticResource ArtSizeThumb}"
                    HorizontalOptions="Center"
                    VerticalOptions="Center" />
         </Grid>

@@ -52,6 +52,25 @@
     <x:Double x:Key="FontSizeCardTitle">14</x:Double>
     <x:Double x:Key="FontSizeCardMeta">12</x:Double>
 
+    <!-- MOBILE STEPS. Deliberately not in tokens.css, and deliberately not snapped to it.
+         The web scale tops out at a 68px display size meant for a desktop hero; on a phone the
+         useful range is narrow and needs rungs the web does not, which is why the web's own
+         breakpoint sheets shrink type as the viewport does. These are the sizes this app was
+         already using, named rather than changed - so the port is a colour and system change,
+         not a silent re-typesetting of every screen.
+         Prefer a step above where one fits; reach for these when it does not. -->
+    <x:Double x:Key="FontSizeNano">10</x:Double>
+    <x:Double x:Key="FontSizeBodyLarge">16</x:Double>
+    <x:Double x:Key="FontSizeH4">18</x:Double>
+    <x:Double x:Key="FontSizeH3">20</x:Double>
+    <x:Double x:Key="FontSizeH2Compact">22</x:Double>
+    <x:Double x:Key="FontSizeH1Compact">28</x:Double>
+
+    <!-- Decorative glyphs (emoji and symbol characters used as icons), sized as type because
+         that is what they are. Not part of the reading scale. -->
+    <x:Double x:Key="GlyphSizeLarge">32</x:Double>
+    <x:Double x:Key="GlyphSizeHero">48</x:Double>
+
     <!-- ===================================================================
          SPACING - tokens.css st-space-*
          =================================================================== -->

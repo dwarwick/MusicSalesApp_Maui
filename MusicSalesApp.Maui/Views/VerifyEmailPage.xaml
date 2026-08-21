@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8" ?>
+﻿<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
@@ -10,31 +10,31 @@
              BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
 
     <ScrollView>
-        <VerticalStackLayout Spacing="16" Padding="24,40,24,24" MaximumWidthRequest="400"
+        <VerticalStackLayout Spacing="{StaticResource Space4}" Padding="24,40,24,24" MaximumWidthRequest="400"
                              HorizontalOptions="Center" VerticalOptions="Center">
 
             <Image Source="{AppThemeBinding Light=logo_light_small.png, Dark=logo_dark_small.png}"
                    HeightRequest="50" Aspect="AspectFit" HorizontalOptions="Center" Margin="0,0,0,16" />
 
             <Label Text="Verify Your Email"
-                   FontSize="22" FontAttributes="Bold"
+                   FontSize="{StaticResource FontSizeH2Compact}" FontAttributes="Bold"
                    HorizontalOptions="Center"
                    TextColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}" />
 
             <Label Text="We sent a 6-digit code to your email. Enter it below to verify your account."
-                   FontSize="14"
+                   FontSize="{StaticResource FontSizeCardTitle}"
                    HorizontalTextAlignment="Center"
                    TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray300}}" />
 
             <!-- Error Message -->
             <Label Text="{Binding ErrorMessage}"
                    IsVisible="{Binding ErrorMessage, Converter={toolkit:IsNotNullConverter}}"
-                   TextColor="Red" FontSize="13" HorizontalOptions="Center" />
+                   TextColor="Red" FontSize="{StaticResource FontSizeSmall}" HorizontalOptions="Center" />
 
             <!-- Status Message -->
             <Label Text="{Binding StatusMessage}"
                    IsVisible="{Binding StatusMessage, Converter={toolkit:IsNotNullConverter}}"
-                   TextColor="{StaticResource Primary}" FontSize="13" HorizontalOptions="Center" />
+                   TextColor="{StaticResource Primary}" FontSize="{StaticResource FontSizeSmall}" HorizontalOptions="Center" />
 
             <!-- Code Entry -->
             <Entry Placeholder="6-digit code"
@@ -43,8 +43,8 @@
                    MaxLength="6"
                    ReturnType="Done"
                    HorizontalTextAlignment="Center"
-                   FontSize="24"
-                   CharacterSpacing="8"
+                   FontSize="{StaticResource FontSizeH2}"
+                   CharacterSpacing="{StaticResource Space2}"
                    BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource CardBackgroundDark}}"
                    TextColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}"
                    PlaceholderColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray500}}" />
@@ -56,8 +56,8 @@
                     BackgroundColor="{StaticResource Primary}"
                     TextColor="White"
                     FontAttributes="Bold"
-                    CornerRadius="8"
-                    HeightRequest="48" />
+                    CornerRadius="{StaticResource RadiusSmInt}"
+                    HeightRequest="{StaticResource ArtSizeThumb}" />
 
             <!-- Activity Indicator -->
             <ActivityIndicator IsRunning="{Binding IsBusy}"
@@ -67,7 +67,7 @@
             <!-- Resend Code -->
             <Label Text="Resend Code"
                    TextColor="{StaticResource Primary}"
-                   FontSize="14"
+                   FontSize="{StaticResource FontSizeCardTitle}"
                    HorizontalOptions="Center">
                 <Label.GestureRecognizers>
                     <TapGestureRecognizer Command="{Binding ResendCodeCommand}" />
@@ -77,7 +77,7 @@
             <!-- Change Email Toggle -->
             <Label Text="{Binding ChangeEmailToggleText}"
                    TextColor="{StaticResource Primary}"
-                   FontSize="14"
+                   FontSize="{StaticResource FontSizeCardTitle}"
                    HorizontalOptions="Center">
                 <Label.GestureRecognizers>
                     <TapGestureRecognizer Command="{Binding ToggleChangeEmailCommand}" />
@@ -85,9 +85,9 @@
             </Label>
 
             <!-- Change Email Section -->
-            <VerticalStackLayout Spacing="8" IsVisible="{Binding ShowChangeEmail}">
+            <VerticalStackLayout Spacing="{StaticResource Space2}" IsVisible="{Binding ShowChangeEmail}">
                 <Label Text="Made a typo? Update your email below:"
-                       FontSize="13"
+                       FontSize="{StaticResource FontSizeSmall}"
                        TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray300}}" />
                 <Entry Placeholder="New email address"
                        Text="{Binding NewEmail}"
@@ -101,14 +101,14 @@
                         IsEnabled="{Binding IsBusy, Converter={toolkit:InvertedBoolConverter}}"
                         BackgroundColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray600}}"
                         TextColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}"
-                        CornerRadius="8"
-                        HeightRequest="44" />
+                        CornerRadius="{StaticResource RadiusSmInt}"
+                        HeightRequest="{StaticResource ControlHeight}" />
             </VerticalStackLayout>
 
             <!-- Skip / Continue browsing -->
             <Label Text="Skip for now"
                    TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray300}}"
-                   FontSize="14"
+                   FontSize="{StaticResource FontSizeCardTitle}"
                    HorizontalOptions="Center"
                    Margin="0,8,0,0">
                 <Label.GestureRecognizers>

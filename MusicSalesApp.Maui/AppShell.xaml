@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8" ?>
+﻿<?xml version="1.0" encoding="UTF-8" ?>
 <Shell
     x:Class="MusicSalesApp.Maui.AppShell"
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
@@ -39,13 +39,13 @@
                             JustifyContent="Center"
                             AlignItems="Center">
                     <Label x:Name="TestingServerBannerTextLabel"
-                           FontSize="10"
+                           FontSize="{StaticResource FontSizeNano}"
                            LineBreakMode="WordWrap"
                            TextColor="{AppThemeBinding Light={StaticResource TestingBannerLightText}, Dark={StaticResource TestingBannerDarkText}}" />
 
                     <Label x:Name="TestingServerBannerUrlLabel"
                            AutomationId="TestingServerBannerUrl"
-                           FontSize="10"
+                           FontSize="{StaticResource FontSizeNano}"
                            LineBreakMode="WordWrap"
                            TextDecorations="Underline"
                            TextColor="{AppThemeBinding Light={StaticResource TestingBannerLightLink}, Dark={StaticResource TestingBannerDarkLink}}">
@@ -134,7 +134,7 @@
 
             <Grid x:Name="UploadYourOwnMusicFooterRow"
                   ColumnDefinitions="24,*"
-                  ColumnSpacing="12"
+                  ColumnSpacing="{StaticResource Space3}"
                   Padding="0,4,0,8">
                 <Grid.GestureRecognizers>
                     <TapGestureRecognizer Tapped="OnUploadYourOwnMusicClicked" />
@@ -147,7 +147,7 @@
                        VerticalOptions="Center" />
                 <Label Grid.Column="1"
                        Text="Upload Your Own Music"
-                       FontSize="14"
+                       FontSize="{StaticResource FontSizeCardTitle}"
                        FontAttributes="Bold"
                        VerticalOptions="Center"
                        TextColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}" />
@@ -156,7 +156,7 @@
             <BoxView HeightRequest="1" Color="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray600}}" Margin="0,0,0,4" />
 
             <Label Text="Terms of Use"
-                   FontSize="12"
+                   FontSize="{StaticResource FontSizeCardMeta}"
                    TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray400}}"
                    TextDecorations="Underline">
                 <Label.GestureRecognizers>
@@ -165,7 +165,7 @@
             </Label>
 
             <Label Text="Privacy Policy"
-                   FontSize="12"
+                   FontSize="{StaticResource FontSizeCardMeta}"
                    TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray400}}"
                    TextDecorations="Underline">
                 <Label.GestureRecognizers>
@@ -174,7 +174,7 @@
             </Label>
 
             <Label Text="Account Deletion"
-                   FontSize="12"
+                   FontSize="{StaticResource FontSizeCardMeta}"
                    TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray400}}"
                    TextDecorations="Underline">
                 <Label.GestureRecognizers>
@@ -183,7 +183,7 @@
             </Label>
 
             <Label Text="User Refund Policy"
-                   FontSize="12"
+                   FontSize="{StaticResource FontSizeCardMeta}"
                    TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray400}}"
                    TextDecorations="Underline">
                 <Label.GestureRecognizers>
@@ -192,7 +192,7 @@
             </Label>
 
             <Label Text="Copyright Policy"
-                   FontSize="12"
+                   FontSize="{StaticResource FontSizeCardMeta}"
                    TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray400}}"
                    TextDecorations="Underline">
                 <Label.GestureRecognizers>
@@ -201,13 +201,13 @@
             </Label>
 
             <Label x:Name="CopyrightLabel"
-                   FontSize="11"
+                   FontSize="{StaticResource FontSizeMicro}"
                    TextColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray500}}"
                    HorizontalOptions="Center"
                    Margin="0,4,0,0" />
 
                  <Label x:Name="VersionLabel"
-                     FontSize="11"
+                     FontSize="{StaticResource FontSizeMicro}"
                      TextColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray500}}"
                      HorizontalOptions="Center" />
 

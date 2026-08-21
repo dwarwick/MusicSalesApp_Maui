@@ -1,11 +1,11 @@
-<?xml version="1.0" encoding="utf-8" ?>
+﻿<?xml version="1.0" encoding="utf-8" ?>
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="MusicSalesApp.Maui.Views.AddToPlaylistButton">
 
     <Grid x:Name="AddBtn"
-          HeightRequest="36"
-          WidthRequest="36"
+          HeightRequest="{StaticResource ArtSizeMini}"
+          WidthRequest="{StaticResource ArtSizeMini}"
           VerticalOptions="Center">
         <!-- Plus-in-rectangle glyph (playlist-add) -->
         <Path Data="M14 10H2v2h12v-2zm0-4H2v2h12V6zM2 16h8v-2H2v2zm19.5-4.5L23 13l-6.99 7-4.51-4.5L13 14l3.01 3 5.49-5.5z"

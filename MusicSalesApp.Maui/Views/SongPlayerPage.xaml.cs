@@ -1,6 +1,7 @@
-using System.Globalization;
+﻿using System.Globalization;
 using MusicSalesApp.Maui.Services;
 using MusicSalesApp.Maui.ViewModels;
+using MusicSalesApp.Maui.Resources.Styles;
 
 namespace MusicSalesApp.Maui.Views;
 
@@ -68,8 +69,8 @@ public class SubBadgeBgConverter : IValueConverter
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         return value is true
-            ? Color.FromArgb("#1DB954") // green for subscriber
-            : Color.FromArgb("#FFA500"); // orange for preview
+            ? AppColors.BlueBright   // subscribed
+            : AppColors.Amber;       // preview limited - a warning, never brand colour
     }
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
@@ -126,10 +127,10 @@ public class LikeFillConverter : IValueConverter
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         if (value is true)
-            return new SolidColorBrush(Color.FromArgb("#1DB954"));
+            return new SolidColorBrush(AppColors.AccentFill);
 
         return Application.Current?.RequestedTheme == AppTheme.Dark
-            ? new SolidColorBrush(Color.FromArgb("#B3B3B3"))
+            ? new SolidColorBrush(AppColors.Text3)
             : new SolidColorBrush(Colors.Black);
     }
 
@@ -142,10 +143,10 @@ public class DislikeFillConverter : IValueConverter
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         if (value is false)
-            return new SolidColorBrush(Color.FromArgb("#E74C3C"));
+            return new SolidColorBrush(AppColors.Danger);
 
         return Application.Current?.RequestedTheme == AppTheme.Dark
-            ? new SolidColorBrush(Color.FromArgb("#B3B3B3"))
+            ? new SolidColorBrush(AppColors.Text3)
             : new SolidColorBrush(Colors.Black);
     }
 
@@ -158,10 +159,10 @@ public class LikeColorConverter : IValueConverter
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         if (value is true)
-            return Color.FromArgb("#1DB954"); // green when liked
+            return AppColors.AccentFill; // liked
 
         return Application.Current?.RequestedTheme == AppTheme.Dark
-            ? Color.FromArgb("#B3B3B3")
+            ? AppColors.Text3
             : Colors.Black;
     }
 
@@ -174,10 +175,10 @@ public class DislikeColorConverter : IValueConverter
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         if (value is false)
-            return Color.FromArgb("#E74C3C"); // red when disliked
+            return AppColors.Danger; // disliked
 
         return Application.Current?.RequestedTheme == AppTheme.Dark
-            ? Color.FromArgb("#B3B3B3")
+            ? AppColors.Text3
             : Colors.Black;
     }
 

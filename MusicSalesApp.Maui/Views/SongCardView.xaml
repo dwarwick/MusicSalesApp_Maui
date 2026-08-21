@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8" ?>
+﻿<?xml version="1.0" encoding="utf-8" ?>
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
@@ -26,18 +26,18 @@
                 Command="{Binding Source={x:Reference Root}, Path=OpenSongCommand}"
                 CommandParameter="{Binding .}" />
         </Border.GestureRecognizers>
-        <VerticalStackLayout Spacing="8">
+        <VerticalStackLayout Spacing="{StaticResource Space2}">
             <Grid HorizontalOptions="Center"
-                  HeightRequest="150"
-                  WidthRequest="150">
+                  HeightRequest="{StaticResource ArtSizeCard}"
+                  WidthRequest="{StaticResource ArtSizeCard}">
                 <Border HorizontalOptions="Center"
                         StrokeShape="RoundRectangle 8"
                         StrokeThickness="0"
-                        HeightRequest="150"
-                        WidthRequest="150">
+                        HeightRequest="{StaticResource ArtSizeCard}"
+                        WidthRequest="{StaticResource ArtSizeCard}">
                     <views:SongArtworkView AlbumArtUrl="{Binding AlbumArtHeroDisplaySource}"
-                                           HeightRequest="150"
-                                           WidthRequest="150" />
+                                           HeightRequest="{StaticResource ArtSizeCard}"
+                                           WidthRequest="{StaticResource ArtSizeCard}" />
                 </Border>
             </Grid>
 
@@ -48,7 +48,7 @@
                                         HorizontalOptions="Center" />
 
             <Label Text="{Binding SongTitle}"
-                   FontSize="16"
+                   FontSize="{StaticResource FontSizeBodyLarge}"
                    FontAttributes="Bold"
                    TextColor="{AppThemeBinding Light=Black, Dark=White}"
                    LineBreakMode="TailTruncation"
@@ -69,7 +69,7 @@
                            WidthRequest="20" />
                 </Border>
                 <Label Text="{Binding ArtistName}"
-                       FontSize="13"
+                       FontSize="{StaticResource FontSizeSmall}"
                        TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
                        LineBreakMode="TailTruncation"
                        MaxLines="1"
@@ -84,9 +84,9 @@
             </HorizontalStackLayout>
 
             <HorizontalStackLayout HorizontalOptions="Center"
-                                    Spacing="4">
+                                    Spacing="{StaticResource Space1}">
                 <Label Text="{Binding Genre}"
-                       FontSize="12"
+                       FontSize="{StaticResource FontSizeCardMeta}"
                        VerticalOptions="Center"
                        VerticalTextAlignment="Center"
                        TextColor="{StaticResource Primary}"
@@ -99,12 +99,12 @@
                     </Label.GestureRecognizers>
                 </Label>
                 <Label Text="·"
-                       FontSize="12"
+                       FontSize="{StaticResource FontSizeCardMeta}"
                        VerticalOptions="Center"
                        VerticalTextAlignment="Center"
                        TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}"
                        IsVisible="{Binding Genre, Converter={toolkit:IsStringNotNullOrEmptyConverter}}" />
-                <Label FontSize="12"
+                <Label FontSize="{StaticResource FontSizeCardMeta}"
                        VerticalOptions="Center"
                        VerticalTextAlignment="Center"
                        TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}">
@@ -114,23 +114,23 @@
                     </Label.Text>
                 </Label>
                 <Label Text="·"
-                       FontSize="12"
+                       FontSize="{StaticResource FontSizeCardMeta}"
                        VerticalOptions="Center"
                        VerticalTextAlignment="Center"
                        TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}" />
-                <Label FontSize="12"
+                <Label FontSize="{StaticResource FontSizeCardMeta}"
                        VerticalOptions="Center"
                        VerticalTextAlignment="Center"
                        TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}"
                        Text="{Binding TrackLengthSeconds, Converter={StaticResource DurationConverter}}" />
                 <Label Text="·"
-                       FontSize="12"
+                       FontSize="{StaticResource FontSizeCardMeta}"
                        VerticalOptions="Center"
                        VerticalTextAlignment="Center"
                        TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}" />
 
-                <Grid HeightRequest="32"
-                      WidthRequest="32"
+                <Grid HeightRequest="{StaticResource ControlHeightSmall}"
+                      WidthRequest="{StaticResource ControlHeightSmall}"
                       VerticalOptions="Center">
                     <Grid.GestureRecognizers>
                         <TapGestureRecognizer
@@ -146,13 +146,13 @@
                           VerticalOptions="Center" />
                 </Grid>
                 <Label Text="{Binding LikeCount}"
-                       FontSize="12"
+                       FontSize="{StaticResource FontSizeCardMeta}"
                        TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource LikeButtonDarkText}}"
                        VerticalOptions="Center"
                        VerticalTextAlignment="Center" />
 
-                <Grid HeightRequest="32"
-                      WidthRequest="32"
+                <Grid HeightRequest="{StaticResource ControlHeightSmall}"
+                      WidthRequest="{StaticResource ControlHeightSmall}"
                       VerticalOptions="Center">
                     <Grid.GestureRecognizers>
                         <TapGestureRecognizer
@@ -168,7 +168,7 @@
                           VerticalOptions="Center" />
                 </Grid>
                 <Label Text="{Binding DislikeCount}"
-                       FontSize="12"
+                       FontSize="{StaticResource FontSizeCardMeta}"
                        TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource LikeButtonDarkText}}"
                        VerticalOptions="Center"
                        VerticalTextAlignment="Center" />
@@ -204,8 +204,8 @@
                                                                  VerticalOptions="Center" />
 
                                 <Grid Grid.Column="4"
-                      HeightRequest="32"
-                      WidthRequest="32"
+                      HeightRequest="{StaticResource ControlHeightSmall}"
+                      WidthRequest="{StaticResource ControlHeightSmall}"
                       IsVisible="{Binding Source={x:Reference Root}, Path=ShowReportButton}">
                     <Grid.GestureRecognizers>
                         <TapGestureRecognizer

@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8" ?>
+﻿<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
@@ -11,21 +11,21 @@
              BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
 
     <ScrollView>
-        <VerticalStackLayout Spacing="16" Padding="24,40,24,24" MaximumWidthRequest="400"
+        <VerticalStackLayout Spacing="{StaticResource Space4}" Padding="24,40,24,24" MaximumWidthRequest="400"
                              HorizontalOptions="Center" VerticalOptions="Center">
 
             <Image Source="{AppThemeBinding Light=logo_light_small.png, Dark=logo_dark_small.png}"
                    HeightRequest="50" Aspect="AspectFit" HorizontalOptions="Center" Margin="0,0,0,16" />
 
             <Label Text="Sign in to StreamTunes"
-                   FontSize="22" FontAttributes="Bold"
+                   FontSize="{StaticResource FontSizeH2Compact}" FontAttributes="Bold"
                    HorizontalOptions="Center"
                    TextColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}" />
 
             <!-- Error Message -->
             <Label Text="{Binding ErrorMessage}"
                    IsVisible="{Binding ErrorMessage, Converter={toolkit:IsNotNullConverter}}"
-                   TextColor="Red" FontSize="13" HorizontalOptions="Center" />
+                   TextColor="Red" FontSize="{StaticResource FontSizeSmall}" HorizontalOptions="Center" />
 
             <!-- Email -->
             <Entry Placeholder="Email"
@@ -56,15 +56,15 @@
             </Grid>
 
             <!-- Login Button + Biometric Icon -->
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space3}">
                 <Button Text="Login"
                         Command="{Binding LoginCommand}"
                         IsEnabled="{Binding IsBusy, Converter={toolkit:InvertedBoolConverter}}"
                         BackgroundColor="{StaticResource Primary}"
                         TextColor="White"
                         FontAttributes="Bold"
-                        CornerRadius="8"
-                        HeightRequest="48" />
+                        CornerRadius="{StaticResource RadiusSmInt}"
+                        HeightRequest="{StaticResource ArtSizeThumb}" />
 
                 <ImageButton Grid.Column="1"
                              Command="{Binding BiometricLoginCommand}"
@@ -72,7 +72,7 @@
                              IsEnabled="{Binding IsBusy, Converter={toolkit:InvertedBoolConverter}}"
                              Source="fingerprint.png"
                              BackgroundColor="Transparent"
-                             WidthRequest="48" HeightRequest="48"
+                             WidthRequest="{StaticResource ArtSizeThumb}" HeightRequest="{StaticResource ArtSizeThumb}"
                              Padding="8"
                              VerticalOptions="Center" />
             </Grid>
@@ -82,10 +82,10 @@
                              Command="{Binding GoogleLoginCommand}"
                              IsEnabled="{Binding IsBusy, Converter={toolkit:InvertedBoolConverter}}"
                              BackgroundColor="White"
-                             BorderColor="{AppThemeBinding Light=#DADCE0, Dark=#DADCE0}"
+                             BorderColor="{StaticResource GoogleButtonBorder}"
                              BorderWidth="1"
-                             CornerRadius="8"
-                             HeightRequest="48"
+                             CornerRadius="{StaticResource RadiusSmInt}"
+                             HeightRequest="{StaticResource ArtSizeThumb}"
                              Padding="12"
                              Aspect="AspectFit"
                              HorizontalOptions="Fill"
@@ -99,7 +99,7 @@
             <!-- Forgot Password -->
             <Label Text="Forgot Password?"
                    TextColor="{StaticResource Primary}"
-                   FontSize="14"
+                   FontSize="{StaticResource FontSizeCardTitle}"
                    HorizontalOptions="Center">
                 <Label.GestureRecognizers>
                     <TapGestureRecognizer Command="{Binding GoToForgotPasswordCommand}" />
@@ -107,12 +107,12 @@
             </Label>
 
             <!-- Register Link -->
-            <HorizontalStackLayout HorizontalOptions="Center" Spacing="4">
+            <HorizontalStackLayout HorizontalOptions="Center" Spacing="{StaticResource Space1}">
                 <Label Text="Don't have an account?"
-                       FontSize="14"
+                       FontSize="{StaticResource FontSizeCardTitle}"
                        TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray300}}" />
                 <Label Text="Register"
-                       FontSize="14"
+                       FontSize="{StaticResource FontSizeCardTitle}"
                        FontAttributes="Bold"
                        TextColor="{StaticResource Primary}">
                     <Label.GestureRecognizers>

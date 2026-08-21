@@ -137,6 +137,12 @@
     <Color x:Key="WarnSoftLight">#1F9A5C00</Color>
     <Color x:Key="WarnSoftDark">#26FFA500</Color>
 
+    <!-- The only foreground allowed on an amber FILL. White on StAmber is 2.1:1 and fails AA
+         in both themes - the preview badge shipped that way for a long time. Same near-black
+         reasoning as OnAccentDark: a bright fill takes a dark label, it is not dimmed to suit
+         a light one. -->
+    <Color x:Key="OnWarn">#04121F</Color>
+
     <!-- Track (sliders, progress) -->
     <Color x:Key="TrackLight">#240F1B2D</Color>
     <Color x:Key="TrackDark">#29FFFFFF</Color>
@@ -190,6 +196,24 @@
     <Color x:Key="DangerFillLight">#B3261E</Color>
     <Color x:Key="DangerFillDark">#93000A</Color>
     <Color x:Key="OnDanger">#FFFFFF</Color>
+    <Color x:Key="DangerSoftLight">#FFF3F3</Color>
+    <Color x:Key="DangerSoftDark">#3A1A1A</Color>
+
+    <!-- Modal backdrop. The same in both themes: a scrim darkens whatever is behind it, and
+         a light one would wash the page out rather than push it back. -->
+    <Color x:Key="Scrim">#CC000000</Color>
+
+    <!-- ===================================================================
+         THIRD-PARTY BRAND COLOURS
+         These are NOT ours and are not part of the palette. They are prescribed by the
+         platforms whose sign-in and share buttons they belong to, and changing them to fit
+         our design is a brand-guideline violation on their side. They are named here only so
+         that a search for stray hex literals comes back clean and so the reason survives.
+         Do not re-theme these to match the blues.
+         =================================================================== -->
+    <Color x:Key="GoogleButtonBorder">#DADCE0</Color>
+    <Color x:Key="FacebookBrand">#3B5998</Color>
+    <Color x:Key="FacebookBrandPressed">#334B82</Color>
 
     <!-- ===================================================================
          NEUTRALS - kept because MAUI's template styles reference them.

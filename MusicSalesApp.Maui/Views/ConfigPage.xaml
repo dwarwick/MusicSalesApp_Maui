@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8" ?>
+﻿<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:vm="clr-namespace:MusicSalesApp.Maui.ViewModels"
@@ -9,82 +9,82 @@
              BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
 
     <ScrollView>
-        <VerticalStackLayout Padding="24,24" Spacing="24">
-            <VerticalStackLayout Spacing="4">
+        <VerticalStackLayout Padding="24,24" Spacing="{StaticResource Space5}">
+            <VerticalStackLayout Spacing="{StaticResource Space1}">
                 <Label Text="Config"
-                       FontSize="22"
+                       FontSize="{StaticResource FontSizeH2Compact}"
                        FontAttributes="Bold"
-                       TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+                       TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
                 <Label Text="Offline cache"
-                       FontSize="15"
-                       TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+                       FontSize="{StaticResource FontSizeBody}"
+                       TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
             </VerticalStackLayout>
 
             <BoxView HeightRequest="1"
-                     Color="{AppThemeBinding Light=#E0E0E0, Dark=#333333}" />
+                     Color="{AppThemeBinding Light={StaticResource LineLight}, Dark={StaticResource LineDark}}" />
 
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
-                <VerticalStackLayout Grid.Column="0" Spacing="4">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space4}">
+                <VerticalStackLayout Grid.Column="0" Spacing="{StaticResource Space1}">
                     <Label Text="Space used"
-                           FontSize="18"
+                           FontSize="{StaticResource FontSizeH4}"
                            FontAttributes="Bold"
-                           TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+                           TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
                     <Label Text="Storage currently used by downloaded songs on this device."
-                           FontSize="14"
-                           TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+                           FontSize="{StaticResource FontSizeCardTitle}"
+                           TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
                 </VerticalStackLayout>
 
                 <Label Grid.Column="1"
                        Text="{Binding CacheUsageDisplay}"
-                       FontSize="18"
+                       FontSize="{StaticResource FontSizeH4}"
                        FontAttributes="Bold"
                        VerticalOptions="Center"
-                       TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+                       TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
             </Grid>
 
             <BoxView HeightRequest="1"
-                     Color="{AppThemeBinding Light=#E0E0E0, Dark=#333333}" />
+                     Color="{AppThemeBinding Light={StaticResource LineLight}, Dark={StaticResource LineDark}}" />
 
-            <VerticalStackLayout Spacing="16">
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
-                    <VerticalStackLayout Grid.Column="0" Spacing="4">
+            <VerticalStackLayout Spacing="{StaticResource Space4}">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space4}">
+                    <VerticalStackLayout Grid.Column="0" Spacing="{StaticResource Space1}">
                         <Label Text="Cache size"
-                               FontSize="18"
+                               FontSize="{StaticResource FontSizeH4}"
                                FontAttributes="Bold"
-                               TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+                               TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
                         <Label Text="Max potential storage for prepared audio on this device."
-                               FontSize="14"
-                               TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+                               FontSize="{StaticResource FontSizeCardTitle}"
+                               TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
                     </VerticalStackLayout>
 
                     <Label Grid.Column="1"
                            Text="{Binding OfflineCacheLimitDisplay}"
-                           FontSize="18"
+                           FontSize="{StaticResource FontSizeH4}"
                            FontAttributes="Bold"
                            VerticalOptions="Center"
-                           TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+                           TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
                 </Grid>
 
                 <Slider Minimum="{Binding MinimumCacheLimitMb}"
                         Maximum="{Binding MaximumCacheLimitMb}"
                         Value="{Binding OfflineCacheLimitMb, Mode=TwoWay}"
-                        MinimumTrackColor="#1db954"
-                        MaximumTrackColor="{AppThemeBinding Light=#E0E0E0, Dark=#333333}"
-                        ThumbColor="#1db954" />
+                        MinimumTrackColor="{StaticResource AccentFillLight}"
+                        MaximumTrackColor="{AppThemeBinding Light={StaticResource LineLight}, Dark={StaticResource LineDark}}"
+                        ThumbColor="{StaticResource AccentFillLight}" />
 
                 <Grid ColumnDefinitions="*,Auto">
                     <Label Grid.Column="0"
                            Text="{Binding MinimumCacheLimitDisplay}"
-                           FontSize="12"
-                           TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+                           FontSize="{StaticResource FontSizeCardMeta}"
+                           TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
                     <Label Grid.Column="1"
                            Text="{Binding MaximumCacheLimitDisplay}"
-                           FontSize="12"
-                           TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
+                           FontSize="{StaticResource FontSizeCardMeta}"
+                           TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
                 </Grid>
 
-                <Label FontSize="13"
-                       TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}">
+                <Label FontSize="{StaticResource FontSizeSmall}"
+                       TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}">
                     <Label.FormattedText>
                         <FormattedString>
                             <Span Text="StreamTunes may use less than this limit when device free space reaches the " />
@@ -96,11 +96,11 @@
 
                 <Button Text="Reset to 1 GB"
                         Command="{Binding ResetOfflineCacheLimitCommand}"
-                        BackgroundColor="{AppThemeBinding Light=#E0E0E0, Dark=#333333}"
-                        TextColor="{AppThemeBinding Light=#333333, Dark=#e0e0e0}"
+                        BackgroundColor="{AppThemeBinding Light={StaticResource LineLight}, Dark={StaticResource LineDark}}"
+                        TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}"
                         FontAttributes="Bold"
-                        CornerRadius="8"
-                        HeightRequest="44"
+                        CornerRadius="{StaticResource RadiusSmInt}"
+                        HeightRequest="{StaticResource ControlHeight}"
                         HorizontalOptions="Start"
                         Padding="20,0" />
             </VerticalStackLayout>

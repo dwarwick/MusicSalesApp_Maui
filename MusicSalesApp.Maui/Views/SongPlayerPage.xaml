@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8" ?>
+﻿<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
@@ -16,7 +16,7 @@
                      Command="{Binding RefreshCommand}"
                      IsRefreshing="{Binding IsRefreshing, Mode=OneWay}">
             <ScrollView Padding="0">
-                <VerticalStackLayout Spacing="16"
+                <VerticalStackLayout Spacing="{StaticResource Space4}"
                                      Padding="20,24,20,16">
 
                 <!-- Large Album Art -->
@@ -40,7 +40,7 @@
 
                 <!-- Song Title -->
                 <Label Text="{Binding Song.SongTitle}"
-                       FontSize="24"
+                       FontSize="{StaticResource FontSizeH2}"
                        FontAttributes="Bold"
                        TextColor="{AppThemeBinding Light=Black, Dark=White}"
                        HorizontalTextAlignment="Center"
@@ -49,7 +49,7 @@
 
                 <!-- Artist Name -->
                 <HorizontalStackLayout HorizontalOptions="Center"
-                                        Spacing="8">
+                                        Spacing="{StaticResource Space2}">
                     <Border StrokeShape="RoundRectangle 12"
                             StrokeThickness="0"
                             HeightRequest="24"
@@ -62,7 +62,7 @@
                                WidthRequest="24" />
                     </Border>
                     <Label Text="{Binding Song.ArtistName}"
-                           FontSize="16"
+                           FontSize="{StaticResource FontSizeBodyLarge}"
                            TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
                            VerticalOptions="Center"
                            TextDecorations="Underline">
@@ -92,7 +92,7 @@
                             BackgroundColor="Transparent"
                             IsVisible="{Binding Song.Genre, Converter={toolkit:IsStringNotNullOrEmptyConverter}}">
                         <Label Text="{Binding Song.Genre}"
-                               FontSize="12"
+                               FontSize="{StaticResource FontSizeCardMeta}"
                                TextColor="{StaticResource Primary}"
                                TextDecorations="Underline">
                             <Label.GestureRecognizers>
@@ -102,7 +102,7 @@
                         </Label>
                     </Border>
                     <Label Text="·"
-                           FontSize="14"
+                           FontSize="{StaticResource FontSizeCardTitle}"
                            TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}"
                            VerticalOptions="Center"
                            IsVisible="{Binding Song.Genre, Converter={toolkit:IsStringNotNullOrEmptyConverter}}" />
@@ -110,7 +110,7 @@
                                          Command="{Binding PlaySongCommand}"
                                          ButtonSize="40"
                                          VerticalOptions="Center" />
-                    <Label FontSize="13"
+                    <Label FontSize="{StaticResource FontSizeSmall}"
                            TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}"
                            VerticalOptions="Center">
                         <Label.Text>
@@ -119,10 +119,10 @@
                         </Label.Text>
                     </Label>
                     <Label Text="·"
-                           FontSize="14"
+                           FontSize="{StaticResource FontSizeCardTitle}"
                            TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}"
                            VerticalOptions="Center" />
-                    <Label FontSize="13"
+                    <Label FontSize="{StaticResource FontSizeSmall}"
                            TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}"
                            VerticalOptions="Center"
                            Text="{Binding Song.TrackLengthSeconds, Converter={StaticResource DurationConverter}}" />
@@ -134,17 +134,17 @@
                         StrokeShape="RoundRectangle 16"
                         StrokeThickness="0"
                         IsVisible="{Binding IsCurrentSongPreviewLimited}"
-                        BackgroundColor="#FFA500">
-                    <Label FontSize="12"
+                        BackgroundColor="{StaticResource StAmber}">
+                    <Label FontSize="{StaticResource FontSizeCardMeta}"
                            FontAttributes="Bold"
-                           TextColor="White"
+                           TextColor="{StaticResource OnWarn}"
                            HorizontalTextAlignment="Center"
                            Text="Preview Only (60 seconds)" />
                 </Border>
 
                 <!-- Action Row: Like, Dislike, Share -->
                 <HorizontalStackLayout HorizontalOptions="Center"
-                                        Spacing="16">
+                                        Spacing="{StaticResource Space4}">
 
                     <!-- Like Button -->
                     <VerticalStackLayout VerticalOptions="Center"
@@ -161,7 +161,7 @@
                                   HorizontalOptions="Center" VerticalOptions="Center" />
                         </Grid>
                         <Label Text="{Binding Song.LikeCount}"
-                               FontSize="11"
+                               FontSize="{StaticResource FontSizeMicro}"
                                TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource LikeButtonDarkText}}"
                                HorizontalTextAlignment="Center" />
                     </VerticalStackLayout>
@@ -181,7 +181,7 @@
                                   HorizontalOptions="Center" VerticalOptions="Center" />
                         </Grid>
                         <Label Text="{Binding Song.DislikeCount}"
-                               FontSize="11"
+                               FontSize="{StaticResource FontSizeMicro}"
                                TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource LikeButtonDarkText}}"
                                HorizontalTextAlignment="Center" />
                     </VerticalStackLayout>
@@ -223,7 +223,7 @@
                                   HorizontalOptions="Center" VerticalOptions="Center" />
                         </Grid>
                         <Label Text="Report"
-                               FontSize="10"
+                               FontSize="{StaticResource FontSizeNano}"
                                TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource LikeButtonDarkText}}"
                                HorizontalTextAlignment="Center" />
                     </VerticalStackLayout>

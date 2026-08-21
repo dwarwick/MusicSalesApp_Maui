@@ -1,53 +1,41 @@
-<?xml version="1.0" encoding="utf-8" ?>
+﻿<?xml version="1.0" encoding="utf-8" ?>
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="MusicSalesApp.Maui.Views.SubscriptionOfferCardView"
              x:Name="Root">
     <Border StrokeShape="RoundRectangle 8"
             Stroke="{StaticResource Primary}"
-            BackgroundColor="{AppThemeBinding Light=#F2FFF7, Dark=#123321}"
+            BackgroundColor="{AppThemeBinding Light={StaticResource AccentSoftLight}, Dark={StaticResource AccentSoftDark}}"
             Padding="16">
-        <VerticalStackLayout Spacing="12">
+        <VerticalStackLayout Spacing="{StaticResource Space3}">
             <Label Text="{Binding TitleText, Source={x:Reference Root}}"
-                   FontSize="18"
+                   FontSize="{StaticResource FontSizeH4}"
                    FontAttributes="Bold"
                    LineBreakMode="WordWrap"
-                   TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+                   TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
             <Label Text="{Binding BodyText, Source={x:Reference Root}}"
-                   FontSize="14"
+                   FontSize="{StaticResource FontSizeCardTitle}"
                    LineBreakMode="WordWrap"
-                   TextColor="{AppThemeBinding Light=#1a1a2e, Dark=White}" />
+                   TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
             <Label Text="{Binding PriceText, Source={x:Reference Root}, StringFormat='Only {0}/month'}"
-                   FontSize="16"
+                   FontSize="{StaticResource FontSizeBodyLarge}"
                    FontAttributes="Bold"
                    IsVisible="{Binding ShowPriceText, Source={x:Reference Root}}"
                    TextColor="{StaticResource Primary}" />
             <Label Text="{Binding DisclosureText, Source={x:Reference Root}}"
-                   FontSize="12"
+                   FontSize="{StaticResource FontSizeCardMeta}"
                    LineBreakMode="WordWrap"
-                   TextColor="{AppThemeBinding Light=#666666, Dark=#b3b3b3}" />
-            <HorizontalStackLayout Spacing="12">
-                <Button Text="{Binding PrimaryButtonText, Source={x:Reference Root}}"
+                   TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
+            <HorizontalStackLayout Spacing="{StaticResource Space3}">
+                <Button Style="{StaticResource PillButtonPrimary}" Text="{Binding PrimaryButtonText, Source={x:Reference Root}}"
                         Command="{Binding PrimaryCommand, Source={x:Reference Root}}"
                         IsVisible="{Binding ShowPrimaryButton, Source={x:Reference Root}}"
                         IsEnabled="{Binding IsPrimaryButtonEnabled, Source={x:Reference Root}}"
-                        BackgroundColor="{StaticResource Primary}"
-                        TextColor="White"
-                        FontAttributes="Bold"
-                        CornerRadius="24"
-                        HeightRequest="44"
-                        MinimumWidthRequest="120"
-                        Padding="20,0" />
-                <Button Text="{Binding SecondaryButtonText, Source={x:Reference Root}}"
+                        MinimumWidthRequest="120" />
+                <Button Style="{StaticResource PillButtonSecondary}" Text="{Binding SecondaryButtonText, Source={x:Reference Root}}"
                         Command="{Binding SecondaryCommand, Source={x:Reference Root}}"
                         IsVisible="{Binding ShowSecondaryButton, Source={x:Reference Root}}"
-                        BackgroundColor="#8e44ad"
-                        TextColor="White"
-                        FontAttributes="Bold"
-                        CornerRadius="24"
-                        HeightRequest="44"
-                        MinimumWidthRequest="100"
-                        Padding="20,0" />
+                        MinimumWidthRequest="100" />
             </HorizontalStackLayout>
         </VerticalStackLayout>
     </Border>

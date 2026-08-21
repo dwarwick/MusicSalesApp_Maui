@@ -1,4 +1,5 @@
-using Microsoft.Maui.Controls.Shapes;
+﻿using Microsoft.Maui.Controls.Shapes;
+using MusicSalesApp.Maui.Resources.Styles;
 
 namespace MusicSalesApp.Maui.Services;
 
@@ -27,7 +28,7 @@ public sealed class PermissionExplainerPage : ContentPage
         var container = new Grid();
         var backdrop = new Grid
         {
-            BackgroundColor = Color.FromArgb("#A6000000")
+            BackgroundColor = AppColors.Get("Scrim", "#CC000000")
         };
 
         if (request.AllowBackdropDismiss)
@@ -59,7 +60,7 @@ public sealed class PermissionExplainerPage : ContentPage
             FontSize = 12,
             FontAttributes = FontAttributes.Bold,
             CharacterSpacing = 1.2,
-            TextColor = Color.FromArgb("#1DB954")
+            TextColor = AppColors.Accent
         };
 
         var title = new Label
@@ -78,7 +79,7 @@ public sealed class PermissionExplainerPage : ContentPage
             LineHeight = 1.35,
             LineBreakMode = LineBreakMode.WordWrap
         };
-        message.SetAppThemeColor(Label.TextColorProperty, Color.FromArgb("#444444"), Color.FromArgb("#D0D0D0"));
+        message.SetAppThemeColor(Label.TextColorProperty, AppColors.Get("Text2Light", "#4A5B70"), AppColors.Get("Text2Dark", "#A8B6C8"));
 
         CheckBox? doNotAskAgainCheckBox = null;
         HorizontalStackLayout? doNotAskAgainRow = null;
@@ -87,7 +88,7 @@ public sealed class PermissionExplainerPage : ContentPage
             doNotAskAgainCheckBox = new CheckBox
             {
                 IsChecked = false,
-                Color = Color.FromArgb("#1DB954"),
+                Color = AppColors.AccentFill,
                 VerticalOptions = LayoutOptions.Center
             };
 
@@ -98,7 +99,7 @@ public sealed class PermissionExplainerPage : ContentPage
                 VerticalTextAlignment = TextAlignment.Center,
                 LineBreakMode = LineBreakMode.WordWrap
             };
-            doNotAskAgainLabel.SetAppThemeColor(Label.TextColorProperty, Color.FromArgb("#444444"), Color.FromArgb("#D0D0D0"));
+            doNotAskAgainLabel.SetAppThemeColor(Label.TextColorProperty, AppColors.Get("Text2Light", "#4A5B70"), AppColors.Get("Text2Dark", "#A8B6C8"));
 
             var toggleGesture = new TapGestureRecognizer();
             toggleGesture.Tapped += (_, _) => doNotAskAgainCheckBox.IsChecked = !doNotAskAgainCheckBox.IsChecked;
@@ -130,9 +131,9 @@ public sealed class PermissionExplainerPage : ContentPage
             {
                 Text = request.SecondaryButtonText,
                 BackgroundColor = Colors.Transparent,
-                BorderColor = GetThemeColor("#D4D4D4", "#4A4A4A"),
+                BorderColor = AppColors.Line,
                 BorderWidth = 1,
-                TextColor = GetThemeColor("#4A4A4A", "#E0E0E0"),
+                TextColor = AppColors.Text2,
                 CornerRadius = 20,
                 HorizontalOptions = LayoutOptions.Fill,
                 Padding = new Thickness(16, 12)
@@ -149,8 +150,8 @@ public sealed class PermissionExplainerPage : ContentPage
         var primaryButton = new Button
         {
             Text = request.PrimaryButtonText,
-            BackgroundColor = Color.FromArgb("#1DB954"),
-            TextColor = Colors.White,
+            BackgroundColor = AppColors.AccentFill,
+            TextColor = AppColors.OnAccent,
             FontAttributes = FontAttributes.Bold,
             CornerRadius = 20,
             HorizontalOptions = LayoutOptions.Fill,
@@ -186,14 +187,14 @@ public sealed class PermissionExplainerPage : ContentPage
             Padding = new Thickness(24),
             Shadow = new Shadow
             {
-                Brush = new SolidColorBrush(Color.FromArgb("#60000000")),
+                Brush = new SolidColorBrush(Colors.Black.WithAlpha(0.38f)),
                 Offset = new Point(0, 10),
                 Radius = 18,
                 Opacity = 0.35f,
             },
             Content = contentStack
         };
-        dialog.SetAppThemeColor(Border.BackgroundColorProperty, Colors.White, Color.FromArgb("#202020"));
+        dialog.SetAppThemeColor(Border.BackgroundColorProperty, AppColors.Get("SurfaceLight", "#FFFFFF"), AppColors.Get("SurfaceDark", "#2A323D"));
 
         return (doNotAskAgainCheckBox, dialog);
     }

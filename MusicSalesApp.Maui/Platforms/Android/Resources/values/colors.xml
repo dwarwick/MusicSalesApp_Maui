@@ -1,8 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    Android's NATIVE chrome. This file does not read Resources/Styles/Colors.xaml, so the two
+    must be changed together - these values are the same tokens by hand.
+      colorPrimary / colorPrimaryDark -> StBlueDeep  (#0166D6)
+      colorAccent                     -> StBlueBright (#02B8FD)
+    They were the retired Spotify green until the design system was ported.
+-->
 <resources>
-    <color name="colorPrimary">#1DB954</color>
-    <color name="colorPrimaryDark">#1DB954</color>
-    <color name="colorAccent">#1ED760</color>
-    <!-- Light-mode splash background (overridden in values-night) -->
-    <color name="maui_splash_color">#FFFFFF</color>
+    <color name="colorPrimary">#0166D6</color>
+    <color name="colorPrimaryDark">#0166D6</color>
+    <color name="colorAccent">#02B8FD</color>
+    <!-- Splash background. Light here, overridden in values-night. Matches PageLight. -->
+    <color name="maui_splash_color">#F8F9FA</color>
 </resources>

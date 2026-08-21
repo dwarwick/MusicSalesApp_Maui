@@ -1,11 +1,11 @@
-<?xml version="1.0" encoding="utf-8" ?>
+﻿<?xml version="1.0" encoding="utf-8" ?>
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:views="clr-namespace:MusicSalesApp.Maui.Views"
              x:Class="MusicSalesApp.Maui.Views.NowPlayingView">
 
     <Grid x:Name="DrawerRoot"
-                    MinimumHeightRequest="44">
+                    MinimumHeightRequest="{StaticResource ControlHeight}">
         <Border x:Name="PlayerBorder"
                 Padding="0"
                 BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource PlayerBarDark}}"
@@ -17,12 +17,12 @@
                                          Spacing="0">
                         <!-- Progress Slider Row -->
                         <Grid ColumnDefinitions="Auto,*,Auto"
-                              ColumnSpacing="8"
+                              ColumnSpacing="{StaticResource Space2}"
                               Padding="12,8,12,0">
                             <Label Grid.Column="0"
                                    x:Name="PositionLabel"
                                    Text="0:00"
-                                   FontSize="11"
+                                   FontSize="{StaticResource FontSizeMicro}"
                                    TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource TimeText}}"
                                    VerticalOptions="Center" />
                             <Grid Grid.Column="1"
@@ -37,7 +37,7 @@
                                 <BoxView x:Name="PreviewMarker"
                                          WidthRequest="3"
                                          HeightRequest="20"
-                                         Color="#FFA500"
+                                         Color="{StaticResource StAmber}"
                                          CornerRadius="1"
                                          VerticalOptions="Center"
                                          HorizontalOptions="Start"
@@ -48,34 +48,34 @@
                             <Label Grid.Column="2"
                                    x:Name="DurationLabel"
                                    Text="0:00"
-                                   FontSize="11"
+                                   FontSize="{StaticResource FontSizeMicro}"
                                    TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource TimeText}}"
                                    VerticalOptions="Center" />
                         </Grid>
 
                         <Grid ColumnDefinitions="36,*"
-                              ColumnSpacing="8"
+                              ColumnSpacing="{StaticResource Space2}"
                               Padding="12,4,12,0">
                             <Border StrokeShape="RoundRectangle 4"
                                     StrokeThickness="0"
-                                    HeightRequest="36"
-                                    WidthRequest="36">
+                                    HeightRequest="{StaticResource ArtSizeMini}"
+                                    WidthRequest="{StaticResource ArtSizeMini}">
                                 <views:SongArtworkView x:Name="AlbumArtworkView"
-                                                       HeightRequest="36"
-                                                       WidthRequest="36" />
+                                                       HeightRequest="{StaticResource ArtSizeMini}"
+                                                       WidthRequest="{StaticResource ArtSizeMini}" />
                             </Border>
 
                             <VerticalStackLayout Grid.Column="1"
                                                  VerticalOptions="Center"
                                                  Spacing="0">
                                 <Label x:Name="SongTitleLabel"
-                                       FontSize="13"
+                                       FontSize="{StaticResource FontSizeSmall}"
                                        FontAttributes="Bold"
                                        TextColor="{AppThemeBinding Light=Black, Dark=White}"
                                        LineBreakMode="TailTruncation"
                                        MaxLines="1" />
                                 <Label x:Name="ArtistNameLabel"
-                                       FontSize="11"
+                                       FontSize="{StaticResource FontSizeMicro}"
                                        TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
                                        LineBreakMode="TailTruncation"
                                        MaxLines="1" />
@@ -84,22 +84,22 @@
                     </VerticalStackLayout>
 
                     <VerticalStackLayout x:Name="EmptyStateContainer"
-                                         Spacing="4"
+                                         Spacing="{StaticResource Space1}"
                                          Padding="12,8,12,0"
                                          IsVisible="False">
                         <Label x:Name="EmptyStateTitleLabel"
                                Text="Nothing queued yet"
-                               FontSize="13"
+                               FontSize="{StaticResource FontSizeSmall}"
                                FontAttributes="Bold"
                                TextColor="{AppThemeBinding Light=Black, Dark=White}" />
                         <Label x:Name="EmptyStateHintLabel"
                                Text="Press Play to start listening from this screen."
-                               FontSize="11"
+                               FontSize="{StaticResource FontSizeMicro}"
                                LineBreakMode="WordWrap"
                                TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}" />
                     </VerticalStackLayout>
 
-                    <HorizontalStackLayout Spacing="12"
+                    <HorizontalStackLayout Spacing="{StaticResource Space3}"
                                            HorizontalOptions="Center"
                                            Padding="12,2,12,6"
                                            InputTransparent="False">
@@ -107,8 +107,8 @@
                         <Border x:Name="ShuffleBorder"
                                 StrokeShape="RoundRectangle 16"
                                 StrokeThickness="0"
-                                HeightRequest="32"
-                                WidthRequest="32"
+                                HeightRequest="{StaticResource ControlHeightSmall}"
+                                WidthRequest="{StaticResource ControlHeightSmall}"
                                 BackgroundColor="Transparent"
                                 VerticalOptions="Center">
                             <Grid>
@@ -128,8 +128,8 @@
                         <Border x:Name="PrevBorder"
                                 StrokeShape="RoundRectangle 16"
                                 StrokeThickness="0"
-                                HeightRequest="32"
-                                WidthRequest="32"
+                                HeightRequest="{StaticResource ControlHeightSmall}"
+                                WidthRequest="{StaticResource ControlHeightSmall}"
                                 BackgroundColor="Transparent"
                                 VerticalOptions="Center"
                                 IsVisible="False">
@@ -171,8 +171,8 @@
                         <Border x:Name="NextBorder"
                                 StrokeShape="RoundRectangle 16"
                                 StrokeThickness="0"
-                                HeightRequest="32"
-                                WidthRequest="32"
+                                HeightRequest="{StaticResource ControlHeightSmall}"
+                                WidthRequest="{StaticResource ControlHeightSmall}"
                                 BackgroundColor="Transparent"
                                 VerticalOptions="Center"
                                 IsVisible="False">
