@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using Android.Content;
 using AndroidX.Media3.Common;
 using AndroidX.Media3.ExoPlayer;
@@ -209,16 +209,7 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
                 _queue.SetItems(items);
                 SetPlayerQueueItems(items, safeCurrentIndex, safePositionMs);
                 _player.Prepare();
-                if (_player.CurrentMediaItemIndex != safeCurrentIndex)
-                {
-                    _logger.LogWarning(
-                        "Media3 ReplaceQueueAsync seek correction required. RequestedIndex={RequestedIndex}; ActualIndex={ActualIndex}; RequestedPositionMs={RequestedPositionMs}; {Snapshot}",
-                        safeCurrentIndex,
-                        _player.CurrentMediaItemIndex,
-                        safePositionMs,
-                        CreatePlayerSnapshot());
-                    _player.SeekTo(safeCurrentIndex, safePositionMs);
-                }
+                EnsurePlayerOnRequestedItem(safeCurrentIndex, safePositionMs);
 
                 if (playWhenReady)
                 {
@@ -835,6 +826,66 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
 
         return builder.Build()
             ?? throw new InvalidOperationException("Media3 MediaItem.Builder returned null.");
+    }
+
+    /// <summary>
+    /// Make certain the player is on the item the queue rebuild asked for, and say so loudly if it
+    /// will not go.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is not defensive padding - the correction fires in production. Handing
+    /// <c>SetMediaItems(items, startIndex, positionMs)</c> a non-zero start index has been observed
+    /// to leave the player on index 0, and the only situation that produces a non-zero index here
+    /// is a queue swap where the ALREADY PLAYING song sits at a different position in the new list:
+    /// leaving the home page's featured queue, where a song is first, for the artist queue, where it
+    /// is second.
+    /// </para>
+    /// <para>
+    /// When that correction silently fails to take, the failure is the worst kind this app has - the
+    /// player keeps rendering index 0 while the rest of the app believes the index it asked for, so
+    /// every title, duration and lyric on screen belongs to a different song from the audio. Hence
+    /// a verify after the seek rather than a fire-and-forget one, and an Error - not a Warning -
+    /// when the player still disagrees, because that line is the only evidence such a session
+    /// leaves behind.
+    /// </para>
+    /// </remarks>
+    private void EnsurePlayerOnRequestedItem(int requestedIndex, long positionMs)
+    {
+        if (_player.CurrentMediaItemIndex == requestedIndex)
+        {
+            return;
+        }
+
+        _logger.LogWarning(
+            "Media3 ReplaceQueueAsync seek correction required. RequestedIndex={RequestedIndex}; ActualIndex={ActualIndex}; RequestedPositionMs={RequestedPositionMs}; {Snapshot}",
+            requestedIndex,
+            _player.CurrentMediaItemIndex,
+            positionMs,
+            CreatePlayerSnapshot());
+
+        _player.SeekTo(requestedIndex, positionMs);
+
+        if (_player.CurrentMediaItemIndex == requestedIndex)
+        {
+            return;
+        }
+
+        // Second attempt, after re-submitting the timeline. A seek into an index the player has not
+        // accepted yet does nothing, and there is no callback to wait on here - this method runs on
+        // the player thread and must leave the queue correct before playback is told to start.
+        _player.Prepare();
+        _player.SeekTo(requestedIndex, positionMs);
+
+        if (_player.CurrentMediaItemIndex != requestedIndex)
+        {
+            _logger.LogError(
+                "Media3 ReplaceQueueAsync could not move the player onto the requested item; the audio will not match the reported song. RequestedIndex={RequestedIndex}; ActualIndex={ActualIndex}; RequestedPositionMs={RequestedPositionMs}; {Snapshot}",
+                requestedIndex,
+                _player.CurrentMediaItemIndex,
+                positionMs,
+                CreatePlayerSnapshot());
+        }
     }
 
     private void SetPlayerQueueItems(IReadOnlyList<MauiMediaItem> items, int startIndex, long startPositionMs = 0)

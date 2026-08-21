@@ -1196,4 +1196,156 @@ public class PlaylistPlayerViewModelTests
             Assert.That(_viewModel.ShowTracksHeader, Is.True);
         });
     }
+
+    // --- Resyncing to the player after time away ---
+
+    /// <summary>
+    /// Coming back must re-read what is playing, not merely start listening again.
+    /// </summary>
+    /// <remarks>
+    /// The regression this covers: Cleanup() detaches on OnDisappearing, so a track that advances
+    /// while the page is off screen - most often while the app is backgrounded - raises its change
+    /// to nobody. Activate() used to only re-subscribe, leaving the header on the song that was
+    /// playing when the page left while the now-playing bar, which does resync, showed the truth.
+    /// </remarks>
+    [Test]
+    public void Activate_ResyncsCurrentSong_ToWhateverAdvancedWhileDetached()
+    {
+        var first = new SongDto { Id = 1, SongTitle = "First" };
+        var second = new SongDto { Id = 2, SongTitle = "Second" };
+        _viewModel.Songs.Add(first);
+        _viewModel.Songs.Add(second);
+
+        _mockPlaybackService.SetupGet(p => p.CurrentSong).Returns(first);
+        _viewModel.Activate();
+        Assert.That(_viewModel.CurrentSong, Is.SameAs(first));
+
+        // Away, and the queue moves on without anybody listening.
+        _viewModel.Cleanup();
+        _mockPlaybackService.SetupGet(p => p.CurrentSong).Returns(second);
+
+        _viewModel.Activate();
+
+        Assert.That(_viewModel.CurrentSong, Is.SameAs(second));
+    }
+
+    [Test]
+    public void Activate_ResolvesAgainstTheVisibleList_NotThePlaybackServicesOwnCopy()
+    {
+        // Same song, different instance - the list's copy is the one carrying this page's like
+        // counts and cached artwork, so that is the one the header must show.
+        var visible = new SongDto { Id = 7, SongTitle = "Shared", LikeCount = 42 };
+        _viewModel.Songs.Add(visible);
+        _mockPlaybackService.SetupGet(p => p.CurrentSong)
+            .Returns(new SongDto { Id = 7, SongTitle = "Shared" });
+
+        _viewModel.Activate();
+
+        Assert.That(_viewModel.CurrentSong, Is.SameAs(visible));
+    }
+
+    [Test]
+    public void Activate_FallsBackToThePlaybackService_WhenTheListHasNotLoadedYet()
+    {
+        var playing = new SongDto { Id = 3, SongTitle = "Only Copy" };
+        _mockPlaybackService.SetupGet(p => p.CurrentSong).Returns(playing);
+
+        _viewModel.Activate();
+
+        Assert.That(_viewModel.CurrentSong, Is.SameAs(playing));
+    }
+
+    // --- Which row is playing ---
+
+    [Test]
+    public void CurrentSongChange_LightsExactlyOneRow()
+    {
+        var first = new SongDto { Id = 1 };
+        var second = new SongDto { Id = 2 };
+        _viewModel.Songs.Add(first);
+        _viewModel.Songs.Add(second);
+
+        _mockPlaybackService.SetupGet(p => p.CurrentSong).Returns(first);
+        _viewModel.Activate();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(first.IsNowPlaying, Is.True);
+            Assert.That(second.IsNowPlaying, Is.False);
+        });
+
+        _mockPlaybackService.SetupGet(p => p.CurrentSong).Returns(second);
+        _mockPlaybackService.Raise(p => p.StateChanged += null, nameof(IPlaybackService.CurrentSong));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(first.IsNowPlaying, Is.False, "the previous row must go dark");
+            Assert.That(second.IsNowPlaying, Is.True);
+        });
+    }
+
+    [Test]
+    public void NoRowIsLit_WhenNothingIsPlaying()
+    {
+        var song = new SongDto { Id = 1, IsNowPlaying = true };
+        _viewModel.Songs.Add(song);
+        _mockPlaybackService.SetupGet(p => p.CurrentSong).Returns((SongDto?)null);
+
+        _viewModel.Activate();
+
+        Assert.That(song.IsNowPlaying, Is.False);
+    }
+
+    // --- Which trailing panel shows ---
+
+    /// <summary>
+    /// Exactly one of the two bio panels, never both - or the bio prints twice.
+    /// </summary>
+    [Test]
+    public void ArtistPage_ShowsAbout_AndNotTheArtistPanel()
+    {
+        _viewModel.CurrentSong = new SongDto
+        {
+            Id = 1,
+            ArtistName = "Test Band",
+            PersonaBio = "This is my bio.",
+        };
+        _viewModel.ArtistName = "Test Band";
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.ShowAboutPanel, Is.True);
+            Assert.That(_viewModel.ShowArtistPanel, Is.False);
+        });
+    }
+
+    [Test]
+    public void OrdinaryPlaylist_ShowsTheArtistPanel_AndNotAbout()
+    {
+        _viewModel.CurrentSong = new SongDto
+        {
+            Id = 1,
+            ArtistName = "Test Band",
+            PersonaBio = "This is my bio.",
+        };
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.ShowAboutPanel, Is.False);
+            Assert.That(_viewModel.ShowArtistPanel, Is.True);
+        });
+    }
+
+    [Test]
+    public void ArtistPage_ShowsNoBioPanelAtAll_WhenTheArtistHasNotWrittenOne()
+    {
+        _viewModel.CurrentSong = new SongDto { Id = 1, ArtistName = "Test Band" };
+        _viewModel.ArtistName = "Test Band";
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.ShowAboutPanel, Is.False);
+            Assert.That(_viewModel.ShowArtistPanel, Is.False);
+        });
+    }
 }

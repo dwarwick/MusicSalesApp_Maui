@@ -86,6 +86,20 @@ public partial class SongDto : ObservableObject
     public int? CreatorId { get; set; }
     public int? CreatorUserId { get; set; }
 
+    /// <summary>
+    /// Whether this row is the track the player is currently on.
+    /// </summary>
+    /// <remarks>
+    /// Carried on the DTO rather than computed in the row, because a DataTemplate cannot see the
+    /// playback service and the alternative - a converter reaching for a service locator per row -
+    /// re-evaluates for every song on every track change. The owning view model sets this on the
+    /// two songs whose state actually changed. Not serialized: it is view state, and the offline
+    /// catalogue store persists this type verbatim.
+    /// </remarks>
+    [JsonIgnore]
+    [ObservableProperty]
+    public partial bool IsNowPlaying { get; set; }
+
     [ObservableProperty]
     public partial int StreamCount { get; set; }
 

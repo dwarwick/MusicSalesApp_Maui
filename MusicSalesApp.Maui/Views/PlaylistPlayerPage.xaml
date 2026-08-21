@@ -140,10 +140,27 @@
                         </Label>
                     </HorizontalStackLayout>
 
-                    <!-- THE ARTIST PANEL - the web's .playlist-artist-panel. -->
+                    <!-- ABOUT - the web's .playlist-about-panel, and ONLY on an artist's own page.
+                         There the bio is the subject of the page rather than a note about someone
+                         else, so it gets the full text and no repeat of the name and picture the
+                         header already carries. -->
                     <Border Style="{StaticResource PlayerPanel}"
                             Padding="{StaticResource Space3}"
-                            IsVisible="{Binding Source={x:Reference ArtistSection}, Path=HasContent}">
+                            IsVisible="{Binding ShowAboutPanel}">
+                        <VerticalStackLayout Spacing="{StaticResource Space3}">
+                            <Label Style="{StaticResource PlayerPanelCaption}"
+                                   Text="ABOUT" />
+                            <Label Style="{StaticResource PlayerBodyText}"
+                                   Text="{Binding CurrentSong.PersonaBio}"
+                                   LineBreakMode="WordWrap" />
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <!-- THE ARTIST PANEL - the web's .playlist-artist-panel. Suppressed on an
+                         artist's own page, where ABOUT above says the same thing in full. -->
+                    <Border Style="{StaticResource PlayerPanel}"
+                            Padding="{StaticResource Space3}"
+                            IsVisible="{Binding ShowArtistPanel}">
                         <VerticalStackLayout Spacing="{StaticResource Space3}">
                             <Label Style="{StaticResource PlayerPanelCaption}"
                                    Text="THE ARTIST" />
@@ -326,11 +343,23 @@
 
                 <CollectionView.ItemTemplate>
                         <DataTemplate x:DataType="vm:SongDto">
+                            <!-- The playing row is marked the way the web marks it: an accent edge
+                                 and a lifted surface, so the list answers "which one is this?"
+                                 without having to read the header. -->
                             <Border Margin="8,2"
                                     Padding="12,10"
                                     StrokeShape="RoundRectangle 6"
                                     Stroke="Transparent"
+                                    StrokeThickness="{StaticResource StrokeThin}"
                                     BackgroundColor="{StaticResource PlayerSurface2}">
+                                <Border.Triggers>
+                                    <DataTrigger TargetType="Border"
+                                                 Binding="{Binding IsNowPlaying}"
+                                                 Value="True">
+                                        <Setter Property="Stroke" Value="{StaticResource StBlueBright}" />
+                                        <Setter Property="BackgroundColor" Value="{StaticResource PlayerSurface}" />
+                                    </DataTrigger>
+                                </Border.Triggers>
                                 <Border.GestureRecognizers>
                                     <TapGestureRecognizer
                                         Command="{Binding Source={RelativeSource AncestorType={x:Type vm:PlaylistPlayerViewModel}}, Path=PlayTrackCommand}"
@@ -366,6 +395,18 @@
                                     </VerticalStackLayout>
 
                                     <!-- Mini Album Art -->
+                                    <!-- Only on the playing row, so the list is not a wall of play
+                                         buttons. It doubles as pause/resume for that track. -->
+                                    <views:EqualizerPlayButton Grid.Column="1"
+                                                               SongId="{Binding Id}"
+                                                               ButtonSize="28"
+                                                               ZIndex="2"
+                                                               HorizontalOptions="Center"
+                                                               VerticalOptions="Center"
+                                                               IsVisible="{Binding IsNowPlaying}"
+                                                               Command="{Binding Source={RelativeSource AncestorType={x:Type vm:PlaylistPlayerViewModel}}, Path=PlayTrackCommand}"
+                                                               CommandParameter="{Binding .}" />
+
                                     <Border Grid.Column="1"
                                             StrokeShape="RoundRectangle 6"
                                             StrokeThickness="0"

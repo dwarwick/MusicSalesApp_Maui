@@ -69,6 +69,51 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     public void Activate()
     {
         AttachSubscriptions();
+
+        // Re-read what is playing, do not merely start listening for the NEXT change. Cleanup()
+        // detaches on OnDisappearing, so every track that advances while this page is off screen -
+        // most commonly while the app is backgrounded - raises its change to nobody. Without this
+        // the header stays on whatever was playing when the page left, while the now-playing bar,
+        // which does resync on Activate, shows the truth. That is the exact split this fixes.
+        SyncCurrentSongFromPlayback();
+    }
+
+    /// <summary>
+    /// Point <see cref="CurrentSong"/> at whatever the playback service is actually on.
+    /// </summary>
+    /// <remarks>
+    /// Resolved against the visible list rather than taken straight off the service, so the header
+    /// shows the same SongDto instance the track list holds - the one carrying this page's like
+    /// counts and cached artwork. Falls back to the service's own copy only when the list has not
+    /// loaded yet.
+    /// </remarks>
+    private void SyncCurrentSongFromPlayback()
+    {
+        CurrentSong = Songs.Count == 0
+            ? _playbackService.CurrentSong
+            : PlaybackQueueSelection.ResolveCurrentSong(_playbackService, Songs);
+        OnPropertyChanged(nameof(ShareUrl));
+        OnPropertyChanged(nameof(ShowAboutPanel));
+        OnPropertyChanged(nameof(ShowArtistPanel));
+        MarkNowPlayingRow();
+    }
+
+    /// <summary>
+    /// Flag the track list row the player is on, so the list shows WHICH song is playing.
+    /// </summary>
+    /// <remarks>
+    /// Walks the list rather than tracking the previous row, because the queue can be rebuilt
+    /// underneath this - a filter change or a jump to another playlist replaces Songs wholesale,
+    /// and a remembered reference would then clear a flag on a row that is no longer displayed
+    /// while leaving the real one lit.
+    /// </remarks>
+    private void MarkNowPlayingRow()
+    {
+        var playingId = CurrentSong?.Id;
+        foreach (var song in Songs)
+        {
+            song.IsNowPlaying = song.Id == playingId;
+        }
     }
 
     public Task StartSignalRAsync() => _signalRService.StartAsync();
@@ -197,6 +242,9 @@ public partial class PlaylistPlayerViewModel : ObservableObject
 
     partial void OnArtistNameChanged(string? value)
     {
+        OnPropertyChanged(nameof(IsArtistTreatment));
+        OnPropertyChanged(nameof(ShowAboutPanel));
+        OnPropertyChanged(nameof(ShowArtistPanel));
         if (!string.IsNullOrEmpty(value))
             _ = LoadPlaylistAsync();
     }
@@ -219,6 +267,25 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     }
 
     public string ShareUrl => CurrentSong?.ShareUrl ?? string.Empty;
+
+    /// <summary>
+    /// Whether this page is an artist's own page rather than a playlist that happens to have one.
+    /// </summary>
+    /// <remarks>
+    /// Drives which trailing panel shows, matching the web. On an artist's page the bio is the
+    /// page's own subject and gets an "About" panel with the full text; anywhere else it is
+    /// context about someone else and gets "The artist", with their picture and a link out.
+    /// Showing both would print the bio twice.
+    /// </remarks>
+    public bool IsArtistTreatment => !string.IsNullOrWhiteSpace(ArtistName);
+
+    /// <summary>The full-bio panel, on an artist's own page and only when there is a bio.</summary>
+    public bool ShowAboutPanel =>
+        IsArtistTreatment && !string.IsNullOrWhiteSpace(CurrentSong?.PersonaBio);
+
+    /// <summary>The artist panel, everywhere else, and only when there is an artist to name.</summary>
+    public bool ShowArtistPanel =>
+        !IsArtistTreatment && !string.IsNullOrWhiteSpace(CurrentSong?.ArtistName);
 
     // --- Refresh ---
 
@@ -402,6 +469,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         await HydrateArtworkAsync(list);
 
         Songs.ReplaceAll(list);
+        MarkNowPlayingRow();
 
         HasActiveSubscription = _authService.HasActiveSubscription;
 
@@ -722,10 +790,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     {
         if (propertyName == nameof(IPlaybackService.CurrentSong))
         {
-            CurrentSong = Songs.Count == 0
-                ? _playbackService.CurrentSong
-                : PlaybackQueueSelection.ResolveCurrentSong(_playbackService, Songs);
-            OnPropertyChanged(nameof(ShareUrl));
+            SyncCurrentSongFromPlayback();
         }
     }
 

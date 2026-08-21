@@ -81,17 +81,20 @@ public partial class NowPlayingView : ContentView
 
     public void Activate()
     {
-        if (_isActive)
+        if (!_isActive)
         {
-            return;
+            _isActive = true;
+            if (_playbackService != null)
+            {
+                _playbackService.StateChanged += OnPlaybackStateChanged;
+            }
         }
 
-        _isActive = true;
-        if (_playbackService != null)
-        {
-            _playbackService.StateChanged += OnPlaybackStateChanged;
-        }
-
+        // Outside the guard on purpose. Subscribing is what must happen once; REPAINTING must
+        // happen every time this bar comes back, because a track that advanced while it was away
+        // raised its change to nobody. Android does not reliably tear a page down on backgrounding,
+        // so an already-active bar is precisely the case that used to come back showing the
+        // previous song's title over the new song's audio.
         ApplyPlaybackUpdates(AllUpdates);
     }
 
