@@ -16,12 +16,14 @@
                      Command="{Binding RefreshCommand}"
                      IsRefreshing="{Binding IsRefreshing, Mode=OneWay}">
             <ScrollView Padding="0">
-                <!-- Capped and centred so the page does not stretch edge to edge on a tablet. On a
-                     phone the cap is never reached and this behaves exactly as before. -->
-                <VerticalStackLayout Spacing="{StaticResource Space4}"
+                <!-- Capped and centred by the width handler, which sets this element's side
+                     margins. NOT by MaximumWidthRequest with HorizontalOptions="Center": Center
+                     makes a stack size to its CONTENT rather than expand to the cap, which left
+                     both columns far narrower than the window and clipped the cover art. -->
+                <VerticalStackLayout x:Name="ContentColumn"
+                                     Spacing="{StaticResource Space4}"
                                      Padding="20,24,20,16"
-                                     MaximumWidthRequest="{StaticResource ReadableWidth}"
-                                     HorizontalOptions="Center">
+                                     HorizontalOptions="Fill">
 
                 <!-- SONG HERO - the web's .song-hero-inner. The cover art is a SMALL square
                      here beside the details; the large one lives in the stage panel below, which is
@@ -347,6 +349,7 @@
         <!-- Now Playing Bar at bottom -->
         <views:NowPlayingView x:Name="NowPlayingBar"
                               CollapseWhenEmpty="False"
+                              OnDarkSurface="True"
                               Grid.Row="1" />
     </Grid>
 </ContentPage>

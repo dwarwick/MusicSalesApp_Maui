@@ -1,4 +1,4 @@
-{
+﻿{
   "version": "2.0.0",
   "tasks": [
     {
@@ -38,6 +38,25 @@
         ]
       },
       "problemMatcher": [],
+      "group": "build"
+    },
+    {
+      "label": "maui-deploy-android-tablet",
+      "detail": "Boots the Tablet_API_35 AVD (800x1280dp) and installs the Debug build on it. Rotate to cross the 992dp breakpoint: portrait is single column, landscape is two.",
+      "type": "shell",
+      "command": "pwsh -ExecutionPolicy Bypass -File ${workspaceFolder:MusicSalesApp_Maui}/.vscode/deploy-avd.ps1",
+      "windows": {
+        "command": "pwsh",
+        "args": [
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          "${workspaceFolder:MusicSalesApp_Maui}/.vscode/deploy-avd.ps1",
+          "-AvdName",
+          "Tablet_API_35"
+        ]
+      },
+      "problemMatcher": "$msCompile",
       "group": "build"
     },
     {

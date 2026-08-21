@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 namespace MusicSalesApp.Maui.Services;
 
 /// <summary>
@@ -23,6 +23,16 @@ internal static class AdaptiveLayout
     /// <summary>The width at or above which the players lay out in two columns.</summary>
     public const double WideBreakpoint = 992d;
 
+    /// <summary>
+    /// The widest the content is allowed to get before it stops growing and starts centring.
+    /// </summary>
+    /// <remarks>
+    /// Applied as side margins, not as MaximumWidthRequest. The two do not compose in MAUI: a
+    /// layout set to Center sizes to its content and never reaches the cap at all, while one set to
+    /// Fill reaches it but sits against the leading edge.
+    /// </remarks>
+    public const double ReadableWidth = 1100d;
+
     /// <summary>How wide the trailing column is when there are two.</summary>
     public const double SideColumnWidth = 360d;
 
@@ -35,4 +45,15 @@ internal static class AdaptiveLayout
     /// down a frame later when the true width arrived.
     /// </remarks>
     public static bool IsWide(double width) => width >= WideBreakpoint;
+
+    /// <summary>
+    /// How much to inset each side so content stops growing at <see cref="ReadableWidth"/> and
+    /// centres beyond it.
+    /// </summary>
+    /// <remarks>
+    /// Never negative. A window narrower than the cap - every phone - gets zero, which leaves the
+    /// layout exactly as it was before any of this existed.
+    /// </remarks>
+    public static double ContentInset(double width) =>
+        width <= ReadableWidth ? 0d : (width - ReadableWidth) / 2d;
 }

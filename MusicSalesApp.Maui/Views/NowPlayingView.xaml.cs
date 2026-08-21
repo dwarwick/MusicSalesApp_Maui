@@ -42,6 +42,11 @@ public partial class NowPlayingView : ContentView
     public NowPlayingView()
     {
         InitializeComponent();
+
+        // Paint for the default surface straight away. The property-changed handler only fires when
+        // a page SETS OnDarkSurface, so a bar left at the default would keep whatever colours the
+        // XAML happens to carry - which is how the home page ended up with a player-dark bar.
+        ApplySurface();
         _updateScheduler = new CoalescedUiUpdateScheduler(
             action => MainThread.BeginInvokeOnMainThread(action),
             ApplyScheduledPlaybackUpdates);
@@ -77,6 +82,65 @@ public partial class NowPlayingView : ContentView
         }
 
         ApplyPlaybackUpdates(AllUpdates);
+    }
+
+    /// <summary>
+    /// Whether this bar sits on a player page.
+    /// </summary>
+    /// <remarks>
+    /// On the players the bar is the player's own surface and stays dark in either OS theme - the
+    /// web paints .song-player-container .player-bar the same colour in light.css and dark.css.
+    /// Everywhere else it is page chrome and follows the theme, which is how the web scopes it too:
+    /// a dark bar welded to the bottom of a light home page reads as a mistake.
+    /// </remarks>
+    public static readonly BindableProperty OnDarkSurfaceProperty =
+        BindableProperty.Create(
+            nameof(OnDarkSurface), typeof(bool), typeof(NowPlayingView), false,
+            propertyChanged: (b, _, _) => ((NowPlayingView)b).ApplySurface());
+
+    public bool OnDarkSurface
+    {
+        get => (bool)GetValue(OnDarkSurfaceProperty);
+        set => SetValue(OnDarkSurfaceProperty, value);
+    }
+
+    /// <summary>
+    /// Paint the bar for the surface it is on.
+    /// </summary>
+    /// <remarks>
+    /// The themed branch uses SetAppThemeColor rather than a resolved colour, so the bar keeps
+    /// following the OS theme if it changes while the app is open. The dark branch assigns flat
+    /// values, which is the point - it must NOT follow the theme.
+    /// </remarks>
+    private void ApplySurface()
+    {
+        if (OnDarkSurface)
+        {
+            PlayerBorder.BackgroundColor = AppColors.PlayerBarDark;
+            ProgressSlider.MaximumTrackColor = AppColors.ProgressTrack;
+            PositionLabel.TextColor = AppColors.TimeText;
+            DurationLabel.TextColor = AppColors.TimeText;
+            SongTitleLabel.TextColor = AppColors.PlayerText;
+            EmptyStateTitleLabel.TextColor = AppColors.PlayerText;
+            ArtistNameLabel.TextColor = AppColors.PlayerText2;
+            EmptyStateHintLabel.TextColor = AppColors.PlayerText2;
+            PrevIcon.Fill = new SolidColorBrush(AppColors.PlayerText);
+            PlayPauseIcon.Fill = new SolidColorBrush(AppColors.PlayerText);
+            NextIcon.Fill = new SolidColorBrush(AppColors.PlayerText);
+            return;
+        }
+
+        PlayerBorder.SetAppThemeColor(Border.BackgroundColorProperty, AppColors.Gray100, AppColors.PlayerBarDark);
+        ProgressSlider.SetAppThemeColor(Slider.MaximumTrackColorProperty, AppColors.Gray200, AppColors.ProgressTrack);
+        PositionLabel.SetAppThemeColor(Label.TextColorProperty, AppColors.Gray500, AppColors.TimeText);
+        DurationLabel.SetAppThemeColor(Label.TextColorProperty, AppColors.Gray500, AppColors.TimeText);
+        SongTitleLabel.SetAppThemeColor(Label.TextColorProperty, Colors.Black, Colors.White);
+        EmptyStateTitleLabel.SetAppThemeColor(Label.TextColorProperty, Colors.Black, Colors.White);
+        ArtistNameLabel.SetAppThemeColor(Label.TextColorProperty, AppColors.Gray600, AppColors.Gray300);
+        EmptyStateHintLabel.SetAppThemeColor(Label.TextColorProperty, AppColors.Gray600, AppColors.Gray300);
+        PrevIcon.SetAppTheme(Microsoft.Maui.Controls.Shapes.Shape.FillProperty, new SolidColorBrush(Colors.Black), new SolidColorBrush(Colors.White));
+        PlayPauseIcon.SetAppTheme(Microsoft.Maui.Controls.Shapes.Shape.FillProperty, new SolidColorBrush(Colors.Black), new SolidColorBrush(Colors.White));
+        NextIcon.SetAppTheme(Microsoft.Maui.Controls.Shapes.Shape.FillProperty, new SolidColorBrush(Colors.Black), new SolidColorBrush(Colors.White));
     }
 
     public void Activate()

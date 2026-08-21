@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 namespace MusicSalesApp.Maui.Resources.Styles;
 
 /// <summary>
@@ -58,6 +58,28 @@ internal static class AppColors
 
     // Player - flat, dark in both themes ------------------------------------------------------
     public static Color PlayerText3 => Get("PlayerText3", "#8BA3C7");
+
+    /// <summary>The players' page background. Used for the shell chrome on those pages too.</summary>
+    public static Color PlayerBg => Get("PlayerBg", "#070D16");
+
+    /// <summary>Primary text on the player surface.</summary>
+    public static Color PlayerText => Get("PlayerText", "#FFFFFF");
+
+    /// <summary>The navigation bar in dark theme, restored when leaving a player page.</summary>
+    public static Color NavBarDark => Get("NavBarDark", "#0D1727");
+
+    /// <summary>Secondary text on the player surface.</summary>
+    public static Color PlayerText2 => Get("PlayerText2", "#C8EAFD");
+
+    // The now-playing bar paints itself in code, so it needs these by name --------------------
+    public static Color PlayerBarDark => Get("PlayerBarDark", "#0D1727");
+    public static Color ProgressTrack => Get("ProgressTrack", "#29FFFFFF");
+    public static Color TimeText => Get("TimeText", "#8BA3C7");
+    public static Color Gray100 => Get("Gray100", "#E1E1E1");
+    public static Color Gray200 => Get("Gray200", "#C8C8C8");
+    public static Color Gray300 => Get("Gray300", "#ACACAC");
+    public static Color Gray500 => Get("Gray500", "#6E6E6E");
+    public static Color Gray600 => Get("Gray600", "#404040");
 
     /// <summary>
     /// The accent used as a FILL, resolved for the current theme.

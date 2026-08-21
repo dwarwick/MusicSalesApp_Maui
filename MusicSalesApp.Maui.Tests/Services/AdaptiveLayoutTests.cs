@@ -1,4 +1,4 @@
-using MusicSalesApp.Maui.Services;
+﻿using MusicSalesApp.Maui.Services;
 
 namespace MusicSalesApp.Maui.Tests.Services;
 
@@ -58,5 +58,31 @@ public class AdaptiveLayoutTests
             Assert.That(AdaptiveLayout.WideBreakpoint, Is.EqualTo(992d));
             Assert.That(AdaptiveLayout.SideColumnWidth, Is.EqualTo(360d));
         });
+    }
+
+    // --- Capping the content width ---
+
+    [TestCase(360, TestName = "Phone")]
+    [TestCase(800, TestName = "Tablet portrait")]
+    [TestCase(1100, TestName = "Exactly at the cap")]
+    public void NarrowerThanTheCapIsNotInsetAtAll(double width)
+    {
+        // Every phone lands here, and must lay out exactly as it did before any of this existed.
+        Assert.That(AdaptiveLayout.ContentInset(width), Is.EqualTo(0d));
+    }
+
+    [Test]
+    public void WiderThanTheCapCentresTheRemainder()
+    {
+        // 1280 - 1100 = 180 left over, half each side.
+        Assert.That(AdaptiveLayout.ContentInset(1280), Is.EqualTo(90d));
+    }
+
+    [TestCase(0)]
+    [TestCase(-1)]
+    public void AnUnmeasuredWidthIsNotInset(double width)
+    {
+        // A negative inset would push content off the leading edge.
+        Assert.That(AdaptiveLayout.ContentInset(width), Is.EqualTo(0d));
     }
 }

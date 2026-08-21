@@ -165,6 +165,8 @@ public partial class SongPlayerPage : ContentPage
     {
         base.OnSizeAllocated(width, height);
 
+        ApplyContentWidth(width);
+
         var wide = AdaptiveLayout.IsWide(width);
         if (wide == _isWideLayout)
         {
@@ -173,6 +175,20 @@ public partial class SongPlayerPage : ContentPage
 
         _isWideLayout = wide;
         ApplyStageLayout(wide);
+    }
+
+    /// <summary>
+    /// Hold the content to a readable width, centred, once the window is wider than that.
+    /// </summary>
+    /// <remarks>
+    /// Done with margins rather than MaximumWidthRequest because the two do not compose: a stack
+    /// set to Center sizes to its content and never reaches the cap, while one set to Fill reaches
+    /// it but sits against the leading edge. Margins give both.
+    /// </remarks>
+    private void ApplyContentWidth(double width)
+    {
+        var inset = AdaptiveLayout.ContentInset(width);
+        ContentColumn.Margin = new Thickness(inset, 0, inset, 0);
     }
 
     private void ApplyStageLayout(bool wide)

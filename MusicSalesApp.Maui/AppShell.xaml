@@ -1,6 +1,7 @@
 ﻿<?xml version="1.0" encoding="UTF-8" ?>
 <Shell
     x:Class="MusicSalesApp.Maui.AppShell"
+    x:Name="ShellRoot"
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:views="clr-namespace:MusicSalesApp.Maui.Views"
@@ -17,9 +18,13 @@
               RowDefinitions="Auto,Auto"
               RowSpacing="3"
               HorizontalOptions="Fill">
+            <!-- BOUND, not assigned from code-behind. Shell can rebuild its title view, which
+                 leaves an x:Name field pointing at a discarded instance - the logo then silently
+                 keeps the wrong artwork while the bar around it changes colour. A binding follows
+                 whichever instance is live. -->
             <Image Grid.Row="0"
                    Margin="8,0,0,0"
-                   Source="{AppThemeBinding Light=logo_light_small.png, Dark=logo_dark_small.png}"
+                   Source="{Binding CurrentLogo, Source={x:Reference ShellRoot}}"
                    HeightRequest="24"
                    Aspect="AspectFit"
                    VerticalOptions="Center"

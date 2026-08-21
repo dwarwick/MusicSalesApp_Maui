@@ -718,6 +718,7 @@
         <!-- Now Playing Bar at bottom -->
         <views:NowPlayingView x:Name="NowPlayingBar"
                               CollapseWhenEmpty="False"
+                              OnDarkSurface="True"
                               Grid.Row="1" />
 
         <!-- Removed: bulk Add-Songs modal. Use the per-song AddToPlaylistButton instead. -->

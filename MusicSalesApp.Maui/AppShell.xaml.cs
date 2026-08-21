@@ -1,4 +1,5 @@
-﻿using MusicSalesApp.Maui.Services;
+﻿using MusicSalesApp.Maui.Resources.Styles;
+using MusicSalesApp.Maui.Services;
 using MusicSalesApp.Maui.Views;
 
 namespace MusicSalesApp.Maui;
@@ -10,6 +11,31 @@ public partial class AppShell : Shell
 	private readonly IBrowserService _browserService;
 	private readonly IAppConfig _appConfig;
 	private string _testingServerBannerUrl = string.Empty;
+	private ImageSource _currentLogo = ImageSource.FromFile("logo_light_small.png");
+
+	/// <summary>
+	/// The logo artwork for the bar as it is currently coloured.
+	/// </summary>
+	/// <remarks>
+	/// A property rather than a direct assignment to a named Image: the title view can be rebuilt,
+	/// and an x:Name field then refers to an instance no longer on screen. The two logos are not
+	/// interchangeable - the light-theme one is dark ink on an opaque light ground, so on a dark
+	/// bar it shows as a white block.
+	/// </remarks>
+	public ImageSource CurrentLogo
+	{
+		get => _currentLogo;
+		private set
+		{
+			if (_currentLogo == value)
+			{
+				return;
+			}
+
+			_currentLogo = value;
+			OnPropertyChanged();
+		}
+	}
 
 	public AppShell(
 		IAuthService authService,
@@ -92,9 +118,67 @@ public partial class AppShell : Shell
 	{
 		base.OnNavigated(args);
 
+		ApplyChromeForCurrentPage();
+
 		if (_authService.IsLoggedIn)
 		{
 			_ = _adminMessageCoordinator.ProcessPendingMessagesAsync();
+		}
+	}
+
+	/// <summary>
+	/// Darken the navigation bar on the player pages, and restore it everywhere else.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// The players are dark in EITHER OS theme, so on a light-mode device a themed navigation bar
+	/// sat white above a dark page. The page cannot fix this alone: Shell chrome and the title view
+	/// belong to the shell, not to the page.
+	/// </para>
+	/// <para>
+	/// Recomputed from the destination on every navigation rather than toggled on entry and exit,
+	/// so it cannot drift - a dark bar stranded on an ordinary page is exactly what a toggle
+	/// produces. Restoring re-applies the theme BINDINGS through SetAppTheme rather than a fixed
+	/// colour, because assigning a plain value would break light/dark switching for the rest of the
+	/// session.
+	/// </para>
+	/// <para>
+	/// Nothing here is allowed to take down startup. This runs on the FIRST navigation, before the
+	/// title view is necessarily realised, and chrome colour is never worth a crash - the app died
+	/// before its own logger existed when this threw, which leaves no diagnostic behind at all.
+	/// </para>
+	/// </remarks>
+	private void ApplyChromeForCurrentPage()
+	{
+		try
+		{
+			var onPlayer = CurrentPage is SongPlayerPage or PlaylistPlayerPage;
+
+			if (onPlayer)
+			{
+				SetValue(Shell.BackgroundColorProperty, AppColors.PlayerBg);
+				SetValue(Shell.ForegroundColorProperty, AppColors.PlayerText);
+				SetValue(Shell.TitleColorProperty, AppColors.PlayerText);
+				// The light-theme logo is dark ink on an opaque light ground; it shows as a
+				// white block on a dark bar.
+				CurrentLogo = ImageSource.FromFile("logo_dark_small.png");
+				return;
+			}
+
+			this.SetAppThemeColor(Shell.BackgroundColorProperty, Colors.White, AppColors.NavBarDark);
+			this.SetAppThemeColor(Shell.ForegroundColorProperty, Colors.Black, Colors.White);
+			this.SetAppThemeColor(Shell.TitleColorProperty, Colors.Black, Colors.White);
+			CurrentLogo = ImageSource.FromFile(
+				Application.Current?.RequestedTheme == AppTheme.Dark
+					? "logo_dark_small.png"
+					: "logo_light_small.png");
+		}
+		catch (Exception ex)
+		{
+			// Deliberately swallowed. Chrome colour is cosmetic and this runs on the startup
+			// navigation, where an exception kills the app before its own logger exists - which is
+			// exactly what happened, and it left no diagnostic anywhere.
+			System.Diagnostics.Debug.WriteLine($"Navigation-bar chrome not applied: {ex}");
 		}
 	}
 

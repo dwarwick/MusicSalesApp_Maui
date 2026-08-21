@@ -4,6 +4,11 @@
              xmlns:views="clr-namespace:MusicSalesApp.Maui.Views"
              x:Class="MusicSalesApp.Maui.Views.NowPlayingView">
 
+    <!-- Colours are applied in code, from OnDarkSurface. On the player pages this bar is the
+         player's own surface and is dark in either OS theme - the web paints
+         .song-player-container .player-bar the same rgba(13,23,39,.92) in light.css and dark.css.
+         Everywhere else it is page chrome and follows the OS theme, which is also how the web
+         scopes it. The values set here are only the dark ones; ApplySurface overwrites them. -->
     <Grid x:Name="DrawerRoot"
                     MinimumHeightRequest="{StaticResource ControlHeight}">
         <!-- ROUNDED ENDS, matching the web's .player-bar: a pill with a hairline edge, floated off
@@ -18,7 +23,7 @@
                 Padding="0"
                 Margin="{StaticResource Space2}, 0, {StaticResource Space2}, {StaticResource Space2}"
                 StrokeShape="RoundRectangle 28"
-                BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource PlayerBarDark}}"
+                BackgroundColor="{StaticResource PlayerBarDark}"
                 Stroke="{StaticResource PlayerLineStrong}"
                 StrokeThickness="{StaticResource StrokeThin}">
             <VerticalStackLayout Spacing="0">
@@ -34,7 +39,7 @@
                                    x:Name="PositionLabel"
                                    Text="0:00"
                                    FontSize="{StaticResource FontSizeMicro}"
-                                   TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource TimeText}}"
+                                   TextColor="{StaticResource TimeText}"
                                    VerticalOptions="Center" />
                             <Grid Grid.Column="1"
                                   VerticalOptions="Center">
@@ -42,7 +47,7 @@
                                         Minimum="0"
                                         Maximum="1"
                                         MinimumTrackColor="{StaticResource Primary}"
-                                        MaximumTrackColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource ProgressTrack}}"
+                                        MaximumTrackColor="{StaticResource ProgressTrack}"
                                         ThumbColor="{StaticResource Primary}"
                                         VerticalOptions="Center" />
                                 <!-- CornerRadius is off-scale on purpose: a 1px round on a 3px marker, not a surface radius. -->
@@ -61,7 +66,7 @@
                                    x:Name="DurationLabel"
                                    Text="0:00"
                                    FontSize="{StaticResource FontSizeMicro}"
-                                   TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource TimeText}}"
+                                   TextColor="{StaticResource TimeText}"
                                    VerticalOptions="Center" />
                         </Grid>
 
@@ -83,12 +88,12 @@
                                 <Label x:Name="SongTitleLabel"
                                        FontSize="{StaticResource FontSizeSmall}"
                                        FontAttributes="Bold"
-                                       TextColor="{AppThemeBinding Light=Black, Dark=White}"
+                                       TextColor="{StaticResource PlayerText}"
                                        LineBreakMode="TailTruncation"
                                        MaxLines="1" />
                                 <Label x:Name="ArtistNameLabel"
                                        FontSize="{StaticResource FontSizeMicro}"
-                                       TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
+                                       TextColor="{StaticResource PlayerText2}"
                                        LineBreakMode="TailTruncation"
                                        MaxLines="1" />
                             </VerticalStackLayout>
@@ -103,12 +108,12 @@
                                Text="Nothing queued yet"
                                FontSize="{StaticResource FontSizeSmall}"
                                FontAttributes="Bold"
-                               TextColor="{AppThemeBinding Light=Black, Dark=White}" />
+                               TextColor="{StaticResource PlayerText}" />
                         <Label x:Name="EmptyStateHintLabel"
                                Text="Press Play to start listening from this screen."
                                FontSize="{StaticResource FontSizeMicro}"
                                LineBreakMode="WordWrap"
-                               TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}" />
+                               TextColor="{StaticResource PlayerText2}" />
                     </VerticalStackLayout>
 
                     <HorizontalStackLayout Spacing="{StaticResource Space3}"
@@ -149,8 +154,9 @@
                                 <Grid.GestureRecognizers>
                                     <TapGestureRecognizer x:Name="PrevTap" />
                                 </Grid.GestureRecognizers>
-                                <Path Data="M6 6h2v12H6zm3.5 6l8.5 6V6z"
-                                      Fill="{AppThemeBinding Light=Black, Dark=White}"
+                                <Path x:Name="PrevIcon"
+                                      Data="M6 6h2v12H6zm3.5 6l8.5 6V6z"
+                                      Fill="{StaticResource PlayerText}"
                                       Aspect="Uniform"
                                       HeightRequest="18"
                                       WidthRequest="18"
@@ -171,7 +177,7 @@
                                     <TapGestureRecognizer x:Name="PlayPauseTap" />
                                 </Grid.GestureRecognizers>
                                 <Path x:Name="PlayPauseIcon"
-                                      Fill="{AppThemeBinding Light=Black, Dark=White}"
+                                      Fill="{StaticResource PlayerText}"
                                       Aspect="Uniform"
                                       HeightRequest="18"
                                       WidthRequest="18"
@@ -192,8 +198,9 @@
                                 <Grid.GestureRecognizers>
                                     <TapGestureRecognizer x:Name="NextTap" />
                                 </Grid.GestureRecognizers>
-                                <Path Data="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"
-                                      Fill="{AppThemeBinding Light=Black, Dark=White}"
+                                <Path x:Name="NextIcon"
+                                      Data="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"
+                                      Fill="{StaticResource PlayerText}"
                                       Aspect="Uniform"
                                       HeightRequest="18"
                                       WidthRequest="18"
