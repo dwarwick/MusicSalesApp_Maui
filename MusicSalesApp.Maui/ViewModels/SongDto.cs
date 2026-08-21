@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace MusicSalesApp.Maui.ViewModels;
@@ -48,6 +48,33 @@ public partial class SongDto : ObservableObject
     public int PersonaImageVersion { get; set; }
 
     public string? PersonaBio { get; set; }
+
+    /// <summary>
+    /// The persona's own website, or null when they have not given one.
+    /// </summary>
+    /// <remarks>
+    /// Stored exactly as the creator typed it - the server does nothing but Trim it - so it may
+    /// well arrive without a scheme. Do not hand it to Launcher.OpenAsync unguarded.
+    /// </remarks>
+    public string? PersonaWebsiteUrl { get; set; }
+
+    /// <summary>
+    /// The blob path of this song's word-level lyric timings, or null when there are none a
+    /// listener may see. Fetched from <c>api/music/{path}?v={LyricsVersion}</c>.
+    /// </summary>
+    /// <remarks>
+    /// The server resolves this and sends null for anything unpublished, so its presence IS the
+    /// permission - there is no status to re-check here.
+    /// </remarks>
+    public string? LyricsTimingsPath { get; set; }
+
+    /// <summary>As <see cref="AlbumArtVersion"/>, for the lyric timings.</summary>
+    /// <remarks>
+    /// Part of the cache key, not decoration. The timings blob path never changes between
+    /// re-publishes, so without this a corrected set would never replace the one on disk.
+    /// </remarks>
+    public int LyricsVersion { get; set; }
+
     public string StreamUrl { get; set; } = string.Empty;
     public int StreamQualifyingSeconds { get; set; }
     public double? TrackLengthSeconds { get; set; }
@@ -103,6 +130,14 @@ public partial class SongDto : ObservableObject
     [NotifyPropertyChangedFor(nameof(PersonaImageDisplaySource))]
     [NotifyPropertyChangedFor(nameof(PersonaImageThumbDisplaySource))]
     public partial string? CachedPersonaImagePath { get; set; }
+
+    /// <summary>
+    /// A locally cached copy of the timings, when one exists. JsonIgnore for the same reason the
+    /// artwork paths are: a per-device path has no meaning in the shared offline catalog.
+    /// </summary>
+    [JsonIgnore]
+    [ObservableProperty]
+    public partial string? CachedLyricsPath { get; set; }
 
     [JsonIgnore]
     [ObservableProperty]

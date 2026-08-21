@@ -1,4 +1,4 @@
-using CommunityToolkit.Mvvm.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using MusicSalesApp.Maui.ViewModels;
 
 namespace MusicSalesApp.Maui.Services;
@@ -27,6 +27,24 @@ public interface IPlaybackService
     double PlaybackProgress { get; }
     string FormattedPosition { get; }
     string FormattedDuration { get; }
+
+    /// <summary>
+    /// Where playback actually is, unrounded and unclamped.
+    /// </summary>
+    /// <remarks>
+    /// <b>Deliberately different from <see cref="PlaybackProgress"/> and
+    /// <see cref="FormattedPosition"/>, which are both CLAMPED at the preview limit for
+    /// non-subscribers and rounded to the second.</b> Those two exist to drive a progress bar and
+    /// a time label, where the clamp is the point. Anything that needs to line up with the audio -
+    /// lyric timings, for instance - has to have the real number, and cannot recover it by
+    /// multiplying progress by duration.
+    ///
+    /// <para>
+    /// Note this is sampled roughly once a second on every platform; there is no faster source.
+    /// A consumer needing finer resolution must interpolate between samples.
+    /// </para>
+    /// </remarks>
+    TimeSpan Position { get; }
     bool IsRepeatEnabled { get; }
     bool PreviewLimitReached { get; }
     PlaybackPreparationState PreparationState { get; }

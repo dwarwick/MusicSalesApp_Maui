@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Microsoft.Maui.ApplicationModel;
@@ -205,6 +205,16 @@ public class PlaybackService : IPlaybackService
                 CreatePlaybackSnapshot(CurrentSong, null));
             RaiseStateChanged(nameof(IsPlaying));
         }
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Reads the raw field rather than keeping a second copy, so it cannot drift from the value
+    /// the preview clamp is applied to below.
+    /// </remarks>
+    public TimeSpan Position
+    {
+        get { lock (_positionSync) { return _playbackPosition; } }
     }
 
     private double _playbackProgress;
@@ -506,6 +516,10 @@ public class PlaybackService : IPlaybackService
 
             FormattedPosition = FormatDuration(effectivePosition.TotalSeconds);
             FormattedDuration = FormatDuration(duration.TotalSeconds);
+
+            // Raised explicitly because Position has no setter to raise it - it reads the field
+            // assigned above. Subscribers treat each of these as a resync anchor.
+            RaiseStateChanged(nameof(Position));
 
             TrackStreamPlayback(position, previousPosition);
             shouldEnforcePreviewLimit = ShouldEnforcePreviewLimit() && position.TotalSeconds >= PreviewLimitSeconds;
