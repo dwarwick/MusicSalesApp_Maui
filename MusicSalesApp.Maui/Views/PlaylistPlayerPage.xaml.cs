@@ -11,6 +11,8 @@ public partial class PlaylistPlayerPage : ContentPage
     private CancellationTokenSource? _lyricsLoad;
     private bool _showingLyrics;
     private int _lyricsLoadedForSongId = -1;
+    private bool? _isWideLayout;
+    private View? _sidePanels;
 
     public PlaylistPlayerPage(
         PlaylistPlayerViewModel viewModel,
@@ -185,6 +187,58 @@ public partial class PlaylistPlayerPage : ContentPage
         return Application.Current?.Resources.TryGetValue(key, out var style) == true
             ? style as Style
             : null;
+    }
+
+    /// <summary>
+    /// Put the stage and bio panels beside the track list when the window is wide enough, and back
+    /// underneath it when it is not.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The panels are declared once, inside SidePanelHost, and MOVED - not duplicated. Two copies
+    /// would mean two LyricsView instances running highlight loops against the same playback, and
+    /// the off-screen one would go on waking the main thread ten times a second.
+    /// </para>
+    /// <para>
+    /// A CollectionView renders header, items, then footer, so on a phone the panels have to sit in
+    /// the footer to appear below the rows; on a wide window they belong in a column beside them.
+    /// MAUI cannot reparent declaratively, hence the hand-off here. Detach from the old host BEFORE
+    /// attaching to the new one - a view with two parents throws.
+    /// </para>
+    /// </remarks>
+    protected override void OnSizeAllocated(double width, double height)
+    {
+        base.OnSizeAllocated(width, height);
+
+        var wide = AdaptiveLayout.IsWide(width);
+        if (wide == _isWideLayout)
+        {
+            return;
+        }
+
+        _isWideLayout = wide;
+        ApplyStageLayout(wide);
+    }
+
+    private void ApplyStageLayout(bool wide)
+    {
+        _sidePanels ??= SidePanels;
+
+        if (wide)
+        {
+            FooterPanelHost.Content = null;
+            SidePanelHost.Content = _sidePanels;
+            SidePanelHost.IsVisible = true;
+            StageShell.ColumnDefinitions = new ColumnDefinitionCollection(
+                new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(new GridLength(AdaptiveLayout.SideColumnWidth)));
+            return;
+        }
+
+        SidePanelHost.Content = null;
+        SidePanelHost.IsVisible = false;
+        FooterPanelHost.Content = _sidePanels;
+        StageShell.ColumnDefinitions = new ColumnDefinitionCollection(new ColumnDefinition(GridLength.Star));
     }
 
     protected override async void OnAppearing()

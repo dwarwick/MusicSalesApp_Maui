@@ -12,6 +12,7 @@ public partial class SongPlayerPage : ContentPage
     private readonly ILyricsService _lyricsService;
     private CancellationTokenSource? _lyricsLoad;
     private bool _showingLyrics;
+    private bool? _isWideLayout;
 
     public SongPlayerPage(
         SongPlayerViewModel viewModel,
@@ -141,6 +142,58 @@ public partial class SongPlayerPage : ContentPage
         return Application.Current?.Resources.TryGetValue(key, out var style) == true
             ? style as Style
             : null;
+    }
+
+    /// <summary>
+    /// Move the artist panel beside the stage once the window is wide enough, and back beneath it
+    /// when it is not.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Done here rather than with AdaptiveTrigger and visual states, because the setters that would
+    /// be needed - a string converted to a ColumnDefinitionCollection, and attached Grid.Row and
+    /// Grid.Column inside a VisualState - compile whether or not they resolve, so a mistake shows
+    /// up as a wrong layout on a device rather than as a build error. This form is checkable, and
+    /// the decision itself is a tested function.
+    /// </para>
+    /// <para>
+    /// Guarded on the previous answer: OnSizeAllocated fires on every layout pass, and rebuilding
+    /// the grid each time would re-measure both panels continually.
+    /// </para>
+    /// </remarks>
+    protected override void OnSizeAllocated(double width, double height)
+    {
+        base.OnSizeAllocated(width, height);
+
+        var wide = AdaptiveLayout.IsWide(width);
+        if (wide == _isWideLayout)
+        {
+            return;
+        }
+
+        _isWideLayout = wide;
+        ApplyStageLayout(wide);
+    }
+
+    private void ApplyStageLayout(bool wide)
+    {
+        if (wide)
+        {
+            StageRow.RowDefinitions = new RowDefinitionCollection(new RowDefinition(GridLength.Auto));
+            StageRow.ColumnDefinitions = new ColumnDefinitionCollection(
+                new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(new GridLength(AdaptiveLayout.SideColumnWidth)));
+            Grid.SetRow(ArtistColumn, 0);
+            Grid.SetColumn(ArtistColumn, 1);
+            return;
+        }
+
+        StageRow.RowDefinitions = new RowDefinitionCollection(
+            new RowDefinition(GridLength.Auto),
+            new RowDefinition(GridLength.Auto));
+        StageRow.ColumnDefinitions = new ColumnDefinitionCollection(new ColumnDefinition(GridLength.Star));
+        Grid.SetRow(ArtistColumn, 1);
+        Grid.SetColumn(ArtistColumn, 0);
     }
 
     protected override async void OnAppearing()

@@ -16,8 +16,12 @@
                      Command="{Binding RefreshCommand}"
                      IsRefreshing="{Binding IsRefreshing, Mode=OneWay}">
             <ScrollView Padding="0">
+                <!-- Capped and centred so the page does not stretch edge to edge on a tablet. On a
+                     phone the cap is never reached and this behaves exactly as before. -->
                 <VerticalStackLayout Spacing="{StaticResource Space4}"
-                                     Padding="20,24,20,16">
+                                     Padding="20,24,20,16"
+                                     MaximumWidthRequest="{StaticResource ReadableWidth}"
+                                     HorizontalOptions="Center">
 
                 <!-- SONG HERO - the web's .song-hero-inner. The cover art is a SMALL square
                      here beside the details; the large one lives in the stage panel below, which is
@@ -141,10 +145,15 @@
                         <FlexLayout Wrap="Wrap"
                                     Direction="Row"
                                     AlignItems="Center">
+                            <!-- The left inset is optical, not arbitrary. Every other control in
+                                 this row is a 24-point glyph centred in a 40-point hit target, so
+                                 each carries about 8 points of empty edge; this button is a filled
+                                 circle that reaches its own bounds. Flush left, it reads as jutting
+                                 out past the row it belongs to. -->
                             <views:EqualizerPlayButton SongId="{Binding Song.Id}"
                                                        Command="{Binding PlaySongCommand}"
                                                        ButtonSize="52"
-                                                       Margin="0,0,12,0"
+                                                       Margin="8,0,12,0"
                                                        VerticalOptions="Center" />
 
                         <!-- Like Button -->
@@ -232,83 +241,104 @@
                     </VerticalStackLayout>
                 </Border>
 
-                <!-- THE STAGE PANEL. Mirrors the web's .playlist-stage-panel: a bordered section
-                     whose header carries an uppercase caption naming what is on show, and - only
-                     when the song HAS lyrics a listener may see - a segmented switch between them.
+                <!-- The stage and the artist sit in one column on a phone and side by side once
+                     the window is wide enough - the web's two-column .song-stage, switching at the
+                     same 992 the web switches at.
 
-                     The art and the lyrics swap rather than overlaying, so the panel keeps its
-                     height and nothing below it shifts when the switch is pressed. -->
-                <Border Style="{StaticResource PlayerPanel}"
-                        Padding="{StaticResource Space3}">
-                    <VerticalStackLayout Spacing="{StaticResource Space3}">
+                     Keyed off WINDOW WIDTH rather than device type: an iPad in portrait is narrow
+                     and should stay single column, the same iPad in landscape should not, and a
+                     tablet running the app in split view is narrower still. OnIdiom cannot see any
+                     of that. -->
+                <Grid x:Name="StageRow"
+                      RowDefinitions="Auto,Auto"
+                      ColumnDefinitions="*"
+                      RowSpacing="{StaticResource Space4}"
+                      ColumnSpacing="{StaticResource Space4}">
 
-                        <Grid ColumnDefinitions="*,Auto">
-                            <Label x:Name="StageCaption"
-                                   Grid.Column="0"
-                                   Style="{StaticResource PlayerPanelCaption}"
-                                   Text="COVER ART" />
+                    <ContentView Grid.Row="0" Grid.Column="0">
+                        <!-- THE STAGE PANEL. Mirrors the web's .playlist-stage-panel: a bordered section
+                             whose header carries an uppercase caption naming what is on show, and - only
+                             when the song HAS lyrics a listener may see - a segmented switch between them.
 
-                            <!-- The switch, not a corner bubble on the artwork. Hidden entirely
-                                 when there is nothing to switch to, which leaves an ordinary
-                                 captioned panel rather than a header with a gap in it. -->
-                            <Border x:Name="StageSwitch"
-                                    Grid.Column="1"
-                                    IsVisible="False"
-                                    Padding="0"
-                                    StrokeThickness="{StaticResource StrokeThin}"
-                                    Stroke="{StaticResource PlayerLine}"
-                                    StrokeShape="RoundRectangle 999"
-                                    BackgroundColor="Transparent">
-                                <HorizontalStackLayout>
-                                    <Button x:Name="LyricsSegment"
-                                            Text="Lyrics"
-                                            Style="{StaticResource PlayerSwitchSegment}"
-                                            Clicked="OnShowLyricsClicked" />
-                                    <Button x:Name="ArtSegment"
-                                            Text="Art"
-                                            Style="{StaticResource PlayerSwitchSegmentActive}"
-                                            Clicked="OnShowArtClicked" />
-                                </HorizontalStackLayout>
-                            </Border>
-                        </Grid>
+                             The art and the lyrics swap rather than overlaying, so the panel keeps its
+                             height and nothing below it shifts when the switch is pressed. -->
+                        <Border Style="{StaticResource PlayerPanel}"
+                                Padding="{StaticResource Space3}">
+                            <VerticalStackLayout Spacing="{StaticResource Space3}">
 
-                        <Grid HorizontalOptions="Center"
-                              HeightRequest="{StaticResource PlayerHeroArtSize}"
-                              WidthRequest="{StaticResource PlayerHeroArtSize}">
-                            <Border x:Name="HeroArt"
-                                    HorizontalOptions="Center"
-                                    StrokeShape="RoundRectangle 12"
-                                    StrokeThickness="0">
-                                <views:SongArtworkView AlbumArtUrl="{Binding Song.AlbumArtHeroDisplaySource}"
-                                                       HeightRequest="{StaticResource PlayerHeroArtSize}"
-                                                       WidthRequest="{StaticResource PlayerHeroArtSize}" />
-                            </Border>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <Label x:Name="StageCaption"
+                                           Grid.Column="0"
+                                           Style="{StaticResource PlayerPanelCaption}"
+                                           Text="COVER ART" />
 
-                            <views:LyricsView x:Name="LyricsPanel"
-                                              IsVisible="False"
-                                              OnDarkSurface="True"
-                                              TextSize="{StaticResource FontSizeLyricsPlayer}" />
-                        </Grid>
-                    </VerticalStackLayout>
-                </Border>
+                                    <!-- The switch, not a corner bubble on the artwork. Hidden entirely
+                                         when there is nothing to switch to, which leaves an ordinary
+                                         captioned panel rather than a header with a gap in it. -->
+                                    <Border x:Name="StageSwitch"
+                                            Grid.Column="1"
+                                            IsVisible="False"
+                                            Padding="0"
+                                            StrokeThickness="{StaticResource StrokeThin}"
+                                            Stroke="{StaticResource PlayerLine}"
+                                            StrokeShape="RoundRectangle 999"
+                                            BackgroundColor="Transparent">
+                                        <HorizontalStackLayout>
+                                            <Button x:Name="LyricsSegment"
+                                                    Text="Lyrics"
+                                                    Style="{StaticResource PlayerSwitchSegment}"
+                                                    Clicked="OnShowLyricsClicked" />
+                                            <Button x:Name="ArtSegment"
+                                                    Text="Art"
+                                                    Style="{StaticResource PlayerSwitchSegmentActive}"
+                                                    Clicked="OnShowArtClicked" />
+                                        </HorizontalStackLayout>
+                                    </Border>
+                                </Grid>
 
-                <!-- THE ARTIST PANEL - the web's .playlist-artist-panel. Collapses with its
-                     caption when the song has no artist to show, rather than leaving a captioned
-                     empty box. -->
-                <Border Style="{StaticResource PlayerPanel}"
-                        Padding="{StaticResource Space3}"
-                        IsVisible="{Binding Source={x:Reference ArtistSection}, Path=HasContent}">
-                    <VerticalStackLayout Spacing="{StaticResource Space3}">
-                        <Label Style="{StaticResource PlayerPanelCaption}"
-                               Text="THE ARTIST" />
-                        <views:PersonaSectionView x:Name="ArtistSection"
-                                                  PersonaName="{Binding Song.ArtistName}"
-                                                  Bio="{Binding Song.PersonaBio}"
-                                                  WebsiteUrl="{Binding Song.PersonaWebsiteUrl}"
-                                                  ImageSource="{Binding Song.PersonaImageHeroDisplaySource}"
-                                                  NavigateCommand="{Binding NavigateToArtistCommand}" />
-                    </VerticalStackLayout>
-                </Border>
+                                <Grid HorizontalOptions="Center"
+                                      HeightRequest="{StaticResource PlayerHeroArtSize}"
+                                      WidthRequest="{StaticResource PlayerHeroArtSize}">
+                                    <Border x:Name="HeroArt"
+                                            HorizontalOptions="Center"
+                                            StrokeShape="RoundRectangle 12"
+                                            StrokeThickness="0">
+                                        <views:SongArtworkView AlbumArtUrl="{Binding Song.AlbumArtHeroDisplaySource}"
+                                                               HeightRequest="{StaticResource PlayerHeroArtSize}"
+                                                               WidthRequest="{StaticResource PlayerHeroArtSize}" />
+                                    </Border>
+
+                                    <views:LyricsView x:Name="LyricsPanel"
+                                                      IsVisible="False"
+                                                      OnDarkSurface="True"
+                                                      TextSize="{StaticResource FontSizeLyricsPlayer}" />
+                                </Grid>
+                            </VerticalStackLayout>
+                        </Border>
+                    </ContentView>
+
+                    <ContentView x:Name="ArtistColumn"
+                                 Grid.Row="1"
+                                 Grid.Column="0">
+                        <!-- THE ARTIST PANEL - the web's .playlist-artist-panel. Collapses with its
+                             caption when the song has no artist to show, rather than leaving a captioned
+                             empty box. -->
+                        <Border Style="{StaticResource PlayerPanel}"
+                                Padding="{StaticResource Space3}"
+                                IsVisible="{Binding Source={x:Reference ArtistSection}, Path=HasContent}">
+                            <VerticalStackLayout Spacing="{StaticResource Space3}">
+                                <Label Style="{StaticResource PlayerPanelCaption}"
+                                       Text="THE ARTIST" />
+                                <views:PersonaSectionView x:Name="ArtistSection"
+                                                          PersonaName="{Binding Song.ArtistName}"
+                                                          Bio="{Binding Song.PersonaBio}"
+                                                          WebsiteUrl="{Binding Song.PersonaWebsiteUrl}"
+                                                          ImageSource="{Binding Song.PersonaImageHeroDisplaySource}"
+                                                          NavigateCommand="{Binding NavigateToArtistCommand}" />
+                            </VerticalStackLayout>
+                        </Border>
+                    </ContentView>
+                </Grid>
 
                 </VerticalStackLayout>
             </ScrollView>

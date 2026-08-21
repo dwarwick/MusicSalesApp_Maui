@@ -12,7 +12,20 @@
 
     <Grid RowDefinitions="*,Auto">
         <!-- Scrollable content: now-playing hero + track list -->
-        <RefreshView Grid.Row="0"
+        <!-- Two-column shell. The track list keeps the main column and the stage and bio panels
+             move into the trailing one once there is room - the web's .playlist-stage beside its
+             .playlist-side, switching at the same 992.
+
+             The panels exist ONCE, and the width handler hands them between SidePanelHost here and
+             FooterPanelHost inside the list. Declaring them twice would be simpler and wrong: two
+             LyricsView instances means two highlight loops ticking against the same playback, and
+             the hidden one would go on waking the main thread. -->
+        <Grid x:Name="StageShell"
+              Grid.Row="0"
+              ColumnDefinitions="*"
+              ColumnSpacing="{StaticResource Space4}">
+
+            <RefreshView Grid.Column="0"
                      Command="{Binding RefreshCommand}"
                      IsRefreshing="{Binding IsLoading, Mode=OneWay}">
             <CollectionView ItemsSource="{Binding Songs}"
@@ -444,100 +457,7 @@
                      items, then footer - so anything that belongs UNDER the rows has to live here,
                      not at the end of the header. -->
                 <CollectionView.Footer>
-                    <VerticalStackLayout Spacing="{StaticResource Space4}"
-                                         Padding="16,8,16,20">
-                        <!-- THE STAGE PANEL - the web's .playlist-stage-panel. A bordered section
-                             whose header names what is on show and, per TRACK rather than per
-                             playlist, offers the switch: it comes and goes as the queue moves between
-                             songs that have published lyrics and songs that do not.
-
-                             Fixed size in both states: this block is a CollectionView header, and a
-                             header that changes height re-measures the whole list under it. -->
-                        <Border Style="{StaticResource PlayerPanel}"
-                                Padding="{StaticResource Space3}">
-                            <VerticalStackLayout Spacing="{StaticResource Space3}">
-
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <Label x:Name="StageCaption"
-                                           Grid.Column="0"
-                                           Style="{StaticResource PlayerPanelCaption}"
-                                           Text="COVER ART" />
-
-                                    <Border x:Name="StageSwitch"
-                                                Grid.Column="1"
-                                                IsVisible="False"
-                                                Padding="0"
-                                                StrokeThickness="{StaticResource StrokeThin}"
-                                                Stroke="{StaticResource PlayerLine}"
-                                                StrokeShape="RoundRectangle 999"
-                                                BackgroundColor="Transparent">
-                                        <HorizontalStackLayout>
-                                                <Button x:Name="LyricsSegment"
-                                                        Text="Lyrics"
-                                                        Style="{StaticResource PlayerSwitchSegment}"
-                                                        Clicked="OnShowLyricsClicked" />
-                                                <Button x:Name="ArtSegment"
-                                                        Text="Art"
-                                                        Style="{StaticResource PlayerSwitchSegmentActive}"
-                                                        Clicked="OnShowArtClicked" />
-                                        </HorizontalStackLayout>
-                                    </Border>
-                                </Grid>
-
-                                <Grid HorizontalOptions="Center"
-                                      HeightRequest="{StaticResource PlayerHeroArtSize}"
-                                      WidthRequest="{StaticResource PlayerHeroArtSize}">
-                                    <Border x:Name="HeroArt"
-                                                HorizontalOptions="Center"
-                                                StrokeShape="RoundRectangle 12"
-                                                StrokeThickness="0">
-                                        <views:SongArtworkView AlbumArtUrl="{Binding CurrentSong.AlbumArtHeroDisplaySource}"
-                                                                   HeightRequest="{StaticResource PlayerHeroArtSize}"
-                                                                   WidthRequest="{StaticResource PlayerHeroArtSize}" />
-                                    </Border>
-
-                                    <views:LyricsView x:Name="LyricsPanel"
-                                                          IsVisible="False"
-                                                          OnDarkSurface="True"
-                                                          TextSize="{StaticResource FontSizeLyricsPlaylist}" />
-                                </Grid>
-                            </VerticalStackLayout>
-                        </Border>
-
-                        <!-- ABOUT - the web's .playlist-about-panel, and ONLY on an artist's own page.
-                             There the bio is the subject of the page rather than a note about someone
-                             else, so it gets the full text and no repeat of the name and picture the
-                             header already carries. -->
-                        <Border Style="{StaticResource PlayerPanel}"
-                                Padding="{StaticResource Space3}"
-                                IsVisible="{Binding ShowAboutPanel}">
-                            <VerticalStackLayout Spacing="{StaticResource Space3}">
-                                <Label Style="{StaticResource PlayerPanelCaption}"
-                                       Text="ABOUT" />
-                                <Label Style="{StaticResource PlayerBodyText}"
-                                       Text="{Binding CurrentSong.PersonaBio}"
-                                       LineBreakMode="WordWrap" />
-                            </VerticalStackLayout>
-                        </Border>
-
-                        <!-- THE ARTIST PANEL - the web's .playlist-artist-panel. Suppressed on an
-                             artist's own page, where ABOUT above says the same thing in full. -->
-                        <Border Style="{StaticResource PlayerPanel}"
-                                Padding="{StaticResource Space3}"
-                                IsVisible="{Binding ShowArtistPanel}">
-                            <VerticalStackLayout Spacing="{StaticResource Space3}">
-                                <Label Style="{StaticResource PlayerPanelCaption}"
-                                       Text="THE ARTIST" />
-                                <views:PersonaSectionView x:Name="ArtistSection"
-                                                              PersonaName="{Binding CurrentSong.ArtistName}"
-                                                              Bio="{Binding CurrentSong.PersonaBio}"
-                                                              WebsiteUrl="{Binding CurrentSong.PersonaWebsiteUrl}"
-                                                              ImageSource="{Binding CurrentSong.PersonaImageHeroDisplaySource}"
-                                                              NavigateCommand="{Binding NavigateToArtistCommand}" />
-                            </VerticalStackLayout>
-                        </Border>
-
-                    </VerticalStackLayout>
+                    <ContentView x:Name="FooterPanelHost" />
                 </CollectionView.Footer>
 
                 <CollectionView.ItemTemplate>
@@ -689,7 +609,111 @@
                         </DataTemplate>
                 </CollectionView.ItemTemplate>
             </CollectionView>
-        </RefreshView>
+            </RefreshView>
+
+            <!-- Declared here so it has a name and a namescope. On a phone the handler moves it
+                 into the list's footer at first layout, and this host collapses. -->
+            <ScrollView x:Name="SidePanelHost"
+                        Grid.Column="1"
+                        IsVisible="False"
+                        Padding="0,12,16,20">
+    <VerticalStackLayout x:Name="SidePanels"
+                                             Spacing="{StaticResource Space4}"
+                                             Padding="16,8,16,20">
+                            <!-- THE STAGE PANEL - the web's .playlist-stage-panel. A bordered section
+                                 whose header names what is on show and, per TRACK rather than per
+                                 playlist, offers the switch: it comes and goes as the queue moves between
+                                 songs that have published lyrics and songs that do not.
+
+                                 Fixed size in both states: this block is a CollectionView header, and a
+                                 header that changes height re-measures the whole list under it. -->
+                            <Border Style="{StaticResource PlayerPanel}"
+                                    Padding="{StaticResource Space3}">
+                                <VerticalStackLayout Spacing="{StaticResource Space3}">
+
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <Label x:Name="StageCaption"
+                                               Grid.Column="0"
+                                               Style="{StaticResource PlayerPanelCaption}"
+                                               Text="COVER ART" />
+
+                                        <Border x:Name="StageSwitch"
+                                                    Grid.Column="1"
+                                                    IsVisible="False"
+                                                    Padding="0"
+                                                    StrokeThickness="{StaticResource StrokeThin}"
+                                                    Stroke="{StaticResource PlayerLine}"
+                                                    StrokeShape="RoundRectangle 999"
+                                                    BackgroundColor="Transparent">
+                                            <HorizontalStackLayout>
+                                                    <Button x:Name="LyricsSegment"
+                                                            Text="Lyrics"
+                                                            Style="{StaticResource PlayerSwitchSegment}"
+                                                            Clicked="OnShowLyricsClicked" />
+                                                    <Button x:Name="ArtSegment"
+                                                            Text="Art"
+                                                            Style="{StaticResource PlayerSwitchSegmentActive}"
+                                                            Clicked="OnShowArtClicked" />
+                                            </HorizontalStackLayout>
+                                        </Border>
+                                    </Grid>
+
+                                    <Grid HorizontalOptions="Center"
+                                          HeightRequest="{StaticResource PlayerHeroArtSize}"
+                                          WidthRequest="{StaticResource PlayerHeroArtSize}">
+                                        <Border x:Name="HeroArt"
+                                                    HorizontalOptions="Center"
+                                                    StrokeShape="RoundRectangle 12"
+                                                    StrokeThickness="0">
+                                            <views:SongArtworkView AlbumArtUrl="{Binding CurrentSong.AlbumArtHeroDisplaySource}"
+                                                                       HeightRequest="{StaticResource PlayerHeroArtSize}"
+                                                                       WidthRequest="{StaticResource PlayerHeroArtSize}" />
+                                        </Border>
+
+                                        <views:LyricsView x:Name="LyricsPanel"
+                                                              IsVisible="False"
+                                                              OnDarkSurface="True"
+                                                              TextSize="{StaticResource FontSizeLyricsPlaylist}" />
+                                    </Grid>
+                                </VerticalStackLayout>
+                            </Border>
+
+                            <!-- ABOUT - the web's .playlist-about-panel, and ONLY on an artist's own page.
+                                 There the bio is the subject of the page rather than a note about someone
+                                 else, so it gets the full text and no repeat of the name and picture the
+                                 header already carries. -->
+                            <Border Style="{StaticResource PlayerPanel}"
+                                    Padding="{StaticResource Space3}"
+                                    IsVisible="{Binding ShowAboutPanel}">
+                                <VerticalStackLayout Spacing="{StaticResource Space3}">
+                                    <Label Style="{StaticResource PlayerPanelCaption}"
+                                           Text="ABOUT" />
+                                    <Label Style="{StaticResource PlayerBodyText}"
+                                           Text="{Binding CurrentSong.PersonaBio}"
+                                           LineBreakMode="WordWrap" />
+                                </VerticalStackLayout>
+                            </Border>
+
+                            <!-- THE ARTIST PANEL - the web's .playlist-artist-panel. Suppressed on an
+                                 artist's own page, where ABOUT above says the same thing in full. -->
+                            <Border Style="{StaticResource PlayerPanel}"
+                                    Padding="{StaticResource Space3}"
+                                    IsVisible="{Binding ShowArtistPanel}">
+                                <VerticalStackLayout Spacing="{StaticResource Space3}">
+                                    <Label Style="{StaticResource PlayerPanelCaption}"
+                                           Text="THE ARTIST" />
+                                    <views:PersonaSectionView x:Name="ArtistSection"
+                                                                  PersonaName="{Binding CurrentSong.ArtistName}"
+                                                                  Bio="{Binding CurrentSong.PersonaBio}"
+                                                                  WebsiteUrl="{Binding CurrentSong.PersonaWebsiteUrl}"
+                                                                  ImageSource="{Binding CurrentSong.PersonaImageHeroDisplaySource}"
+                                                                  NavigateCommand="{Binding NavigateToArtistCommand}" />
+                                </VerticalStackLayout>
+                            </Border>
+
+                        </VerticalStackLayout>
+            </ScrollView>
+        </Grid>
 
         <!-- Now Playing Bar at bottom -->
         <views:NowPlayingView x:Name="NowPlayingBar"

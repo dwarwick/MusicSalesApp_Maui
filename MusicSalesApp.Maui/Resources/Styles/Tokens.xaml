@@ -139,6 +139,19 @@
          CONTROL SIZES
          Replaces 130 HeightRequest and 89 WidthRequest literals.
          =================================================================== -->
+    <!-- ADAPTIVE LAYOUT.
+
+         WideBreakpoint is the width at which the players go two-column. 992 is the web's own
+         switch (its md breakpoint is max-width:992px), so the two apps change shape at the same
+         place: a tablet in portrait is single column on both, landscape is two on both.
+
+         ReadableWidth caps the content on a wide screen. Without it a hero's text column runs the
+         full width of a tablet beside a 100-point picture, and lyrics lines get long enough to
+         lose your place between them. -->
+    <x:Double x:Key="WideBreakpoint">992</x:Double>
+    <x:Double x:Key="ReadableWidth">1100</x:Double>
+    <x:Double x:Key="SideColumnWidth">360</x:Double>
+
     <x:Double x:Key="ControlHeight">44</x:Double>
     <!-- pill buttons, filter pills -->
     <x:Double x:Key="ControlHeightLarge">48</x:Double>
