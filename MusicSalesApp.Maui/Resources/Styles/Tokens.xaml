@@ -74,6 +74,13 @@
     <!-- ===================================================================
          SPACING - tokens.css st-space-*
          =================================================================== -->
+    <!-- Two sub-steps below the scale, for dense rows where a 4px gap is already too much:
+         a metadata strip under a card title, the gap between an icon and its count. Named
+         because they are used 19 times between them, not because the scale wanted finer
+         rungs - reach for Space1 first. -->
+    <x:Double x:Key="SpaceHair">2</x:Double>
+    <x:Double x:Key="SpaceTight">6</x:Double>
+
     <x:Double x:Key="Space1">4</x:Double>
     <x:Double x:Key="Space2">8</x:Double>
     <x:Double x:Key="Space3">12</x:Double>

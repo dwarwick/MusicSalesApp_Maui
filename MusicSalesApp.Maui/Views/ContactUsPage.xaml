@@ -11,7 +11,7 @@
              BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
 
     <Grid Padding="24" RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="14">
-        <VerticalStackLayout Grid.Row="0" Spacing="6">
+        <VerticalStackLayout Grid.Row="0" Spacing="{StaticResource SpaceTight}">
             <Label Text="Contact Us"
                    FontSize="{StaticResource FontSizeH2Compact}"
                    FontAttributes="Bold"

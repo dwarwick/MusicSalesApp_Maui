@@ -14,16 +14,11 @@
         <!-- Create button + subscription banner -->
         <VerticalStackLayout Grid.Row="0" Spacing="{StaticResource Space2}">
             <!-- Creating a playlist needs the server, so the control is hidden offline -->
-            <Button Text="+ Create Playlist"
+            <Button Style="{StaticResource PillButtonPrimary}"
+                    Text="+ Create Playlist"
                     IsVisible="{Binding CanUseServerActions}"
                     Command="{Binding CreatePlaylistCommand}"
-                    BackgroundColor="{StaticResource Primary}"
-                    TextColor="White"
-                    FontAttributes="Bold"
-                    CornerRadius="20"
-                    HeightRequest="{StaticResource ControlHeight}"
-                    HorizontalOptions="Start"
-                    Padding="20,0" />
+                    HorizontalOptions="Start" />
 
             <Border IsVisible="{Binding HasActiveSubscription, Converter={toolkit:InvertedBoolConverter}}"
                     StrokeShape="RoundRectangle 8"
@@ -52,7 +47,7 @@
                 <!-- Empty state. Offline this must not read as "your playlists were deleted". -->
                 <VerticalStackLayout IsVisible="{Binding ShowEmptyState}"
                                      VerticalOptions="Start"
-                                     Spacing="6"
+                                     Spacing="{StaticResource SpaceTight}"
                                      Padding="24">
                     <Label Text="{Binding EmptyStateTitle}"
                            FontSize="{StaticResource FontSizeBodyLarge}"
@@ -83,7 +78,7 @@
                                                           CommandParameter="{Binding .}" />
                                 </Border.GestureRecognizers>
                                 <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="{StaticResource Space2}" VerticalOptions="Center">
-                                    <VerticalStackLayout Grid.Column="0" Spacing="2" VerticalOptions="Center">
+                                    <VerticalStackLayout Grid.Column="0" Spacing="{StaticResource SpaceHair}" VerticalOptions="Center">
                                         <Label Text="{Binding Name}"
                                                FontSize="{StaticResource FontSizeBodyLarge}"
                                                FontAttributes="Bold"

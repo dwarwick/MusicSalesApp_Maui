@@ -46,7 +46,7 @@
                                        AutomationId="OfflineLibraryBanner"
                                        Text="You&apos;re offline. Showing only downloaded songs &#8212; reconnect to browse the full library." />
 
-            <HorizontalStackLayout Spacing="6">
+            <HorizontalStackLayout Spacing="{StaticResource SpaceTight}">
                 <Button Style="{StaticResource FilterPill}" Command="{Binding ToggleAiPanelCommand}"
                         Clicked="OnFilterChromeClicked"
                         Text="{Binding AiPillText}"
@@ -101,7 +101,7 @@
                 Margin="8,0,8,4"
                 Padding="8"
                 BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource CardBackgroundDark}}">
-            <VerticalStackLayout Spacing="2">
+            <VerticalStackLayout Spacing="{StaticResource SpaceHair}">
                 <Grid ColumnDefinitions="Auto,*" Padding="4,8" ColumnSpacing="{StaticResource Space2}">
                     <Grid.GestureRecognizers>
                         <TapGestureRecognizer Command="{Binding SelectAiFilterCommand}"
@@ -342,7 +342,7 @@
                 <CollectionView.EmptyView>
                     <VerticalStackLayout HorizontalOptions="Center"
                                          VerticalOptions="Center"
-                                         Spacing="6"
+                                         Spacing="{StaticResource SpaceTight}"
                                          Padding="20">
                         <Label Text="{Binding EmptyStateTitle}"
                                FontSize="{StaticResource FontSizeH4}"

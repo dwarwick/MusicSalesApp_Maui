@@ -12,6 +12,7 @@
     FlyoutBackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
 
     <Shell.TitleView>
+          <!-- RowSpacing is off-scale on purpose: the title rows sit tighter than the scale allows. -->
           <Grid Padding="0,4,0,4"
               RowDefinitions="Auto,Auto"
               RowSpacing="3"
@@ -129,7 +130,7 @@
               Clicked="OnLogoutClicked" />
 
     <Shell.FlyoutFooter>
-        <VerticalStackLayout Padding="16,8" Spacing="6"
+        <VerticalStackLayout Padding="16,8" Spacing="{StaticResource SpaceTight}"
                              BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
 
             <Grid x:Name="UploadYourOwnMusicFooterRow"

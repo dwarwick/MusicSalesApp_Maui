@@ -56,7 +56,7 @@
                    HorizontalTextAlignment="Center" />
 
             <HorizontalStackLayout HorizontalOptions="Center"
-                                    Spacing="6">
+                                    Spacing="{StaticResource SpaceTight}">
                 <Border StrokeShape="RoundRectangle 10"
                         StrokeThickness="0"
                         HeightRequest="20"
@@ -175,7 +175,7 @@
             </HorizontalStackLayout>
 
                         <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto"
-                  ColumnSpacing="6"
+                  ColumnSpacing="{StaticResource SpaceTight}"
                   HorizontalOptions="Center">
                 <views:FacebookShareButton Grid.Column="0"
                                            ShareUrl="{Binding ShareUrl}"

@@ -68,7 +68,7 @@
             </VerticalStackLayout>
 
             <!-- ========== HERO SECTION ========== -->
-            <VerticalStackLayout Padding="24,4,24,4" Spacing="2"
+            <VerticalStackLayout Padding="24,4,24,4" Spacing="{StaticResource SpaceHair}"
                   BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
 
                 <!-- Title row: text + Lottie, wraps like flex-row -->
@@ -187,6 +187,7 @@
                     <Border.GestureRecognizers>
                         <TapGestureRecognizer Command="{Binding OpenRecommendedCommand}" />
                     </Border.GestureRecognizers>
+                    <!-- Off-scale on purpose: 14 centres the row against the 56px tile beside it. -->
                     <Grid ColumnDefinitions="56,*,Auto" ColumnSpacing="14" VerticalOptions="Center">
                         <Border Grid.Column="0"
                                 WidthRequest="56" HeightRequest="56"
@@ -199,7 +200,7 @@
                                    HorizontalTextAlignment="Center"
                                    VerticalTextAlignment="Center" />
                         </Border>
-                        <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                        <VerticalStackLayout Grid.Column="1" Spacing="{StaticResource SpaceHair}" VerticalOptions="Center">
                             <Label Text="{Binding RecommendedPlaylist.Name}"
                                    FontSize="{StaticResource FontSizeBodyLarge}"
                                    FontAttributes="Bold"
@@ -226,6 +227,7 @@
                         <TapGestureRecognizer Command="{Binding OpenPlaylistCommand}"
                                               CommandParameter="{Binding LikedSongsPlaylist}" />
                     </Border.GestureRecognizers>
+                    <!-- Off-scale on purpose: 14 centres the row against the 56px tile beside it. -->
                     <Grid ColumnDefinitions="56,*,Auto" ColumnSpacing="14" VerticalOptions="Center">
                         <Border Grid.Column="0"
                                 WidthRequest="56" HeightRequest="56"
@@ -238,7 +240,7 @@
                                    HorizontalTextAlignment="Center"
                                    VerticalTextAlignment="Center" />
                         </Border>
-                        <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                        <VerticalStackLayout Grid.Column="1" Spacing="{StaticResource SpaceHair}" VerticalOptions="Center">
                             <Label Text="{Binding LikedSongsPlaylist.Name}"
                                    FontSize="{StaticResource FontSizeBodyLarge}"
                                    FontAttributes="Bold"

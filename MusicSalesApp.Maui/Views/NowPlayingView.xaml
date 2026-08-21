@@ -34,6 +34,7 @@
                                         MaximumTrackColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource ProgressTrack}}"
                                         ThumbColor="{StaticResource Primary}"
                                         VerticalOptions="Center" />
+                                <!-- CornerRadius is off-scale on purpose: a 1px round on a 3px marker, not a surface radius. -->
                                 <BoxView x:Name="PreviewMarker"
                                          WidthRequest="3"
                                          HeightRequest="20"

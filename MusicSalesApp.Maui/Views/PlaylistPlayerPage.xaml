@@ -106,7 +106,7 @@
 
                     <!-- Genre (tappable → genre playlist) · Stream Count · Duration -->
                     <HorizontalStackLayout HorizontalOptions="Center"
-                                           Spacing="6">
+                                           Spacing="{StaticResource SpaceTight}">
                         <Border Padding="8,4"
                                 StrokeShape="RoundRectangle 12"
                                 StrokeThickness="1"
@@ -170,7 +170,7 @@
                                            Spacing="{StaticResource Space4}">
 
                         <!-- Like Button -->
-                        <VerticalStackLayout VerticalOptions="Center" Spacing="2">
+                        <VerticalStackLayout VerticalOptions="Center" Spacing="{StaticResource SpaceHair}">
                             <Grid HeightRequest="40" WidthRequest="40" HorizontalOptions="Center">
                                 <Grid.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding LikeSongCommand}" />
@@ -188,7 +188,7 @@
                         </VerticalStackLayout>
 
                         <!-- Dislike Button -->
-                        <VerticalStackLayout VerticalOptions="Center" Spacing="2">
+                        <VerticalStackLayout VerticalOptions="Center" Spacing="{StaticResource SpaceHair}">
                             <Grid HeightRequest="40" WidthRequest="40" HorizontalOptions="Center">
                                 <Grid.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding DislikeSongCommand}" />
@@ -327,7 +327,7 @@
                                     <!-- Song Info -->
                                     <VerticalStackLayout Grid.Column="2"
                                                          VerticalOptions="Center"
-                                                         Spacing="2">
+                                                         Spacing="{StaticResource SpaceHair}">
                                         <Label Text="{Binding SongTitle}"
                                                FontSize="{StaticResource FontSizeCardTitle}"
                                                FontAttributes="Bold"
