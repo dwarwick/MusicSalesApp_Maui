@@ -140,6 +140,27 @@ public partial class SongCardView : ContentView
     /// <summary>Injected by tests.</summary>
     public ILyricsService? LyricsServiceOverride { get; set; }
 
+    /// <summary>
+    /// Cards are recycled by the list, so a card can be handed a different song at any moment.
+    /// </summary>
+    /// <remarks>
+    /// Without this the panel, the toggle and the loaded-song guard would all carry over to
+    /// whatever song scrolled into this slot next - showing one song's lyrics against another's
+    /// title, which is worse than showing none.
+    /// </remarks>
+    protected override void OnBindingContextChanged()
+    {
+        base.OnBindingContextChanged();
+
+        _lyricsLoad?.Cancel();
+        _lyricsLoadedForSongId = -1;
+        LyricsPanel.Document = null;
+        LyricsToggle.IsVisible = false;
+        ShowArt();
+
+        SyncToPlayingSong();
+    }
+
     private void OnLoaded(object? sender, EventArgs e)
     {
         var services = IPlatformApplication.Current?.Services;
@@ -212,8 +233,17 @@ public partial class SongCardView : ContentView
         try
         {
             var document = await _lyricsService.GetTimingsAsync(song, token);
-            if (token.IsCancellationRequested || document is null)
+            if (token.IsCancellationRequested)
             {
+                return;
+            }
+
+            if (document is null)
+            {
+                // No lyrics for this one. Close anything the previous song left open rather than
+                // leaving an empty panel over hidden artwork.
+                ShowArt();
+                LyricsToggle.IsVisible = false;
                 return;
             }
 

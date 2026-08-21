@@ -65,8 +65,14 @@ public partial class SongPlayerPage : ContentPage
         try
         {
             var document = await _lyricsService.GetTimingsAsync(_viewModel.Song, token);
-            if (token.IsCancellationRequested || document is null)
+            if (token.IsCancellationRequested)
             {
+                return;
+            }
+
+            if (document is null)
+            {
+                ShowArt();
                 return;
             }
 
@@ -81,22 +87,30 @@ public partial class SongPlayerPage : ContentPage
 
     private void OnLyricsToggleTapped(object? sender, TappedEventArgs e)
     {
-        _showingLyrics = !_showingLyrics;
+        if (_showingLyrics)
+        {
+            ShowArt();
+            return;
+        }
 
-        HeroArt.IsVisible = !_showingLyrics;
-        LyricsPanelHost.IsVisible = _showingLyrics;
-        LyricsToggleLabel.Text = _showingLyrics ? "Art" : "Lyrics";
+        _showingLyrics = true;
+        HeroArt.IsVisible = false;
+        LyricsPanelHost.IsVisible = true;
+        LyricsToggleLabel.Text = "Art";
 
         // The panel only follows playback while it is on screen - a hidden one must not be
         // waking the main thread ten times a second.
-        if (_showingLyrics)
-        {
-            LyricsPanel.Activate();
-        }
-        else
-        {
-            LyricsPanel.Deactivate();
-        }
+        LyricsPanel.Activate();
+    }
+
+    /// <summary>Put the artwork back and stop the panel.</summary>
+    private void ShowArt()
+    {
+        _showingLyrics = false;
+        HeroArt.IsVisible = true;
+        LyricsPanelHost.IsVisible = false;
+        LyricsToggleLabel.Text = "Lyrics";
+        LyricsPanel.Deactivate();
     }
 
     protected override async void OnAppearing()

@@ -46,12 +46,17 @@ public partial class PlaylistPlayerPage : ContentPage
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
     }
 
-    private async void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(PlaylistPlayerViewModel.CurrentSong))
+        if (e.PropertyName != nameof(PlaylistPlayerViewModel.CurrentSong))
         {
-            await LoadLyricsAsync();
+            return;
         }
+
+        // Marshalled rather than awaited here: the track can advance from a playback callback on
+        // a thread-pool thread, and everything this ends up touching - the toggle, the panel, the
+        // artwork - is a live visual element.
+        MainThread.BeginInvokeOnMainThread(async () => await LoadLyricsAsync());
     }
 
     /// <summary>
@@ -82,8 +87,16 @@ public partial class PlaylistPlayerPage : ContentPage
         try
         {
             var document = await _lyricsService.GetTimingsAsync(song, token);
-            if (token.IsCancellationRequested || document is null)
+            if (token.IsCancellationRequested)
             {
+                return;
+            }
+
+            if (document is null)
+            {
+                // This track has no lyrics. If the panel was open on the previous one it has to
+                // close, or it sits there empty over hidden artwork with nothing coming.
+                ShowArt();
                 return;
             }
 
@@ -98,20 +111,34 @@ public partial class PlaylistPlayerPage : ContentPage
 
     private void OnLyricsToggleTapped(object? sender, TappedEventArgs e)
     {
-        _showingLyrics = !_showingLyrics;
-
-        HeroArt.IsVisible = !_showingLyrics;
-        LyricsPanelHost.IsVisible = _showingLyrics;
-        LyricsToggleLabel.Text = _showingLyrics ? "Art" : "Lyrics";
-
         if (_showingLyrics)
         {
-            LyricsPanel.Activate();
+            ShowArt();
+            return;
         }
-        else
-        {
-            LyricsPanel.Deactivate();
-        }
+
+        _showingLyrics = true;
+        HeroArt.IsVisible = false;
+        LyricsPanelHost.IsVisible = true;
+        LyricsToggleLabel.Text = "Art";
+        LyricsPanel.Activate();
+    }
+
+    /// <summary>
+    /// Put the artwork back and stop the panel.
+    /// </summary>
+    /// <remarks>
+    /// Called on the toggle AND whenever a track turns out to have no lyrics. The second is the
+    /// one that matters: advancing from a song with lyrics to one without used to leave the panel
+    /// open and empty over hidden artwork.
+    /// </remarks>
+    private void ShowArt()
+    {
+        _showingLyrics = false;
+        HeroArt.IsVisible = true;
+        LyricsPanelHost.IsVisible = false;
+        LyricsToggleLabel.Text = "Lyrics";
+        LyricsPanel.Deactivate();
     }
 
     protected override async void OnAppearing()
