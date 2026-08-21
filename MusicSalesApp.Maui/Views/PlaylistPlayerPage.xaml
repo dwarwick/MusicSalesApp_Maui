@@ -93,16 +93,12 @@
                                                       CommandParameter="{Binding CurrentSong.ArtistName}" />
                             </Label.GestureRecognizers>
                         </Label>
-                        <ImageButton Source="artist_bio_icon.png"
-                                 HeightRequest="28"
-                                 WidthRequest="28"
-                                 Padding="4"
-                                 VerticalOptions="Center"
-                                 BackgroundColor="Transparent"
-                                 Command="{Binding ViewBioCommand}"
-                                 IsVisible="{Binding CurrentSong.ArtistName, Converter={toolkit:IsStringNotNullOrEmptyConverter}}"
-                                 SemanticProperties.Description="View artist bio" />
                     </HorizontalStackLayout>
+
+                    <views:PersonaSectionView PersonaName="{Binding CurrentSong.ArtistName}"
+                                              Bio="{Binding CurrentSong.PersonaBio}"
+                                              ImageSource="{Binding CurrentSong.PersonaImageHeroDisplaySource}"
+                                              NavigateCommand="{Binding NavigateToArtistCommand}" />
 
                     <!-- Genre (tappable → genre playlist) · Stream Count · Duration -->
                     <HorizontalStackLayout HorizontalOptions="Center"

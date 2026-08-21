@@ -1,4 +1,4 @@
-using Moq;
+﻿using Moq;
 using MusicSalesApp.Maui.Services;
 using MusicSalesApp.Maui.ViewModels;
 
@@ -623,33 +623,6 @@ public class PlaylistPlayerViewModelTests
 
         _mockNavigationService.Verify(n =>
             n.GoToReplacingCurrentAsync(It.IsAny<string>(), It.IsAny<IDictionary<string, object>>()),
-            Times.Never);
-    }
-
-    [Test]
-    public async Task ViewBio_NavigatesToPersonaPage()
-    {
-        _viewModel.CurrentSong = new SongDto
-        {
-            Id = 1, SongTitle = "Test", ArtistName = "Band A",
-            PersonaImageUrl = "http://img.png", PersonaBio = "A cool band"
-        };
-
-        await _viewModel.ViewBioCommand.ExecuteAsync(null);
-
-        _mockNavigationService.Verify(n =>
-            n.GoToAsync("persona", It.Is<Dictionary<string, object>>(d =>
-                (string)d["PersonaName"] == "Band A")),
-            Times.Once);
-    }
-
-    [Test]
-    public async Task ViewBio_NullCurrentSong_DoesNothing()
-    {
-        await _viewModel.ViewBioCommand.ExecuteAsync(null);
-
-        _mockNavigationService.Verify(n =>
-            n.GoToAsync(It.IsAny<string>(), It.IsAny<Dictionary<string, object>>()),
             Times.Never);
     }
 

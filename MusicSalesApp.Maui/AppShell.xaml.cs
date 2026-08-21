@@ -37,7 +37,6 @@ public partial class AppShell : Shell
 		Routing.RegisterRoute(NavigationRoutes.ForgotPassword, typeof(ForgotPasswordPage));
 		Routing.RegisterRoute(NavigationRoutes.ResetPassword, typeof(ResetPasswordPage));
 		Routing.RegisterRoute(NavigationRoutes.SongPlayer, typeof(SongPlayerPage));
-		Routing.RegisterRoute(NavigationRoutes.Persona, typeof(PersonaPage));
 		Routing.RegisterRoute(NavigationRoutes.PlaylistPlayer, typeof(PlaylistPlayerPage));
 		Routing.RegisterRoute(NavigationRoutes.AccountSettings, typeof(AccountSettingsPage));
 		Routing.RegisterRoute(NavigationRoutes.Config, typeof(ConfigPage));

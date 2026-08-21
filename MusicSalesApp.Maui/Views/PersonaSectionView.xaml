@@ -1,0 +1,62 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<!--
+    The artist block, shown inline on both players.
+
+    Mirrors the web app's .playlist-persona-section, which is what its /artist/{name} page
+    renders: the image on the left at a ROUNDED SQUARE rather than a circle (border-radius:12%
+    there), the name and bio stacked beside it, and the whole thing top-aligned so a long bio
+    grows downward instead of pushing the image off-centre.
+
+    It replaces a button that opened a separate bio page. The web app has no such page - the
+    bio is simply part of the artist view - so a tap that led somewhere else was the mobile app
+    inventing a screen the design does not have.
+-->
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             x:Class="MusicSalesApp.Maui.Views.PersonaSectionView"
+             x:Name="Root">
+
+    <Grid ColumnDefinitions="Auto,*"
+          ColumnSpacing="{StaticResource Space3}"
+          Padding="{StaticResource Space4}, {StaticResource Space2}"
+          IsVisible="{Binding HasContent, Source={x:Reference Root}}">
+
+        <!-- 12% of 60 is 7.2; RadiusSm is 8, which is the scale's nearest rung and within a
+             pixel of the web. -->
+        <Border Grid.Column="0"
+                StrokeShape="RoundRectangle 8"
+                StrokeThickness="0"
+                HeightRequest="60"
+                WidthRequest="60"
+                VerticalOptions="Start"
+                IsVisible="{Binding ImageSource, Source={x:Reference Root}, Converter={toolkit:IsNotNullConverter}}">
+            <Image Source="{Binding ImageSource, Source={x:Reference Root}}"
+                   Aspect="AspectFill"
+                   HeightRequest="60"
+                   WidthRequest="60" />
+        </Border>
+
+        <VerticalStackLayout Grid.Column="1"
+                             Spacing="{StaticResource Space1}"
+                             VerticalOptions="Start">
+
+            <Label Text="{Binding PersonaName, Source={x:Reference Root}}"
+                   FontSize="{StaticResource FontSizeCardTitle}"
+                   FontAttributes="Bold"
+                   TextColor="{AppThemeBinding Light={StaticResource AccentLight}, Dark={StaticResource AccentDark}}"
+                   TextDecorations="Underline">
+                <Label.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding NavigateCommand, Source={x:Reference Root}}"
+                                          CommandParameter="{Binding PersonaName, Source={x:Reference Root}}" />
+                </Label.GestureRecognizers>
+            </Label>
+
+            <Label Style="{StaticResource SecondaryText}"
+                   Text="{Binding Bio, Source={x:Reference Root}}"
+                   LineBreakMode="WordWrap"
+                   IsVisible="{Binding Bio, Source={x:Reference Root}, Converter={toolkit:IsStringNotNullOrEmptyConverter}}" />
+
+        </VerticalStackLayout>
+    </Grid>
+</ContentView>

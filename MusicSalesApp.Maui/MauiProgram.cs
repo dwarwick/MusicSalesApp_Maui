@@ -331,8 +331,6 @@ public static class MauiProgram
 		builder.Services.AddTransient<ResetPasswordPage>();
 		builder.Services.AddTransient<SongPlayerViewModel>();
 		builder.Services.AddTransient<SongPlayerPage>();
-		builder.Services.AddTransient<PersonaViewModel>();
-		builder.Services.AddTransient<PersonaPage>();
 		builder.Services.AddTransient<AccountSettingsViewModel>();
 		builder.Services.AddTransient<AccountSettingsPage>();
 		builder.Services.AddTransient<ConfigViewModel>();

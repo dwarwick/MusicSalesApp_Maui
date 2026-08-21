@@ -1,4 +1,4 @@
-namespace MusicSalesApp.Maui.Services;
+﻿namespace MusicSalesApp.Maui.Services;
 
 public static class NavigationRoutes
 {
@@ -13,7 +13,6 @@ public static class NavigationRoutes
     public const string ForgotPassword = "forgot-password";
     public const string ResetPassword = "reset-password";
     public const string SongPlayer = "song-player";
-    public const string Persona = "persona";
     public const string PlaylistPlayer = "playlist-player";
     public const string AccountSettings = "account-settings";
     public const string Config = "config";

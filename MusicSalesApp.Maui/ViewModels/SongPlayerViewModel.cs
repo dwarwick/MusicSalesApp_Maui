@@ -1,4 +1,4 @@
-using CommunityToolkit.Mvvm.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MusicSalesApp.Maui.Services;
 
@@ -399,21 +399,9 @@ public partial class SongPlayerViewModel : ObservableObject
         }
     }
 
-    [RelayCommand]
-    private async Task ViewBioAsync()
-    {
-        if (Song == null || string.IsNullOrEmpty(Song.ArtistName)) return;
-
-        await _navigationService.GoToAsync("persona", new Dictionary<string, object>
-        {
-            ["PersonaName"] = Song.ArtistName,
-            // Prefer the cached copy so the persona page renders offline too, and the larger
-            // rendition because the page shows the image at 120 DIP - 360 px on a 3x screen, which
-            // the 320 px thumb would visibly soften.
-            ["PersonaImageUrl"] = Song.PersonaImageHeroDisplaySource ?? string.Empty,
-            ["PersonaBio"] = Song.PersonaBio ?? string.Empty
-        });
-    }
+    // ViewBioAsync used to push a dedicated persona page. The bio is now rendered inline by
+    // PersonaSectionView, which is where the web app puts it - it has no separate artist bio
+    // page, so the hop existed only on mobile.
 
     [RelayCommand]
     private async Task NavigateToGenreAsync(string? genre)
