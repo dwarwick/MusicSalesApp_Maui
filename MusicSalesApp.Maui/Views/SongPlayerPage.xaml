@@ -8,7 +8,7 @@
              x:DataType="vm:SongPlayerViewModel"
              Title="Now Playing"
              SafeAreaEdges="Container"
-             BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
+             BackgroundColor="{StaticResource PlayerBg}">
 
     <Grid RowDefinitions="*,Auto">
         <!-- Scrollable song details -->
@@ -19,51 +19,65 @@
                 <VerticalStackLayout Spacing="{StaticResource Space4}"
                                      Padding="20,24,20,16">
 
-                <!-- Large Album Art, with the lyrics panel occupying the same square. The two
-                     swap rather than overlaying, so the block keeps its size and nothing below
-                     it shifts when the toggle is pressed. -->
-                <Grid HorizontalOptions="Center"
-                      HeightRequest="{StaticResource PlayerHeroArtSize}"
-                      WidthRequest="{StaticResource PlayerHeroArtSize}">
-                    <Border x:Name="HeroArt"
-                            HorizontalOptions="Center"
-                            StrokeShape="RoundRectangle 12"
-                            StrokeThickness="0">
-                        <views:SongArtworkView AlbumArtUrl="{Binding Song.AlbumArtHeroDisplaySource}"
-                                               HeightRequest="{StaticResource PlayerHeroArtSize}"
-                                               WidthRequest="{StaticResource PlayerHeroArtSize}" />
-                    </Border>
+                <!-- THE STAGE PANEL. Mirrors the web's .playlist-stage-panel: a bordered section
+                     whose header carries an uppercase caption naming what is on show, and - only
+                     when the song HAS lyrics a listener may see - a segmented switch between them.
 
-                    <Border x:Name="LyricsPanelHost"
-                            IsVisible="False"
-                            StrokeShape="RoundRectangle 12"
-                            StrokeThickness="0"
-                            BackgroundColor="{AppThemeBinding Light={StaticResource SurfaceLight}, Dark={StaticResource SurfaceDark}}">
-                        <views:LyricsView x:Name="LyricsPanel"
-                                          TextSize="{StaticResource FontSizeLyricsPlayer}" />
-                    </Border>
+                     The art and the lyrics swap rather than overlaying, so the panel keeps its
+                     height and nothing below it shifts when the switch is pressed. -->
+                <Border Style="{StaticResource PlayerPanel}"
+                        Padding="{StaticResource Space3}">
+                    <VerticalStackLayout Spacing="{StaticResource Space3}">
 
-                    <!-- Sits in the corner of the square, as the web toggle does. Hidden entirely
-                         when the song has no lyrics a listener may see. -->
-                    <Border x:Name="LyricsToggle"
-                            IsVisible="False"
-                            HorizontalOptions="End"
-                            VerticalOptions="End"
-                            Margin="{StaticResource Space1}"
-                            Padding="10,4"
-                            StrokeThickness="0"
-                            StrokeShape="RoundRectangle 999"
-                            BackgroundColor="{AppThemeBinding Light={StaticResource AccentFillLight}, Dark={StaticResource AccentFillDark}}">
-                        <Label x:Name="LyricsToggleLabel"
-                               Text="Lyrics"
-                               FontSize="{StaticResource FontSizeMicro}"
-                               FontAttributes="Bold"
-                               TextColor="{AppThemeBinding Light={StaticResource OnAccentLight}, Dark={StaticResource OnAccentDark}}" />
-                        <Border.GestureRecognizers>
-                            <TapGestureRecognizer Tapped="OnLyricsToggleTapped" />
-                        </Border.GestureRecognizers>
-                    </Border>
-                </Grid>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label x:Name="StageCaption"
+                                   Grid.Column="0"
+                                   Style="{StaticResource PlayerPanelCaption}"
+                                   Text="COVER ART" />
+
+                            <!-- The switch, not a corner bubble on the artwork. Hidden entirely
+                                 when there is nothing to switch to, which leaves an ordinary
+                                 captioned panel rather than a header with a gap in it. -->
+                            <Border x:Name="StageSwitch"
+                                    Grid.Column="1"
+                                    IsVisible="False"
+                                    Padding="0"
+                                    StrokeThickness="{StaticResource StrokeThin}"
+                                    Stroke="{StaticResource PlayerLine}"
+                                    StrokeShape="RoundRectangle 999"
+                                    BackgroundColor="Transparent">
+                                <HorizontalStackLayout>
+                                    <Button x:Name="LyricsSegment"
+                                            Text="Lyrics"
+                                            Style="{StaticResource PlayerSwitchSegment}"
+                                            Clicked="OnShowLyricsClicked" />
+                                    <Button x:Name="ArtSegment"
+                                            Text="Art"
+                                            Style="{StaticResource PlayerSwitchSegmentActive}"
+                                            Clicked="OnShowArtClicked" />
+                                </HorizontalStackLayout>
+                            </Border>
+                        </Grid>
+
+                        <Grid HorizontalOptions="Center"
+                              HeightRequest="{StaticResource PlayerHeroArtSize}"
+                              WidthRequest="{StaticResource PlayerHeroArtSize}">
+                            <Border x:Name="HeroArt"
+                                    HorizontalOptions="Center"
+                                    StrokeShape="RoundRectangle 12"
+                                    StrokeThickness="0">
+                                <views:SongArtworkView AlbumArtUrl="{Binding Song.AlbumArtHeroDisplaySource}"
+                                                       HeightRequest="{StaticResource PlayerHeroArtSize}"
+                                                       WidthRequest="{StaticResource PlayerHeroArtSize}" />
+                            </Border>
+
+                            <views:LyricsView x:Name="LyricsPanel"
+                                              IsVisible="False"
+                                              OnDarkSurface="True"
+                                              TextSize="{StaticResource FontSizeLyricsPlayer}" />
+                        </Grid>
+                    </VerticalStackLayout>
+                </Border>
 
                 <views:AiContentBadgesView IsAiMusic="{Binding Song.IsAiGenerated}"
                                             IsAiVocals="{Binding Song.IsAiVocals}"
@@ -75,7 +89,7 @@
                 <Label Text="{Binding Song.SongTitle}"
                        FontSize="{StaticResource FontSizeH2}"
                        FontAttributes="Bold"
-                       TextColor="{AppThemeBinding Light=Black, Dark=White}"
+                       TextColor="{StaticResource PlayerText}"
                        HorizontalTextAlignment="Center"
                        LineBreakMode="WordWrap"
                        MaxLines="2" />
@@ -96,7 +110,7 @@
                     </Border>
                     <Label Text="{Binding Song.ArtistName}"
                            FontSize="{StaticResource FontSizeBodyLarge}"
-                           TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
+                           TextColor="{StaticResource PlayerText2}"
                            VerticalOptions="Center"
                            TextDecorations="Underline">
                         <Label.GestureRecognizers>
@@ -106,11 +120,23 @@
                     </Label>
                 </HorizontalStackLayout>
 
-                <views:PersonaSectionView PersonaName="{Binding Song.ArtistName}"
-                                          Bio="{Binding Song.PersonaBio}"
-                                      WebsiteUrl="{Binding Song.PersonaWebsiteUrl}"
-                                          ImageSource="{Binding Song.PersonaImageHeroDisplaySource}"
-                                          NavigateCommand="{Binding NavigateToArtistCommand}" />
+                <!-- THE ARTIST PANEL - the web's .playlist-artist-panel. Collapses with its
+                     caption when the song has no artist to show, rather than leaving a captioned
+                     empty box. -->
+                <Border Style="{StaticResource PlayerPanel}"
+                        Padding="{StaticResource Space3}"
+                        IsVisible="{Binding Source={x:Reference ArtistSection}, Path=HasContent}">
+                    <VerticalStackLayout Spacing="{StaticResource Space3}">
+                        <Label Style="{StaticResource PlayerPanelCaption}"
+                               Text="THE ARTIST" />
+                        <views:PersonaSectionView x:Name="ArtistSection"
+                                                  PersonaName="{Binding Song.ArtistName}"
+                                                  Bio="{Binding Song.PersonaBio}"
+                                                  WebsiteUrl="{Binding Song.PersonaWebsiteUrl}"
+                                                  ImageSource="{Binding Song.PersonaImageHeroDisplaySource}"
+                                                  NavigateCommand="{Binding NavigateToArtistCommand}" />
+                    </VerticalStackLayout>
+                </Border>
 
                 <!-- Genre · Stream Count · Duration -->
                 <HorizontalStackLayout HorizontalOptions="Center"
@@ -118,12 +144,12 @@
                     <Border Padding="8,4"
                             StrokeShape="RoundRectangle 12"
                             StrokeThickness="1"
-                            Stroke="{AppThemeBinding Light={StaticResource Gray300}, Dark={StaticResource Gray600}}"
+                            Stroke="{StaticResource PlayerLine}"
                             BackgroundColor="Transparent"
                             IsVisible="{Binding Song.Genre, Converter={toolkit:IsStringNotNullOrEmptyConverter}}">
                         <Label Text="{Binding Song.Genre}"
                                FontSize="{StaticResource FontSizeCardMeta}"
-                               TextColor="{StaticResource Primary}"
+                               TextColor="{StaticResource StBlueBright}"
                                TextDecorations="Underline">
                             <Label.GestureRecognizers>
                                 <TapGestureRecognizer Command="{Binding NavigateToGenreCommand}"
@@ -133,7 +159,7 @@
                     </Border>
                     <Label Text="·"
                            FontSize="{StaticResource FontSizeCardTitle}"
-                           TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}"
+                           TextColor="{StaticResource PlayerText3}"
                            VerticalOptions="Center"
                            IsVisible="{Binding Song.Genre, Converter={toolkit:IsStringNotNullOrEmptyConverter}}" />
                           <views:EqualizerPlayButton SongId="{Binding Song.Id}"
@@ -141,7 +167,7 @@
                                          ButtonSize="40"
                                          VerticalOptions="Center" />
                     <Label FontSize="{StaticResource FontSizeSmall}"
-                           TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}"
+                           TextColor="{StaticResource PlayerText3}"
                            VerticalOptions="Center">
                         <Label.Text>
                             <Binding Path="Song.StreamCount"
@@ -150,10 +176,10 @@
                     </Label>
                     <Label Text="·"
                            FontSize="{StaticResource FontSizeCardTitle}"
-                           TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}"
+                           TextColor="{StaticResource PlayerText3}"
                            VerticalOptions="Center" />
                     <Label FontSize="{StaticResource FontSizeSmall}"
-                           TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}"
+                           TextColor="{StaticResource PlayerText3}"
                            VerticalOptions="Center"
                            Text="{Binding Song.TrackLengthSeconds, Converter={StaticResource DurationConverter}}" />
                 </HorizontalStackLayout>
@@ -192,7 +218,7 @@
                         </Grid>
                         <Label Text="{Binding Song.LikeCount}"
                                FontSize="{StaticResource FontSizeMicro}"
-                               TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource LikeButtonDarkText}}"
+                               TextColor="{StaticResource PlayerText3}"
                                HorizontalTextAlignment="Center" />
                     </VerticalStackLayout>
 
@@ -212,7 +238,7 @@
                         </Grid>
                         <Label Text="{Binding Song.DislikeCount}"
                                FontSize="{StaticResource FontSizeMicro}"
-                               TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource LikeButtonDarkText}}"
+                               TextColor="{StaticResource PlayerText3}"
                                HorizontalTextAlignment="Center" />
                     </VerticalStackLayout>
 
@@ -247,14 +273,14 @@
                                 <TapGestureRecognizer Command="{Binding ReportSongCommand}" />
                             </Grid.GestureRecognizers>
                             <Path Data="M3 3v18h2V3H3zm4 0v12h8l-2-6 2-6H7z"
-                                  Fill="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource LikeButtonDarkText}}"
+                                  Fill="{StaticResource PlayerText3}"
                                   Aspect="Uniform"
                                   HeightRequest="20" WidthRequest="20"
                                   HorizontalOptions="Center" VerticalOptions="Center" />
                         </Grid>
                         <Label Text="Report"
                                FontSize="{StaticResource FontSizeNano}"
-                               TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource LikeButtonDarkText}}"
+                               TextColor="{StaticResource PlayerText3}"
                                HorizontalTextAlignment="Center" />
                     </VerticalStackLayout>
                 </HorizontalStackLayout>

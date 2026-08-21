@@ -49,6 +49,20 @@ public partial class LyricsView : ContentView
             nameof(Document), typeof(LyricsTimingsDocument), typeof(LyricsView), null,
             propertyChanged: OnDocumentChanged);
 
+    /// <summary>
+    /// Whether this instance sits on the player surface rather than on a themed page.
+    /// </summary>
+    /// <remarks>
+    /// The players are dark whatever the OS theme is, so their lyrics take the flat Player
+    /// colours; a song card is page content and follows the theme. Same control, two homes with
+    /// genuinely different backgrounds - which is why this is a property rather than one palette
+    /// hardcoded for whichever surface was written first.
+    /// </remarks>
+    public static readonly BindableProperty OnDarkSurfaceProperty =
+        BindableProperty.Create(
+            nameof(OnDarkSurface), typeof(bool), typeof(LyricsView), false,
+            propertyChanged: OnDocumentChanged);
+
     public static readonly BindableProperty TextSizeProperty =
         BindableProperty.Create(
             nameof(TextSize), typeof(double), typeof(LyricsView), 15d,
@@ -81,6 +95,13 @@ public partial class LyricsView : ContentView
     {
         get => (LyricsTimingsDocument?)GetValue(DocumentProperty);
         set => SetValue(DocumentProperty, value);
+    }
+
+    /// <summary>See <see cref="OnDarkSurfaceProperty"/>.</summary>
+    public bool OnDarkSurface
+    {
+        get => (bool)GetValue(OnDarkSurfaceProperty);
+        set => SetValue(OnDarkSurfaceProperty, value);
     }
 
     /// <summary>Line size in device-independent units. Set from a token, not a literal.</summary>
@@ -259,10 +280,18 @@ public partial class LyricsView : ContentView
             label.Text = line.Text;
             label.FontAttributes = FontAttributes.Italic;
             label.Opacity = 0.55;
-            label.SetAppThemeColor(
-                Label.TextColorProperty,
-                AppColors.Get("Text3Light", "#5E6F85"),
-                AppColors.Get("Text3Dark", "#8BA3C7"));
+            if (OnDarkSurface)
+            {
+                label.TextColor = AppColors.Get("PlayerText3", "#8BA3C7");
+            }
+            else
+            {
+                label.SetAppThemeColor(
+                    Label.TextColorProperty,
+                    AppColors.Get("Text3Light", "#5E6F85"),
+                    AppColors.Get("Text3Dark", "#8BA3C7"));
+            }
+
             return label;
         }
 
@@ -310,8 +339,36 @@ public partial class LyricsView : ContentView
     /// has highlighted yet still follows a theme change. Highlighting overrides that binding and
     /// un-highlighting restores it.
     /// </remarks>
-    private static Span MakeSpan(string? text) =>
-        new Span { Text = text ?? string.Empty }.WithRestingColour();
+    private Span MakeSpan(string? text) => ApplyRestingColour(new Span { Text = text ?? string.Empty });
+
+    /// <summary>
+    /// A word at rest.
+    /// </summary>
+    /// <remarks>
+    /// On a themed page the resting colour is an app-theme binding, so a word nobody has
+    /// highlighted yet still follows a theme change. On the player surface there is nothing to
+    /// follow - it is dark either way - so a flat colour is set instead.
+    /// </remarks>
+    private Span ApplyRestingColour(Span span)
+    {
+        if (OnDarkSurface)
+        {
+            span.TextColor = AppColors.Get("PlayerText3", "#8BA3C7");
+            return span;
+        }
+
+        span.SetAppThemeColor(
+            Span.TextColorProperty,
+            AppColors.Get("Text2Light", "#4A5B70"),
+            AppColors.Get("Text2Dark", "#A8B6C8"));
+
+        return span;
+    }
+
+    /// <summary>The colour of the word being sung.</summary>
+    private Color ActiveColour => OnDarkSurface
+        ? AppColors.BlueBright
+        : AppColors.Accent;
 
     private void OnPlaybackStateChanged(string propertyName)
     {
@@ -378,7 +435,11 @@ public partial class LyricsView : ContentView
     {
         if (_activeIndex >= 0 && _activeIndex < _spanForEntry.Length)
         {
-            _spanForEntry[_activeIndex]?.WithRestingColour();
+            var previous = _spanForEntry[_activeIndex];
+            if (previous is not null)
+            {
+                ApplyRestingColour(previous);
+            }
         }
 
         _activeIndex = index;
@@ -393,7 +454,7 @@ public partial class LyricsView : ContentView
         if (span is not null)
         {
             // A direct set, which replaces the resting theme binding until it is restored.
-            span.TextColor = AppColors.Accent;
+            span.TextColor = ActiveColour;
         }
 
         var line = _timeline.LineOf(index);
@@ -453,19 +514,5 @@ public partial class LyricsView : ContentView
         {
             _lastManualScrollUtc = DateTime.UtcNow;
         }
-    }
-}
-
-/// <summary>Extension used so the resting colour is defined in exactly one place.</summary>
-internal static class LyricsSpanExtensions
-{
-    public static Span WithRestingColour(this Span span)
-    {
-        span.SetAppThemeColor(
-            Span.TextColorProperty,
-            AppColors.Get("Text2Light", "#4A5B70"),
-            AppColors.Get("Text2Dark", "#A8B6C8"));
-
-        return span;
     }
 }

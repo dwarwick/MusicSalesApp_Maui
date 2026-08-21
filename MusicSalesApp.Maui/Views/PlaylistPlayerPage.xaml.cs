@@ -81,7 +81,7 @@ public partial class PlaylistPlayerPage : ContentPage
         _lyricsLoad = new CancellationTokenSource();
         var token = _lyricsLoad.Token;
 
-        LyricsToggle.IsVisible = false;
+        StageSwitch.IsVisible = false;
         LyricsPanel.Document = null;
 
         try
@@ -101,7 +101,7 @@ public partial class PlaylistPlayerPage : ContentPage
             }
 
             LyricsPanel.Document = document;
-            LyricsToggle.IsVisible = true;
+            StageSwitch.IsVisible = true;
         }
         catch (OperationCanceledException)
         {
@@ -109,18 +109,18 @@ public partial class PlaylistPlayerPage : ContentPage
         }
     }
 
-    private void OnLyricsToggleTapped(object? sender, TappedEventArgs e)
-    {
-        if (_showingLyrics)
-        {
-            ShowArt();
-            return;
-        }
+    private void OnShowLyricsClicked(object? sender, EventArgs e) => ShowLyrics();
 
+    private void OnShowArtClicked(object? sender, EventArgs e) => ShowArt();
+
+    /// <summary>Bring the lyrics up in the stage panel and start following playback.</summary>
+    private void ShowLyrics()
+    {
         _showingLyrics = true;
         HeroArt.IsVisible = false;
-        LyricsPanelHost.IsVisible = true;
-        LyricsToggleLabel.Text = "Art";
+        LyricsPanel.IsVisible = true;
+        StageCaption.Text = "LYRICS";
+        ApplySegmentState();
         LyricsPanel.Activate();
     }
 
@@ -128,7 +128,7 @@ public partial class PlaylistPlayerPage : ContentPage
     /// Put the artwork back and stop the panel.
     /// </summary>
     /// <remarks>
-    /// Called on the toggle AND whenever a track turns out to have no lyrics. The second is the
+    /// Called from the switch AND whenever a track turns out to have no lyrics. The second is the
     /// one that matters: advancing from a song with lyrics to one without used to leave the panel
     /// open and empty over hidden artwork.
     /// </remarks>
@@ -136,9 +136,33 @@ public partial class PlaylistPlayerPage : ContentPage
     {
         _showingLyrics = false;
         HeroArt.IsVisible = true;
-        LyricsPanelHost.IsVisible = false;
-        LyricsToggleLabel.Text = "Lyrics";
+        LyricsPanel.IsVisible = false;
+        StageCaption.Text = "COVER ART";
+        ApplySegmentState();
         LyricsPanel.Deactivate();
+    }
+
+    /// <summary>
+    /// Move the bright fill onto whichever segment is showing.
+    /// </summary>
+    /// <remarks>
+    /// Restyled rather than merely recoloured, because the active state is a background AND a
+    /// foreground - setting one without the other is how a segment ends up bright-on-bright.
+    /// Looked up off <see cref="Application.Resources"/> rather than the page's own, which does
+    /// not contain these: they come from Styles.xaml, merged in at the application level.
+    /// </remarks>
+    private void ApplySegmentState()
+    {
+        LyricsSegment.Style = SegmentStyle(_showingLyrics);
+        ArtSegment.Style = SegmentStyle(!_showingLyrics);
+    }
+
+    private static Style? SegmentStyle(bool active)
+    {
+        var key = active ? "PlayerSwitchSegmentActive" : "PlayerSwitchSegment";
+        return Application.Current?.Resources.TryGetValue(key, out var style) == true
+            ? style as Style
+            : null;
     }
 
     protected override async void OnAppearing()

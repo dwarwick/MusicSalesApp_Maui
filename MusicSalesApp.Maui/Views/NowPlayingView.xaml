@@ -6,10 +6,21 @@
 
     <Grid x:Name="DrawerRoot"
                     MinimumHeightRequest="{StaticResource ControlHeight}">
+        <!-- ROUNDED ENDS, matching the web's .player-bar: a pill with a hairline edge, floated off
+             the screen sides by its margin so the ends actually read as ends rather than being
+             clipped flat against the display.
+
+             The radius is a fixed 28 rather than the pill token. This bar is a DRAWER - it grows
+             when expanded - and a pill radius resolves against half the height, so an expanded bar
+             would round into a stadium. 28 is a true pill at the collapsed height and stays a
+             sensible large round once open. -->
         <Border x:Name="PlayerBorder"
                 Padding="0"
+                Margin="{StaticResource Space2}, 0, {StaticResource Space2}, {StaticResource Space2}"
+                StrokeShape="RoundRectangle 28"
                 BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource PlayerBarDark}}"
-                StrokeThickness="0">
+                Stroke="{StaticResource PlayerLineStrong}"
+                StrokeThickness="{StaticResource StrokeThin}">
             <VerticalStackLayout Spacing="0">
                 <VerticalStackLayout x:Name="ExpandedContent"
                                                                          Spacing="0">
