@@ -209,7 +209,7 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
                 _queue.SetItems(items);
                 SetPlayerQueueItems(items, safeCurrentIndex, safePositionMs);
                 _player.Prepare();
-                EnsurePlayerOnRequestedItem(safeCurrentIndex, safePositionMs);
+                EnsurePlayerOnRequestedItem(items, safeCurrentIndex, safePositionMs);
 
                 if (playWhenReady)
                 {
@@ -829,63 +829,92 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
     }
 
     /// <summary>
-    /// Make certain the player is on the item the queue rebuild asked for, and say so loudly if it
-    /// will not go.
+    /// Make certain the player is on the SONG the queue rebuild asked for.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// This is not defensive padding - the correction fires in production. Handing
-    /// <c>SetMediaItems(items, startIndex, positionMs)</c> a non-zero start index has been observed
-    /// to leave the player on index 0, and the only situation that produces a non-zero index here
-    /// is a queue swap where the ALREADY PLAYING song sits at a different position in the new list:
-    /// leaving the home page's featured queue, where a song is first, for the artist queue, where it
-    /// is second.
+    /// By media id, never by index. The bug this replaces was the correction itself: it compared
+    /// <c>CurrentMediaItemIndex</c> against the index this runtime wanted and, on a mismatch,
+    /// seeked to that index. When the player was still holding the PREVIOUS queue, that index
+    /// belonged to the previous ordering - so a player correctly playing the right song at the old
+    /// index was dragged onto a different song at the new one. Leaving the featured queue, where
+    /// a song sits first, for the artist queue, where it sits second, moved playback from that song
+    /// onto its neighbour while every label kept naming the first. The correction caused the fault
+    /// it appeared to be repairing.
     /// </para>
     /// <para>
-    /// When that correction silently fails to take, the failure is the worst kind this app has - the
-    /// player keeps rendering index 0 while the rest of the app believes the index it asked for, so
-    /// every title, duration and lyric on screen belongs to a different song from the audio. Hence
-    /// a verify after the seek rather than a fire-and-forget one, and an Error - not a Warning -
-    /// when the player still disagrees, because that line is the only evidence such a session
-    /// leaves behind.
+    /// So: if the player is already on the right song, its index is irrelevant and nothing happens.
+    /// Only when it is on the WRONG song does this seek, and then to wherever that song actually
+    /// sits in the player's own list rather than to where this runtime assumes it sits.
     /// </para>
     /// </remarks>
-    private void EnsurePlayerOnRequestedItem(int requestedIndex, long positionMs)
+    private void EnsurePlayerOnRequestedItem(IReadOnlyList<MauiMediaItem> items, int requestedIndex, long positionMs)
     {
-        if (_player.CurrentMediaItemIndex == requestedIndex)
+        var expectedId = items[requestedIndex].StableCacheKey;
+        var playerIds = ReadPlayerMediaIds();
+        var correction = PlaybackQueueAlignment.ResolveCorrection(
+            expectedId,
+            _player.CurrentMediaItem?.MediaId,
+            playerIds);
+
+        switch (correction.Kind)
         {
-            return;
+            case QueueCorrectionKind.AlreadyCorrect:
+                return;
+
+            case QueueCorrectionKind.NotPresent:
+                _logger.LogError(
+                    "Media3 ReplaceQueueAsync cannot place the player on the requested song because the player's playlist does not contain it; audio will not match the reported song. ExpectedMediaId={ExpectedMediaId}; RequestedIndex={RequestedIndex}; {Snapshot}",
+                    expectedId,
+                    requestedIndex,
+                    CreatePlayerSnapshot());
+                return;
         }
 
         _logger.LogWarning(
-            "Media3 ReplaceQueueAsync seek correction required. RequestedIndex={RequestedIndex}; ActualIndex={ActualIndex}; RequestedPositionMs={RequestedPositionMs}; {Snapshot}",
+            "Media3 ReplaceQueueAsync seek correction required. ExpectedMediaId={ExpectedMediaId}; RequestedIndex={RequestedIndex}; ActualIndex={ActualIndex}; RequestedPositionMs={RequestedPositionMs}; {Snapshot}",
+            expectedId,
             requestedIndex,
-            _player.CurrentMediaItemIndex,
+            correction.SeekIndex,
             positionMs,
             CreatePlayerSnapshot());
 
-        _player.SeekTo(requestedIndex, positionMs);
+        _player.SeekTo(correction.SeekIndex, positionMs);
 
-        if (_player.CurrentMediaItemIndex == requestedIndex)
-        {
-            return;
-        }
-
-        // Second attempt, after re-submitting the timeline. A seek into an index the player has not
-        // accepted yet does nothing, and there is no callback to wait on here - this method runs on
-        // the player thread and must leave the queue correct before playback is told to start.
-        _player.Prepare();
-        _player.SeekTo(requestedIndex, positionMs);
-
-        if (_player.CurrentMediaItemIndex != requestedIndex)
+        if (_player.CurrentMediaItem?.MediaId != expectedId)
         {
             _logger.LogError(
-                "Media3 ReplaceQueueAsync could not move the player onto the requested item; the audio will not match the reported song. RequestedIndex={RequestedIndex}; ActualIndex={ActualIndex}; RequestedPositionMs={RequestedPositionMs}; {Snapshot}",
-                requestedIndex,
-                _player.CurrentMediaItemIndex,
-                positionMs,
+                "Media3 ReplaceQueueAsync could not move the player onto the requested song; audio will not match the reported song. ExpectedMediaId={ExpectedMediaId}; ActualMediaId={ActualMediaId}; {Snapshot}",
+                expectedId,
+                _player.CurrentMediaItem?.MediaId,
                 CreatePlayerSnapshot());
         }
+    }
+
+    /// <summary>
+    /// Whether the player is really holding the playlist just submitted, item for item.
+    /// </summary>
+    /// <remarks>
+    /// Compares media ids in order rather than comparing counts. Two different queues frequently
+    /// have the same length - swapping a two-song featured queue for a two-song artist queue is the
+    /// exact case that produced a silent mismatch in production - and a count check cannot tell
+    /// those apart. Media ids are the per-song stable cache key, set in <see cref="ToMedia3Item"/>.
+    /// </remarks>
+    private bool PlayerQueueMatches(IReadOnlyList<CommonMediaItem> expected) =>
+        PlaybackQueueAlignment.QueueMatches(
+            expected.Select(item => item.MediaId).ToList(),
+            ReadPlayerMediaIds());
+
+    /// <summary>The media ids the player is actually holding, in its own order.</summary>
+    private List<string?> ReadPlayerMediaIds()
+    {
+        var ids = new List<string?>(_player.MediaItemCount);
+        for (var index = 0; index < _player.MediaItemCount; index++)
+        {
+            ids.Add(_player.GetMediaItemAt(index)?.MediaId);
+        }
+
+        return ids;
     }
 
     private void SetPlayerQueueItems(IReadOnlyList<MauiMediaItem> items, int startIndex, long startPositionMs = 0)
@@ -896,17 +925,21 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
 
         // Observed on-device (Galaxy S25, Media3 bulk-submit): SetMediaItems can return with the
         // native playlist still empty, so the follow-up Prepare() immediately ends playback.
-        // Verify the applied count and fall back to the per-item submission path production used
-        // before this call was batched.
-        var appliedCount = _player.MediaItemCount;
-        if (appliedCount == media3Items.Count)
+        // Fall back to the per-item submission path production used before this call was batched.
+        //
+        // Checked by IDENTITY, not by count. Counting caught the empty case and nothing else: when
+        // one queue is swapped for another of the SAME LENGTH - the two-song featured queue for the
+        // two-song artist queue - a submission that left the OLD ORDER in place still counted 2 of
+        // 2 and passed. The player then held one order while this class held another, and every
+        // index either side exchanged after that referred to a different song.
+        if (PlayerQueueMatches(media3Items))
         {
             return;
         }
 
         _logger.LogWarning(
-            "Media3 bulk SetMediaItems applied {AppliedCount} of {RequestedCount} items; falling back to per-item queue submission. StartIndex={StartIndex}; StartPositionMs={StartPositionMs}",
-            appliedCount,
+            "Media3 bulk SetMediaItems did not apply the requested queue (count {AppliedCount} of {RequestedCount}); falling back to per-item queue submission. StartIndex={StartIndex}; StartPositionMs={StartPositionMs}",
+            _player.MediaItemCount,
             media3Items.Count,
             startIndex,
             safeStartPositionMs);
@@ -921,6 +954,15 @@ public sealed class AndroidMedia3PlaybackRuntime : IPlatformPlaybackRuntime, IIn
         if (startIndex > 0 || safeStartPositionMs > 0)
         {
             _player.SeekTo(startIndex, safeStartPositionMs);
+        }
+
+        if (!PlayerQueueMatches(media3Items))
+        {
+            _logger.LogError(
+                "Media3 per-item queue submission ALSO failed to apply the requested queue; the player is holding a different playlist from the one this runtime believes it has. RequestedCount={RequestedCount}; PlayerCount={PlayerCount}; {Snapshot}",
+                media3Items.Count,
+                _player.MediaItemCount,
+                CreatePlayerSnapshot());
         }
 
         _logger.LogInformation(
