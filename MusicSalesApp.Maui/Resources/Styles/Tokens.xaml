@@ -1,0 +1,151 @@
+﻿<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+    StreamTunes non-colour design tokens - type, spacing, radii, sizes, elevation, motion.
+    ======================================================================================
+
+    WHY THIS FILE EXISTS
+    ====================
+    Before it, this app had ZERO resource-backed non-colour values: 191 raw FontSize, 103
+    Padding, 112 Spacing, 130 HeightRequest, 30 CornerRadius and 31 Margin, every one written
+    on the element that used it. Colour was roughly half tokenised; size and rhythm were not
+    tokenised at all. That is what made a redesign cost a full sweep of every file, and it is
+    the thing this file exists to stop happening twice.
+
+    The values are the web app's, from ../MusicSalesApp/MusicSalesApp/wwwroot/tokens.css, so
+    the two clients share ONE scale rather than two that drift. That drift is exactly how the
+    mobile app ended up on a palette the web app had already retired.
+
+    HOW TO USE IT
+    =============
+    Reach for the nearest token rather than a number. If nothing fits, the right move is
+    usually to add a token here, not an exception there - a one-off number is how a scale
+    dies. Genuine exceptions get a comment saying why.
+
+    WHERE MAUI AND CSS DIVERGE
+    ===========================
+    - Shadow: CSS layers two shadows per elevation; MAUI allows one per element, so each
+      Shadow below collapses to the larger, more visible stop. Documented rather than hidden.
+    - Letter-spacing: MAUI has no tracking on Label, so st-tracking-display / -micro are not
+      ported. Display type will read slightly looser than the web.
+    - Motion: MAUI animations take milliseconds as uint, so these are exposed as x:Double for
+      binding and converted at the call site.
+-->
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:sys="clr-namespace:System;assembly=netstandard">
+
+    <!-- ===================================================================
+         TYPE SCALE - tokens.css st-text-*
+         Six steps, and that is the whole scale. A seventh size is almost always one of these
+         plus a weight change.
+         =================================================================== -->
+    <x:Double x:Key="FontSizeDisplay">68</x:Double>
+    <!-- player hero title only -->
+    <x:Double x:Key="FontSizeH1">40</x:Double>
+    <x:Double x:Key="FontSizeH2">24</x:Double>
+    <x:Double x:Key="FontSizeBody">15</x:Double>
+    <x:Double x:Key="FontSizeSmall">13</x:Double>
+    <x:Double x:Key="FontSizeMicro">11</x:Double>
+
+    <!-- Card type, measured separately on the web because a card is denser than body copy. -->
+    <x:Double x:Key="FontSizeCardTitle">14</x:Double>
+    <x:Double x:Key="FontSizeCardMeta">12</x:Double>
+
+    <!-- ===================================================================
+         SPACING - tokens.css st-space-*
+         =================================================================== -->
+    <x:Double x:Key="Space1">4</x:Double>
+    <x:Double x:Key="Space2">8</x:Double>
+    <x:Double x:Key="Space3">12</x:Double>
+    <x:Double x:Key="Space4">16</x:Double>
+    <x:Double x:Key="Space5">24</x:Double>
+    <x:Double x:Key="Space6">32</x:Double>
+    <x:Double x:Key="Space7">48</x:Double>
+    <x:Double x:Key="Space8">64</x:Double>
+
+    <!-- Thickness presets for the layouts that recur. Padding takes a Thickness, not a
+         Double, so without these every call site writes its own literal again. -->
+    <Thickness x:Key="PagePadding">16,16,16,16</Thickness>
+    <Thickness x:Key="PagePaddingWide">24,24,24,24</Thickness>
+    <Thickness x:Key="CardPadding">12,12,12,12</Thickness>
+    <Thickness x:Key="ListItemPadding">16,12,16,12</Thickness>
+    <Thickness x:Key="PillPadding">16,0,16,0</Thickness>
+    <Thickness x:Key="SectionSpacing">0,24,0,0</Thickness>
+    <!-- The auth pages all open with this exact inset. -->
+    <Thickness x:Key="AuthFormPadding">24,40,24,24</Thickness>
+
+    <!-- ===================================================================
+         RADII - tokens.css st-radius-*
+         The web had 19 different radii before it tokenised. Five is the whole set.
+         =================================================================== -->
+    <x:Double x:Key="RadiusXs">4</x:Double>
+    <x:Double x:Key="RadiusSm">8</x:Double>
+    <x:Double x:Key="RadiusMd">12</x:Double>
+    <x:Double x:Key="RadiusLg">18</x:Double>
+    <x:Double x:Key="RadiusPill">999</x:Double>
+
+    <!-- The same five radii typed as Int32, because Button.CornerRadius is an int while
+         Border/RoundRectangle take a double, and StaticResource does no type conversion.
+         Two spellings of one value is unfortunate; a literal on every Button is worse, and
+         this way changing the scale still means editing one file. Use the Int variants on
+         Button and ImageButton, the Double variants everywhere else. -->
+    <x:Int32 x:Key="RadiusXsInt">4</x:Int32>
+    <x:Int32 x:Key="RadiusSmInt">8</x:Int32>
+    <x:Int32 x:Key="RadiusMdInt">12</x:Int32>
+    <x:Int32 x:Key="RadiusLgInt">18</x:Int32>
+    <x:Int32 x:Key="RadiusPillInt">999</x:Int32>
+
+    <!-- ===================================================================
+         CONTROL SIZES
+         Replaces 130 HeightRequest and 89 WidthRequest literals.
+         =================================================================== -->
+    <x:Double x:Key="ControlHeight">44</x:Double>
+    <!-- pill buttons, filter pills -->
+    <x:Double x:Key="ControlHeightLarge">48</x:Double>
+    <!-- primary auth buttons, entries -->
+    <x:Double x:Key="ControlHeightSmall">32</x:Double>
+    <x:Double x:Key="IconSize">24</x:Double>
+    <x:Double x:Key="IconSizeSmall">16</x:Double>
+    <x:Double x:Key="IconSizeLarge">32</x:Double>
+
+    <!-- Artwork. PlayerHeroArtSize previously lived alone in App.xaml as the app's only
+         non-colour token; it belongs with the rest of the scale. -->
+    <x:Double x:Key="ArtSizeMini">36</x:Double>
+    <!-- now-playing bar -->
+    <x:Double x:Key="ArtSizeThumb">48</x:Double>
+    <!-- track rows -->
+    <x:Double x:Key="ArtSizeCard">150</x:Double>
+    <!-- song card -->
+    <x:Double x:Key="PlayerHeroArtSize">180</x:Double>
+    <!-- player hero -->
+
+    <!-- Now-playing drawer, mirrored in Views/NowPlayingDrawerController.cs. If you change
+         one, change both - the controller snaps between these two heights. -->
+    <x:Double x:Key="DrawerCollapsedHeight">44</x:Double>
+    <x:Double x:Key="DrawerExpandedHeight">168</x:Double>
+
+    <x:Double x:Key="StrokeThin">1</x:Double>
+    <x:Double x:Key="StrokeThick">1.5</x:Double>
+
+    <!-- ===================================================================
+         ELEVATION - tokens.css st-shadow-*
+         A SHADOW IS ALWAYS DARK, IN BOTH THEMES. The web app's dark theme once used a white
+         shadow, which reads as a halo rather than as height. Do not add a light variant.
+         Each of these collapses the web's two-layer shadow to its larger stop; MAUI supports
+         one shadow per element.
+         =================================================================== -->
+    <Shadow x:Key="ShadowCard" Brush="Black" Offset="0,6" Radius="22" Opacity="0.35" />
+    <Shadow x:Key="ShadowArt" Brush="Black" Offset="0,22" Radius="52" Opacity="0.7" />
+    <Shadow x:Key="ShadowFloat" Brush="Black" Offset="0,20" Radius="50" Opacity="0.6" />
+    <!-- The play button's glow is BLUE, not black - it is the one coloured shadow. -->
+    <Shadow x:Key="ShadowPlay" Brush="#02B8FD" Offset="0,10" Radius="32" Opacity="0.4" />
+
+    <!-- ===================================================================
+         MOTION - tokens.css st-dur-*
+         =================================================================== -->
+    <x:Double x:Key="DurationFast">120</x:Double>
+    <x:Double x:Key="DurationBase">200</x:Double>
+    <x:Double x:Key="DurationSlow">320</x:Double>
+
+</ResourceDictionary>

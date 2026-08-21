@@ -5,9 +5,10 @@
              x:Class="MusicSalesApp.Maui.App">
     <Application.Resources>
         <ResourceDictionary>
-            <x:Double x:Key="PlayerHeroArtSize">180</x:Double>
             <ResourceDictionary.MergedDictionaries>
+                <!-- Order matters: Colors and Tokens define what Styles consumes. -->
                 <ResourceDictionary Source="Resources/Styles/Colors.xaml" />
+                <ResourceDictionary Source="Resources/Styles/Tokens.xaml" />
                 <ResourceDictionary Source="Resources/Styles/Styles.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>

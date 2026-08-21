@@ -1,56 +1,171 @@
 ﻿<?xml version="1.0" encoding="UTF-8" ?>
-<ResourceDictionary 
+<!--
+    StreamTunes colour tokens - the mobile half of the design system.
+    ================================================================
+
+    THE SOURCE OF TRUTH IS THE WEB APP, NOT THIS FILE.
+    Every value here is ported from the sibling repo:
+      ../MusicSalesApp/MusicSalesApp/wwwroot/tokens.css   (brand, player, scale)
+      ../MusicSalesApp/MusicSalesApp/wwwroot/light.css    (the light half of the themed pairs)
+      ../MusicSalesApp/MusicSalesApp/wwwroot/dark.css     (the dark half)
+    When one of those changes, this changes. The previous version of this file claimed to
+    match light.css/dark.css and had drifted years behind - it was still on the Spotify green
+    the web app deliberately retired. That comment was the only thing keeping the drift
+    invisible, so this one names the files instead.
+
+    THE PALETTE IS MEASURED, NOT CHOSEN.
+    The blues were sampled from the pixels of the logo disc. Do not "tidy" them into rounder
+    hex values; they ARE the logo. Ratios in the comments come from the web tokens and are
+    against the surface each colour actually sits on.
+
+    TWO RULES THE MEASUREMENTS FORCE - breaking either fails WCAG AA:
+      1. NEVER white text on StBlue (#0186fd). That pair is 3.6:1. A filled button carrying a
+         white label uses StBlueDeep (#0166d6), which is 5.42:1.
+      2. The play button is StBlueBright with a BLACK glyph: 9.28:1, the strongest pairing
+         available. That includes the SkiaSharp EqualizerPlayButton.
+
+    THEMING: MAUI resolves themes per-property, so themed tokens are declared here as
+    *Light/*Dark PAIRS and combined at the point of use with
+        {AppThemeBinding Light={StaticResource XLight}, Dark={StaticResource XDark}}
+    Prefer doing that once inside a Style in Styles.xaml rather than on individual elements -
+    that is the difference between this file being a design system and being a list of hexes.
+
+    Android's native chrome does NOT read this file. Platforms/Android/Resources/values/colors.xml
+    and values-night/colors.xml must be updated alongside it.
+-->
+<ResourceDictionary
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
 
-    <!-- Note: For Android please see also Platforms\Android\Resources\values\colors.xml -->
+    <!-- ===================================================================
+         BRAND - global, identical in both themes. Sampled from the logo.
+         =================================================================== -->
+    <Color x:Key="StBlue">#0186FD</Color>
+    <!-- core logo blue, 5.41:1 - fills and icons, NEVER white-on-this -->
+    <Color x:Key="StBlueBright">#02B8FD</Color>
+    <!-- logo highlight, 8.60:1 - accent text, links, active states -->
+    <Color x:Key="StBlueDeep">#0166D6</Color>
+    <!-- action fill, white-on-it 5.42:1 -->
+    <Color x:Key="StBluePale">#C8EAFD</Color>
+    <!-- 15.44:1 - secondary text on dark -->
+    <Color x:Key="StBlueTint">#E5FBFF</Color>
+    <!-- 12.68:1 -->
+    <Color x:Key="StNavy">#102E55</Color>
+    <!-- logo disc edge -->
 
-    <!-- StreamTunes brand colors (matching web app light.css / dark.css) -->
-    <Color x:Key="Primary">#1DB954</Color>
-    <Color x:Key="PrimaryDark">#1DB954</Color>
-    <Color x:Key="PrimaryDarkText">#242424</Color>
-    <Color x:Key="SpotifyGreenLight">#1ED760</Color>
-    <Color x:Key="Secondary">#DFD8F7</Color>
-    <Color x:Key="SecondaryDarkText">#9880e5</Color>
-    <Color x:Key="Tertiary">#2B0B98</Color>
+    <!-- Secondary and status. Amber is a WARNING colour, never brand. -->
+    <Color x:Key="StViolet">#9B87F5</Color>
+    <Color x:Key="StVioletDeep">#8E44AD</Color>
+    <Color x:Key="StAmber">#FFA500</Color>
+    <Color x:Key="StPink">#FF6B8B</Color>
 
-    <!-- Purple accent (matching web app #8e44ad) -->
-    <Color x:Key="PurpleAccent">#8E44AD</Color>
-    <Color x:Key="PurpleAccentLight">#9B59B6</Color>
+    <!-- ===================================================================
+         PLAYER SURFACE - global, and DELIBERATELY DARK IN BOTH THEMES.
+         The player is an immersive listening surface, not a themed page, so these are
+         declared once rather than as a light/dark pair. If you find yourself reaching for a
+         light variant, that is the signal you are theming something that should not theme:
+         StBlueBright measures ~2.1:1 on white and carries the karaoke highlight, so a light
+         player would need a different accent and the signature moment would change with a
+         user preference.
+         =================================================================== -->
+    <Color x:Key="PlayerBg">#070D16</Color>
+    <Color x:Key="PlayerSurface">#0D1727</Color>
+    <Color x:Key="PlayerSurface2">#142338</Color>
+    <Color x:Key="PlayerLine">#17FFFFFF</Color>
+    <Color x:Key="PlayerLineStrong">#24FFFFFF</Color>
+    <Color x:Key="PlayerText">#FFFFFF</Color>
+    <!-- 19.48:1 -->
+    <Color x:Key="PlayerText2">#C8EAFD</Color>
+    <!-- 15.44:1 -->
+    <Color x:Key="PlayerText3">#8BA3C7</Color>
+    <!-- 7.57:1 - the dimmest that still passes AA -->
+    <Color x:Key="PlayerScrim">#B8070D16</Color>
 
-    <Color x:Key="White">White</Color>
-    <Color x:Key="Black">Black</Color>
-    <Color x:Key="Magenta">#D600AA</Color>
-    <Color x:Key="MidnightBlue">#190649</Color>
-    <Color x:Key="OffBlack">#1f1f1f</Color>
+    <!-- ===================================================================
+         THEMED PAIRS - the light half is light.css :root, the dark half is dark.css :root.
+         Keep the two in step; they are meaningless apart.
+         =================================================================== -->
 
-    <!-- Navbar (dark.css: color-sf-appbar-bg-color-alt1) -->
-    <Color x:Key="NavBarDark">#181C1F</Color>
+    <!-- Page and surface. A CARD IS RAISED IN BOTH THEMES: SurfaceDark is deliberately
+         LIGHTER than PageDark. Before the web redesign, light made the card darker than the
+         page (a grey hole) while dark made it lighter - the same component reading as
+         recessed in one theme and raised in the other. -->
+    <Color x:Key="PageLight">#F8F9FA</Color>
+    <Color x:Key="PageDark">#212529</Color>
+    <Color x:Key="SurfaceLight">#FFFFFF</Color>
+    <Color x:Key="SurfaceDark">#2A323D</Color>
+    <Color x:Key="SurfaceHoverLight">#F1F4F8</Color>
+    <Color x:Key="SurfaceHoverDark">#333C49</Color>
+    <Color x:Key="LineLight">#DEE2E6</Color>
+    <Color x:Key="LineDark">#1AFFFFFF</Color>
 
-    <!-- Card backgrounds (light.css: rgba(0,0,0,0.125) / dark.css: #2a2a2a) -->
-    <Color x:Key="CardBackgroundLight">#E0E0E0</Color>
-    <Color x:Key="CardBackgroundDark">#2A2A2A</Color>
+    <!-- Text. Text3 is the dimmest that still passes AA in each theme - do not go below it. -->
+    <Color x:Key="TextLight">#0F1B2D</Color>
+    <!-- 17.28:1 on SurfaceLight -->
+    <Color x:Key="TextDark">#E9EEF5</Color>
+    <!-- 11.10:1 on SurfaceDark -->
+    <Color x:Key="Text2Light">#4A5B70</Color>
+    <!-- 6.95:1 -->
+    <Color x:Key="Text2Dark">#A8B6C8</Color>
+    <!-- 6.28:1 -->
+    <Color x:Key="Text3Light">#5E6F85</Color>
+    <!-- 5.14:1 -->
+    <Color x:Key="Text3Dark">#8BA3C7</Color>
+    <!-- 5.03:1 -->
 
-    <!-- Stream count icon colors -->
-    <Color x:Key="StreamIconLight">#B3B3B3</Color>
-    <Color x:Key="StreamIconDark">#8A8A8A</Color>
+    <!-- Accent as TEXT on a surface. Measured as a foreground - says nothing about what is
+         legible on top of it. For that, use the fill family below. -->
+    <Color x:Key="AccentLight">#0166D6</Color>
+    <Color x:Key="AccentDark">#02B8FD</Color>
+    <Color x:Key="AccentHoverLight">#0159B8</Color>
+    <Color x:Key="AccentHoverDark">#C8EAFD</Color>
+    <Color x:Key="AccentSoftLight">#1A0166D6</Color>
+    <Color x:Key="AccentSoftDark">#2402B8FD</Color>
 
-    <!-- Like/dislike button colors (dark theme) -->
-    <Color x:Key="LikeButtonDarkText">#8A8A8A</Color>
-    <Color x:Key="LikeButtonActiveText">#E0E0E0</Color>
+    <!-- Genre. Dark is NOT the players' StViolet: the card surface is lighter than the player
+         surface and that violet measures 4.43:1 here, failing AA. Same hue, one step up. -->
+    <Color x:Key="GenreLight">#7D3C98</Color>
+    <!-- 7.07:1 - NOT StVioletDeep, which is for dark surfaces -->
+    <Color x:Key="GenreDark">#A594F6</Color>
+    <!-- 5.03:1 -->
 
-    <!-- Progress bar colors (matching web app progress bar) -->
-    <Color x:Key="ProgressTrack">#4D4D4D</Color>
-    <Color x:Key="ProgressFill">#B3B3B3</Color>
+    <!-- Warning. Light is NOT StAmber, which measures 2.1:1 on white. -->
+    <Color x:Key="WarnLight">#9A5C00</Color>
+    <!-- 5.38:1 -->
+    <Color x:Key="WarnDark">#FFA500</Color>
+    <!-- 6.56:1 -->
+    <Color x:Key="WarnSoftLight">#1F9A5C00</Color>
+    <Color x:Key="WarnSoftDark">#26FFA500</Color>
 
-    <!-- Player bar colors -->
-    <Color x:Key="PlayerBarDark">#181818</Color>
-    <Color x:Key="PlayerBarLight">#282828</Color>
-    <Color x:Key="ControlInactive">#B3B3B3</Color>
-    <Color x:Key="TimeText">#A7A7A7</Color>
-    <Color x:Key="PreviewOrange">#FFA500</Color>
+    <!-- Track (sliders, progress) -->
+    <Color x:Key="TrackLight">#240F1B2D</Color>
+    <Color x:Key="TrackDark">#29FFFFFF</Color>
 
-    <!-- Testing server banner colors -->
+    <!-- FILL FAMILY - measured the OPPOSITE way round from the accent family above: these are
+         backgrounds, and On* is the only foreground allowed on them. Dark is where getting
+         this wrong showed - a white icon on AccentDark measures 2.26:1, and on its hover
+         1.26:1, i.e. gone. The fill stays BRIGHT and the foreground goes near-black. Never
+         dim the fill to make white work. -->
+    <Color x:Key="AccentFillLight">#0166D6</Color>
+    <Color x:Key="AccentFillDark">#02B8FD</Color>
+    <Color x:Key="AccentFillHoverLight">#0159B8</Color>
+    <Color x:Key="AccentFillHoverDark">#45CBFF</Color>
+    <Color x:Key="OnAccentLight">#FFFFFF</Color>
+    <!-- 5.42:1 on the fill -->
+    <Color x:Key="OnAccentDark">#04121F</Color>
+    <!-- 8.35:1 on the fill -->
+    <Color x:Key="OnAccentSoftLight">#47FFFFFF</Color>
+    <Color x:Key="OnAccentSoftDark">#38000000</Color>
+    <Color x:Key="GenreFillLight">#7D3C98</Color>
+    <Color x:Key="GenreFillDark">#A594F6</Color>
+    <Color x:Key="OnGenreLight">#FFFFFF</Color>
+    <!-- 7.07:1 -->
+    <Color x:Key="OnGenreDark">#17102E</Color>
+    <!-- 7.10:1 -->
+
+    <!-- ===================================================================
+         BANNERS - amber notices. Not brand colour; see StAmber's note.
+         =================================================================== -->
     <Color x:Key="TestingBannerLightBackground">#FFF3CD</Color>
     <Color x:Key="TestingBannerLightBorder">#FFC107</Color>
     <Color x:Key="TestingBannerLightText">#856404</Color>
@@ -60,7 +175,6 @@
     <Color x:Key="TestingBannerDarkText">#FFE082</Color>
     <Color x:Key="TestingBannerDarkLink">#FFECB3</Color>
 
-    <!-- Offline subscription information banner colors -->
     <Color x:Key="OfflineBannerLightBackground">#FFF3CD</Color>
     <Color x:Key="OfflineBannerLightBorder">#FFC107</Color>
     <Color x:Key="OfflineBannerLightText">#856404</Color>
@@ -68,6 +182,22 @@
     <Color x:Key="OfflineBannerDarkBorder">#FFC107</Color>
     <Color x:Key="OfflineBannerDarkText">#FFE082</Color>
 
+    <!-- ===================================================================
+         DESTRUCTIVE - delete account, remove track, error text.
+         =================================================================== -->
+    <Color x:Key="DangerLight">#B3261E</Color>
+    <Color x:Key="DangerDark">#FFB4AB</Color>
+    <Color x:Key="DangerFillLight">#B3261E</Color>
+    <Color x:Key="DangerFillDark">#93000A</Color>
+    <Color x:Key="OnDanger">#FFFFFF</Color>
+
+    <!-- ===================================================================
+         NEUTRALS - kept because MAUI's template styles reference them.
+         Prefer a semantic token above over a grey wherever one fits.
+         =================================================================== -->
+    <Color x:Key="White">White</Color>
+    <Color x:Key="Black">Black</Color>
+    <Color x:Key="OffBlack">#1F1F1F</Color>
     <Color x:Key="Gray100">#E1E1E1</Color>
     <Color x:Key="Gray200">#C8C8C8</Color>
     <Color x:Key="Gray300">#ACACAC</Color>
@@ -77,9 +207,35 @@
     <Color x:Key="Gray900">#212121</Color>
     <Color x:Key="Gray950">#141414</Color>
 
+    <!-- ===================================================================
+         TRANSITIONAL ALIASES - retired names still referenced by unswept files.
+         These now point at the NEW palette, so an unswept screen is merely un-tokenised
+         rather than off-brand. Delete this block once the sweep is finished and the grep in
+         AGENTS.md comes back clean; that deletion is what proves the sweep is complete.
+         =================================================================== -->
+    <Color x:Key="Primary">#0166D6</Color>
+    <Color x:Key="PrimaryDark">#02B8FD</Color>
+    <Color x:Key="PrimaryDarkText">#242424</Color>
+    <Color x:Key="Secondary">#DFD8F7</Color>
+    <Color x:Key="SecondaryDarkText">#9880E5</Color>
+    <Color x:Key="Magenta">#D600AA</Color>
+    <Color x:Key="MidnightBlue">#190649</Color>
+    <Color x:Key="NavBarDark">#0D1727</Color>
+    <Color x:Key="CardBackgroundLight">#FFFFFF</Color>
+    <Color x:Key="CardBackgroundDark">#2A323D</Color>
+    <Color x:Key="StreamIconLight">#5E6F85</Color>
+    <Color x:Key="StreamIconDark">#8BA3C7</Color>
+    <Color x:Key="LikeButtonDarkText">#8BA3C7</Color>
+    <Color x:Key="ProgressTrack">#29FFFFFF</Color>
+    <Color x:Key="ControlInactive">#8BA3C7</Color>
+    <Color x:Key="TimeText">#8BA3C7</Color>
+    <Color x:Key="PlayerBarDark">#0D1727</Color>
+
+    <!-- ===================================================================
+         BRUSHES - required by MAUI's template styles.
+         =================================================================== -->
     <SolidColorBrush x:Key="PrimaryBrush" Color="{StaticResource Primary}"/>
     <SolidColorBrush x:Key="SecondaryBrush" Color="{StaticResource Secondary}"/>
-    <SolidColorBrush x:Key="TertiaryBrush" Color="{StaticResource Tertiary}"/>
     <SolidColorBrush x:Key="WhiteBrush" Color="{StaticResource White}"/>
     <SolidColorBrush x:Key="BlackBrush" Color="{StaticResource Black}"/>
 

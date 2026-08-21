@@ -23,15 +23,18 @@
     </Style>
 
     <Style TargetType="Button">
-        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}" />
-        <Setter Property="BackgroundColor" Value="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}" />
+        <!-- The fill family, not the accent family: these are backgrounds, so the
+             foreground is On* rather than a fixed white. Dark keeps the BRIGHT fill and
+             flips the label near-black; never dim the fill to make white work. -->
+        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource OnAccentLight}, Dark={StaticResource OnAccentDark}}" />
+        <Setter Property="BackgroundColor" Value="{AppThemeBinding Light={StaticResource AccentFillLight}, Dark={StaticResource AccentFillDark}}" />
         <Setter Property="FontFamily" Value="OpenSansRegular"/>
-        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="FontSize" Value="{StaticResource FontSizeCardTitle}"/>
         <Setter Property="BorderWidth" Value="0"/>
-        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="CornerRadius" Value="{StaticResource RadiusSmInt}"/>
         <Setter Property="Padding" Value="14,10"/>
-        <Setter Property="MinimumHeightRequest" Value="44"/>
-        <Setter Property="MinimumWidthRequest" Value="44"/>
+        <Setter Property="MinimumHeightRequest" Value="{StaticResource ControlHeight}"/>
+        <Setter Property="MinimumWidthRequest" Value="{StaticResource ControlHeight}"/>
         <Setter Property="VisualStateManager.VisualStateGroups">
             <VisualStateGroupList>
                 <VisualStateGroup x:Name="CommonStates">
@@ -154,10 +157,10 @@
     </Style>
 
     <Style TargetType="Label">
-        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}" />
+        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
         <Setter Property="BackgroundColor" Value="Transparent" />
         <Setter Property="FontFamily" Value="OpenSansRegular" />
-        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
         <Setter Property="VisualStateManager.VisualStateGroups">
             <VisualStateGroupList>
                 <VisualStateGroup x:Name="CommonStates">
@@ -173,15 +176,16 @@
     </Style>
 
     <Style TargetType="Label" x:Key="Headline">
-        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource MidnightBlue}, Dark={StaticResource White}}" />
-        <Setter Property="FontSize" Value="32" />
+        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeH1}" />
+        <Setter Property="FontAttributes" Value="Bold" />
         <Setter Property="HorizontalOptions" Value="Center" />
         <Setter Property="HorizontalTextAlignment" Value="Center" />
     </Style>
 
     <Style TargetType="Label" x:Key="SubHeadline">
-        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource MidnightBlue}, Dark={StaticResource White}}" />
-        <Setter Property="FontSize" Value="24" />
+        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeH2}" />
         <Setter Property="HorizontalOptions" Value="Center" />
         <Setter Property="HorizontalTextAlignment" Value="Center" />
     </Style>
@@ -402,19 +406,19 @@
 
     <Style TargetType="Page" ApplyToDerivedTypes="True">
         <Setter Property="Padding" Value="0"/>
-        <Setter Property="BackgroundColor" Value="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}" />
+        <Setter Property="BackgroundColor" Value="{AppThemeBinding Light={StaticResource PageLight}, Dark={StaticResource PageDark}}" />
     </Style>
 
     <Style TargetType="Shell" ApplyToDerivedTypes="True">
-        <Setter Property="Shell.BackgroundColor" Value="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}" />
-        <Setter Property="Shell.ForegroundColor" Value="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource SecondaryDarkText}}" />
-        <Setter Property="Shell.TitleColor" Value="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource SecondaryDarkText}}" />
+        <Setter Property="Shell.BackgroundColor" Value="{AppThemeBinding Light={StaticResource SurfaceLight}, Dark={StaticResource PageDark}}" />
+        <Setter Property="Shell.ForegroundColor" Value="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
+        <Setter Property="Shell.TitleColor" Value="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
         <Setter Property="Shell.DisabledColor" Value="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray950}}" />
         <Setter Property="Shell.UnselectedColor" Value="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray200}}" />
         <Setter Property="Shell.NavBarHasShadow" Value="False" />
         <Setter Property="Shell.TabBarBackgroundColor" Value="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource Black}}" />
-        <Setter Property="Shell.TabBarForegroundColor" Value="{AppThemeBinding Light={StaticResource Magenta}, Dark={StaticResource White}}" />
-        <Setter Property="Shell.TabBarTitleColor" Value="{AppThemeBinding Light={StaticResource Magenta}, Dark={StaticResource White}}" />
+        <Setter Property="Shell.TabBarForegroundColor" Value="{AppThemeBinding Light={StaticResource AccentLight}, Dark={StaticResource White}}" />
+        <Setter Property="Shell.TabBarTitleColor" Value="{AppThemeBinding Light={StaticResource AccentLight}, Dark={StaticResource White}}" />
         <Setter Property="Shell.TabBarUnselectedColor" Value="{AppThemeBinding Light={StaticResource Gray900}, Dark={StaticResource Gray200}}" />
     </Style>
 
@@ -426,9 +430,141 @@
 
     <Style TargetType="TabbedPage">
         <Setter Property="BarBackgroundColor" Value="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource Gray950}}" />
-        <Setter Property="BarTextColor" Value="{AppThemeBinding Light={StaticResource Magenta}, Dark={StaticResource White}}" />
+        <Setter Property="BarTextColor" Value="{AppThemeBinding Light={StaticResource AccentLight}, Dark={StaticResource White}}" />
         <Setter Property="UnselectedTabColor" Value="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray950}}" />
         <Setter Property="SelectedTabColor" Value="{AppThemeBinding Light={StaticResource Gray950}, Dark={StaticResource Gray200}}" />
+    </Style>
+
+    <!-- ===================================================================
+         NAMED COMPONENT STYLES
+         The recipes below were previously copy-pasted attribute-by-attribute across pages:
+         the pill button appeared in five files, the filter pill four times verbatim inside
+         one file, and all five auth pages open with an identical form shell. Each is here
+         once now. Adding a sixth caller should mean adding a Style attribute, not another
+         six attributes.
+         =================================================================== -->
+
+    <!-- Primary action. Blue fill, and the label colour comes from the On* family so dark
+         gets a near-black label on a bright fill rather than white on blue. -->
+    <Style TargetType="Button" x:Key="PillButtonPrimary">
+        <Setter Property="BackgroundColor" Value="{AppThemeBinding Light={StaticResource AccentFillLight}, Dark={StaticResource AccentFillDark}}" />
+        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource OnAccentLight}, Dark={StaticResource OnAccentDark}}" />
+        <Setter Property="FontAttributes" Value="Bold" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeCardTitle}" />
+        <Setter Property="CornerRadius" Value="{StaticResource RadiusPillInt}" />
+        <Setter Property="HeightRequest" Value="{StaticResource ControlHeight}" />
+        <Setter Property="Padding" Value="{StaticResource PillPadding}" />
+        <Setter Property="BorderWidth" Value="0" />
+    </Style>
+
+    <!-- Secondary action. Violet, reserved for account and creator routes exactly as the web
+         app reserves it, so the two clients agree on what violet means. -->
+    <Style TargetType="Button" x:Key="PillButtonSecondary">
+        <Setter Property="BackgroundColor" Value="{AppThemeBinding Light={StaticResource GenreFillLight}, Dark={StaticResource GenreFillDark}}" />
+        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource OnGenreLight}, Dark={StaticResource OnGenreDark}}" />
+        <Setter Property="FontAttributes" Value="Bold" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeCardTitle}" />
+        <Setter Property="CornerRadius" Value="{StaticResource RadiusPillInt}" />
+        <Setter Property="HeightRequest" Value="{StaticResource ControlHeight}" />
+        <Setter Property="Padding" Value="{StaticResource PillPadding}" />
+        <Setter Property="BorderWidth" Value="0" />
+    </Style>
+
+    <!-- Ghost action. Transparent with a hairline, for the row of icon actions on a card. -->
+    <Style TargetType="Button" x:Key="GhostButton">
+        <Setter Property="BackgroundColor" Value="Transparent" />
+        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
+        <Setter Property="BorderColor" Value="{AppThemeBinding Light={StaticResource LineLight}, Dark={StaticResource LineDark}}" />
+        <Setter Property="BorderWidth" Value="{StaticResource StrokeThin}" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeSmall}" />
+        <Setter Property="CornerRadius" Value="{StaticResource RadiusSmInt}" />
+        <Setter Property="HeightRequest" Value="{StaticResource ControlHeightSmall}" />
+    </Style>
+
+    <!-- The primary button on the five auth pages: full width, taller than a pill. -->
+    <Style TargetType="Button" x:Key="AuthPrimaryButton" BasedOn="{StaticResource PillButtonPrimary}">
+        <Setter Property="CornerRadius" Value="{StaticResource RadiusSmInt}" />
+        <Setter Property="HeightRequest" Value="{StaticResource ControlHeightLarge}" />
+    </Style>
+
+    <!-- Filter pill, inactive. MusicLibraryPage repeated this ten-property recipe four times.
+         The active state is a separate style rather than a trigger because the pages drive it
+         through converters today; converting those to VisualStates is a later, separate job. -->
+    <Style TargetType="Button" x:Key="FilterPill">
+        <Setter Property="BackgroundColor" Value="{AppThemeBinding Light={StaticResource SurfaceLight}, Dark={StaticResource SurfaceDark}}" />
+        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
+        <Setter Property="BorderColor" Value="{AppThemeBinding Light={StaticResource LineLight}, Dark={StaticResource LineDark}}" />
+        <Setter Property="BorderWidth" Value="{StaticResource StrokeThick}" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeCardMeta}" />
+        <Setter Property="FontAttributes" Value="Bold" />
+        <Setter Property="CornerRadius" Value="{StaticResource RadiusPillInt}" />
+        <Setter Property="HeightRequest" Value="{StaticResource ControlHeightSmall}" />
+        <Setter Property="Padding" Value="10,0" />
+    </Style>
+
+    <Style TargetType="Button" x:Key="FilterPillActive" BasedOn="{StaticResource FilterPill}">
+        <Setter Property="BackgroundColor" Value="{AppThemeBinding Light={StaticResource AccentFillLight}, Dark={StaticResource AccentFillDark}}" />
+        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource OnAccentLight}, Dark={StaticResource OnAccentDark}}" />
+        <Setter Property="BorderColor" Value="{AppThemeBinding Light={StaticResource AccentFillLight}, Dark={StaticResource AccentFillDark}}" />
+    </Style>
+
+    <!-- A card is RAISED in both themes: the dark surface is lighter than the dark page, and
+         the shadow is dark in both. Do not add a light-theme-only shadow. -->
+    <Style TargetType="Border" x:Key="CardSurface">
+        <Setter Property="BackgroundColor" Value="{AppThemeBinding Light={StaticResource SurfaceLight}, Dark={StaticResource SurfaceDark}}" />
+        <Setter Property="Stroke" Value="{AppThemeBinding Light={StaticResource LineLight}, Dark={StaticResource LineDark}}" />
+        <Setter Property="StrokeThickness" Value="{StaticResource StrokeThin}" />
+        <Setter Property="Padding" Value="{StaticResource CardPadding}" />
+        <Setter Property="StrokeShape" Value="RoundRectangle 12" />
+        <Setter Property="Shadow" Value="{StaticResource ShadowCard}" />
+    </Style>
+
+    <!-- Panels on the player pages. Flat player tokens, never the themed pair: the player is
+         dark under a light OS theme too. -->
+    <Style TargetType="Border" x:Key="PlayerPanel">
+        <Setter Property="BackgroundColor" Value="{StaticResource PlayerSurface}" />
+        <Setter Property="Stroke" Value="{StaticResource PlayerLine}" />
+        <Setter Property="StrokeThickness" Value="{StaticResource StrokeThin}" />
+        <Setter Property="Padding" Value="{StaticResource CardPadding}" />
+        <Setter Property="StrokeShape" Value="RoundRectangle 12" />
+    </Style>
+
+    <!-- Text roles. Three weights of emphasis, matching the web's text / text-2 / text-3. -->
+    <Style TargetType="Label" x:Key="SectionHeading">
+        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeH2}" />
+        <Setter Property="FontAttributes" Value="Bold" />
+    </Style>
+
+    <Style TargetType="Label" x:Key="SecondaryText">
+        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeSmall}" />
+    </Style>
+
+    <!-- Text3 is the DIMMEST that still passes AA in each theme. Nothing quieter than this. -->
+    <Style TargetType="Label" x:Key="MicroText">
+        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource Text3Light}, Dark={StaticResource Text3Dark}}" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeMicro}" />
+    </Style>
+
+    <Style TargetType="Label" x:Key="ErrorText">
+        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource DangerLight}, Dark={StaticResource DangerDark}}" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeSmall}" />
+    </Style>
+
+    <!-- A tappable text link. -->
+    <Style TargetType="Label" x:Key="LinkText">
+        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource AccentLight}, Dark={StaticResource AccentDark}}" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeSmall}" />
+        <Setter Property="FontAttributes" Value="Bold" />
+    </Style>
+
+    <!-- The shell every auth page opens with. -->
+    <Style TargetType="VerticalStackLayout" x:Key="AuthFormLayout">
+        <Setter Property="Spacing" Value="{StaticResource Space4}" />
+        <Setter Property="Padding" Value="{StaticResource AuthFormPadding}" />
+        <Setter Property="MaximumWidthRequest" Value="400" />
+        <Setter Property="HorizontalOptions" Value="Center" />
     </Style>
 
 </ResourceDictionary>
