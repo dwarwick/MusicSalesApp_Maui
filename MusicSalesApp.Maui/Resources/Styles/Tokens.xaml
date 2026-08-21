@@ -71,6 +71,19 @@
     <x:Double x:Key="GlyphSizeLarge">32</x:Double>
     <x:Double x:Key="GlyphSizeHero">48</x:Double>
 
+    <!-- LYRICS. Larger than the surrounding UI on purpose: this is text being read at arm's
+         length while the song plays, not chrome. The two player sizes are the web app's own at
+         phone width, where it sizes lyrics UP rather than down.
+
+         The card size is the one judgement call. The web has no mobile override for card lyrics,
+         because at phone width its library collapses to 84px rows where lyrics are not offered
+         at all, and the only card that keeps them is the ~300px carousel. Our card is a 150 DIP
+         square in both places - between those two - so it gets a size chosen for that box rather
+         than a number inherited from a larger one. -->
+    <x:Double x:Key="FontSizeLyricsPlayer">18</x:Double>
+    <x:Double x:Key="FontSizeLyricsPlaylist">15</x:Double>
+    <x:Double x:Key="FontSizeLyricsCard">13</x:Double>
+
     <!-- ===================================================================
          SPACING - tokens.css st-space-*
          =================================================================== -->

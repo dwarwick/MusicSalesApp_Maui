@@ -1,9 +1,16 @@
-using System.Windows.Input;
+﻿using System.Windows.Input;
+using MusicSalesApp.Maui.Services;
+using MusicSalesApp.Maui.ViewModels;
 
 namespace MusicSalesApp.Maui.Views;
 
 public partial class SongCardView : ContentView
 {
+    private IPlaybackService? _playbackService;
+    private ILyricsService? _lyricsService;
+    private CancellationTokenSource? _lyricsLoad;
+    private int _lyricsLoadedForSongId = -1;
+
     public static readonly BindableProperty ShowFacebookShareButtonProperty =
         BindableProperty.Create(nameof(ShowFacebookShareButton), typeof(bool), typeof(SongCardView), true);
 
@@ -119,5 +126,125 @@ public partial class SongCardView : ContentView
     public SongCardView()
     {
         InitializeComponent();
+
+        // Cards are built by a DataTemplate, so services are resolved on the way in and released
+        // on the way out rather than injected - the same shape EqualizerPlayButton uses, and for
+        // the same reason.
+        Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
+    }
+
+    /// <summary>Injected by tests, which have no platform application to resolve from.</summary>
+    public IPlaybackService? PlaybackServiceOverride { get; set; }
+
+    /// <summary>Injected by tests.</summary>
+    public ILyricsService? LyricsServiceOverride { get; set; }
+
+    private void OnLoaded(object? sender, EventArgs e)
+    {
+        var services = IPlatformApplication.Current?.Services;
+        _playbackService = PlaybackServiceOverride
+            ?? services?.GetService(typeof(IPlaybackService)) as IPlaybackService;
+        _lyricsService = LyricsServiceOverride
+            ?? services?.GetService(typeof(ILyricsService)) as ILyricsService;
+
+        if (_playbackService is not null)
+        {
+            _playbackService.StateChanged += OnPlaybackStateChanged;
+        }
+
+        SyncToPlayingSong();
+    }
+
+    private void OnUnloaded(object? sender, EventArgs e)
+    {
+        if (_playbackService is not null)
+        {
+            _playbackService.StateChanged -= OnPlaybackStateChanged;
+        }
+
+        _lyricsLoad?.Cancel();
+        LyricsPanel.Deactivate();
+    }
+
+    private void OnPlaybackStateChanged(string propertyName)
+    {
+        if (propertyName == nameof(IPlaybackService.CurrentSong))
+        {
+            MainThread.BeginInvokeOnMainThread(SyncToPlayingSong);
+        }
+    }
+
+    /// <summary>
+    /// Offer lyrics on this card only while it is the one playing.
+    /// </summary>
+    /// <remarks>
+    /// Two reasons, and the second is the one that matters at scale. The highlight follows the
+    /// audio clock, so on a card that is not playing there is nothing for it to follow. And a
+    /// library page holds dozens of cards - fetching timings for all of them would be dozens of
+    /// downloads to answer a question nobody asked.
+    /// </remarks>
+    private async void SyncToPlayingSong()
+    {
+        var song = BindingContext as SongDto;
+        var isPlayingCard = song is not null && _playbackService?.CurrentSong?.Id == song.Id;
+
+        if (!isPlayingCard)
+        {
+            _lyricsLoad?.Cancel();
+            ShowArt();
+            LyricsToggle.IsVisible = false;
+            LyricsPanel.Document = null;
+            _lyricsLoadedForSongId = -1;
+            return;
+        }
+
+        if (song!.Id == _lyricsLoadedForSongId || _lyricsService is null)
+        {
+            return;
+        }
+
+        _lyricsLoadedForSongId = song.Id;
+        _lyricsLoad?.Cancel();
+        _lyricsLoad = new CancellationTokenSource();
+        var token = _lyricsLoad.Token;
+
+        try
+        {
+            var document = await _lyricsService.GetTimingsAsync(song, token);
+            if (token.IsCancellationRequested || document is null)
+            {
+                return;
+            }
+
+            LyricsPanel.Document = document;
+            LyricsToggle.IsVisible = true;
+        }
+        catch (OperationCanceledException)
+        {
+            // Playback moved to another card. That card owns the panel now.
+        }
+    }
+
+    private void OnLyricsToggleTapped(object? sender, TappedEventArgs e)
+    {
+        if (LyricsPanelHost.IsVisible)
+        {
+            ShowArt();
+            return;
+        }
+
+        HeroArt.IsVisible = false;
+        LyricsPanelHost.IsVisible = true;
+        LyricsToggleLabel.Text = "Art";
+        LyricsPanel.Activate();
+    }
+
+    private void ShowArt()
+    {
+        HeroArt.IsVisible = true;
+        LyricsPanelHost.IsVisible = false;
+        LyricsToggleLabel.Text = "Lyrics";
+        LyricsPanel.Deactivate();
     }
 }

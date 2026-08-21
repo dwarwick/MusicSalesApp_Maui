@@ -1,0 +1,39 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<!--
+    Scrolling lyrics with the sung word highlighted.
+
+    The markup is deliberately almost empty: one scroller holding one stack. Every line is built
+    in code-behind when a document arrives, because the number of lines and the number of words
+    inside each are only known then, and a DataTemplate over words would put a layout container
+    around every word on the page.
+
+    Lines are Labels carrying a Span per word. Highlighting sets a Span's TextColor and nothing
+    else - see the code-behind for why a weight change is not an option.
+-->
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="MusicSalesApp.Maui.Views.LyricsView"
+             x:Name="Root">
+
+    <Grid>
+        <!-- Scrolling is ours to drive, so the bars are hidden: the creator is not meant to be
+             hunting through this, the song is doing that for them. -->
+        <ScrollView x:Name="Scroller"
+                    Orientation="Vertical"
+                    VerticalScrollBarVisibility="Never"
+                    HorizontalScrollBarVisibility="Never">
+            <VerticalStackLayout x:Name="LineStack"
+                                 Spacing="{StaticResource SpaceHair}"
+                                 Padding="{StaticResource Space3}" />
+        </ScrollView>
+
+        <!-- Shown instead of the stack when there is nothing to show. -->
+        <Label x:Name="EmptyLabel"
+               Style="{StaticResource SecondaryText}"
+               Text="Lyrics are loading&#8230;"
+               HorizontalOptions="Center"
+               VerticalOptions="Center"
+               HorizontalTextAlignment="Center"
+               IsVisible="False" />
+    </Grid>
+</ContentView>

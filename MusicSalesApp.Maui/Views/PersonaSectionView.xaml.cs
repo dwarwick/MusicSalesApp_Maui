@@ -1,4 +1,5 @@
-using System.Windows.Input;
+﻿using System.Windows.Input;
+using MusicSalesApp.Maui.Services;
 
 namespace MusicSalesApp.Maui.Views;
 
@@ -25,6 +26,10 @@ public partial class PersonaSectionView : ContentView
     public static readonly BindableProperty ImageSourceProperty =
         BindableProperty.Create(
             nameof(ImageSource), typeof(ImageSource), typeof(PersonaSectionView), default(ImageSource));
+
+    public static readonly BindableProperty WebsiteUrlProperty =
+        BindableProperty.Create(
+            nameof(WebsiteUrl), typeof(string), typeof(PersonaSectionView), default(string));
 
     /// <summary>Where tapping the artist's name goes. The players supply their artist route.</summary>
     public static readonly BindableProperty NavigateCommandProperty =
@@ -58,6 +63,38 @@ public partial class PersonaSectionView : ContentView
     {
         get => (ICommand?)GetValue(NavigateCommandProperty);
         set => SetValue(NavigateCommandProperty, value);
+    }
+
+    /// <summary>
+    /// The artist's own site, exactly as they typed it.
+    /// </summary>
+    /// <remarks>
+    /// Not necessarily a URL. The server stores this with nothing but a Trim - no scheme is
+    /// added and nothing is validated - so it may well arrive as "example.com", and it is not
+    /// safe to hand to the launcher unexamined. See <see cref="WebsiteUri"/>.
+    /// </remarks>
+    public string? WebsiteUrl
+    {
+        get => (string?)GetValue(WebsiteUrlProperty);
+        set => SetValue(WebsiteUrlProperty, value);
+    }
+
+    private async void OnWebsiteTapped(object? sender, TappedEventArgs e)
+    {
+        if (!WebsiteUri.TryParse(WebsiteUrl, out var uri) || uri is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Launcher.Default.OpenAsync(uri);
+        }
+        catch
+        {
+            // No browser, or the launcher refused. Nothing useful to say - the rest of the page
+            // is unaffected.
+        }
     }
 
     /// <summary>

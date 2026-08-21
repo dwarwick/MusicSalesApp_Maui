@@ -179,6 +179,10 @@ public static class MauiProgram
 			services.GetRequiredService<ILogger<OfflineAwareMusicService>>(),
 			services.GetRequiredService<IImageCacheService>()));
 		builder.Services.AddSingleton<IImageCacheService, ImageCacheService>();
+
+		// Lyric timings. Fetched on demand and cached beside the audio and artwork, so a downloaded
+		// song stays fully usable offline rather than losing its lyrics the moment the signal does.
+		builder.Services.AddSingleton<ILyricsService, LyricsService>();
 		builder.Services.AddSingleton<ISongArtworkHydrator, SongArtworkHydrator>();
 		// The platform cache is registered concretely and wrapped, so a song's artwork is downloaded at
 		// exactly the same moment its audio is - no separate trigger to keep in sync.
@@ -188,14 +192,16 @@ public static class MauiProgram
 			services.GetRequiredService<MusicSalesApp.Maui.Platforms.Android.AndroidMedia3AudioCacheService>(),
 			services.GetRequiredService<IImageCacheService>(),
 			services.GetRequiredService<ILogger<ArtworkCachingAudioCacheService>>(),
-			services.GetRequiredService<INetworkStatusService>()));
+			services.GetRequiredService<INetworkStatusService>(),
+			services.GetRequiredService<ILyricsService>()));
 	#else
 		builder.Services.AddSingleton<AudioCacheService>();
 		builder.Services.AddSingleton<IAudioCacheService>(services => new ArtworkCachingAudioCacheService(
 			services.GetRequiredService<AudioCacheService>(),
 			services.GetRequiredService<IImageCacheService>(),
 			services.GetRequiredService<ILogger<ArtworkCachingAudioCacheService>>(),
-			services.GetRequiredService<INetworkStatusService>()));
+			services.GetRequiredService<INetworkStatusService>(),
+			services.GetRequiredService<ILyricsService>()));
 	#endif
 		builder.Services.AddSingleton<ITrackCacheService>(services => services.GetRequiredService<IAudioCacheService>());
 		builder.Services.AddSingleton<IQueuePreparationService, QueuePreparationService>();

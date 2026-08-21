@@ -1,15 +1,20 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using MusicSalesApp.Maui.ViewModels;
 
 namespace MusicSalesApp.Maui.Services;
 
 /// <summary>
-/// Wraps the platform audio cache so a song's artwork is downloaded alongside its audio.
+/// Wraps the platform audio cache so a song's artwork and lyric timings are downloaded alongside its
+/// audio.
 ///
-/// Hooking the audio cache rather than the UI is what keeps the two in step: artwork is cached exactly
-/// when - and only when - the audio it belongs to is cached, so everything playable offline also has a
-/// cover, and nothing else is downloaded.
+/// Hooking the audio cache rather than the UI is what keeps the three in step: they are cached exactly
+/// when - and only when - the audio they belong to is cached, so everything playable offline also has a
+/// cover and its lyrics, and nothing else is downloaded.
+///
+/// Timings ride here rather than in their own decorator because they answer the same question artwork
+/// does - "is this song whole on this device" - and a second decorator would have had to duplicate the
+/// network gate and the local-ready hook to reach the same answer a beat later.
 /// </summary>
 public sealed class ArtworkCachingAudioCacheService : IAudioCacheService
 {
@@ -25,6 +30,7 @@ public sealed class ArtworkCachingAudioCacheService : IAudioCacheService
 
     private readonly IAudioCacheService _inner;
     private readonly IImageCacheService _imageCacheService;
+    private readonly ILyricsService? _lyricsService;
     private readonly INetworkStatusService? _networkStatusService;
     private readonly ILogger<ArtworkCachingAudioCacheService> _logger;
     private readonly SemaphoreSlim _backfillGate = new(BackfillConcurrency, BackfillConcurrency);
@@ -41,12 +47,14 @@ public sealed class ArtworkCachingAudioCacheService : IAudioCacheService
         IAudioCacheService inner,
         IImageCacheService imageCacheService,
         ILogger<ArtworkCachingAudioCacheService> logger,
-        INetworkStatusService? networkStatusService = null)
+        INetworkStatusService? networkStatusService = null,
+        ILyricsService? lyricsService = null)
     {
         _inner = inner;
         _imageCacheService = imageCacheService;
         _logger = logger;
         _networkStatusService = networkStatusService;
+        _lyricsService = lyricsService;
     }
 
     public string GetStableCacheKey(SongDto song) => _inner.GetStableCacheKey(song);
@@ -82,6 +90,7 @@ public sealed class ArtworkCachingAudioCacheService : IAudioCacheService
         if (status.IsLocalReady)
         {
             QueueArtworkBackfill([song]);
+            QueueLyricsBackfill([song]);
         }
 
         return status;
@@ -114,6 +123,48 @@ public sealed class ArtworkCachingAudioCacheService : IAudioCacheService
     /// <summary>
     /// Fire-and-forget: artwork must never delay or fail an audio cache operation.
     /// </summary>
+    /// <summary>
+    /// Fetch the timings for songs whose audio is now local.
+    /// </summary>
+    /// <remarks>
+    /// Fire-and-forget on purpose: a caller waiting for its audio should not also wait on a few
+    /// kilobytes of JSON. Songs the server said have no published lyrics cost nothing here - the
+    /// service returns immediately without touching the network.
+    /// </remarks>
+    private void QueueLyricsBackfill(IReadOnlyList<SongDto> songs)
+    {
+        if (_lyricsService is null || songs.Count == 0 || _networkStatusService?.HasNoNetworkAccess == true)
+        {
+            return;
+        }
+
+        var pending = songs
+            .Where(song => !string.IsNullOrWhiteSpace(song.LyricsTimingsPath))
+            .ToList();
+
+        if (pending.Count == 0)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            foreach (var song in pending)
+            {
+                try
+                {
+                    await _lyricsService.EnsureCachedAsync(song).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    // Losing the lyrics costs the lyrics. The song is downloaded and playable,
+                    // which is what the caller actually asked for.
+                    _logger.LogDebug(ex, "Could not cache lyrics for song {SongId}.", song.Id);
+                }
+            }
+        });
+    }
+
     private void QueueArtworkBackfill(IReadOnlyList<SongDto> songs)
     {
         if (songs.Count == 0 || _networkStatusService?.HasNoNetworkAccess == true)

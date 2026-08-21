@@ -19,18 +19,51 @@
                 <VerticalStackLayout Spacing="{StaticResource Space4}"
                                      Padding="20,24,20,16">
 
-                <!-- Large Album Art -->
-                        <Grid HorizontalOptions="Center"
-                            HeightRequest="{StaticResource PlayerHeroArtSize}"
-                            WidthRequest="{StaticResource PlayerHeroArtSize}">
-                      <Border HorizontalOptions="Center"
-                        StrokeShape="RoundRectangle 12"
-                        StrokeThickness="0">
-                       <views:SongArtworkView AlbumArtUrl="{Binding Song.AlbumArtHeroDisplaySource}"
-                                    HeightRequest="{StaticResource PlayerHeroArtSize}"
-                                    WidthRequest="{StaticResource PlayerHeroArtSize}" />
-                      </Border>
-                  </Grid>
+                <!-- Large Album Art, with the lyrics panel occupying the same square. The two
+                     swap rather than overlaying, so the block keeps its size and nothing below
+                     it shifts when the toggle is pressed. -->
+                <Grid HorizontalOptions="Center"
+                      HeightRequest="{StaticResource PlayerHeroArtSize}"
+                      WidthRequest="{StaticResource PlayerHeroArtSize}">
+                    <Border x:Name="HeroArt"
+                            HorizontalOptions="Center"
+                            StrokeShape="RoundRectangle 12"
+                            StrokeThickness="0">
+                        <views:SongArtworkView AlbumArtUrl="{Binding Song.AlbumArtHeroDisplaySource}"
+                                               HeightRequest="{StaticResource PlayerHeroArtSize}"
+                                               WidthRequest="{StaticResource PlayerHeroArtSize}" />
+                    </Border>
+
+                    <Border x:Name="LyricsPanelHost"
+                            IsVisible="False"
+                            StrokeShape="RoundRectangle 12"
+                            StrokeThickness="0"
+                            BackgroundColor="{AppThemeBinding Light={StaticResource SurfaceLight}, Dark={StaticResource SurfaceDark}}">
+                        <views:LyricsView x:Name="LyricsPanel"
+                                          TextSize="{StaticResource FontSizeLyricsPlayer}" />
+                    </Border>
+
+                    <!-- Sits in the corner of the square, as the web toggle does. Hidden entirely
+                         when the song has no lyrics a listener may see. -->
+                    <Border x:Name="LyricsToggle"
+                            IsVisible="False"
+                            HorizontalOptions="End"
+                            VerticalOptions="End"
+                            Margin="{StaticResource Space1}"
+                            Padding="10,4"
+                            StrokeThickness="0"
+                            StrokeShape="RoundRectangle 999"
+                            BackgroundColor="{AppThemeBinding Light={StaticResource AccentFillLight}, Dark={StaticResource AccentFillDark}}">
+                        <Label x:Name="LyricsToggleLabel"
+                               Text="Lyrics"
+                               FontSize="{StaticResource FontSizeMicro}"
+                               FontAttributes="Bold"
+                               TextColor="{AppThemeBinding Light={StaticResource OnAccentLight}, Dark={StaticResource OnAccentDark}}" />
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnLyricsToggleTapped" />
+                        </Border.GestureRecognizers>
+                    </Border>
+                </Grid>
 
                 <views:AiContentBadgesView IsAiMusic="{Binding Song.IsAiGenerated}"
                                             IsAiVocals="{Binding Song.IsAiVocals}"
@@ -75,6 +108,7 @@
 
                 <views:PersonaSectionView PersonaName="{Binding Song.ArtistName}"
                                           Bio="{Binding Song.PersonaBio}"
+                                      WebsiteUrl="{Binding Song.PersonaWebsiteUrl}"
                                           ImageSource="{Binding Song.PersonaImageHeroDisplaySource}"
                                           NavigateCommand="{Binding NavigateToArtistCommand}" />
 

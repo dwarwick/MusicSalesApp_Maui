@@ -30,7 +30,8 @@
             <Grid HorizontalOptions="Center"
                   HeightRequest="{StaticResource ArtSizeCard}"
                   WidthRequest="{StaticResource ArtSizeCard}">
-                <Border HorizontalOptions="Center"
+                <Border x:Name="HeroArt"
+                        HorizontalOptions="Center"
                         StrokeShape="RoundRectangle 8"
                         StrokeThickness="0"
                         HeightRequest="{StaticResource ArtSizeCard}"
@@ -38,6 +39,39 @@
                     <views:SongArtworkView AlbumArtUrl="{Binding AlbumArtHeroDisplaySource}"
                                            HeightRequest="{StaticResource ArtSizeCard}"
                                            WidthRequest="{StaticResource ArtSizeCard}" />
+                </Border>
+
+                <!-- Same square, swapped rather than overlaid, so the card keeps its height. -->
+                <Border x:Name="LyricsPanelHost"
+                        IsVisible="False"
+                        StrokeShape="RoundRectangle 8"
+                        StrokeThickness="0"
+                        HeightRequest="{StaticResource ArtSizeCard}"
+                        WidthRequest="{StaticResource ArtSizeCard}"
+                        BackgroundColor="{AppThemeBinding Light={StaticResource SurfaceLight}, Dark={StaticResource SurfaceDark}}">
+                    <views:LyricsView x:Name="LyricsPanel"
+                                      TextSize="{StaticResource FontSizeLyricsCard}" />
+                </Border>
+
+                <!-- Only ever shown on the card that is playing: the highlight follows the audio
+                     clock, so on any other card there would be nothing for it to follow. -->
+                <Border x:Name="LyricsToggle"
+                        IsVisible="False"
+                        HorizontalOptions="End"
+                        VerticalOptions="End"
+                        Margin="{StaticResource Space1}"
+                        Padding="8,3"
+                        StrokeThickness="0"
+                        StrokeShape="RoundRectangle 999"
+                        BackgroundColor="{AppThemeBinding Light={StaticResource AccentFillLight}, Dark={StaticResource AccentFillDark}}">
+                    <Label x:Name="LyricsToggleLabel"
+                           Text="Lyrics"
+                           FontSize="{StaticResource FontSizeNano}"
+                           FontAttributes="Bold"
+                           TextColor="{AppThemeBinding Light={StaticResource OnAccentLight}, Dark={StaticResource OnAccentDark}}" />
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnLyricsToggleTapped" />
+                    </Border.GestureRecognizers>
                 </Border>
             </Grid>
 

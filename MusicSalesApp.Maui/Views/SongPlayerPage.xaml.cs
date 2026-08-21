@@ -9,9 +9,17 @@ public partial class SongPlayerPage : ContentPage
 {
     private readonly IPlaybackService _playbackService;
     private readonly SongPlayerViewModel _viewModel;
+    private readonly ILyricsService _lyricsService;
+    private CancellationTokenSource? _lyricsLoad;
+    private bool _showingLyrics;
 
-    public SongPlayerPage(SongPlayerViewModel viewModel, IPlaybackService playbackService, IAuthService authService)
+    public SongPlayerPage(
+        SongPlayerViewModel viewModel,
+        IPlaybackService playbackService,
+        IAuthService authService,
+        ILyricsService lyricsService)
     {
+        _lyricsService = lyricsService;
         _viewModel = viewModel;
         _playbackService = playbackService;
         BindingContext = viewModel;
@@ -34,6 +42,61 @@ public partial class SongPlayerPage : ContentPage
             authService,
             _viewModel.PlayDisplayedSongQueueAsync,
             "Press Play to queue this song.");
+
+        LyricsPanel.Initialize(playbackService);
+    }
+
+    /// <summary>
+    /// Fetch this song's timings, if it has any a listener may see.
+    /// </summary>
+    /// <remarks>
+    /// The toggle stays hidden until they are actually in hand, so it can never offer a panel
+    /// that turns out to be empty. A song without lyrics simply never grows the control.
+    /// </remarks>
+    private async Task LoadLyricsAsync()
+    {
+        _lyricsLoad?.Cancel();
+        _lyricsLoad = new CancellationTokenSource();
+        var token = _lyricsLoad.Token;
+
+        LyricsToggle.IsVisible = false;
+        LyricsPanel.Document = null;
+
+        try
+        {
+            var document = await _lyricsService.GetTimingsAsync(_viewModel.Song, token);
+            if (token.IsCancellationRequested || document is null)
+            {
+                return;
+            }
+
+            LyricsPanel.Document = document;
+            LyricsToggle.IsVisible = true;
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer song. Nothing to clean up.
+        }
+    }
+
+    private void OnLyricsToggleTapped(object? sender, TappedEventArgs e)
+    {
+        _showingLyrics = !_showingLyrics;
+
+        HeroArt.IsVisible = !_showingLyrics;
+        LyricsPanelHost.IsVisible = _showingLyrics;
+        LyricsToggleLabel.Text = _showingLyrics ? "Art" : "Lyrics";
+
+        // The panel only follows playback while it is on screen - a hidden one must not be
+        // waking the main thread ten times a second.
+        if (_showingLyrics)
+        {
+            LyricsPanel.Activate();
+        }
+        else
+        {
+            LyricsPanel.Deactivate();
+        }
     }
 
     protected override async void OnAppearing()
@@ -41,13 +104,22 @@ public partial class SongPlayerPage : ContentPage
         base.OnAppearing();
         NowPlayingBar.Activate();
         _viewModel.Activate();
+
+        if (_showingLyrics)
+        {
+            LyricsPanel.Activate();
+        }
+
         await _viewModel.StartSignalRAsync();
+        await LoadLyricsAsync();
     }
 
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
         NowPlayingBar.Deactivate();
+        LyricsPanel.Deactivate();
+        _lyricsLoad?.Cancel();
         _viewModel.Cleanup();
     }
 

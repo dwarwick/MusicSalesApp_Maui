@@ -57,6 +57,17 @@
                    LineBreakMode="WordWrap"
                    IsVisible="{Binding Bio, Source={x:Reference Root}, Converter={toolkit:IsStringNotNullOrEmptyConverter}}" />
 
+            <Label Style="{StaticResource LinkText}"
+                   Text="{Binding WebsiteUrl, Source={x:Reference Root}}"
+                   LineBreakMode="TailTruncation"
+                   MaxLines="1"
+                   TextDecorations="Underline"
+                   IsVisible="{Binding WebsiteUrl, Source={x:Reference Root}, Converter={toolkit:IsStringNotNullOrEmptyConverter}}">
+                <Label.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnWebsiteTapped" />
+                </Label.GestureRecognizers>
+            </Label>
+
         </VerticalStackLayout>
     </Grid>
 </ContentView>
