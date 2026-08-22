@@ -39,7 +39,7 @@
 		<ApplicationId>net.streamtunes.musicsalesapp.maui</ApplicationId>
 
 		<!-- Versions -->
-		<ApplicationDisplayVersion>1.0.107</ApplicationDisplayVersion>
+		<ApplicationDisplayVersion>1.0.108</ApplicationDisplayVersion>
 		<ApplicationVersion>107</ApplicationVersion>
 		<AndroidXMedia3Version>1.10.1.1</AndroidXMedia3Version>
 
