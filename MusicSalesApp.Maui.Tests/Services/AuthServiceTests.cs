@@ -28,6 +28,7 @@ public class AuthServiceTests
     private Mock<ISecureStorage> _mockSecureStorage;
     private Mock<IOfflinePlaylistStore> _mockOfflinePlaylistStore;
     private Mock<IOfflineSongCatalogStore> _mockOfflineSongCatalogStore;
+    private Mock<IBiometricAuthenticator> _mockBiometrics;
     private AuthService _authService;
 
     [SetUp]
@@ -51,6 +52,14 @@ public class AuthServiceTests
         _mockOfflinePlaylistStore = new Mock<IOfflinePlaylistStore>();
         _mockOfflineSongCatalogStore = new Mock<IOfflineSongCatalogStore>();
 
+        // Default to a device that has biometrics but refuses the prompt, so a test that cares
+        // about either has to say so.
+        _mockBiometrics = new Mock<IBiometricAuthenticator>();
+        _mockBiometrics.Setup(biometrics => biometrics.GetAvailabilityAsync())
+            .ReturnsAsync(new BiometricAvailability(true, BiometricMethod.Fingerprint, "your fingerprint or face", "Fingerprint"));
+        _mockBiometrics.Setup(biometrics => biometrics.AuthenticateAsync())
+            .ReturnsAsync((false, "Authentication cancelled."));
+
         _authService = new AuthService(
             _mockHttpClientFactory.Object,
             _mockConfiguration.Object,
@@ -59,6 +68,7 @@ public class AuthServiceTests
             _mockBillingService.Object,
             _mockMusicService.Object,
             _mockSecureStorage.Object,
+            _mockBiometrics.Object,
             _mockOfflinePlaylistStore.Object,
             _mockOfflineSongCatalogStore.Object);
     }
@@ -185,7 +195,8 @@ public class AuthServiceTests
             _mockWebAuthenticatorService.Object,
             _mockBillingService.Object,
             _mockMusicService.Object,
-            _mockSecureStorage.Object);
+            _mockSecureStorage.Object,
+            _mockBiometrics.Object);
 
         await authService.LogoutAsync();
 
@@ -1406,6 +1417,80 @@ public class AuthServiceTests
         {
             Assert.That(_authService.IsLoggedIn, Is.True);
             Assert.That(_authService.PendingSessionExpiryNotice, Is.Null);
+        });
+    }
+
+    // --- The biometric prompt itself. Untestable until it moved behind IBiometricAuthenticator:
+    //     it was a private static method inside an #if ANDROID, so the platform-less test build
+    //     compiled the "not supported" branch and no test could reach the real path. ---
+
+    /// <summary>Puts a saved pair in the keychain so the prompt is actually reached.</summary>
+    private void GiveTheDeviceSavedCredentials()
+    {
+        _mockSecureStorage.Setup(storage => storage.GetAsync(BioEmailKey)).ReturnsAsync("saved@test.com");
+        _mockSecureStorage.Setup(storage => storage.GetAsync(BioPasswordKey)).ReturnsAsync("saved-password");
+    }
+
+    [Test]
+    public async Task BiometricLoginAsync_WhenThePromptSucceeds_SignsInWithTheSavedCredentials()
+    {
+        GiveTheDeviceSavedCredentials();
+        _mockBiometrics.Setup(biometrics => biometrics.AuthenticateAsync()).ReturnsAsync((true, string.Empty));
+
+        await _authService.BiometricLoginAsync();
+
+        // The saved pair is replayed against the login endpoint - there is no refresh-token flow, so
+        // this really is a fresh password login behind the prompt.
+        _mockBiometrics.Verify(biometrics => biometrics.AuthenticateAsync(), Times.Once);
+        _mockSecureStorage.Verify(storage => storage.GetAsync(BioPasswordKey), Times.Once);
+    }
+
+    [Test]
+    public async Task BiometricLoginAsync_WhenThePromptFails_ReportsItsReasonAndDoesNotSignIn()
+    {
+        // The prompt's wording reaches the screen unchanged, so a cancellation must not be reworded
+        // into something that reads like a failure.
+        GiveTheDeviceSavedCredentials();
+        _mockBiometrics.Setup(biometrics => biometrics.AuthenticateAsync())
+            .ReturnsAsync((false, "Authentication cancelled."));
+
+        var (success, error) = await _authService.BiometricLoginAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(success, Is.False);
+            Assert.That(error, Is.EqualTo("Authentication cancelled."));
+            Assert.That(_authService.IsLoggedIn, Is.False);
+        });
+    }
+
+    [Test]
+    public async Task BiometricLoginAsync_WithNoSavedCredentials_NeverShowsThePrompt()
+    {
+        // The default mock storage returns null for everything, so there is nothing to unlock.
+        var (success, error) = await _authService.BiometricLoginAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(success, Is.False);
+            Assert.That(error, Does.Contain("No saved credentials"));
+        });
+        _mockBiometrics.Verify(biometrics => biometrics.AuthenticateAsync(), Times.Never);
+    }
+
+    [Test]
+    public async Task GetBiometricAvailabilityAsync_PassesThroughWhatTheDeviceSaid()
+    {
+        _mockBiometrics.Setup(biometrics => biometrics.GetAvailabilityAsync())
+            .ReturnsAsync(new BiometricAvailability(true, BiometricMethod.FaceId, "Face ID", "Face ID"));
+
+        var availability = await _authService.GetBiometricAvailabilityAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(availability.IsAvailable, Is.True);
+            Assert.That(availability.Method, Is.EqualTo(BiometricMethod.FaceId));
+            Assert.That(availability.ShortName, Is.EqualTo("Face ID"));
         });
     }
 

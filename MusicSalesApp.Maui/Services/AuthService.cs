@@ -20,6 +20,7 @@ public class AuthService : IAuthService
     private readonly IBillingService _billingService;
     private readonly IMusicService _musicService;
     private readonly ISecureStorage _secureStorage;
+    private readonly IBiometricAuthenticator _biometrics;
     private readonly SemaphoreSlim _biometricStateLock = new(1, 1);
     private int _biometricCredentialsState = -1;
 
@@ -90,6 +91,7 @@ public class AuthService : IAuthService
     public AuthService(IHttpClientFactory httpClientFactory, IConfiguration configuration,
         ILogger<AuthService> logger, IWebAuthenticatorService webAuthenticatorService,
         IBillingService billingService, IMusicService musicService, ISecureStorage secureStorage,
+        IBiometricAuthenticator biometrics,
         IOfflinePlaylistStore? offlinePlaylistStore = null,
         IOfflineSongCatalogStore? offlineSongCatalogStore = null)
     {
@@ -100,6 +102,7 @@ public class AuthService : IAuthService
         _billingService = billingService;
         _musicService = musicService;
         _secureStorage = secureStorage;
+        _biometrics = biometrics;
         _offlinePlaylistStore = offlinePlaylistStore;
         _offlineSongCatalogStore = offlineSongCatalogStore;
 
@@ -753,15 +756,18 @@ public class AuthService : IAuthService
         return await LoginAsync(email, password);
     }
 
-    private static async Task<(bool Success, string Error)> PromptBiometricAsync()
-    {
-#if ANDROID
-        return await Platforms.Android.BiometricHelper.AuthenticateAsync();
-#else
-        await Task.CompletedTask;
-        return (false, "Biometric authentication is not supported on this platform.");
-#endif
-    }
+    public Task<BiometricAvailability> GetBiometricAvailabilityAsync() => _biometrics.GetAvailabilityAsync();
+
+    /// <summary>
+    /// Shows the device's biometric prompt.
+    /// </summary>
+    /// <remarks>
+    /// This was <c>#if ANDROID</c> around a static call, with a hard-coded "not supported on this
+    /// platform" everywhere else. Routing it through <see cref="IBiometricAuthenticator"/> is what
+    /// lets iOS answer, and what lets <see cref="BiometricLoginAsync"/> be tested at all - the
+    /// compile-time branch left no seam to stand a double in.
+    /// </remarks>
+    private Task<(bool Success, string Error)> PromptBiometricAsync() => _biometrics.AuthenticateAsync();
 
     // --- Private helpers ---
 

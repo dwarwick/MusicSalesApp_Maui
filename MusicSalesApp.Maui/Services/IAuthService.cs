@@ -36,6 +36,16 @@ public interface IAuthService
     Task<bool> HasBiometricCredentialsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Whether this device can offer biometric sign-in, and what to call it on screen.
+    ///
+    /// Exposed here rather than by injecting the authenticator into each view model: the three
+    /// screens that gate on it already take this service, which owns every other half of the
+    /// feature. Callers must not assume a platform - a phone with no enrolled biometrics answers
+    /// unavailable on Android exactly as it does on iOS.
+    /// </summary>
+    Task<BiometricAvailability> GetBiometricAvailabilityAsync();
+
+    /// <summary>
     /// The standing explanation for a session that ended without the user asking. Null when the
     /// session ended some other way — an explicit logout, or a first launch with nothing stored.
     ///

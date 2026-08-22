@@ -19,10 +19,23 @@ public class LoginViewModelTests
         _mockAuthService
             .Setup(a => a.HasBiometricCredentialsAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
+        GiveTheDeviceBiometrics();
         _mockAlertService = new Mock<IAlertService>();
         _mockNavigationService = new Mock<INavigationService>();
         _viewModel = new LoginViewModel(_mockAuthService.Object, _mockAlertService.Object, _mockNavigationService.Object);
     }
+
+    /// <summary>
+    /// An Android-shaped answer: a prompt is available and it is called "your fingerprint or face".
+    /// </summary>
+    private void GiveTheDeviceBiometrics()
+        => _mockAuthService.Setup(a => a.GetBiometricAvailabilityAsync())
+            .ReturnsAsync(new BiometricAvailability(true, BiometricMethod.Fingerprint, "your fingerprint or face", "Fingerprint"));
+
+    /// <summary>Nothing enrolled, or no hardware. The platform is irrelevant - the device's answer is not.</summary>
+    private void GiveTheDeviceNoBiometrics()
+        => _mockAuthService.Setup(a => a.GetBiometricAvailabilityAsync())
+            .ReturnsAsync(BiometricAvailability.Unavailable);
 
     [Test]
     public async Task LoginAsync_EmptyEmail_SetsErrorMessage()
@@ -93,10 +106,7 @@ public class LoginViewModelTests
         _mockAuthService
             .Setup(a => a.HasBiometricCredentialsAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
-        var vm = new LoginViewModel(_mockAuthService.Object, _mockAlertService.Object, _mockNavigationService.Object)
-        {
-            IsBiometricLoginSupported = true
-        };
+        var vm = new LoginViewModel(_mockAuthService.Object, _mockAlertService.Object, _mockNavigationService.Object);
 
         await vm.InitializeAsync();
 
@@ -104,21 +114,49 @@ public class LoginViewModelTests
     }
 
     [Test]
-    public async Task InitializeAsync_OnAPlatformWithoutBiometrics_HidesBiometricLogin()
+    public async Task InitializeAsync_WhenTheDeviceHasNoBiometrics_HidesBiometricLogin()
     {
-        // AuthService.PromptBiometricAsync is #if ANDROID, so on iOS the button is chrome over a
-        // hard-coded "not supported on this platform" and every tap fails.
+        // Saved credentials are not enough on their own: with nothing enrolled the button would be
+        // chrome over a prompt that cannot appear, and every tap would fail.
+        GiveTheDeviceNoBiometrics();
         _mockAuthService
             .Setup(a => a.HasBiometricCredentialsAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
-        var vm = new LoginViewModel(_mockAuthService.Object, _mockAlertService.Object, _mockNavigationService.Object)
-        {
-            IsBiometricLoginSupported = false
-        };
+        var vm = new LoginViewModel(_mockAuthService.Object, _mockAlertService.Object, _mockNavigationService.Object);
 
         await vm.InitializeAsync();
 
         Assert.That(vm.BiometricVisible, Is.False);
+    }
+
+    [Test]
+    public async Task InitializeAsync_OnAFaceIdDevice_ShowsTheFaceIdIcon()
+    {
+        // The reason the icon is bound rather than an OnPlatform swap: a Touch ID iPhone and a Face
+        // ID iPhone are the same platform and want different glyphs.
+        _mockAuthService.Setup(a => a.GetBiometricAvailabilityAsync())
+            .ReturnsAsync(new BiometricAvailability(true, BiometricMethod.FaceId, "Face ID", "Face ID"));
+        var vm = new LoginViewModel(_mockAuthService.Object, _mockAlertService.Object, _mockNavigationService.Object);
+
+        await vm.InitializeAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(vm.BiometricIconSource, Is.EqualTo(BiometricIcons.FaceId));
+            Assert.That(vm.BiometricMethodName, Is.EqualTo("Face ID"));
+        });
+    }
+
+    [Test]
+    public async Task InitializeAsync_OnATouchIdDevice_KeepsTheFingerprintIcon()
+    {
+        _mockAuthService.Setup(a => a.GetBiometricAvailabilityAsync())
+            .ReturnsAsync(new BiometricAvailability(true, BiometricMethod.TouchId, "Touch ID", "Touch ID"));
+        var vm = new LoginViewModel(_mockAuthService.Object, _mockAlertService.Object, _mockNavigationService.Object);
+
+        await vm.InitializeAsync();
+
+        Assert.That(vm.BiometricIconSource, Is.EqualTo(BiometricIcons.Fingerprint));
     }
 
     [Test]

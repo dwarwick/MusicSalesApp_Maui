@@ -50,6 +50,8 @@
 			</array>
 		</dict>
 	</dict>
+	<key>NSFaceIDUsageDescription</key>
+	<string>StreamTunes uses Face ID so you can sign in without typing your password.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

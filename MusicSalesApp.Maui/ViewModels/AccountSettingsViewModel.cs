@@ -44,13 +44,25 @@ public partial class AccountSettingsViewModel : ObservableObject
     public partial bool IsBiometricLoginEnabled { get; set; }
 
     /// <summary>
-    /// Android only. <c>AuthService.PromptBiometricAsync</c> is <c>#if ANDROID</c> and returns "not
-    /// supported on this platform" everywhere else, so on iOS the whole feature is chrome over a
-    /// hard-coded failure: offering it here would invite the user to switch on something that cannot
-    /// work. Mirrors how <see cref="IsAndroidSubscriptionPlatform"/> gates the Play-only offer card.
+    /// Whether this device offers biometric sign-in. Resolved in
+    /// <see cref="RefreshBiometricLoginStateAsync"/> by asking the device, not by naming a platform:
+    /// showing this section where no prompt can appear would invite someone to manage a setting that
+    /// cannot work, and that is as true of an Android phone with nothing enrolled as it was of iOS.
     /// </summary>
     [ObservableProperty]
-    public partial bool IsBiometricLoginSupported { get; set; } = DeviceInfo.Platform == DevicePlatform.Android;
+    [NotifyPropertyChangedFor(nameof(BiometricLoginStatusText))]
+    [NotifyPropertyChangedFor(nameof(TurnOffBiometricLoginText))]
+    public partial bool IsBiometricLoginSupported { get; set; }
+
+    /// <summary>What to call it here: "Face ID", "Touch ID", or "your fingerprint or face" on Android.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(BiometricLoginStatusText))]
+    public partial string BiometricMethodName { get; set; } = BiometricAvailability.Unavailable.DisplayName;
+
+    /// <summary>The button-and-dialog form of the same name: "Face ID", "Fingerprint".</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TurnOffBiometricLoginText))]
+    public partial string BiometricMethodShortName { get; set; } = BiometricAvailability.Unavailable.ShortName;
 
     /// <summary>
     /// The flyout only offers this page to a signed-in user, but the session can end underneath it —
@@ -278,8 +290,14 @@ public partial class AccountSettingsViewModel : ObservableObject
     /// page never has it — that opt-in belongs to the login screen, so the copy says where to find it.
     /// </summary>
     public string BiometricLoginStatusText => IsBiometricLoginEnabled
-        ? "Your sign-in details are saved on this device so you can sign in with your fingerprint or face. They stay saved when you log out, so you can get straight back in."
-        : "Fingerprint sign-in is off. You can turn it on next time you sign in with your password.";
+        ? $"Your sign-in details are saved on this device so you can sign in with {BiometricMethodName}. They stay saved when you log out, so you can get straight back in."
+        : $"{BiometricMethodShortName} sign-in is off. You can turn it on next time you sign in with your password.";
+
+    /// <summary>
+    /// Bound rather than literal so the control names the biometric the device actually has. It was
+    /// "Turn Off Fingerprint Sign-In" in markup, which is still what an Android phone renders.
+    /// </summary>
+    public string TurnOffBiometricLoginText => $"Turn Off {BiometricMethodShortName} Sign-In";
 
     public bool ShowSubscriptionUnavailableBanner => CurrentSubscriptionBanner.IsVisible;
 
@@ -412,6 +430,11 @@ public partial class AccountSettingsViewModel : ObservableObject
     /// </summary>
     private async Task RefreshBiometricLoginStateAsync()
     {
+        var availability = await _authService.GetBiometricAvailabilityAsync();
+        IsBiometricLoginSupported = availability.IsAvailable;
+        BiometricMethodName = availability.DisplayName;
+        BiometricMethodShortName = availability.ShortName;
+
         IsBiometricLoginEnabled = IsBiometricLoginSupported
             && await _authService.HasBiometricCredentialsAsync();
     }
@@ -420,7 +443,7 @@ public partial class AccountSettingsViewModel : ObservableObject
     private async Task TurnOffBiometricLoginAsync()
     {
         var confirmed = await _alertService.ShowConfirmAsync(
-            "Turn Off Fingerprint Sign-In",
+            TurnOffBiometricLoginText,
             "Your saved sign-in details will be removed from this device. You will need your password the next time you sign in.",
             "Turn Off",
             "Keep It");

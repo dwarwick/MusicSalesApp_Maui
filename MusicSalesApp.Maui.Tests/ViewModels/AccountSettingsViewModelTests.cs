@@ -153,10 +153,15 @@ public class AccountSettingsViewModelTests
 
     // --- Biometric sign-in is kept across logout, so this page is the only way to withdraw it ---
 
+    /// <summary>An Android-shaped answer: a prompt is available and is called "your fingerprint or face".</summary>
+    private void GiveTheDeviceBiometrics()
+        => _mockAuthService.Setup(a => a.GetBiometricAvailabilityAsync())
+            .ReturnsAsync(new BiometricAvailability(true, BiometricMethod.Fingerprint, "your fingerprint or face", "Fingerprint"));
+
     [Test]
     public async Task LoadCommand_ReportsWhetherBiometricCredentialsAreSaved()
     {
-        _viewModel.IsBiometricLoginSupported = true;
+        GiveTheDeviceBiometrics();
         _mockAuthService.Setup(a => a.HasBiometricCredentialsAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
@@ -170,12 +175,12 @@ public class AccountSettingsViewModelTests
     }
 
     [Test]
-    public async Task LoadCommand_OnAPlatformWithoutBiometrics_DoesNotOfferIt()
+    public async Task LoadCommand_WhenTheDeviceHasNoBiometrics_DoesNotOfferIt()
     {
-        // AuthService.PromptBiometricAsync is #if ANDROID and answers "not supported on this
-        // platform" elsewhere, so offering the feature on iOS invites the user to switch on something
-        // hard-coded to fail. It is also two Keystore reads that platform has no use for.
-        _viewModel.IsBiometricLoginSupported = false;
+        // Offering it where no prompt can appear invites the user to manage a setting that cannot
+        // work. It is also two Keystore reads with nothing to do.
+        _mockAuthService.Setup(a => a.GetBiometricAvailabilityAsync())
+            .ReturnsAsync(BiometricAvailability.Unavailable);
         _mockAuthService.Setup(a => a.HasBiometricCredentialsAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
@@ -191,7 +196,7 @@ public class AccountSettingsViewModelTests
         // A RelayCommand rethrows onto the sync context, so an unguarded keystore failure here is an
         // app crash from a settings tap — and the switch would still have flipped to "off" over
         // credentials that are all still there.
-        _viewModel.IsBiometricLoginSupported = true;
+        GiveTheDeviceBiometrics();
         _viewModel.IsBiometricLoginEnabled = true;
         _mockAlertService.Setup(a => a.ShowConfirmAsync(
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
@@ -211,7 +216,7 @@ public class AccountSettingsViewModelTests
     [Test]
     public async Task TurnOffBiometricLogin_WhenTheCredentialsSurvive_DoesNotClaimTheyAreGone()
     {
-        _viewModel.IsBiometricLoginSupported = true;
+        GiveTheDeviceBiometrics();
         _viewModel.IsBiometricLoginEnabled = true;
         _mockAlertService.Setup(a => a.ShowConfirmAsync(
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
@@ -230,6 +235,42 @@ public class AccountSettingsViewModelTests
     }
 
     [Test]
+    public async Task LoadCommand_OnAFaceIdDevice_NamesFaceIdInTheCopy()
+    {
+        // "Fingerprint sign-in is off" on an iPhone reads as a different feature that is broken.
+        _mockAuthService.Setup(a => a.GetBiometricAvailabilityAsync())
+            .ReturnsAsync(new BiometricAvailability(true, BiometricMethod.FaceId, "Face ID", "Face ID"));
+        _mockAuthService.Setup(a => a.HasBiometricCredentialsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.BiometricLoginStatusText, Does.Contain("Face ID"));
+            Assert.That(_viewModel.BiometricLoginStatusText, Does.Not.Contain("fingerprint"));
+            Assert.That(_viewModel.TurnOffBiometricLoginText, Is.EqualTo("Turn Off Face ID Sign-In"));
+        });
+    }
+
+    [Test]
+    public async Task LoadCommand_OnAndroid_KeepsTheFingerprintWording()
+    {
+        // The Android copy is what shipped, word for word. This is the regression guard on it.
+        GiveTheDeviceBiometrics();
+        _mockAuthService.Setup(a => a.HasBiometricCredentialsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.BiometricLoginStatusText, Does.Contain("sign in with your fingerprint or face"));
+            Assert.That(_viewModel.TurnOffBiometricLoginText, Is.EqualTo("Turn Off Fingerprint Sign-In"));
+        });
+    }
+
+    [Test]
     public void BiometricLoginStatusText_WhenOff_PointsAtTheLoginScreen()
     {
         // Enabling needs the plaintext password, which this page never has, so the copy has to send
@@ -242,7 +283,7 @@ public class AccountSettingsViewModelTests
     [Test]
     public async Task TurnOffBiometricLogin_WhenConfirmed_ClearsTheSavedCredentials()
     {
-        _viewModel.IsBiometricLoginSupported = true;
+        GiveTheDeviceBiometrics();
         _viewModel.IsBiometricLoginEnabled = true;
         _mockAlertService.Setup(a => a.ShowConfirmAsync(
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))

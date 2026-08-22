@@ -56,13 +56,13 @@ public partial class VerifyEmailViewModel : ObservableObject
     public partial bool ShowChangeEmail { get; set; }
 
     /// <summary>
-    /// Android only; see <see cref="PromptBiometricAsync"/>. An overridable property rather than an
-    /// inline <c>DeviceInfo.Platform</c> check, matching <c>LoginViewModel</c> and
-    /// <c>AccountSettingsViewModel</c> — a static call here is unreachable from a test, and this
-    /// screen is one of only two places that can save biometric credentials.
+    /// Whether this device offers biometric sign-in; see <see cref="PromptBiometricAsync"/>, which
+    /// resolves it. An overridable property rather than an inline device check, matching
+    /// <c>LoginViewModel</c> and <c>AccountSettingsViewModel</c> — this screen is one of only two
+    /// places that can save biometric credentials, so the gate has to be reachable from a test.
     /// </summary>
     [ObservableProperty]
-    public partial bool IsBiometricLoginSupported { get; set; } = DeviceInfo.Platform == DevicePlatform.Android;
+    public partial bool IsBiometricLoginSupported { get; set; }
 
     public string ChangeEmailToggleText => ShowChangeEmail ? "Cancel" : "Change Email";
 
@@ -239,16 +239,19 @@ public partial class VerifyEmailViewModel : ObservableObject
 
     private async Task PromptBiometricAsync()
     {
-        // Same platform gate as the login screen: biometric login is Android-only, so the offer must
-        // not appear on iOS where accepting it saves credentials the prompt can never use.
+        // Same gate as the login screen: the offer must not appear where no prompt would, because
+        // accepting it saves credentials the device could never be asked to unlock.
+        var availability = await _authService.GetBiometricAvailabilityAsync();
+        IsBiometricLoginSupported = availability.IsAvailable;
+
         if (!IsBiometricLoginSupported
             || string.IsNullOrEmpty(Password)
             || await _authService.HasBiometricCredentialsAsync())
             return;
 
         bool enable = await _alertService.ShowConfirmAsync(
-            "Biometric Login",
-            "Would you like to enable biometric login for next time?",
+            $"Sign In With {availability.ShortName}",
+            $"Would you like to use {availability.DisplayName} to sign in next time?",
             "Yes", "No");
 
         if (enable)

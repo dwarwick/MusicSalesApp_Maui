@@ -22,9 +22,32 @@ public partial class LoginViewModel : ObservableObject
     [ObservableProperty]
     public partial bool BiometricVisible { get; set; }
 
-    /// <summary>Android only; see <see cref="PromptBiometricAsync"/>.</summary>
+    /// <summary>
+    /// Whether this device offers biometric sign-in at all. Resolved in <see cref="InitializeAsync"/>
+    /// from the device rather than assumed from the platform, so a phone with nothing enrolled does
+    /// not get a button that can only fail.
+    /// </summary>
     [ObservableProperty]
-    public partial bool IsBiometricLoginSupported { get; set; } = DeviceInfo.Platform == DevicePlatform.Android;
+    public partial bool IsBiometricLoginSupported { get; set; }
+
+    /// <summary>What to call it: "Face ID", "Touch ID", or "your fingerprint or face" on Android.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(BiometricSignInDescription))]
+    public partial string BiometricMethodName { get; set; } = BiometricAvailability.Unavailable.DisplayName;
+
+    /// <summary>
+    /// The screen-reader label for the biometric button, which is otherwise an unlabelled glyph.
+    /// Follows the "Continue with Google" description on the same page.
+    /// </summary>
+    public string BiometricSignInDescription => $"Sign in with {BiometricMethodName}";
+
+    /// <summary>
+    /// The button's glyph. Touch ID is a fingerprint, so it and Android share one asset; Face ID
+    /// gets its own, which is the whole reason this is bound rather than an OnPlatform swap - an
+    /// iPhone SE would otherwise be told to look at a camera it does not use this way.
+    /// </summary>
+    [ObservableProperty]
+    public partial string BiometricIconSource { get; set; } = BiometricIcons.Fingerprint;
 
     [ObservableProperty]
     public partial string? ErrorMessage { get; set; }
@@ -40,8 +63,18 @@ public partial class LoginViewModel : ObservableObject
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
+        var availability = await _authService.GetBiometricAvailabilityAsync();
+        ApplyBiometricAvailability(availability);
+
         BiometricVisible = IsBiometricLoginSupported
             && await _authService.HasBiometricCredentialsAsync(cancellationToken);
+    }
+
+    private void ApplyBiometricAvailability(BiometricAvailability availability)
+    {
+        IsBiometricLoginSupported = availability.IsAvailable;
+        BiometricMethodName = availability.DisplayName;
+        BiometricIconSource = BiometricIcons.For(availability.Method);
     }
 
     [RelayCommand]
@@ -199,15 +232,19 @@ public partial class LoginViewModel : ObservableObject
 
     private async Task PromptBiometricAsync()
     {
-        // AuthService.PromptBiometricAsync is #if ANDROID and answers "not supported on this
-        // platform" everywhere else, so accepting this offer on iOS would write the credentials,
-        // show the fingerprint button, and fail on every tap.
+        // The offer is only honest where a prompt would actually appear. Accepting it on a device
+        // with no biometrics would save the credentials and show a button that fails on every tap.
+        // InitializeAsync has normally answered this already; a password login on a screen that was
+        // never initialised has not, so ask.
+        var availability = await _authService.GetBiometricAvailabilityAsync();
+        ApplyBiometricAvailability(availability);
+
         if (!IsBiometricLoginSupported || await _authService.HasBiometricCredentialsAsync())
             return;
 
         bool enable = await _alertService.ShowConfirmAsync(
-            "Biometric Login",
-            "Would you like to enable biometric login for next time?",
+            $"Sign In With {availability.ShortName}",
+            $"Would you like to use {availability.DisplayName} to sign in next time?",
             "Yes", "No");
 
         if (enable)

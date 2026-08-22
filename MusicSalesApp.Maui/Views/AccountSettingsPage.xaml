@@ -98,7 +98,7 @@
                              Color="{AppThemeBinding Light={StaticResource LineLight}, Dark={StaticResource LineDark}}" />
                 </VerticalStackLayout>
 
-                <!-- Sign-In Section (Android only - biometric login is not implemented on iOS) -->
+                <!-- Sign-In Section. Hidden where the device has no biometrics enrolled, on either platform. -->
                 <VerticalStackLayout Spacing="{StaticResource Space3}"
                                      IsVisible="{Binding IsBiometricLoginSupported}">
                     <Label Text="Sign-In"
@@ -109,7 +109,7 @@
                            FontSize="{StaticResource FontSizeCardTitle}"
                            LineBreakMode="WordWrap"
                            TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
-                    <Button Text="Turn Off Fingerprint Sign-In"
+                    <Button Text="{Binding TurnOffBiometricLoginText}"
                             Command="{Binding TurnOffBiometricLoginCommand}"
                             IsVisible="{Binding IsBiometricLoginEnabled}"
                             BackgroundColor="{StaticResource GenreFillLight}"

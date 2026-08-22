@@ -163,6 +163,16 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IAnonymousFeaturedStreamStore, AnonymousFeaturedStreamStore>();
 		builder.Services.AddSingleton<IPermissionExplainerService, PermissionExplainerService>();
 		builder.Services.AddSingleton<IMicrophonePermissionService, MicrophonePermissionService>();
+		// Biometric sign-in. The Android adapter wraps the BiometricPrompt helper that has shipped
+		// all along; the Apple one is LocalAuthentication. Anywhere else answers "not supported",
+		// which is exactly what AuthService used to hard-code off Android.
+#if ANDROID
+		builder.Services.AddSingleton<IBiometricAuthenticator, MusicSalesApp.Maui.Platforms.Android.AndroidBiometricAuthenticator>();
+#elif IOS
+		builder.Services.AddSingleton<IBiometricAuthenticator, AppleBiometricAuthenticator>();
+#else
+		builder.Services.AddSingleton<IBiometricAuthenticator, UnsupportedBiometricAuthenticator>();
+#endif
 		builder.Services.AddSingleton<IAuthService, AuthService>();
 		builder.Services.AddSingleton<IWebAuthenticatorService, WebAuthenticatorService>();
 		builder.Services.AddSingleton<IAppSettingsService, AppSettingsService>();

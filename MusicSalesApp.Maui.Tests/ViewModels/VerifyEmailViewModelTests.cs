@@ -16,6 +16,7 @@ public class VerifyEmailViewModelTests
     public void Setup()
     {
         _mockAuthService = new Mock<IAuthService>();
+        GiveTheDeviceBiometrics();
         _mockAlertService = new Mock<IAlertService>();
         _mockNavigationService = new Mock<INavigationService>();
         _viewModel = new VerifyEmailViewModel(_mockAuthService.Object, _mockAlertService.Object, _mockNavigationService.Object);
@@ -24,6 +25,16 @@ public class VerifyEmailViewModelTests
     }
 
     // --- Biometric enrolment: this screen is one of only two places that can save credentials ---
+
+    /// <summary>An Android-shaped answer: a prompt is available and is called "your fingerprint or face".</summary>
+    private void GiveTheDeviceBiometrics()
+        => _mockAuthService.Setup(a => a.GetBiometricAvailabilityAsync())
+            .ReturnsAsync(new BiometricAvailability(true, BiometricMethod.Fingerprint, "your fingerprint or face", "Fingerprint"));
+
+    /// <summary>Nothing enrolled, or no hardware. True of an Android phone as readily as an iPhone.</summary>
+    private void GiveTheDeviceNoBiometrics()
+        => _mockAuthService.Setup(a => a.GetBiometricAvailabilityAsync())
+            .ReturnsAsync(BiometricAvailability.Unavailable);
 
     private void ArrangeSuccessfulVerification()
     {
@@ -39,9 +50,8 @@ public class VerifyEmailViewModelTests
     }
 
     [Test]
-    public async Task VerifyAsync_OnAndroid_OffersBiometricEnrolment()
+    public async Task VerifyAsync_WhenTheDeviceHasBiometrics_OffersEnrolment()
     {
-        _viewModel.IsBiometricLoginSupported = true;
         ArrangeSuccessfulVerification();
 
         await _viewModel.VerifyCommand.ExecuteAsync(null);
@@ -50,12 +60,11 @@ public class VerifyEmailViewModelTests
     }
 
     [Test]
-    public async Task VerifyAsync_OnAPlatformWithoutBiometrics_NeverSavesCredentials()
+    public async Task VerifyAsync_WhenTheDeviceHasNoBiometrics_NeverSavesCredentials()
     {
-        // AuthService.PromptBiometricAsync is #if ANDROID and answers "not supported on this
-        // platform" elsewhere. Accepting the offer on iOS would write a plaintext password to the
-        // keychain for a prompt that can never consume it.
-        _viewModel.IsBiometricLoginSupported = false;
+        // Accepting the offer where no prompt can appear would write a plaintext password to the
+        // keychain for something that could never consume it.
+        GiveTheDeviceNoBiometrics();
         ArrangeSuccessfulVerification();
 
         await _viewModel.VerifyCommand.ExecuteAsync(null);
@@ -73,7 +82,6 @@ public class VerifyEmailViewModelTests
     [Test]
     public async Task VerifyAsync_WhenCredentialsAreAlreadySaved_DoesNotAskAgain()
     {
-        _viewModel.IsBiometricLoginSupported = true;
         ArrangeSuccessfulVerification();
         _mockAuthService.Setup(a => a.HasBiometricCredentialsAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
@@ -89,7 +97,6 @@ public class VerifyEmailViewModelTests
     {
         // Arriving here from a deep link rather than registration leaves Password empty, and there is
         // nothing to save.
-        _viewModel.IsBiometricLoginSupported = true;
         ArrangeSuccessfulVerification();
         _viewModel.Password = string.Empty;
 
@@ -102,7 +109,6 @@ public class VerifyEmailViewModelTests
     [Test]
     public async Task VerifyAsync_WhenTheUserDeclinesTheOffer_SavesNothing()
     {
-        _viewModel.IsBiometricLoginSupported = true;
         ArrangeSuccessfulVerification();
         _mockAlertService.Setup(a => a.ShowConfirmAsync(
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
@@ -117,7 +123,6 @@ public class VerifyEmailViewModelTests
     [Test]
     public async Task VerifyAsync_WhenVerificationFails_DoesNotOfferBiometrics()
     {
-        _viewModel.IsBiometricLoginSupported = true;
         ArrangeSuccessfulVerification();
         _mockAuthService.Setup(a => a.VerifyCodeAsync(1, "123456"))
             .ReturnsAsync((false, "Invalid code.", (LoginResponseDto?)null));

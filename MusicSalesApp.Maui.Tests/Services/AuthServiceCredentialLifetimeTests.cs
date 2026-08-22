@@ -63,6 +63,7 @@ public class AuthServiceCredentialLifetimeTests
             new Mock<IBillingService>().Object,
             _mockMusicService.Object,
             _storage,
+            new Mock<IBiometricAuthenticator>().Object,
             new Mock<IOfflinePlaylistStore>().Object,
             new Mock<IOfflineSongCatalogStore>().Object);
     }

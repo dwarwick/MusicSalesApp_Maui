@@ -102,6 +102,11 @@ public class XamlBindingContractTests
     [TestCase("AccountSettingsPage.xaml", "IsBiometricLoginEnabled")]
     [TestCase("AccountSettingsPage.xaml", "BiometricLoginStatusText")]
     [TestCase("AccountSettingsPage.xaml", "TurnOffBiometricLoginCommand")]
+    // Both name the biometric the device actually has. Hard-coded "Fingerprint" is wrong on an iPhone.
+    [TestCase("AccountSettingsPage.xaml", "TurnOffBiometricLoginText")]
+    [TestCase("LoginPage.xaml", "BiometricIconSource")]
+    [TestCase("LoginPage.xaml", "BiometricSignInDescription")]
+    [TestCase("LoginPage.xaml", "BiometricVisible")]
     public void PageBindsTo(string file, string path)
     {
         var markup = File.ReadAllText(Path.Combine(XamlDirectory, file));
