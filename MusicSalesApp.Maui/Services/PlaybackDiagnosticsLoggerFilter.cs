@@ -28,6 +28,15 @@ public static class PlaybackDiagnosticsLoggerFilter
     public const string AppStoreBillingCategoryPrefix = "MusicSalesApp.Maui.Platforms.iOS.AppStoreBillingService";
     public const string AuthServiceCategoryPrefix = "MusicSalesApp.Maui.Services.AuthService";
 
+    // Why a biometric prompt was not offered. Both implementations report an unavailable device at
+    // Information ("status 11" is NONE_ENROLLED, "status 12" is NO_HARDWARE), and that line is the
+    // whole answer to "why is my fingerprint button missing?" - the availability check deliberately
+    // fails open, so an unavailable device is the only case that hides the control. Without these
+    // prefixes the log would show a device that was asked and a device that was never asked as the
+    // same silence. Two constants because the platform classes share no usable prefix.
+    public const string AndroidBiometricCategoryPrefix = "MusicSalesApp.Maui.Platforms.Android.AndroidBiometricAuthenticator";
+    public const string AppleBiometricCategoryPrefix = "MusicSalesApp.Maui.Services.AppleBiometricAuthenticator";
+
     private static readonly string[] DiagnosticCategoryPrefixes =
     [
         PlaybackServiceCategoryPrefix,
@@ -40,7 +49,9 @@ public static class PlaybackDiagnosticsLoggerFilter
         AppleRemoteCommandCategoryPrefix,
         GooglePlayBillingCategoryPrefix,
         AppStoreBillingCategoryPrefix,
-        AuthServiceCategoryPrefix
+        AuthServiceCategoryPrefix,
+        AndroidBiometricCategoryPrefix,
+        AppleBiometricCategoryPrefix
     ];
 
     public static bool ShouldLog(string categoryName, LogLevel logLevel, LogLevel diagnosticMinimumLevel)

@@ -50,6 +50,10 @@ public sealed class AppleBiometricAuthenticator : IBiometricAuthenticator
             _ => (BiometricMethod.None, "biometrics"),
         };
 
+        // Logged on the way out too, not just on refusal: an absence of lines has to mean "never
+        // asked", or the log cannot answer why the button is missing.
+        _logger.LogInformation("Biometric sign-in is available ({Method})", method);
+
         // Apple's names are proper nouns, so the sentence form and the button form are the same word.
         return Task.FromResult(new BiometricAvailability(true, method, name, name));
     }

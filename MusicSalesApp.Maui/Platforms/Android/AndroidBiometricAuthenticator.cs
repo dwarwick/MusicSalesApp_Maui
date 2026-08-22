@@ -49,6 +49,9 @@ public sealed class AndroidBiometricAuthenticator : IBiometricAuthenticator
                 return BiometricAvailability.Unavailable;
             }
 
+            // Logged on the way out too, not just on refusal: an absence of lines has to mean "never
+            // asked", or the log cannot answer why the button is missing.
+            _logger.LogInformation("Biometric sign-in is available (status {Status})", status);
             return Available;
         }
         catch (Exception ex)

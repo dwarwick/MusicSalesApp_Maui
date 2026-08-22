@@ -74,6 +74,18 @@ public class PlaybackDiagnosticsLoggerFilterTests
         Assert.That(logged, Is.True);
     }
 
+    [TestCase(PlaybackDiagnosticsLoggerFilter.AndroidBiometricCategoryPrefix)]
+    [TestCase(PlaybackDiagnosticsLoggerFilter.AppleBiometricCategoryPrefix)]
+    public void ShouldLog_InformationFromABiometricCategory_Logs(string categoryPrefix)
+    {
+        // "Biometric sign-in is not offered on this device" is Information, and it is the entire
+        // answer to why the button is missing. Dropped, a device that was asked and refused looks
+        // exactly like one that was never asked.
+        var logged = PlaybackDiagnosticsLoggerFilter.ShouldLog(categoryPrefix, LogLevel.Information, LogLevel.Information);
+
+        Assert.That(logged, Is.True);
+    }
+
     [Test]
     public void IsDiagnosticCategory_MatchesOnPrefix_NotExactName()
     {
