@@ -7,7 +7,6 @@ namespace MusicSalesApp.Maui.Tests.ViewModels;
 public class BiometricIconsTests
 {
     [TestCase(BiometricMethod.FaceId, "faceid.png")]
-    [TestCase(BiometricMethod.OpticId, "faceid.png")]
     [TestCase(BiometricMethod.TouchId, "fingerprint.png")]
     [TestCase(BiometricMethod.Fingerprint, "fingerprint.png")]
     [TestCase(BiometricMethod.None, "fingerprint.png")]

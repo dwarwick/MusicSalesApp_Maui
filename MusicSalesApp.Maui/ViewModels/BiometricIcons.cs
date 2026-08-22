@@ -16,7 +16,7 @@ public static class BiometricIcons
     public static string For(BiometricMethod method) => method switch
     {
         // Touch ID is a fingerprint, so it shares the Android asset rather than needing its own.
-        BiometricMethod.FaceId or BiometricMethod.OpticId => FaceId,
+        BiometricMethod.FaceId => FaceId,
         _ => Fingerprint,
     };
 }

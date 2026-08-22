@@ -11,7 +11,6 @@ public enum BiometricMethod
     Fingerprint,
     FaceId,
     TouchId,
-    OpticId,
 }
 
 /// <summary>

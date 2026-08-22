@@ -46,7 +46,9 @@ public sealed class AppleBiometricAuthenticator : IBiometricAuthenticator
         {
             LABiometryType.FaceId => (BiometricMethod.FaceId, "Face ID"),
             LABiometryType.TouchId => (BiometricMethod.TouchId, "Touch ID"),
-            LABiometryType.OpticId => (BiometricMethod.OpticId, "Optic ID"),
+            // No Optic ID case: LABiometryType.OpticId needs iOS 17 and this app supports 15.0, so
+            // naming it here is a CA1416 warning. Nothing is lost - Optic ID is Vision Pro, and
+            // UIDeviceFamily is iPhone and iPad only, so the value cannot arrive.
             _ => (BiometricMethod.None, "biometrics"),
         };
 
