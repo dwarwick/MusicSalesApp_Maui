@@ -1,4 +1,4 @@
-using MediaManager;
+﻿using MediaManager;
 using MediaManager.Library;
 using MediaManager.Media;
 using MediaManager.Playback;
@@ -193,6 +193,81 @@ public class MediaManagerPlaybackRuntimeTests
         // writing it directly cannot be shadowed by anything that assigns DisplayImage later.
         Assert.That(queueItem.DisplayImage, Is.Not.Null);
     }
+
+    // --- ReplaceQueueAsync ---
+
+    /// <summary>
+    /// A genuinely different queue reaches the player.
+    /// </summary>
+    /// <remarks>
+    /// Until this runtime implemented IQueueReplacementPlaybackRuntime, PlaybackService found no
+    /// replacement-capable runtime here and returned without touching the player, so the app's queue
+    /// and the player's diverged. The visible symptom: the song page shrinks the active queue to its
+    /// one song, that shrink never landed, and at the end of the track the stale queue underneath
+    /// advanced into the previous screen's songs - while Android, which has always replaced its
+    /// queue, ended the same tap differently.
+    /// </remarks>
+    [Test]
+    public async Task ReplaceQueueAsync_WhenTheQueueChanged_RebuildsThePlayerQueue()
+    {
+        _mediaManager.Setup(m => m.Play(It.IsAny<IEnumerable<IMediaItem>>())).ReturnsAsync((IMediaItem?)null!);
+
+        await _runtime.PlayAsync(new[] { Item("a"), Item("b") });
+        await _runtime.ReplaceQueueAsync([Item("a")], 0, TimeSpan.Zero, playWhenReady: true);
+
+        _mediaManager.Verify(m => m.Play(It.IsAny<IEnumerable<IMediaItem>>()), Times.Exactly(2));
+    }
+
+    /// <summary>
+    /// Asking for the queue the player already holds leaves it alone.
+    /// </summary>
+    /// <remarks>
+    /// Navigating to the page of the song already playing asks for exactly the loaded queue. A
+    /// rebuild there would re-prepare the audio and audibly restart it mid-track, so the identity
+    /// check is the point of the method rather than a shortcut through it.
+    /// </remarks>
+    [Test]
+    public async Task ReplaceQueueAsync_WhenThePlayerAlreadyHoldsTheQueue_LeavesItPlaying()
+    {
+        _mediaManager.Setup(m => m.Play(It.IsAny<IEnumerable<IMediaItem>>())).ReturnsAsync((IMediaItem?)null!);
+
+        await _runtime.PlayAsync(new[] { Item("a") });
+        await _runtime.ReplaceQueueAsync([Item("a")], 0, TimeSpan.FromSeconds(30), playWhenReady: true);
+
+        _mediaManager.Verify(m => m.Play(It.IsAny<IEnumerable<IMediaItem>>()), Times.Once);
+        _mediaManager.Verify(m => m.SeekTo(It.IsAny<TimeSpan>()), Times.Never);
+    }
+
+    /// <summary>
+    /// Two queues of the same length are not the same queue - the check is by id, not by count.
+    /// </summary>
+    /// <remarks>
+    /// The count comparison this replaces is a fault this codebase has already shipped once: leaving
+    /// a two-song featured queue for a two-song artist queue counted two of two and passed.
+    /// </remarks>
+    [Test]
+    public async Task ReplaceQueueAsync_WhenADifferentQueueHasTheSameLength_StillRebuilds()
+    {
+        _mediaManager.Setup(m => m.Play(It.IsAny<IEnumerable<IMediaItem>>())).ReturnsAsync((IMediaItem?)null!);
+
+        await _runtime.PlayAsync(new[] { Item("a"), Item("b") });
+        await _runtime.ReplaceQueueAsync([Item("b"), Item("a")], 0, TimeSpan.Zero, playWhenReady: true);
+
+        _mediaManager.Verify(m => m.Play(It.IsAny<IEnumerable<IMediaItem>>()), Times.Exactly(2));
+    }
+
+    [Test]
+    public async Task ReplaceQueueAsync_WithAnEmptyQueue_DoesNotTouchThePlayer()
+    {
+        var result = await _runtime.ReplaceQueueAsync([], 0, TimeSpan.Zero, playWhenReady: true);
+
+        Assert.That(result, Is.Null);
+        _mediaManager.Verify(m => m.Play(It.IsAny<IEnumerable<IMediaItem>>()), Times.Never);
+    }
+
+    /// <summary>A queue item whose identity is its stable cache key, as the app builds them.</summary>
+    private static PlaybackMediaItem Item(string id) =>
+        new($"https://streamtunes.test/{id}.mp3?sas={Guid.NewGuid():N}", SongId: 0, StableCacheKey: id);
 
     private sealed class FakeRemoteCommandBridge : IPlaybackRemoteCommandBridge
     {

@@ -133,9 +133,9 @@ public partial class PlaylistPlayerPage : ContentPage
         }
     }
 
-    private void OnShowLyricsClicked(object? sender, EventArgs e) => ShowLyrics();
+    private void OnShowLyricsClicked(object? sender, TappedEventArgs e) => ShowLyrics();
 
-    private void OnShowArtClicked(object? sender, EventArgs e) => ShowArt();
+    private void OnShowArtClicked(object? sender, TappedEventArgs e) => ShowArt();
 
     /// <summary>Bring the lyrics up in the stage panel and start following playback.</summary>
     private void ShowLyrics()
@@ -170,8 +170,9 @@ public partial class PlaylistPlayerPage : ContentPage
     /// Move the bright fill onto whichever segment is showing.
     /// </summary>
     /// <remarks>
-    /// Restyled rather than merely recoloured, because the active state is a background AND a
-    /// foreground - setting one without the other is how a segment ends up bright-on-bright.
+    /// Four assignments, not two: the fill lives on the segment's Border and the label colour on
+    /// the Label inside it, and the active state is a background AND a foreground - moving one
+    /// without the other is how a segment ends up bright-on-bright, or near-black on the panel.
     /// Looked up off <see cref="Application.Resources"/> rather than the page's own, which does
     /// not contain these: they come from Styles.xaml, merged in at the application level.
     /// </remarks>
@@ -179,15 +180,20 @@ public partial class PlaylistPlayerPage : ContentPage
     {
         LyricsSegment.Style = SegmentStyle(_showingLyrics);
         ArtSegment.Style = SegmentStyle(!_showingLyrics);
+        LyricsSegmentText.Style = SegmentTextStyle(_showingLyrics);
+        ArtSegmentText.Style = SegmentTextStyle(!_showingLyrics);
     }
 
-    private static Style? SegmentStyle(bool active)
-    {
-        var key = active ? "PlayerSwitchSegmentActive" : "PlayerSwitchSegment";
-        return Application.Current?.Resources.TryGetValue(key, out var style) == true
+    private static Style? SegmentStyle(bool active) =>
+        LookupStyle(active ? "PlayerSwitchSegmentActive" : "PlayerSwitchSegment");
+
+    private static Style? SegmentTextStyle(bool active) =>
+        LookupStyle(active ? "PlayerSwitchSegmentTextActive" : "PlayerSwitchSegmentText");
+
+    private static Style? LookupStyle(string key) =>
+        Application.Current?.Resources.TryGetValue(key, out var style) == true
             ? style as Style
             : null;
-    }
 
     /// <summary>
     /// Put the stage and bio panels beside the track list when the window is wide enough, and back

@@ -36,6 +36,33 @@ with uppercase captions, a Lyrics/Art segmented switch, and the same section ord
 (hero → songs → stage → about). The artist page's track list marks the playing row and swaps its
 number for an equalizer, as the web's number cell does.
 
+The Lyrics/Art switch is `Border` + `Label`, not `Button`: a `UIButton` whose layer corner radius is
+the pill `999` does not paint its fill on iOS, which left the active segment's near-black label
+sitting straight on the panel and invisible. The genre chip beside it is the same Border-and-Label
+recipe with the same shape and has always drawn correctly, so the shape was never the problem.
+
+The library's filter pills and the Log In / Register / Subscribe CTAs were the same fault. All three
+are fixed, and the cause was **measured** rather than reasoned about — three controls side by side on
+an iPhone 17 Pro simulator:
+
+| Control | Radius | Result |
+| --- | --- | --- |
+| `Button` | `RadiusPillInt` 999 | **nothing renders** — no fill, no label |
+| `Button` | `RadiusSmInt` 8 | correct |
+| `Border` | `RoundRectangle 999` | correct capsule |
+
+So it is the radius exceeding the control's own bounds, not `Button` backgrounds on iOS generally,
+and `Border` is immune because it clamps the shape to its bounds. The label survives on a dark
+surface (the fill is what goes missing), which is why this read as "no fill" on a phone and as
+"completely invisible" in light theme, where the label is white on white.
+
+Two fixes, chosen per context. Chrome that was already being restyled — the Lyrics/Art switch and the
+filter pills — became `Border` + `Label`. The CTAs stayed `Button` and took a new
+`RadiusPillControlInt` (22, half of `ControlHeight`): they carry `IsEnabled` bindings and are the
+app's primary actions, so the disabled state and the button accessibility role are worth keeping.
+Written up as invariant 5 in `AGENTS.md` with a grep, because Android clamps and looks correct either
+way — this is invisible on the platform most of the work happens on.
+
 ### Playback correctness
 Two real bugs, both fixed and both worth knowing about because the diagnosis was misleading:
 
@@ -48,6 +75,23 @@ Two real bugs, both fixed and both worth knowing about because the diagnosis was
 
 2. **The queue check compared counts.** Two different queues of the same length compared equal, so a
    submission that left the old order in place looked applied. Also fixed by identity.
+
+3. **A tapped song played forever, or played the next song — depending on the platform.** Tapping a
+   featured song runs two queue operations: the home page starts the featured queue, then
+   `SongPlayerViewModel` deliberately shrinks the active queue to the one song its page shows. Two
+   separate faults met there. `SetPlaylist` pinned the runtime to `RepeatMode.All` regardless of
+   `IsRepeatEnabled`, on the theory that the native player needed it to advance between tracks — it
+   does not, `Off` advances and stops at the end, which is the case `EnsurePlaylistContinuesAsync`
+   was written for and could never reach. So the one-song queue **wrapped**: Android played the song
+   forever, and the repeat button could not turn repeat off while any queue was active. Meanwhile
+   `MediaManagerPlaybackRuntime` implemented neither queue interface, so
+   `ReplaceNativeQueuePreservingCurrentPlayback` logged and returned and the shrink never reached
+   the player at all — iOS kept the stale featured queue underneath and advanced into it. Both are
+   fixed; repeat now follows the button, and the Apple runtime implements
+   `IQueueReplacementPlaybackRuntime`, skipping the rebuild by media id when the player already
+   holds the queue so that opening the page for the playing song does not restart it mid-track.
+   Both platforms now match the web's `SongPlayerInteractive.AudioEnded`: play once, stop, and
+   restart only with repeat on.
 
 > **Diagnostic trap.** Every `CurrentItem` / `Native*` field in the playback snapshots is
 > `_queue.Current` — the runtime's own item list indexed by the player's index. It reports what the
@@ -87,7 +131,8 @@ Nothing here has run on Apple hardware. In rough priority:
    crossing, and attaching a view that still has a parent throws.
 3. **The queue-order bug (1 above) on iOS.** The fix is in the Android runtime. The Apple runtime is
    a different `IPlatformPlaybackRuntime` and was never verified to have or not have the same fault —
-   walk home → featured card → artist name and check the title matches the audio.
+   walk home → featured card → artist name and check the title matches the audio. Note 3 above found
+   and fixed one Apple-runtime queue fault of this family; it does not clear this one.
 4. **Nav bar chrome.** Verified on Android only; Shell chrome is platform-specific.
 5. **The launch-crash gates.** `test_sims.sh --profile quick` covers iPad, which is the form factor
    review rejected before. Note it scores **startup crashes only** — it never navigates to a player,

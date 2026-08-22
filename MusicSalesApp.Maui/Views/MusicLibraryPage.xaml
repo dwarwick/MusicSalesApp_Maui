@@ -47,48 +47,83 @@
                                        Text="You&apos;re offline. Showing only downloaded songs &#8212; reconnect to browse the full library." />
 
             <HorizontalStackLayout Spacing="{StaticResource SpaceTight}">
-                <Button Style="{StaticResource FilterPill}" Command="{Binding ToggleAiPanelCommand}"
-                        Clicked="OnFilterChromeClicked"
-                        Text="{Binding AiPillText}"
-                        BorderColor="{Binding HasActiveAiFilter, Converter={StaticResource ActivePillBorderConverter}}"
-                        BackgroundColor="{Binding HasActiveAiFilter, Converter={StaticResource ActivePillBgConverter}}"
-                        TextColor="{Binding HasActiveAiFilter, Converter={StaticResource ActivePillTextConverter}}" />
+            <Border Style="{StaticResource FilterPill}"
+                    BackgroundColor="{Binding HasActiveAiFilter, Converter={StaticResource ActivePillBgConverter}}">
+                <Border.Stroke>
+                    <!-- SolidColorBrush rather than a direct bind: Stroke is a Brush and the converter
+                         returns a Color, so the Color goes on the brush where the types already agree. -->
+                    <SolidColorBrush Color="{Binding HasActiveAiFilter, Converter={StaticResource ActivePillBorderConverter}}" />
+                </Border.Stroke>
+                <Label Text="{Binding AiPillText}"
+                       Style="{StaticResource FilterPillText}"
+                       TextColor="{Binding HasActiveAiFilter, Converter={StaticResource ActivePillTextConverter}}" />
+                <Border.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding ToggleAiPanelCommand}" Tapped="OnFilterOptionTapped" />
+                </Border.GestureRecognizers>
+            </Border>
 
             <!-- Genre Pill -->
-            <Button Style="{StaticResource FilterPill}" Command="{Binding ToggleGenrePanelCommand}"
-                    Clicked="OnFilterChromeClicked"
-                    Text="{Binding GenrePillText}"
-                    BorderColor="{Binding HasActiveGenreFilters, Converter={StaticResource ActivePillBorderConverter}}"
-                    BackgroundColor="{Binding HasActiveGenreFilters, Converter={StaticResource ActivePillBgConverter}}"
-                    TextColor="{Binding HasActiveGenreFilters, Converter={StaticResource ActivePillTextConverter}}" />
+            <Border Style="{StaticResource FilterPill}"
+                    BackgroundColor="{Binding HasActiveGenreFilters, Converter={StaticResource ActivePillBgConverter}}">
+                <Border.Stroke>
+                    <!-- SolidColorBrush rather than a direct bind: Stroke is a Brush and the converter
+                         returns a Color, so the Color goes on the brush where the types already agree. -->
+                    <SolidColorBrush Color="{Binding HasActiveGenreFilters, Converter={StaticResource ActivePillBorderConverter}}" />
+                </Border.Stroke>
+                <Label Text="{Binding GenrePillText}"
+                       Style="{StaticResource FilterPillText}"
+                       TextColor="{Binding HasActiveGenreFilters, Converter={StaticResource ActivePillTextConverter}}" />
+                <Border.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding ToggleGenrePanelCommand}" Tapped="OnFilterOptionTapped" />
+                </Border.GestureRecognizers>
+            </Border>
 
             <!-- Artist Pill -->
-            <Button Style="{StaticResource FilterPill}" Command="{Binding ToggleArtistPanelCommand}"
-                    Clicked="OnFilterChromeClicked"
-                    Text="{Binding ArtistPillText}"
-                    BorderColor="{Binding HasActiveArtistFilters, Converter={StaticResource ActivePillBorderConverter}}"
-                    BackgroundColor="{Binding HasActiveArtistFilters, Converter={StaticResource ActivePillBgConverter}}"
-                    TextColor="{Binding HasActiveArtistFilters, Converter={StaticResource ActivePillTextConverter}}" />
+            <Border Style="{StaticResource FilterPill}"
+                    BackgroundColor="{Binding HasActiveArtistFilters, Converter={StaticResource ActivePillBgConverter}}">
+                <Border.Stroke>
+                    <!-- SolidColorBrush rather than a direct bind: Stroke is a Brush and the converter
+                         returns a Color, so the Color goes on the brush where the types already agree. -->
+                    <SolidColorBrush Color="{Binding HasActiveArtistFilters, Converter={StaticResource ActivePillBorderConverter}}" />
+                </Border.Stroke>
+                <Label Text="{Binding ArtistPillText}"
+                       Style="{StaticResource FilterPillText}"
+                       TextColor="{Binding HasActiveArtistFilters, Converter={StaticResource ActivePillTextConverter}}" />
+                <Border.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding ToggleArtistPanelCommand}" Tapped="OnFilterOptionTapped" />
+                </Border.GestureRecognizers>
+            </Border>
 
             <!-- Downloaded-only filter -->
-            <Button Style="{StaticResource FilterPill}" Command="{Binding ToggleDownloadedFilterCommand}"
-                    Clicked="OnFilterChromeClicked"
-                    Text="Downloaded"
-                    BorderColor="{Binding IsDownloadedFilterActive, Converter={StaticResource ActivePillBorderConverter}}"
-                    BackgroundColor="{Binding IsDownloadedFilterActive, Converter={StaticResource ActivePillBgConverter}}"
-                    TextColor="{Binding IsDownloadedFilterActive, Converter={StaticResource ActivePillTextConverter}}" />
+            <Border Style="{StaticResource FilterPill}"
+                    BackgroundColor="{Binding IsDownloadedFilterActive, Converter={StaticResource ActivePillBgConverter}}">
+                <Border.Stroke>
+                    <!-- SolidColorBrush rather than a direct bind: Stroke is a Brush and the converter
+                         returns a Color, so the Color goes on the brush where the types already agree. -->
+                    <SolidColorBrush Color="{Binding IsDownloadedFilterActive, Converter={StaticResource ActivePillBorderConverter}}" />
+                </Border.Stroke>
+                <Label Text="Downloaded"
+                       Style="{StaticResource FilterPillText}"
+                       TextColor="{Binding IsDownloadedFilterActive, Converter={StaticResource ActivePillTextConverter}}" />
+                <Border.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding ToggleDownloadedFilterCommand}" Tapped="OnFilterOptionTapped" />
+                </Border.GestureRecognizers>
+            </Border>
 
             <!-- Clear Filters Button -->
-            <Button Style="{StaticResource FilterPill}" Command="{Binding ClearFiltersCommand}"
-                    Clicked="OnFilterChromeClicked"
-                    Text="✕"
-                    FontSize="{StaticResource FontSizeSmall}"
-                    WidthRequest="{StaticResource ControlHeightSmall}"
-                    Padding="0"
-                    IsVisible="{Binding HasAnyActiveFilters}"
+            <Border Style="{StaticResource FilterPill}"
                     BackgroundColor="{Binding HasAnyActiveFilters, Converter={StaticResource ActivePillBgConverter}}"
-                    TextColor="{Binding HasAnyActiveFilters, Converter={StaticResource ActivePillTextConverter}}"
-                    VerticalOptions="Center" />
+                    IsVisible="{Binding HasAnyActiveFilters}"
+                    WidthRequest="{StaticResource ControlHeightSmall}"
+                    Padding="0">
+                <Label Text="✕"
+                       Style="{StaticResource FilterPillText}"
+                       FontSize="{StaticResource FontSizeSmall}"
+                       TextColor="{Binding HasAnyActiveFilters, Converter={StaticResource ActivePillTextConverter}}" />
+                <Border.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding ClearFiltersCommand}" Tapped="OnFilterOptionTapped" />
+                </Border.GestureRecognizers>
+            </Border>
             </HorizontalStackLayout>
         </VerticalStackLayout>
 

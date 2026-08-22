@@ -468,10 +468,32 @@ public class PlaybackService : IPlaybackService
         }
 
         IsRepeatEnabled = !IsRepeatEnabled;
-        _playbackRuntime.RepeatMode = HasPlaylist
-            ? PlaybackRepeatMode.All
-            : IsRepeatEnabled ? PlaybackRepeatMode.All : PlaybackRepeatMode.Off;
+        ApplyRepeatModeToRuntime();
     }
+
+    /// <summary>
+    /// Put the native player into the repeat mode the user actually asked for.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This used to pin the runtime to <see cref="PlaybackRepeatMode.All"/> whenever a queue was
+    /// active, regardless of <see cref="IsRepeatEnabled"/>, on the theory that the native player
+    /// needed it in order to advance between tracks. It does not: Off advances through a queue and
+    /// simply stops at the end, which is the case <see cref="EnsurePlaylistContinuesAsync"/>
+    /// already handles and - with All pinned on - could never reach, because the native player
+    /// wrapped to the start before the app was ever asked what should happen next.
+    /// </para>
+    /// <para>
+    /// Two visible faults came out of that. The repeat button could not turn repeat off while a
+    /// queue was active. And because <c>SongPlayerViewModel</c> deliberately shrinks the active
+    /// queue to the one song its page shows, a wrap at the end of that one-song queue is a restart:
+    /// tapping a song played it forever instead of playing it once.
+    /// </para>
+    /// </remarks>
+    private void ApplyRepeatModeToRuntime() =>
+        _playbackRuntime.RepeatMode = IsRepeatEnabled
+            ? PlaybackRepeatMode.All
+            : PlaybackRepeatMode.Off;
 
     internal void UpdatePosition(TimeSpan position, TimeSpan duration)
     {
@@ -714,7 +736,7 @@ public class PlaybackService : IPlaybackService
                 PreviewLimitReached = false;
             }
 
-            _playbackRuntime.RepeatMode = PlaybackRepeatMode.All;
+            ApplyRepeatModeToRuntime();
             _playbackRuntime.ShuffleMode = PlaybackShuffleMode.Off;
             ReplaceNativeQueuePreservingCurrentPlayback(
                 _playlist,
@@ -734,7 +756,7 @@ public class PlaybackService : IPlaybackService
         IsPlaying = true;
         QueueImmediateSubscriptionStatusRefreshForPlayback(TimeSpan.Zero);
 
-        _playbackRuntime.RepeatMode = PlaybackRepeatMode.All;
+        ApplyRepeatModeToRuntime();
         _playbackRuntime.ShuffleMode = PlaybackShuffleMode.Off;
 
         BuildAndStartQueue(_currentTrackIndex, requestGeneration);

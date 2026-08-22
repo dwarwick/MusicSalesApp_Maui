@@ -83,7 +83,7 @@ themed pairs. When one of those changes, change these to match. The two clients 
 time precisely because nothing said this out loud — the mobile app was still shipping the Spotify
 green the web app had retired, under a comment claiming the two matched.
 
-**Four invariants. These are measurements, not preferences.**
+**Five invariants. These are measurements, not preferences.**
 
 1. **Never white text on `StBlue` `#0186FD`** — 3.6:1, fails AA. A filled control with a white
    label uses `StBlueDeep` `#0166D6`.
@@ -96,6 +96,15 @@ green the web app had retired, under a comment claiming the two matched.
    different accent and the signature moment of the design would change with a user preference.
 4. **A card is raised in both themes, and a shadow is always dark.** `SurfaceDark` is deliberately
    lighter than `PageDark`. Never add a light-theme-only shadow, and never a white one.
+5. **Never put `RadiusPillInt` (999) on a `Button`.** A `UIButton` whose layer corner radius
+   exceeds its own bounds renders **nothing at all** on iOS — no fill, no label. It is not "very
+   round", it is invisible, and it shipped that way three times: the player's Lyrics/Art switch, the
+   library's filter pills, and the Log In / Register / Subscribe CTAs. Measured side by side on the
+   simulator: a `Button` at radius 8 draws correctly, a `Border` at `RoundRectangle 999` draws a
+   correct capsule, a `Button` at 999 draws nothing. Android clamps and looks fine either way, so
+   this is invisible on the platform most of the work happens on. A pill-shaped `Button` of the
+   standard `ControlHeight` uses `RadiusPillControlInt`; a pill of any other height must be a
+   `Border`, which clamps the shape to its own bounds.
 
 **Two places the system does not reach on its own**
 
@@ -111,6 +120,12 @@ Both of these should return nothing but token definitions and documented excepti
 ```bash
 grep -rn '#[0-9A-Fa-f]\{3,8\}' --include=*.xaml Views/ AppShell.xaml
 grep -rnE '(FontSize|CornerRadius|Spacing)="[0-9]+"' --include=*.xaml Views/ AppShell.xaml
+```
+
+And this one should return only the token definition in `Tokens.xaml` — any other hit is invariant 5:
+
+```bash
+grep -rn 'RadiusPillInt' --include=*.xaml .
 ```
 
 Prefer `SetAppThemeColor` over reading a single colour at construction time. A colour resolved

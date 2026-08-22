@@ -638,22 +638,28 @@
                                                Text="COVER ART" />
 
                                         <Border x:Name="StageSwitch"
-                                                    Grid.Column="1"
-                                                    IsVisible="False"
-                                                    Padding="0"
-                                                    StrokeThickness="{StaticResource StrokeThin}"
-                                                    Stroke="{StaticResource PlayerLine}"
-                                                    StrokeShape="RoundRectangle 999"
-                                                    BackgroundColor="Transparent">
+                                                Grid.Column="1"
+                                                IsVisible="False"
+                                                Style="{StaticResource PlayerSwitchTrack}">
                                             <HorizontalStackLayout>
-                                                    <Button x:Name="LyricsSegment"
-                                                            Text="Lyrics"
-                                                            Style="{StaticResource PlayerSwitchSegment}"
-                                                            Clicked="OnShowLyricsClicked" />
-                                                    <Button x:Name="ArtSegment"
-                                                            Text="Art"
-                                                            Style="{StaticResource PlayerSwitchSegmentActive}"
-                                                            Clicked="OnShowArtClicked" />
+                                                <Border x:Name="LyricsSegment"
+                                                        Style="{StaticResource PlayerSwitchSegment}">
+                                                    <Label x:Name="LyricsSegmentText"
+                                                           Text="Lyrics"
+                                                           Style="{StaticResource PlayerSwitchSegmentText}" />
+                                                    <Border.GestureRecognizers>
+                                                        <TapGestureRecognizer Tapped="OnShowLyricsClicked" />
+                                                    </Border.GestureRecognizers>
+                                                </Border>
+                                                <Border x:Name="ArtSegment"
+                                                        Style="{StaticResource PlayerSwitchSegmentActive}">
+                                                    <Label x:Name="ArtSegmentText"
+                                                           Text="Art"
+                                                           Style="{StaticResource PlayerSwitchSegmentTextActive}" />
+                                                    <Border.GestureRecognizers>
+                                                        <TapGestureRecognizer Tapped="OnShowArtClicked" />
+                                                    </Border.GestureRecognizers>
+                                                </Border>
                                             </HorizontalStackLayout>
                                         </Border>
                                     </Grid>

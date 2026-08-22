@@ -135,6 +135,17 @@
     <x:Int32 x:Key="RadiusLgInt">18</x:Int32>
     <x:Int32 x:Key="RadiusPillInt">999</x:Int32>
 
+    <!-- The pill radius for a BUTTON, and the reason it is not RadiusPillInt.
+         A UIButton whose layer corner radius exceeds its own bounds renders nothing at all on iOS -
+         no fill, no label - so 999 on a Button is not "very round", it is invisible. Measured on the
+         simulator: a Button at radius 8 draws correctly, a Border at RoundRectangle 999 draws a
+         correct capsule, and a Button at 999 draws nothing. Half of ControlHeight is an exact
+         capsule at the only height these styles use, and stays inside the bounds.
+         The invariant: never put RadiusPillInt on a Button. It is for Border/RoundRectangle, which
+         clamps the shape to its own bounds. A pill-shaped Button must use this token, and a
+         pill-shaped control of any other height must be a Border. -->
+    <x:Int32 x:Key="RadiusPillControlInt">22</x:Int32>
+
     <!-- ===================================================================
          CONTROL SIZES
          Replaces 130 HeightRequest and 89 WidthRequest literals.

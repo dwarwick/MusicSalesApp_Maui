@@ -451,7 +451,7 @@
         <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource OnAccentLight}, Dark={StaticResource OnAccentDark}}" />
         <Setter Property="FontAttributes" Value="Bold" />
         <Setter Property="FontSize" Value="{StaticResource FontSizeCardTitle}" />
-        <Setter Property="CornerRadius" Value="{StaticResource RadiusPillInt}" />
+        <Setter Property="CornerRadius" Value="{StaticResource RadiusPillControlInt}" />
         <Setter Property="HeightRequest" Value="{StaticResource ControlHeight}" />
         <Setter Property="Padding" Value="{StaticResource PillPadding}" />
         <Setter Property="BorderWidth" Value="0" />
@@ -464,7 +464,7 @@
         <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource OnGenreLight}, Dark={StaticResource OnGenreDark}}" />
         <Setter Property="FontAttributes" Value="Bold" />
         <Setter Property="FontSize" Value="{StaticResource FontSizeCardTitle}" />
-        <Setter Property="CornerRadius" Value="{StaticResource RadiusPillInt}" />
+        <Setter Property="CornerRadius" Value="{StaticResource RadiusPillControlInt}" />
         <Setter Property="HeightRequest" Value="{StaticResource ControlHeight}" />
         <Setter Property="Padding" Value="{StaticResource PillPadding}" />
         <Setter Property="BorderWidth" Value="0" />
@@ -489,23 +489,39 @@
 
     <!-- Filter pill, inactive. MusicLibraryPage repeated this ten-property recipe four times.
          The active state is a separate style rather than a trigger because the pages drive it
-         through converters today; converting those to VisualStates is a later, separate job. -->
-    <Style TargetType="Button" x:Key="FilterPill">
+         through converters today; converting those to VisualStates is a later, separate job.
+
+         Border and Label, NOT Button - the same reason the player's segmented switch is. A UIButton
+         whose layer corner radius is the pill 999 does not paint its fill on iOS, so the whole row
+         of pills came up as bare text with no fill and no outline. Anything wearing the pill shape
+         has to be drawn by a Border, which clamps the shape to its own bounds. -->
+    <Style TargetType="Border" x:Key="FilterPill">
         <Setter Property="BackgroundColor" Value="{AppThemeBinding Light={StaticResource SurfaceLight}, Dark={StaticResource SurfaceDark}}" />
-        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
-        <Setter Property="BorderColor" Value="{AppThemeBinding Light={StaticResource LineLight}, Dark={StaticResource LineDark}}" />
-        <Setter Property="BorderWidth" Value="{StaticResource StrokeThick}" />
-        <Setter Property="FontSize" Value="{StaticResource FontSizeCardMeta}" />
-        <Setter Property="FontAttributes" Value="Bold" />
-        <Setter Property="CornerRadius" Value="{StaticResource RadiusPillInt}" />
+        <Setter Property="Stroke" Value="{AppThemeBinding Light={StaticResource LineLight}, Dark={StaticResource LineDark}}" />
+        <Setter Property="StrokeThickness" Value="{StaticResource StrokeThick}" />
+        <Setter Property="StrokeShape" Value="RoundRectangle 999" />
         <Setter Property="HeightRequest" Value="{StaticResource ControlHeightSmall}" />
         <Setter Property="Padding" Value="10,0" />
+        <Setter Property="VerticalOptions" Value="Center" />
     </Style>
 
-    <Style TargetType="Button" x:Key="FilterPillActive" BasedOn="{StaticResource FilterPill}">
+    <Style TargetType="Border" x:Key="FilterPillActive" BasedOn="{StaticResource FilterPill}">
         <Setter Property="BackgroundColor" Value="{AppThemeBinding Light={StaticResource AccentFillLight}, Dark={StaticResource AccentFillDark}}" />
+        <Setter Property="Stroke" Value="{AppThemeBinding Light={StaticResource AccentFillLight}, Dark={StaticResource AccentFillDark}}" />
+    </Style>
+
+    <!-- The pill's label. Split out of the style above for the same reason the switch's is: the
+         fill is on the Border and the foreground here, and the two move together. -->
+    <Style TargetType="Label" x:Key="FilterPillText">
+        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeCardMeta}" />
+        <Setter Property="FontAttributes" Value="Bold" />
+        <Setter Property="VerticalOptions" Value="Center" />
+        <Setter Property="HorizontalOptions" Value="Center" />
+    </Style>
+
+    <Style TargetType="Label" x:Key="FilterPillTextActive" BasedOn="{StaticResource FilterPillText}">
         <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource OnAccentLight}, Dark={StaticResource OnAccentDark}}" />
-        <Setter Property="BorderColor" Value="{AppThemeBinding Light={StaticResource AccentFillLight}, Dark={StaticResource AccentFillDark}}" />
     </Style>
 
     <!-- A card is RAISED in both themes: the dark surface is lighter than the dark page, and
@@ -544,21 +560,45 @@
 
     <!-- Segmented switch inside a panel header. Inactive segments are quiet; the active one takes
          the BRIGHT fill with a near-black glyph, which is the same pairing the play button uses
-         and the strongest available on this surface. -->
-    <Style TargetType="Button" x:Key="PlayerSwitchSegment">
+         and the strongest available on this surface.
+
+         Border and Label, NOT Button. A UIButton whose layer corner radius is the pill 999 does
+         not paint its fill on iOS, and the active segment's near-black label was then sitting
+         straight on the panel and invisible - the label recoloured, the fill never arrived. The
+         genre chip beside it is this same Border-and-Label recipe with the same 999 shape and has
+         always drawn correctly, so the shape is fine and the control was not. -->
+    <Style TargetType="Border" x:Key="PlayerSwitchTrack">
+        <Setter Property="Padding" Value="0" />
         <Setter Property="BackgroundColor" Value="Transparent" />
+        <Setter Property="Stroke" Value="{StaticResource PlayerLine}" />
+        <Setter Property="StrokeThickness" Value="{StaticResource StrokeThin}" />
+        <Setter Property="StrokeShape" Value="RoundRectangle 999" />
+        <Setter Property="VerticalOptions" Value="Center" />
+    </Style>
+
+    <Style TargetType="Border" x:Key="PlayerSwitchSegment">
+        <Setter Property="BackgroundColor" Value="Transparent" />
+        <Setter Property="StrokeThickness" Value="0" />
+        <Setter Property="StrokeShape" Value="RoundRectangle 999" />
+        <Setter Property="HeightRequest" Value="28" />
+        <Setter Property="Padding" Value="12,0" />
+    </Style>
+
+    <Style TargetType="Border" x:Key="PlayerSwitchSegmentActive" BasedOn="{StaticResource PlayerSwitchSegment}">
+        <Setter Property="BackgroundColor" Value="{StaticResource StBlueBright}" />
+    </Style>
+
+    <!-- The two halves of the state: the fill above, the label here. Both move together, because
+         a bright fill under a quiet label, or a near-black label with no fill, is unreadable. -->
+    <Style TargetType="Label" x:Key="PlayerSwitchSegmentText">
         <Setter Property="TextColor" Value="{StaticResource PlayerText3}" />
         <Setter Property="FontSize" Value="{StaticResource FontSizeMicro}" />
         <Setter Property="FontAttributes" Value="Bold" />
-        <Setter Property="BorderWidth" Value="0" />
-        <Setter Property="CornerRadius" Value="{StaticResource RadiusPillInt}" />
-        <Setter Property="HeightRequest" Value="28" />
-        <Setter Property="Padding" Value="12,0" />
-        <Setter Property="MinimumWidthRequest" Value="0" />
+        <Setter Property="VerticalOptions" Value="Center" />
+        <Setter Property="HorizontalOptions" Value="Center" />
     </Style>
 
-    <Style TargetType="Button" x:Key="PlayerSwitchSegmentActive" BasedOn="{StaticResource PlayerSwitchSegment}">
-        <Setter Property="BackgroundColor" Value="{StaticResource StBlueBright}" />
+    <Style TargetType="Label" x:Key="PlayerSwitchSegmentTextActive" BasedOn="{StaticResource PlayerSwitchSegmentText}">
         <Setter Property="TextColor" Value="{StaticResource OnAccentDark}" />
     </Style>
 

@@ -1,4 +1,4 @@
-#if !ANDROID
+﻿#if !ANDROID
 using System.Collections;
 using System.Runtime.CompilerServices;
 using MediaManager;
@@ -13,7 +13,7 @@ using MmShuffleMode = MediaManager.Queue.ShuffleMode;
 
 namespace MusicSalesApp.Maui.Services;
 
-public sealed class MediaManagerPlaybackRuntime : IPlatformPlaybackRuntime
+public sealed class MediaManagerPlaybackRuntime : IPlatformPlaybackRuntime, IQueueReplacementPlaybackRuntime
 {
     private readonly IMediaManager _mediaManager;
     private readonly NowPlayingArtworkCoordinator? _artworkCoordinator;
@@ -34,6 +34,9 @@ public sealed class MediaManagerPlaybackRuntime : IPlatformPlaybackRuntime
     private readonly ILogger<MediaManagerPlaybackRuntime>? _logger;
     private readonly TimeProvider _timeProvider;
     private long _lastUserTerminalStateRequestUtcTicks;
+
+    /// <summary>The ids of the queue last submitted to the player. See <c>RecordSubmittedQueue</c>.</summary>
+    private List<string?> _submittedQueueIds = [];
 
     public MediaManagerPlaybackRuntime(
         IMediaManager mediaManager,
@@ -125,18 +128,115 @@ public sealed class MediaManagerPlaybackRuntime : IPlatformPlaybackRuntime
     public async Task<PlaybackMediaItem?> PlayAsync(PlaybackMediaItem mediaItem)
     {
         var playedItem = await _mediaManager.Play(ToMediaManagerItem(mediaItem)).ConfigureAwait(false);
+        RecordSubmittedQueue([mediaItem]);
         ObserveNowPlayingArtwork();
         return FromMediaManagerItem(playedItem);
     }
 
     public async Task<PlaybackMediaItem?> PlayAsync(IEnumerable<PlaybackMediaItem> mediaItems)
     {
-        var playedItem = await _mediaManager.Play(mediaItems.Select(ToMediaManagerItem)).ConfigureAwait(false);
+        var items = mediaItems.ToList();
+        var playedItem = await _mediaManager.Play(items.Select(ToMediaManagerItem)).ConfigureAwait(false);
+        RecordSubmittedQueue(items);
         ObserveNowPlayingArtwork();
         return FromMediaManagerItem(playedItem);
     }
 
     public Task PlayAsync() => _mediaManager.Play();
+
+    /// <summary>
+    /// Swap the native queue for <paramref name="mediaItems"/> without restarting the track that is
+    /// already playing.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Until this existed, <c>PlaybackService.ReplaceNativeQueuePreservingCurrentPlayback</c> found
+    /// no replacement-capable runtime on this platform, logged that, and returned - so the app's
+    /// queue changed and the player's did not. <c>SongPlayerViewModel</c> shrinks the active queue
+    /// to the one song its page shows, and here that shrink never reached the player: at the end of
+    /// the song the stale queue underneath it advanced into whatever the previous screen had queued
+    /// up. Android has implemented this all along, which is why the same tap ended two different
+    /// ways on the two platforms.
+    /// </para>
+    /// <para>
+    /// The identity check is the method's job, not an optimisation. Opening the page for the song
+    /// that is already playing asks for a queue the player already holds, and rebuilding it would
+    /// re-prepare the audio and audibly restart it mid-track. Rebuild only when the queue really
+    /// changed - and decide that by media id through <see cref="PlaybackQueueAlignment"/>, because
+    /// two different queues of the same length are not the same queue.
+    /// </para>
+    /// </remarks>
+    public async Task<PlaybackMediaItem?> ReplaceQueueAsync(
+        IEnumerable<PlaybackMediaItem> mediaItems,
+        int currentIndex,
+        TimeSpan currentPosition,
+        bool playWhenReady)
+    {
+        var items = mediaItems.ToList();
+        if (items.Count == 0)
+        {
+            _logger?.LogWarning("MediaManager ReplaceQueueAsync ignored because the requested queue is empty.");
+            return null;
+        }
+
+        var safeIndex = Math.Clamp(currentIndex, 0, items.Count - 1);
+        var submittedIds = items.Select(item => (string?)item.StableCacheKey).ToList();
+        var playerIds = _submittedQueueIds;
+
+        if (PlaybackQueueAlignment.QueueMatches(submittedIds, playerIds))
+        {
+            _logger?.LogInformation(
+                "MediaManager ReplaceQueueAsync skipped because the player already holds this queue. QueueCount={QueueCount}; CurrentIndex={CurrentIndex}",
+                items.Count,
+                safeIndex);
+            return Queue?.Current;
+        }
+
+        _logger?.LogInformation(
+            "MediaManager ReplaceQueueAsync rebuilding native queue. QueueCount={QueueCount}; PlayerQueueCount={PlayerQueueCount}; CurrentIndex={CurrentIndex}; CurrentPosition={CurrentPosition}; PlayWhenReady={PlayWhenReady}",
+            items.Count,
+            playerIds.Count,
+            safeIndex,
+            currentPosition,
+            playWhenReady);
+
+        var playedItem = await _mediaManager.Play(items.Select(ToMediaManagerItem)).ConfigureAwait(false);
+        RecordSubmittedQueue(items);
+
+        if (safeIndex > 0)
+        {
+            await _mediaManager.PlayQueueItem(safeIndex).ConfigureAwait(false);
+        }
+
+        if (currentPosition > TimeSpan.Zero)
+        {
+            await _mediaManager.SeekTo(currentPosition).ConfigureAwait(false);
+        }
+
+        if (!playWhenReady)
+        {
+            await _mediaManager.Pause().ConfigureAwait(false);
+        }
+
+        ObserveNowPlayingArtwork();
+        return Queue?.Current ?? FromMediaManagerItem(playedItem);
+    }
+
+    /// <summary>
+    /// Remember what was just handed to the player, as the ids the identity check compares.
+    /// </summary>
+    /// <remarks>
+    /// Read back off this runtime rather than off <see cref="Queue"/>, because the media library
+    /// does not round-trip the app's identity: <c>FromMediaManagerItem</c> can only rebuild a
+    /// <see cref="PlaybackMediaItem"/> out of what <c>IMediaItem</c> carries, so its
+    /// <c>StableCacheKey</c> comes back as the media URI. Comparing against that would never match
+    /// a real cache key, every navigation would count as a queue change, and the rebuild this class
+    /// exists to avoid would happen every time. Worse for a remote track, whose URI carries a SAS
+    /// query string the server regenerates per request - the same song, spelled differently each
+    /// time it is asked for.
+    /// </remarks>
+    private void RecordSubmittedQueue(IReadOnlyList<PlaybackMediaItem> items) =>
+        _submittedQueueIds = items.Select(item => (string?)item.StableCacheKey).ToList();
 
     public Task PauseAsync() => _mediaManager.Pause();
 

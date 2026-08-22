@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using MusicSalesApp.Common.Helpers;
@@ -540,17 +540,72 @@ public class PlaybackServiceTests
         Assert.That(_service.IsRepeatEnabled, Is.False);
     }
 
+    /// <summary>
+    /// The native repeat mode follows the repeat button, including with a queue active.
+    /// </summary>
+    /// <remarks>
+    /// This asserted the opposite - that a queue pinned the runtime to All whatever the flag said -
+    /// on the theory that the native player needed All to advance between tracks. It does not, and
+    /// pinning it meant the repeat button could not turn repeat off, and that the one-song queue the
+    /// song page builds wrapped at the end of the track: tapping a song played it forever.
+    /// </remarks>
     [Test]
-    public void ToggleRepeat_WithPlaylist_LeavesNativeRepeatAllForQueueAdvancement()
+    public void ToggleRepeat_WithPlaylist_MovesNativeRepeatWithTheFlag()
     {
         var songs = CreateTestPlaylist(3);
         _service.SetPlaylist(songs, 0);
 
-        Assert.That(_mockMediaManager.Object.RepeatMode, Is.EqualTo(PlaybackRepeatMode.All));
+        Assert.That(_mockMediaManager.Object.RepeatMode, Is.EqualTo(PlaybackRepeatMode.Off));
 
         _service.ToggleRepeat();
 
         Assert.That(_service.IsRepeatEnabled, Is.True);
+        Assert.That(_mockMediaManager.Object.RepeatMode, Is.EqualTo(PlaybackRepeatMode.All));
+
+        _service.ToggleRepeat();
+
+        Assert.That(_service.IsRepeatEnabled, Is.False);
+        Assert.That(_mockMediaManager.Object.RepeatMode, Is.EqualTo(PlaybackRepeatMode.Off));
+    }
+
+    /// <summary>
+    /// A one-song queue that reaches its end stops, rather than starting the song again.
+    /// </summary>
+    /// <remarks>
+    /// The reported bug, and the reason the repeat fix matters: SongPlayerViewModel shrinks the
+    /// active queue to the one song its page shows, so "end of queue" and "end of that song" are the
+    /// same moment. It matches the web's SongPlayer, which stops on AudioEnded unless repeat is on.
+    /// </remarks>
+    [Test]
+    public async Task OnMediaEnded_AtEndOfSingleSongQueueWithoutRepeat_StopsInsteadOfRestarting()
+    {
+        var service = CreateService(TimeSpan.FromMilliseconds(50));
+        var songs = CreateTestPlaylist(1);
+        service.SetPlaylist(songs, 0);
+        Assert.That(service.IsPlaying, Is.True);
+
+        service.OnMediaEnded();
+        await Task.Delay(125);
+
+        Assert.That(service.IsPlaying, Is.False);
+        Assert.That(service.CurrentSong, Is.SameAs(songs[0]));
+        Assert.That(_mockMediaManager.Object.RepeatMode, Is.EqualTo(PlaybackRepeatMode.Off));
+    }
+
+    /// <summary>With repeat on, that same one-song queue starts the song again.</summary>
+    [Test]
+    public async Task OnMediaEnded_AtEndOfSingleSongQueueWithRepeat_PlaysTheSongAgain()
+    {
+        var service = CreateService(TimeSpan.FromMilliseconds(50));
+        var songs = CreateTestPlaylist(1);
+        service.SetPlaylist(songs, 0);
+        service.ToggleRepeat();
+
+        service.OnMediaEnded();
+        await Task.Delay(125);
+
+        Assert.That(service.IsPlaying, Is.True);
+        Assert.That(service.CurrentSong, Is.SameAs(songs[0]));
         Assert.That(_mockMediaManager.Object.RepeatMode, Is.EqualTo(PlaybackRepeatMode.All));
     }
 
@@ -1546,7 +1601,7 @@ public class PlaybackServiceTests
         Assert.That(_service.CurrentTrackIndex, Is.EqualTo(0));
         Assert.That(_service.CurrentSong, Is.SameAs(songs[0]));
         Assert.That(_service.IsPlaying, Is.True);
-        Assert.That(_mockMediaManager.Object.RepeatMode, Is.EqualTo(PlaybackRepeatMode.All));
+        Assert.That(_mockMediaManager.Object.RepeatMode, Is.EqualTo(PlaybackRepeatMode.Off));
     }
 
     [Test]

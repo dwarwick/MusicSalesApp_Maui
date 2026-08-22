@@ -79,8 +79,6 @@ public partial class MusicLibraryPage : ContentPage
         return base.OnBackButtonPressed();
     }
 
-    private void OnFilterChromeClicked(object? sender, EventArgs e) => DismissFilterSearchInputs();
-
     private void OnFilterOptionTapped(object? sender, TappedEventArgs e) => DismissFilterSearchInputs();
 
     private void OnFilterSearchEntryUnfocused(object? sender, FocusEventArgs e) => DismissFilterSearchInputs();
