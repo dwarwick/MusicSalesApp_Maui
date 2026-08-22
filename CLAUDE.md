@@ -133,6 +133,7 @@ Tasks: `maui-smoke-test-ios-simulators[-quick]`, `maui-smoke-test-ios-device`, `
 - **`AGENTS.md`** — branch/PR conventions, MVVM patterns, the no-Models/no-Albums rules above, testing mandate.
 - **`MAUI_REQUIREMENTS.md`** — original feature spec (auth, flat song library, playlists, Facebook sharing/deep linking). Still broadly accurate, but its API endpoint table is stale versus the actual routes (`api/mobile-auth/*`, `api/music/songs`, `api/subscription/status`, etc.) — trust the code over that table.
 - **`PLAYBACK_CACHE_ARCHITECTURE.md`** — authoritative playback/cache design doc, see above.
+- **`APPSTORE_SCREENSHOTS.md`** — how to regenerate App Store screenshots from the simulator. Read it before trying: the 6.5-inch slot needs an iPhone *13* Pro Max (the 14 Pro Max is a different resolution), the build must be Production or a test-server banner lands in the listing, the app must be signed in or the player wears a "Preview Only" badge, and Apple rejects the PNGs `simctl` writes because of their alpha channel.
 - **`HANDOFF_BACKGROUND_PLAYBACK.md`** — historical Doze/sleep playback-stall investigation that preceded the sleep-safe architecture; superseded but useful for background context.
 
 ## Sibling repo
