@@ -14,6 +14,7 @@ public partial class HomeViewModel : ObservableObject
     public INetworkStatusService NetworkStatus { get; }
     private readonly INavigationService _navigationService;
     private readonly IAlertService _alertService;
+    private readonly IUserStreamedSongStore? _userStreamedSongStore;
     private readonly IAppConfig _appConfig;
     private readonly IBillingService _billingService;
     private readonly IMusicService _musicService;
@@ -287,7 +288,8 @@ public partial class HomeViewModel : ObservableObject
         IBrowserService browserService,
         IConfiguration configuration,
         IPlaylistService playlistService,
-        ISongArtworkHydrator? songArtworkHydrator = null)
+        ISongArtworkHydrator? songArtworkHydrator = null,
+        IUserStreamedSongStore? userStreamedSongStore = null)
     {
         _authService = authService;
         NetworkStatus = networkStatus;
@@ -303,6 +305,7 @@ public partial class HomeViewModel : ObservableObject
         _configuration = configuration;
         _playlistService = playlistService;
         _songArtworkHydrator = songArtworkHydrator;
+        _userStreamedSongStore = userStreamedSongStore;
 
         AttachAuthSubscription();
         AttachSignalRSubscriptions();
@@ -483,6 +486,10 @@ public partial class HomeViewModel : ObservableObject
                 LoadUserLikeStatusAsync(featuredSongs));
         }
 
+        // Unconditional: offline the status call above is skipped, so this is the only thing that knows
+        // which of these songs the user has already listened to.
+        UserSongRatingStateApplier.SeedFromLocalStore(featuredSongs, _userStreamedSongStore);
+
         await HydrateArtworkAsync(featuredSongs);
 
         FeaturedSongs = new ObservableCollection<SongDto>(featuredSongs);
@@ -533,14 +540,7 @@ public partial class HomeViewModel : ObservableObject
         if (!_authService.IsLoggedIn || songs.Count == 0) return;
 
         var statuses = await _musicService.GetBulkUserLikeStatusAsync(songs.Select(song => song.Id));
-        foreach (var (songId, status) in statuses)
-        {
-            var song = songs.FirstOrDefault(item => item.Id == songId);
-            if (song != null)
-            {
-                song.UserLikeStatus = status;
-            }
-        }
+        UserSongRatingStateApplier.ApplyServerStatuses(statuses, songs, _userStreamedSongStore);
     }
 
     private void HandleStreamCountUpdated(int songMetadataId, int newCount)
@@ -655,7 +655,8 @@ public partial class HomeViewModel : ObservableObject
         if (!await RequireAuthenticatedUserAsync("like songs"))
             return;
 
-        await OptimisticLikeStateUpdater.ApplyAsync(_musicService, song, LikeAction.ThumbsUp);
+        var outcome = await OptimisticLikeStateUpdater.ApplyAsync(_musicService, song, LikeAction.ThumbsUp);
+        await RatingRequiresStreamNotice.ReportAsync(outcome, _alertService);
     }
 
     [RelayCommand]
@@ -666,7 +667,8 @@ public partial class HomeViewModel : ObservableObject
         if (!await RequireAuthenticatedUserAsync("dislike songs"))
             return;
 
-        await OptimisticLikeStateUpdater.ApplyAsync(_musicService, song, LikeAction.ThumbsDown);
+        var outcome = await OptimisticLikeStateUpdater.ApplyAsync(_musicService, song, LikeAction.ThumbsDown);
+        await RatingRequiresStreamNotice.ReportAsync(outcome, _alertService);
     }
 
     [RelayCommand]

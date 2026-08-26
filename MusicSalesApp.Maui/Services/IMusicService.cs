@@ -34,7 +34,7 @@ public interface IMusicService
     Task FlushPendingStreamRecordsAsync();
     Task ClearPendingStreamRecordsAsync();
     Task<List<LikeCountDto>> GetBulkLikeCountsAsync(IEnumerable<int> songIds);
-    Task<Dictionary<int, bool?>> GetBulkUserLikeStatusAsync(IEnumerable<int> songIds);
+    Task<Dictionary<int, UserSongRatingState>> GetBulkUserLikeStatusAsync(IEnumerable<int> songIds);
     Task<LikeToggleResult?> ToggleLikeAsync(int songMetadataId);
     Task<LikeToggleResult?> ToggleDislikeAsync(int songMetadataId);
 

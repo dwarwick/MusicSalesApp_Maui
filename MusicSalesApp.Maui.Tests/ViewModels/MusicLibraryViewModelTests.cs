@@ -1264,7 +1264,7 @@ public class MusicLibraryViewModelTests
     {
         _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
         _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
-        var song = new SongDto { Id = 42, SongTitle = "Test" };
+        var song = new SongDto { Id = 42, SongTitle = "Test", HasStreamed = true };
 
         await _viewModel.LikeSongCommand.ExecuteAsync(song);
 
@@ -1279,7 +1279,7 @@ public class MusicLibraryViewModelTests
         _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
         _mockMusicService.Setup(s => s.SetLikeStateAsync(It.IsAny<int>(), It.IsAny<bool?>()))
             .ReturnsAsync(SetLikeStateOutcome.QueuedForRetry());
-        var song = new SongDto { Id = 42, SongTitle = "Test" };
+        var song = new SongDto { Id = 42, SongTitle = "Test", HasStreamed = true };
 
         await _viewModel.LikeSongCommand.ExecuteAsync(song);
 
@@ -1287,9 +1287,13 @@ public class MusicLibraryViewModelTests
     }
 
     [Test]
-    public async Task LikeSong_LeavesCountsToTheSignalRBroadcast()
+    public async Task LikeSong_TakesTheServerCountsRatherThanWaitingForTheBroadcast()
     {
-        // The library deliberately ignores the server's counts so every open screen updates together.
+        // The library used to ignore the server's counts and wait for the SignalR broadcast, so every
+        // open screen moved together. That relied on the optimistic value being right, which it is not
+        // when the local like state is stale - and because the set-state endpoint is idempotent, the
+        // server then writes nothing and broadcasts nothing, so the wrong value was never corrected.
+        // The broadcast still updates the other screens.
         _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
         _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
         _mockMusicService.Setup(s => s.SetLikeStateAsync(It.IsAny<int>(), It.IsAny<bool?>()))
@@ -1297,12 +1301,12 @@ public class MusicLibraryViewModelTests
             {
                 UserLikeStatus = true, LikeCount = 999, DislikeCount = 999
             }));
-        var song = new SongDto { Id = 42, SongTitle = "Test", LikeCount = 10, DislikeCount = 4 };
+        var song = new SongDto { Id = 42, SongTitle = "Test", LikeCount = 10, DislikeCount = 4, HasStreamed = true };
 
         await _viewModel.LikeSongCommand.ExecuteAsync(song);
 
-        Assert.That(song.LikeCount, Is.EqualTo(11));
-        Assert.That(song.DislikeCount, Is.EqualTo(4));
+        Assert.That(song.LikeCount, Is.EqualTo(999));
+        Assert.That(song.DislikeCount, Is.EqualTo(999));
     }
 
     [Test]
@@ -1310,7 +1314,7 @@ public class MusicLibraryViewModelTests
     {
         _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
         _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
-        var song = new SongDto { Id = 42, SongTitle = "Test" };
+        var song = new SongDto { Id = 42, SongTitle = "Test", HasStreamed = true };
 
         await _viewModel.DislikeSongCommand.ExecuteAsync(song);
 

@@ -54,4 +54,35 @@ public readonly record struct SetLikeStateOutcome(LikeStateResult? Result, bool 
     public static SetLikeStateOutcome QueuedForRetry() => new(null, true);
 
     public static SetLikeStateOutcome Failed() => new(null, false);
+
+    /// <summary>
+    /// The server refused because the caller has never streamed this song. A subset of
+    /// <see cref="Failed"/> - the caller still rolls back, but it has something to tell the user.
+    /// </summary>
+    public static SetLikeStateOutcome RequiresStream() => new(null, false) { NeedsStream = true };
+
+    /// <inheritdoc cref="RequiresStream"/>
+    public bool NeedsStream { get; init; }
+}
+
+/// <summary>
+/// What the current user has done with one song: their rating, and whether they have streamed it.
+///
+/// Both come from GET api/music/likes/user-status in a single round trip, since every screen that wants
+/// one wants the other.
+/// </summary>
+/// <param name="LikeStatus">true = liked, false = disliked, null = no opinion.</param>
+/// <param name="HasStreamed">Whether the user may set a rating on this song.</param>
+public readonly record struct UserSongRatingState(bool? LikeStatus, bool HasStreamed);
+
+/// <summary>
+/// What happened to a thumbs-up/down tap, as far as the screen that hosts the buttons is concerned.
+/// </summary>
+public enum LikeApplyOutcome
+{
+    /// <summary>Applied, queued for retry, or rolled back - nothing for the user to be told.</summary>
+    Handled,
+
+    /// <summary>Refused because the user has not streamed this song. Tell them why.</summary>
+    NeedsStream
 }

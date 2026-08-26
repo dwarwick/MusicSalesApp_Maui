@@ -10,6 +10,7 @@ public partial class SongPlayerViewModel : ObservableObject
 {
     private readonly IMusicService _musicService;
     private readonly IAlertService _alertService;
+    private readonly IUserStreamedSongStore? _userStreamedSongStore;
     private readonly IAuthService _authService;
     private readonly INavigationService _navigationService;
     private readonly IPlaybackService _playbackService;
@@ -32,7 +33,8 @@ public partial class SongPlayerViewModel : ObservableObject
         IAppConfig appConfig,
         IBillingService billingService,
         INetworkStatusService? networkStatusService = null,
-        ISongArtworkHydrator? songArtworkHydrator = null)
+        ISongArtworkHydrator? songArtworkHydrator = null,
+        IUserStreamedSongStore? userStreamedSongStore = null)
     {
         _musicService = musicService;
         _alertService = alertService;
@@ -45,6 +47,7 @@ public partial class SongPlayerViewModel : ObservableObject
         _billingService = billingService;
         _networkStatusService = networkStatusService;
         _songArtworkHydrator = songArtworkHydrator;
+        _userStreamedSongStore = userStreamedSongStore;
 
         AttachSubscriptions();
     }
@@ -118,8 +121,7 @@ public partial class SongPlayerViewModel : ObservableObject
                 try
                 {
                     var statuses = await _musicService.GetBulkUserLikeStatusAsync([Song.Id]);
-                    if (statuses.TryGetValue(Song.Id, out var status))
-                        Song.UserLikeStatus = status;
+                    UserSongRatingStateApplier.ApplyServerStatuses(statuses, [Song], _userStreamedSongStore);
                 }
                 catch { /* Non-fatal */ }
 
@@ -213,16 +215,17 @@ public partial class SongPlayerViewModel : ObservableObject
             try
             {
                 var statuses = await _musicService.GetBulkUserLikeStatusAsync([song.Id]);
-                if (statuses.TryGetValue(song.Id, out var status))
-                {
-                    song.UserLikeStatus = status;
-                }
+                UserSongRatingStateApplier.ApplyServerStatuses(statuses, [song], _userStreamedSongStore);
             }
             catch
             {
                 // Non-fatal
             }
         }
+
+        // Unconditional: offline the status call above is skipped, so this is the only thing that knows
+        // whether the user has already listened to this song.
+        UserSongRatingStateApplier.SeedFromLocalStore([song], _userStreamedSongStore);
 
         // Preserve current playback state when navigation lands on the active song.
         if (isCurrentSong)
@@ -275,7 +278,8 @@ public partial class SongPlayerViewModel : ObservableObject
         if (Song == null) return;
         if (!await RequireAuthenticatedUserAsync("like songs")) return;
 
-        await OptimisticLikeStateUpdater.ApplyAsync(_musicService, Song, LikeAction.ThumbsUp);
+        var outcome = await OptimisticLikeStateUpdater.ApplyAsync(_musicService, Song, LikeAction.ThumbsUp);
+        await RatingRequiresStreamNotice.ReportAsync(outcome, _alertService);
     }
 
     [RelayCommand]
@@ -284,7 +288,8 @@ public partial class SongPlayerViewModel : ObservableObject
         if (Song == null) return;
         if (!await RequireAuthenticatedUserAsync("dislike songs")) return;
 
-        await OptimisticLikeStateUpdater.ApplyAsync(_musicService, Song, LikeAction.ThumbsDown);
+        var outcome = await OptimisticLikeStateUpdater.ApplyAsync(_musicService, Song, LikeAction.ThumbsDown);
+        await RatingRequiresStreamNotice.ReportAsync(outcome, _alertService);
     }
 
     [RelayCommand]

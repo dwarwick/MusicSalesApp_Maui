@@ -12,6 +12,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
 {
     private readonly IMusicService _musicService;
     private readonly IAlertService _alertService;
+    private readonly IUserStreamedSongStore? _userStreamedSongStore;
     private readonly IAuthService _authService;
     private readonly INavigationService _navigationService;
     private readonly IPlaybackService _playbackService;
@@ -41,7 +42,8 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         IBillingService billingService,
         IPlaylistService playlistService,
         INetworkStatusService? networkStatusService = null,
-        ISongArtworkHydrator? songArtworkHydrator = null)
+        ISongArtworkHydrator? songArtworkHydrator = null,
+        IUserStreamedSongStore? userStreamedSongStore = null)
     {
         _musicService = musicService;
         _alertService = alertService;
@@ -55,6 +57,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         _playlistService = playlistService;
         _networkStatusService = networkStatusService;
         _songArtworkHydrator = songArtworkHydrator;
+        _userStreamedSongStore = userStreamedSongStore;
 
         AttachSubscriptions();
 
@@ -504,6 +507,10 @@ public partial class PlaylistPlayerViewModel : ObservableObject
                 LoadUserLikeStatusAsync(list));
         }
 
+        // Unconditional: offline the status call above is skipped, so this is the only thing that knows
+        // which of these songs the user has already listened to.
+        UserSongRatingStateApplier.SeedFromLocalStore(list, _userStreamedSongStore);
+
         await HydrateArtworkAsync(list);
 
         Songs.ReplaceAll(list);
@@ -707,7 +714,8 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         if (CurrentSong == null) return;
         if (!await RequireAuthenticatedUserAsync("like songs")) return;
 
-        await OptimisticLikeStateUpdater.ApplyAsync(_musicService, CurrentSong, LikeAction.ThumbsUp);
+        var outcome = await OptimisticLikeStateUpdater.ApplyAsync(_musicService, CurrentSong, LikeAction.ThumbsUp);
+        await RatingRequiresStreamNotice.ReportAsync(outcome, _alertService);
     }
 
     [RelayCommand]
@@ -716,7 +724,8 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         if (CurrentSong == null) return;
         if (!await RequireAuthenticatedUserAsync("dislike songs")) return;
 
-        await OptimisticLikeStateUpdater.ApplyAsync(_musicService, CurrentSong, LikeAction.ThumbsDown);
+        var outcome = await OptimisticLikeStateUpdater.ApplyAsync(_musicService, CurrentSong, LikeAction.ThumbsDown);
+        await RatingRequiresStreamNotice.ReportAsync(outcome, _alertService);
     }
 
     // --- Navigation ---
@@ -809,12 +818,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
             if (ids.Count == 0) return;
 
             var statuses = await _musicService.GetBulkUserLikeStatusAsync(ids);
-            foreach (var (songId, status) in statuses)
-            {
-                var song = songs.FirstOrDefault(s => s.Id == songId);
-                if (song != null)
-                    song.UserLikeStatus = status;
-            }
+            UserSongRatingStateApplier.ApplyServerStatuses(statuses, songs, _userStreamedSongStore);
         }
         catch
         {

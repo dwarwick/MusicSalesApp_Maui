@@ -240,20 +240,65 @@ public class MusicService : IMusicService
 
     public async Task<List<LikeCountDto>> GetBulkLikeCountsAsync(IEnumerable<int> songIds)
     {
-        var client = _httpClientFactory.CreateClient("MusicSalesApi");
         try
         {
-            var ids = string.Join(",", songIds);
-            if (string.IsNullOrEmpty(ids)) return [];
+            var ids = NormalizeSongIds(songIds);
+            if (ids.Count == 0) return [];
 
-            var result = await client.GetFromJsonAsync<List<LikeCountDto>>($"api/music/likes/bulk?ids={ids}");
-            return result ?? [];
+            return await SendBulkSongIdsAsync<LikeCountDto>("api/music/likes/bulk", ids).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to fetch bulk like counts");
             return [];
         }
+    }
+
+    private static List<int> NormalizeSongIds(IEnumerable<int> songIds)
+        => songIds.Where(id => id > 0).Distinct().ToList();
+
+    /// <summary>
+    /// Asks a bulk like endpoint about a set of songs, sending the IDs in the request body.
+    ///
+    /// The library sends the whole catalogue, and that list outgrows a query string: IIS request
+    /// filtering caps a query at 2048 characters by default, so a five-digit ID list starts coming back
+    /// as a 404 from the request filter somewhere around 340 songs - a failure the app cannot tell from
+    /// a missing route.
+    ///
+    /// Falls back to the older query-string form when the server does not know the POST route, so the
+    /// two repos can still ship independently. Same concession the like-state path makes.
+    /// </summary>
+    private async Task<List<T>> SendBulkSongIdsAsync<T>(string path, List<int> songIds)
+    {
+        var client = _httpClientFactory.CreateClient("MusicSalesApi");
+
+        var response = await client
+            .PostAsJsonAsync(path, new { Ids = songIds })
+            .ConfigureAwait(false);
+
+        if (response.IsSuccessStatusCode)
+        {
+            var result = await response.Content.ReadFromJsonAsync<List<T>>().ConfigureAwait(false);
+            return result ?? [];
+        }
+
+        // Any failure falls back to the query-string form, not just the 404/405 that mean "this server
+        // predates the route". An unauthenticated POST to the authorized user-status endpoint answers
+        // 400 rather than the 401 its GET twin gives, and treating that as fatal returned an empty set
+        // - which the caller cannot distinguish from "you have rated nothing". The user then sees their
+        // own like as unset, taps it again, and the count creeps up.
+        //
+        // The GET is the same request by another route, so retrying costs one round trip on a path that
+        // was already failing, and it either succeeds or throws somewhere the caller can log.
+        _logger.LogWarning(
+            "Bulk endpoint {Path} rejected the request body ({StatusCode}); falling back to the query-string form",
+            path,
+            response.StatusCode);
+
+        var queryResult = await client
+            .GetFromJsonAsync<List<T>>($"{path}?ids={string.Join(",", songIds)}")
+            .ConfigureAwait(false);
+        return queryResult ?? [];
     }
 
     public async Task<LikeToggleResult?> ToggleLikeAsync(int songMetadataId)
@@ -326,11 +371,30 @@ public class MusicService : IMusicService
             return SetLikeStateOutcome.QueuedForRetry();
         }
 
-        return SetLikeStateOutcome.Failed();
+        return attempt.RequiresStream
+            ? SetLikeStateOutcome.RequiresStream()
+            : SetLikeStateOutcome.Failed();
     }
 
+    /// <summary>
+    /// Drains queued like/dislike intents.
+    ///
+    /// Queued streams go first, and this ordering is load-bearing rather than tidy. Offline, listening
+    /// past the qualifying threshold queues a stream and the thumbs-up that follows queues a like. The
+    /// server only accepts a rating for a song it has a stream record for, and it answers 403 - which
+    /// this client treats as permanently non-retryable and discards. Flushing the like first would
+    /// therefore lose the user's rating outright, every time, with nothing on screen to show for it.
+    ///
+    /// The two queues have independent retry loops, so relying on callers to invoke them in the right
+    /// order would leave the guarantee to chance.
+    /// </summary>
     public async Task FlushPendingLikeStatesAsync()
     {
+        if (await HasPendingStreamRecordsAsync().ConfigureAwait(false))
+        {
+            await FlushPendingStreamRecordsAsync().ConfigureAwait(false);
+        }
+
         await _pendingLikeStateFlushLock.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -407,6 +471,17 @@ public class MusicService : IMusicService
                 return await SendLikeStateViaToggleAsync(songMetadataId, desiredState).ConfigureAwait(false);
             }
 
+            // The only 403 this endpoint issues is the stream-before-rating rule - it carries no policy
+            // that could fail, and an unauthenticated caller gets a 401. Worth telling the user about
+            // rather than silently rolling the button back.
+            if (response.StatusCode == HttpStatusCode.Forbidden)
+            {
+                _logger.LogInformation(
+                    "Rating for song {SongMetadataId} was refused because it has not been streamed by this user",
+                    songMetadataId);
+                return new LikeStateAttemptResult(null, false, true, RequiresStream: true);
+            }
+
             _logger.LogWarning(
                 "SetLikeState returned {StatusCode} for song {SongMetadataId}",
                 response.StatusCode,
@@ -434,7 +509,8 @@ public class MusicService : IMusicService
     private async Task<LikeStateAttemptResult> SendLikeStateViaToggleAsync(int songMetadataId, bool? desiredState)
     {
         var statuses = await GetBulkUserLikeStatusAsync([songMetadataId]).ConfigureAwait(false);
-        statuses.TryGetValue(songMetadataId, out var currentState);
+        statuses.TryGetValue(songMetadataId, out var existingRating);
+        var currentState = existingRating.LikeStatus;
 
         if (currentState == desiredState)
         {
@@ -607,18 +683,25 @@ public class MusicService : IMusicService
             or HttpStatusCode.Unauthorized
             or HttpStatusCode.Forbidden;
 
-    public async Task<Dictionary<int, bool?>> GetBulkUserLikeStatusAsync(IEnumerable<int> songIds)
+    public async Task<Dictionary<int, UserSongRatingState>> GetBulkUserLikeStatusAsync(IEnumerable<int> songIds)
     {
-        var client = _httpClientFactory.CreateClient("MusicSalesApi");
         try
         {
-            var ids = string.Join(",", songIds);
-            if (string.IsNullOrEmpty(ids)) return new();
+            var ids = NormalizeSongIds(songIds);
+            if (ids.Count == 0) return new();
 
-            var result = await client.GetFromJsonAsync<List<UserLikeStatusDto>>($"api/music/likes/user-status?ids={ids}");
-            if (result == null) return new();
+            var result = await SendBulkSongIdsAsync<UserLikeStatusDto>("api/music/likes/user-status", ids)
+                .ConfigureAwait(false);
 
-            return result.ToDictionary(r => r.SongMetadataId, r => r.UserLikeStatus);
+            // Keyed by song rather than ToDictionary'd blindly: the server sends one entry per requested
+            // ID, and a duplicate would throw here rather than degrade.
+            var statuses = new Dictionary<int, UserSongRatingState>(result.Count);
+            foreach (var status in result)
+            {
+                statuses[status.SongMetadataId] = status.ToRatingState();
+            }
+
+            return statuses;
         }
         catch (Exception ex)
         {
@@ -888,11 +971,25 @@ public class MusicService : IMusicService
     private static bool ShouldDropPendingRecord(HttpStatusCode statusCode)
         => statusCode == HttpStatusCode.BadRequest || statusCode == HttpStatusCode.NotFound;
 
-    private sealed record UserLikeStatusDto(int SongMetadataId, bool? UserLikeStatus);
+    /// <summary>
+    /// <paramref name="HasStreamed"/> is nullable on purpose. A server that predates the
+    /// stream-before-rating rule does not send the field at all, and reading that absence as "false"
+    /// would grey out every thumb in the app against an older backend. Null therefore means "this
+    /// server does not report eligibility", which <see cref="ToRatingState"/> resolves to eligible -
+    /// the same independent-shipping concession the like-state/toggle fallback makes.
+    /// </summary>
+    private sealed record UserLikeStatusDto(int SongMetadataId, bool? UserLikeStatus, bool? HasStreamed)
+    {
+        public UserSongRatingState ToRatingState() => new(UserLikeStatus, HasStreamed ?? true);
+    }
     private sealed record PendingStreamRecord(int SongMetadataId, DateTime RecordedUtc);
     private sealed record StreamRecordAttemptResult(int? StreamCount, bool ShouldQueueForRetry, bool ShouldDropPendingRecord);
     private sealed record PendingLikeState(int SongMetadataId, bool? DesiredState, DateTime RecordedUtc);
-    private sealed record LikeStateAttemptResult(LikeStateResult? Result, bool ShouldQueueForRetry, bool ShouldDropPendingRecord);
+    private sealed record LikeStateAttemptResult(
+        LikeStateResult? Result,
+        bool ShouldQueueForRetry,
+        bool ShouldDropPendingRecord,
+        bool RequiresStream = false);
 
     public Task<(bool Success, string ErrorMessage)> VerifyGooglePlayPurchaseAsync(string purchaseToken, string? orderId)
         => VerifySubscriptionPurchaseAsync(BillingPurchaseVerificationRequest.ForGooglePlay(purchaseToken, orderId));

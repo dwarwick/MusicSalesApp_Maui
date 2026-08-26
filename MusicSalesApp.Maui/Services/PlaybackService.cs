@@ -53,6 +53,7 @@ public class PlaybackService : IPlaybackService
     private readonly IQueuePreparationService _queuePreparationService;
     private readonly IPlaybackKeepAliveService _playbackKeepAliveService;
     private readonly IAnonymousFeaturedStreamStore? _anonymousFeaturedStreamStore;
+    private readonly IUserStreamedSongStore? _userStreamedSongStore;
     private readonly INetworkStatusService? _networkStatusService;
     private readonly IImageCacheService? _imageCacheService;
     private readonly ILogger<PlaybackService> _logger;
@@ -143,7 +144,8 @@ public class PlaybackService : IPlaybackService
         TimeSpan? bufferingStallRecoveryDelay = null,
         IAnonymousFeaturedStreamStore? anonymousFeaturedStreamStore = null,
         INetworkStatusService? networkStatusService = null,
-        IImageCacheService? imageCacheService = null)
+        IImageCacheService? imageCacheService = null,
+        IUserStreamedSongStore? userStreamedSongStore = null)
     {
         _authService = authService;
         _musicService = musicService;
@@ -152,6 +154,7 @@ public class PlaybackService : IPlaybackService
         _queuePreparationService = queuePreparationService;
         _playbackKeepAliveService = playbackKeepAliveService;
         _anonymousFeaturedStreamStore = anonymousFeaturedStreamStore;
+        _userStreamedSongStore = userStreamedSongStore;
         _networkStatusService = networkStatusService;
         _imageCacheService = imageCacheService;
         _logger = logger;
@@ -1011,8 +1014,26 @@ public class PlaybackService : IPlaybackService
         {
             _streamRecordedForCurrentSong = true;
             MarkAnonymousFeaturedStreamRecorded(CurrentSong);
+            MarkSongStreamedByCurrentUser(CurrentSong);
             _ = RecordQualifiedStreamAsync(CurrentSong.Id);
         }
+    }
+
+    /// <summary>
+    /// Records that the signed-in user has now streamed this song, which is what entitles them to rate
+    /// it. Done here rather than after <see cref="RecordQualifiedStreamAsync"/> returns, so the thumbs
+    /// light up the moment the threshold is crossed and keep working offline, where the stream itself is
+    /// only queued.
+    /// </summary>
+    private void MarkSongStreamedByCurrentUser(SongDto song)
+    {
+        if (!_authService.IsLoggedIn || song.Id <= 0)
+        {
+            return;
+        }
+
+        _userStreamedSongStore?.MarkStreamed(song.Id);
+        song.HasStreamed = true;
     }
 
     private bool IsAnonymousFeaturedStreamAlreadyRecorded(SongDto song)

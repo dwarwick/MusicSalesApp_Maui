@@ -35,6 +35,7 @@ public partial class SongPlayerPage : ContentPage
         Resources.Add("DislikeColorConverter", new DislikeColorConverter());
         Resources.Add("LikeFillConverter", new LikeFillConverter());
         Resources.Add("DislikeFillConverter", new DislikeFillConverter());
+        Resources.Add("RateableOpacityConverter", new RateableOpacityConverter());
 
         InitializeComponent();
 
@@ -366,6 +367,23 @@ public class DislikeColorConverter : IValueConverter
             ? AppColors.Text3
             : Colors.Black;
     }
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>
+/// Dims the thumbs when the user has not streamed the song yet and so may not rate it.
+///
+/// Opacity rather than IsEnabled on purpose: a disabled control swallows the tap silently, which reads
+/// as a broken button. Dimmed-but-live lets the tap through so the ViewModel can say why.
+/// </summary>
+public class RateableOpacityConverter : IValueConverter
+{
+    private const double BlockedOpacity = 0.35;
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is false ? BlockedOpacity : 1.0;
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
         => throw new NotSupportedException();

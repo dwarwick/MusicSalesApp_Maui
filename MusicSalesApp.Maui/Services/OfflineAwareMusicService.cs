@@ -246,7 +246,7 @@ public sealed class OfflineAwareMusicService : IMusicService
     public Task<List<LikeCountDto>> GetBulkLikeCountsAsync(IEnumerable<int> songIds)
         => _inner.GetBulkLikeCountsAsync(songIds);
 
-    public Task<Dictionary<int, bool?>> GetBulkUserLikeStatusAsync(IEnumerable<int> songIds)
+    public Task<Dictionary<int, UserSongRatingState>> GetBulkUserLikeStatusAsync(IEnumerable<int> songIds)
         => _inner.GetBulkUserLikeStatusAsync(songIds);
 
     public Task<LikeToggleResult?> ToggleLikeAsync(int songMetadataId) => _inner.ToggleLikeAsync(songMetadataId);

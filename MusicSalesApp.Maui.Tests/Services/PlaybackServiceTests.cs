@@ -18,6 +18,7 @@ public class PlaybackServiceTests
     private Mock<IQueuePreparationService> _mockQueuePreparationService;
     private Mock<IPlaybackKeepAliveService> _mockPlaybackKeepAliveService;
     private Mock<IAnonymousFeaturedStreamStore> _mockAnonymousFeaturedStreamStore;
+    private Mock<IUserStreamedSongStore> _mockUserStreamedSongStore;
     private Mock<INetworkStatusService> _mockNetworkStatusService;
     private PlaybackService _service;
     private PlaybackRuntimeState _mediaManagerState;
@@ -34,6 +35,7 @@ public class PlaybackServiceTests
         _mockQueuePreparationService = new Mock<IQueuePreparationService>();
         _mockPlaybackKeepAliveService = new Mock<IPlaybackKeepAliveService>();
         _mockAnonymousFeaturedStreamStore = new Mock<IAnonymousFeaturedStreamStore>();
+        _mockUserStreamedSongStore = new Mock<IUserStreamedSongStore>();
         _mockNetworkStatusService = new Mock<INetworkStatusService>();
         _mediaManagerState = PlaybackRuntimeState.Stopped;
         _isOffline = false;
@@ -116,7 +118,9 @@ public class PlaybackServiceTests
             subscriptionStatusRefreshInterval,
             bufferingStallRecoveryDelay,
             _mockAnonymousFeaturedStreamStore.Object,
-            _mockNetworkStatusService.Object);
+            _mockNetworkStatusService.Object,
+            imageCacheService: null,
+            userStreamedSongStore: _mockUserStreamedSongStore.Object);
     }
 
     [Test]
@@ -678,6 +682,62 @@ public class PlaybackServiceTests
         }
 
         _mockMusicService.Verify(s => s.RecordStreamAsync(10), Times.Once);
+    }
+
+    [Test]
+    public void StreamTracking_QualifyingStream_MakesTheSongRateable()
+    {
+        // Marked here rather than after the server confirms, so the thumbs come alive at the threshold
+        // and still work offline, where the stream is only queued.
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _service.SetStreamQualifyingSeconds(5);
+        var song = new SongDto { Id = 10, SongTitle = "Test", StreamUrl = "https://test.com/song.mp3" };
+        _service.PlaySong(song);
+
+        Assert.That(song.CanRate, Is.False, "Not yet listened to.");
+
+        for (int i = 1; i <= 6; i++)
+        {
+            _service.UpdatePosition(TimeSpan.FromSeconds(i), TimeSpan.FromSeconds(180));
+        }
+
+        Assert.That(song.HasStreamed, Is.True);
+        Assert.That(song.CanRate, Is.True);
+        _mockUserStreamedSongStore.Verify(s => s.MarkStreamed(10), Times.Once);
+    }
+
+    [Test]
+    public void StreamTracking_QualifyingStreamWhileSignedOut_DoesNotMakeTheSongRateable()
+    {
+        // A stream recorded while logged out carries no user, so it entitles nobody to rate.
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(false);
+        _service.SetStreamQualifyingSeconds(5);
+        var song = new SongDto { Id = 10, SongTitle = "Test", StreamUrl = "https://test.com/song.mp3" };
+        _service.PlaySong(song);
+
+        for (int i = 1; i <= 6; i++)
+        {
+            _service.UpdatePosition(TimeSpan.FromSeconds(i), TimeSpan.FromSeconds(180));
+        }
+
+        Assert.That(song.HasStreamed, Is.False);
+        _mockUserStreamedSongStore.Verify(s => s.MarkStreamed(It.IsAny<int>()), Times.Never);
+    }
+
+    [Test]
+    public void StreamTracking_BeforeThreshold_LeavesTheSongUnrateable()
+    {
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _service.SetStreamQualifyingSeconds(30);
+        var song = new SongDto { Id = 10, SongTitle = "Test", StreamUrl = "https://test.com/song.mp3" };
+        _service.PlaySong(song);
+
+        for (int i = 1; i <= 10; i++)
+        {
+            _service.UpdatePosition(TimeSpan.FromSeconds(i), TimeSpan.FromSeconds(180));
+        }
+
+        Assert.That(song.CanRate, Is.False);
     }
 
     [Test]

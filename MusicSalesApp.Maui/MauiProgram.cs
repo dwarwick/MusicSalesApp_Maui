@@ -161,6 +161,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IAppPreferenceStore, AppPreferenceStore>();
 		builder.Services.AddSingleton<ISecureStorage>(SecureStorage.Default);
 		builder.Services.AddSingleton<IAnonymousFeaturedStreamStore, AnonymousFeaturedStreamStore>();
+		builder.Services.AddSingleton<IUserStreamedSongStore, UserStreamedSongStore>();
 		builder.Services.AddSingleton<IPermissionExplainerService, PermissionExplainerService>();
 		builder.Services.AddSingleton<IMicrophonePermissionService, MicrophonePermissionService>();
 		builder.Services.AddSingleton<IAuthService, AuthService>();

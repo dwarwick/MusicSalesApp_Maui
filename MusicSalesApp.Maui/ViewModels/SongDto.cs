@@ -127,7 +127,28 @@ public partial class SongDto : ObservableObject
     /// Populated from bulk user-status endpoint.
     /// </summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanRate))]
     public partial bool? UserLikeStatus { get; set; }
+
+    /// <summary>
+    /// Whether the current user has streamed this song, which is what entitles them to rate it.
+    ///
+    /// Populated from the bulk user-status endpoint alongside <see cref="UserLikeStatus"/>, and set
+    /// locally the moment playback passes the qualifying threshold so the buttons come alive part-way
+    /// through a listen rather than waiting for the next catalogue load. Not JsonIgnored, so it rides
+    /// along in the offline catalogue snapshot the same way the like status does.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanRate))]
+    public partial bool HasStreamed { get; set; }
+
+    /// <summary>
+    /// Whether the thumbs are live for this song.
+    ///
+    /// Setting an opinion needs a stream; clearing one never does, so an existing rating stays
+    /// actionable either way. Mirrors the asymmetry the server enforces in SongLikeService.
+    /// </summary>
+    public bool CanRate => HasStreamed || UserLikeStatus != null;
 
     /// <summary>
     /// Pre-built share URL for this song (e.g. https://domain/song/Encoded%20Title).

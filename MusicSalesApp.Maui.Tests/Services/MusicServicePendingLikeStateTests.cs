@@ -508,6 +508,197 @@ public class MusicServicePendingLikeStateTests
 
         Assert.That(await CreateService().GetPendingLikeStatesAsync(), Is.Empty);
     }
+
+    // --- Reading eligibility ---
+
+    [Test]
+    public async Task GetBulkUserLikeStatusAsync_ReadsTheRatingAndTheEligibility()
+    {
+        _connectivity.NetworkAccess = NetworkAccess.Internet;
+        _handler.RespondWith(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new[]
+            {
+                new { songMetadataId = 1, userLikeStatus = (bool?)true, hasStreamed = true },
+                new { songMetadataId = 2, userLikeStatus = (bool?)null, hasStreamed = false }
+            })
+        });
+
+        var statuses = await CreateService().GetBulkUserLikeStatusAsync([1, 2]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(statuses[1], Is.EqualTo(new UserSongRatingState(true, true)));
+            Assert.That(statuses[2], Is.EqualTo(new UserSongRatingState(null, false)));
+        });
+    }
+
+    [Test]
+    public async Task GetBulkUserLikeStatusAsync_SendsTheIdsInTheBodyNotTheQueryString()
+    {
+        // The library asks about the whole catalogue at once. IIS request filtering caps a query string
+        // at 2048 characters by default, so that list has to travel in the body.
+        _connectivity.NetworkAccess = NetworkAccess.Internet;
+        _handler.RespondWith(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(Array.Empty<object>())
+        });
+
+        await CreateService().GetBulkUserLikeStatusAsync(Enumerable.Range(1, 500));
+
+        Assert.That(_handler.LastRequest!.Method, Is.EqualTo(HttpMethod.Post));
+        Assert.That(_handler.LastRequest.RequestUri!.Query, Is.Empty);
+    }
+
+    [Test]
+    public async Task GetBulkLikeCountsAsync_AgainstAServerWithoutThePostRoute_FallsBackToTheQueryString()
+    {
+        // Lets the two repos ship independently, same concession the like-state path makes.
+        _connectivity.NetworkAccess = NetworkAccess.Internet;
+        _handler.RespondWith(request => request.Method == HttpMethod.Post
+            ? new HttpResponseMessage(HttpStatusCode.MethodNotAllowed)
+            : new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new[]
+                {
+                    new { songMetadataId = 1, likeCount = 4, dislikeCount = 1 }
+                })
+            });
+
+        var counts = await CreateService().GetBulkLikeCountsAsync([1]);
+
+        Assert.That(counts, Has.Count.EqualTo(1));
+        Assert.That(counts[0].LikeCount, Is.EqualTo(4));
+        Assert.That(_handler.LastRequest!.Method, Is.EqualTo(HttpMethod.Get));
+        Assert.That(_handler.LastRequest.RequestUri!.Query, Does.Contain("ids=1"));
+    }
+
+    [Test]
+    public async Task GetBulkUserLikeStatusAsync_WhenThePostIsRejected_FallsBackRatherThanReturningNothing()
+    {
+        // An unauthenticated POST to the authorized user-status route answers 400, not the 401 its GET
+        // twin gives. Treating anything but 404/405 as fatal returned an empty set, which the caller
+        // cannot tell from "you have rated nothing" - so the user's own like showed as unset, they
+        // tapped it again, and the visible count crept up.
+        _connectivity.NetworkAccess = NetworkAccess.Internet;
+        _handler.RespondWith(request => request.Method == HttpMethod.Post
+            ? new HttpResponseMessage(HttpStatusCode.BadRequest)
+            : new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new[]
+                {
+                    new { songMetadataId = 1, userLikeStatus = (bool?)true, hasStreamed = true }
+                })
+            });
+
+        var statuses = await CreateService().GetBulkUserLikeStatusAsync([1]);
+
+        Assert.That(statuses, Has.Count.EqualTo(1), "The fallback should have recovered the state.");
+        Assert.That(statuses[1].LikeStatus, Is.True);
+    }
+
+    [Test]
+    public async Task GetBulkLikeCountsAsync_DropsDuplicateAndNonPositiveIdsBeforeAsking()
+    {
+        _connectivity.NetworkAccess = NetworkAccess.Internet;
+        _handler.RespondWith(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(Array.Empty<object>())
+        });
+
+        await CreateService().GetBulkLikeCountsAsync([7, 7, 0, -1, 8]);
+
+        var body = await _handler.LastRequest!.Content!.ReadAsStringAsync();
+        Assert.That(body, Does.Contain("7").And.Contain("8"));
+        Assert.That(body, Does.Not.Contain("-1"));
+        Assert.That(body.Split('7').Length - 1, Is.EqualTo(1), "The repeated ID should be sent once.");
+    }
+
+    [Test]
+    public async Task GetBulkLikeCountsAsync_WithNoUsableIds_MakesNoRequest()
+    {
+        _connectivity.NetworkAccess = NetworkAccess.Internet;
+
+        var counts = await CreateService().GetBulkLikeCountsAsync([0, -4]);
+
+        Assert.That(counts, Is.Empty);
+        Assert.That(_handler.RequestCount, Is.Zero);
+    }
+
+    [Test]
+    public async Task GetBulkUserLikeStatusAsync_ServerThatDoesNotReportEligibility_TreatsSongsAsRateable()
+    {
+        // A server older than the stream-before-rating rule omits the field entirely. Reading that
+        // absence as "not streamed" would grey out every thumb in the app against such a backend, so
+        // the app degrades to the behaviour that server actually enforces.
+        _connectivity.NetworkAccess = NetworkAccess.Internet;
+        _handler.RespondWith(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new[] { new { songMetadataId = 1, userLikeStatus = (bool?)true } })
+        });
+
+        var statuses = await CreateService().GetBulkUserLikeStatusAsync([1]);
+
+        Assert.That(statuses[1].HasStreamed, Is.True);
+    }
+
+    // --- Rating requires a stream ---
+
+    [Test]
+    public async Task SetLikeStateAsync_WhenTheServerSaysTheSongWasNeverStreamed_ReportsItAndDoesNotQueue()
+    {
+        _connectivity.NetworkAccess = NetworkAccess.Internet;
+        _handler.RespondWith(_ => new HttpResponseMessage(HttpStatusCode.Forbidden)
+        {
+            Content = JsonContent.Create(new { error = "Listen to this song before rating it" })
+        });
+        var service = CreateService();
+
+        var outcome = await service.SetLikeStateAsync(SongId, true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(outcome.NeedsStream, Is.True);
+            Assert.That(outcome.Queued, Is.False, "Retrying would be refused every time.");
+            Assert.That(outcome.Result, Is.Null);
+        });
+        Assert.That(StoredQueue, Is.Null.Or.Empty);
+    }
+
+    /// <summary>
+    /// The ordering guarantee in FlushPendingLikeStatesAsync, which is the difference between the
+    /// user's offline rating landing and vanishing: the server only accepts a rating for a song it has
+    /// a stream record for, and it answers the refusal with a 403 this client discards permanently.
+    /// </summary>
+    [Test]
+    public async Task FlushPendingLikeStatesAsync_SendsAQueuedStreamBeforeTheRatingThatDependsOnIt()
+    {
+        GivenOffline();
+        var service = CreateService(TimeSpan.FromMinutes(5));
+        await service.RecordStreamAsync(SongId);
+        await service.SetLikeStateAsync(SongId, true);
+
+        _connectivity.NetworkAccess = NetworkAccess.Internet;
+        _handler.RespondWith(request => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = request.RequestUri!.AbsolutePath.Contains("like-state")
+                ? JsonContent.Create(new { userLikeStatus = true, likeCount = 1, dislikeCount = 0 })
+                : JsonContent.Create(new { songMetadataId = SongId, streamCount = 1 })
+        });
+
+        await service.FlushPendingLikeStatesAsync();
+
+        var paths = _handler.RequestPaths;
+        var streamIndex = paths.ToList().FindIndex(path => path.Contains("music/stream/"));
+        var likeIndex = paths.ToList().FindIndex(path => path.Contains("like-state"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(streamIndex, Is.GreaterThanOrEqualTo(0), "The queued stream should have been sent.");
+            Assert.That(likeIndex, Is.GreaterThanOrEqualTo(0), "The queued rating should have been sent.");
+            Assert.That(streamIndex, Is.LessThan(likeIndex), "The stream must reach the server first.");
+        });
+    }
 }
 
 /// <summary>

@@ -15,6 +15,7 @@ public partial class MusicLibraryViewModel : ObservableObject
 
     private readonly IMusicService _musicService;
     private readonly IAlertService _alertService;
+    private readonly IUserStreamedSongStore? _userStreamedSongStore;
     private readonly ISignalRService _signalRService;
     private readonly IAuthService _authService;
     private readonly INavigationService _navigationService;
@@ -44,7 +45,8 @@ public partial class MusicLibraryViewModel : ObservableObject
         IBillingService billingService,
         IAudioCacheService? audioCacheService = null,
         INetworkStatusService? networkStatusService = null,
-        ISongArtworkHydrator? songArtworkHydrator = null)
+        ISongArtworkHydrator? songArtworkHydrator = null,
+        IUserStreamedSongStore? userStreamedSongStore = null)
     {
         _musicService = musicService;
         _alertService = alertService;
@@ -58,6 +60,7 @@ public partial class MusicLibraryViewModel : ObservableObject
         _audioCacheService = audioCacheService;
         _networkStatusService = networkStatusService;
         _songArtworkHydrator = songArtworkHydrator;
+        _userStreamedSongStore = userStreamedSongStore;
 
         UpdateAiPillText();
         UpdateGenrePillText();
@@ -645,9 +648,8 @@ public partial class MusicLibraryViewModel : ObservableObject
         if (!await RequireAuthenticatedUserAsync("like songs"))
             return;
 
-        // applyServerCounts: false - the library leaves counts to the SignalR broadcast so every open
-        // screen updates together rather than only the one that was tapped.
-        await OptimisticLikeStateUpdater.ApplyAsync(_musicService, song, LikeAction.ThumbsUp, applyServerCounts: false);
+        var outcome = await OptimisticLikeStateUpdater.ApplyAsync(_musicService, song, LikeAction.ThumbsUp);
+        await RatingRequiresStreamNotice.ReportAsync(outcome, _alertService);
     }
 
     [RelayCommand]
@@ -658,7 +660,8 @@ public partial class MusicLibraryViewModel : ObservableObject
         if (!await RequireAuthenticatedUserAsync("dislike songs"))
             return;
 
-        await OptimisticLikeStateUpdater.ApplyAsync(_musicService, song, LikeAction.ThumbsDown, applyServerCounts: false);
+        var outcome = await OptimisticLikeStateUpdater.ApplyAsync(_musicService, song, LikeAction.ThumbsDown);
+        await RatingRequiresStreamNotice.ReportAsync(outcome, _alertService);
     }
 
     [RelayCommand]
@@ -836,6 +839,10 @@ public partial class MusicLibraryViewModel : ObservableObject
             {
                 SeedLikeCountsFromCachedSongs(orderedSongs);
             }
+
+            // Unconditional: offline the status call above is skipped, so this is the only thing that
+            // knows which of these songs the user has already listened to.
+            UserSongRatingStateApplier.SeedFromLocalStore(orderedSongs, _userStreamedSongStore);
         }
         catch (Exception ex)
         {
@@ -917,14 +924,7 @@ public partial class MusicLibraryViewModel : ObservableObject
             if (ids.Count == 0) return;
 
             var statuses = await _musicService.GetBulkUserLikeStatusAsync(ids);
-            var songsById = songs.ToDictionary(song => song.Id);
-            foreach (var (songId, status) in statuses)
-            {
-                if (songsById.TryGetValue(songId, out var song))
-                {
-                    song.UserLikeStatus = status;
-                }
-            }
+            UserSongRatingStateApplier.ApplyServerStatuses(statuses, songs, _userStreamedSongStore);
         }
         catch (Exception ex)
         {
