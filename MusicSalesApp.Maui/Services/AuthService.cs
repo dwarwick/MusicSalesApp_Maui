@@ -22,6 +22,7 @@ public class AuthService : IAuthService
     private readonly IUserStreamedSongStore? _userStreamedSongStore;
     private readonly ISecureStorage _secureStorage;
     private readonly IBiometricAuthenticator _biometrics;
+    private readonly IAppleSignInService _appleSignIn;
     private readonly SemaphoreSlim _biometricStateLock = new(1, 1);
     private int _biometricCredentialsState = -1;
 
@@ -95,7 +96,8 @@ public class AuthService : IAuthService
         IBiometricAuthenticator biometrics,
         IOfflinePlaylistStore? offlinePlaylistStore = null,
         IOfflineSongCatalogStore? offlineSongCatalogStore = null,
-        IUserStreamedSongStore? userStreamedSongStore = null)
+        IUserStreamedSongStore? userStreamedSongStore = null,
+        IAppleSignInService? appleSignIn = null)
     {
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
@@ -108,6 +110,7 @@ public class AuthService : IAuthService
         _offlinePlaylistStore = offlinePlaylistStore;
         _offlineSongCatalogStore = offlineSongCatalogStore;
         _userStreamedSongStore = userStreamedSongStore;
+        _appleSignIn = appleSignIn ?? new UnsupportedAppleSignInService();
 
         // The store can hand the app a purchase nobody asked for - an interrupted one replayed at
         // launch. Only this service can record it, and the billing service cannot depend on it
@@ -222,14 +225,14 @@ public class AuthService : IAuthService
         }
     }
 
-    public async Task<GoogleAuthResultDto> AuthenticateWithGoogleAsync()
+    public async Task<ExternalAuthResultDto> AuthenticateWithGoogleAsync()
     {
         var client = _httpClientFactory.CreateClient("MusicSalesApi");
         try
         {
             if (client.BaseAddress == null)
             {
-                return new GoogleAuthResultDto { ErrorMessage = "Google sign-in is not configured." };
+                return new ExternalAuthResultDto { ErrorMessage = "Google sign-in is not configured." };
             }
 
             var callbackUrl = _configuration["MobileExternalAuth:CallbackUrl"] ?? "streamtunes://auth";
@@ -239,14 +242,14 @@ public class AuthService : IAuthService
 
             if (authResult.Properties.TryGetValue("error", out var error) && !string.IsNullOrWhiteSpace(error))
             {
-                return new GoogleAuthResultDto { ErrorMessage = error };
+                return new ExternalAuthResultDto { ErrorMessage = error };
             }
 
             if (authResult.Properties.TryGetValue("pendingRegistrationToken", out var pendingToken) &&
                 !string.IsNullOrWhiteSpace(pendingToken))
             {
                 authResult.Properties.TryGetValue("email", out var pendingEmail);
-                return new GoogleAuthResultDto
+                return new ExternalAuthResultDto
                 {
                     RequiresRegistration = true,
                     PendingRegistrationToken = pendingToken,
@@ -257,7 +260,7 @@ public class AuthService : IAuthService
             if (!authResult.Properties.TryGetValue("exchangeToken", out var exchangeToken) ||
                 string.IsNullOrWhiteSpace(exchangeToken))
             {
-                return new GoogleAuthResultDto { ErrorMessage = "Google sign-in returned an invalid response." };
+                return new ExternalAuthResultDto { ErrorMessage = "Google sign-in returned an invalid response." };
             }
 
             var response = await client.PostAsJsonAsync("api/mobile-auth/google/exchange",
@@ -265,17 +268,17 @@ public class AuthService : IAuthService
             if (!response.IsSuccessStatusCode)
             {
                 var exchangeError = await ReadErrorMessageAsync(response);
-                return new GoogleAuthResultDto { ErrorMessage = exchangeError };
+                return new ExternalAuthResultDto { ErrorMessage = exchangeError };
             }
 
             var data = await response.Content.ReadFromJsonAsync<LoginResponseDto>();
             if (data == null)
             {
-                return new GoogleAuthResultDto { ErrorMessage = "Invalid server response." };
+                return new ExternalAuthResultDto { ErrorMessage = "Invalid server response." };
             }
 
             await StoreSessionAsync(data);
-            return new GoogleAuthResultDto
+            return new ExternalAuthResultDto
             {
                 Success = true,
                 Email = data.Email
@@ -283,17 +286,147 @@ public class AuthService : IAuthService
         }
         catch (TaskCanceledException)
         {
-            return new GoogleAuthResultDto { ErrorMessage = "Google sign-in was cancelled." };
+            // Dismissing the web sheet is a decision, not a fault - same as Apple.
+            return new ExternalAuthResultDto { WasCancelled = true };
         }
         catch (Exception ex) when (ex is NotSupportedException or PlatformNotSupportedException)
         {
             _logger.LogWarning(ex, "Google sign-in is not supported on this platform");
-            return new GoogleAuthResultDto { ErrorMessage = "Google sign-in is not available on this platform yet." };
+            return new ExternalAuthResultDto { ErrorMessage = "Google sign-in is not available on this platform yet." };
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Google sign-in failed");
-            return new GoogleAuthResultDto { ErrorMessage = "Unable to connect to server. Please check your internet connection." };
+            return new ExternalAuthResultDto { ErrorMessage = "Unable to connect to server. Please check your internet connection." };
+        }
+    }
+
+    public bool IsAppleSignInSupported => _appleSignIn.IsSupported;
+
+    public async Task<ExternalAuthResultDto> AuthenticateWithAppleAsync()
+    {
+        var client = _httpClientFactory.CreateClient("MusicSalesApi");
+        try
+        {
+            if (client.BaseAddress == null)
+            {
+                return new ExternalAuthResultDto { ErrorMessage = "Sign in with Apple is not configured." };
+            }
+
+            var appleResult = await _appleSignIn.AuthenticateAsync();
+
+            // Dismissing the native sheet is a decision, not a fault - say nothing.
+            if (appleResult.WasCancelled)
+            {
+                return new ExternalAuthResultDto { WasCancelled = true };
+            }
+
+            if (!appleResult.Success)
+            {
+                return new ExternalAuthResultDto
+                {
+                    ErrorMessage = string.IsNullOrWhiteSpace(appleResult.ErrorMessage)
+                        ? "Apple sign-in failed."
+                        : appleResult.ErrorMessage
+                };
+            }
+
+            var response = await client.PostAsJsonAsync("api/mobile-auth/apple/token", new AppleTokenRequestDto
+            {
+                IdentityToken = appleResult.IdentityToken,
+                AuthorizationCode = appleResult.AuthorizationCode,
+                Email = appleResult.Email,
+                FullName = appleResult.FullName
+            });
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return new ExternalAuthResultDto { ErrorMessage = await ReadErrorMessageAsync(response) };
+            }
+
+            var data = await response.Content.ReadFromJsonAsync<AppleTokenResponseDto>();
+            if (data == null)
+            {
+                return new ExternalAuthResultDto { ErrorMessage = "Invalid server response." };
+            }
+
+            if (data.RequiresRegistration)
+            {
+                return new ExternalAuthResultDto
+                {
+                    RequiresRegistration = true,
+                    PendingRegistrationToken = data.PendingRegistrationToken,
+                    Email = data.Email
+                };
+            }
+
+            if (data.Login == null)
+            {
+                return new ExternalAuthResultDto { ErrorMessage = "Invalid server response." };
+            }
+
+            await StoreSessionAsync(data.Login);
+            return new ExternalAuthResultDto
+            {
+                Success = true,
+                Email = data.Login.Email
+            };
+        }
+        catch (TaskCanceledException ex)
+        {
+            // NOT a dismissed sheet - that arrives as AppleSignInResult.Cancelled() and is handled
+            // above. Reaching here means the call to the server timed out, which the user has to be
+            // told about rather than left staring at an idle page.
+            _logger.LogWarning(ex, "Apple sign-in timed out talking to the server");
+            return new ExternalAuthResultDto
+            {
+                ErrorMessage = "Unable to connect to server. Please check your internet connection."
+            };
+        }
+        catch (Exception ex) when (ex is NotSupportedException or PlatformNotSupportedException)
+        {
+            _logger.LogWarning(ex, "Sign in with Apple is not supported on this platform");
+            return new ExternalAuthResultDto { ErrorMessage = "Sign in with Apple is not available on this platform." };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Apple sign-in failed");
+            return new ExternalAuthResultDto { ErrorMessage = "Unable to connect to server. Please check your internet connection." };
+        }
+    }
+
+    public async Task<(bool Success, string Error)> CompleteAppleRegistrationAsync(string pendingRegistrationToken,
+        bool acceptTermsOfUse, bool acceptPrivacyPolicy, bool acceptRefundPolicy)
+    {
+        var client = _httpClientFactory.CreateClient("MusicSalesApi");
+        try
+        {
+            var response = await client.PostAsJsonAsync("api/mobile-auth/apple/register", new AppleRegisterRequestDto
+            {
+                PendingRegistrationToken = pendingRegistrationToken,
+                AcceptTermsOfUse = acceptTermsOfUse,
+                AcceptPrivacyPolicy = acceptPrivacyPolicy,
+                AcceptRefundPolicy = acceptRefundPolicy
+            });
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await ReadErrorMessageAsync(response);
+                return (false, error);
+            }
+
+            var data = await response.Content.ReadFromJsonAsync<LoginResponseDto>();
+            if (data == null)
+            {
+                return (false, "Invalid server response.");
+            }
+
+            await StoreSessionAsync(data);
+            return (true, string.Empty);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Apple registration failed");
+            return (false, "Unable to connect to server. Please check your internet connection.");
         }
     }
 

@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using MusicSalesApp.Common.Helpers;
 using MusicSalesApp.Maui.Services;
 using System.ComponentModel.DataAnnotations;
 
@@ -22,9 +23,19 @@ public partial class RegisterViewModel : ObservableObject
     public partial string ConfirmPassword { get; set; } = string.Empty;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsGoogleRegistrationPending))]
+    [NotifyPropertyChangedFor(nameof(IsExternalRegistrationPending))]
     [NotifyPropertyChangedFor(nameof(RegisterButtonText))]
-    public partial string PendingGoogleRegistrationToken { get; set; } = string.Empty;
+    [NotifyPropertyChangedFor(nameof(ExternalRegistrationPrompt))]
+    public partial string PendingExternalRegistrationToken { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Which provider the pending token was minted for - "Google" or "Apple". Only affects the
+    /// wording on screen and which completion endpoint is called; the flow is identical.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RegisterButtonText))]
+    [NotifyPropertyChangedFor(nameof(ExternalRegistrationPrompt))]
+    public partial string PendingExternalProvider { get; set; } = ExternalLoginProviders.Google;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanRegister))]
@@ -45,9 +56,19 @@ public partial class RegisterViewModel : ObservableObject
     public partial string? ErrorMessage { get; set; }
 
     public bool CanRegister => AcceptTermsOfUse && AcceptPrivacyPolicy && AcceptRefundPolicy;
-    public bool IsGoogleRegistrationPending => !string.IsNullOrWhiteSpace(PendingGoogleRegistrationToken);
-    public string RegisterButtonText => IsGoogleRegistrationPending ? "Complete Google Sign Up" : "Register";
+    public bool IsExternalRegistrationPending => !string.IsNullOrWhiteSpace(PendingExternalRegistrationToken);
+    public string RegisterButtonText => IsExternalRegistrationPending
+        ? $"Complete {PendingExternalProvider} Sign Up"
+        : "Register";
+
+    public string ExternalRegistrationPrompt =>
+        $"Finish creating your {PendingExternalProvider} account by accepting the policies below.";
     public bool ReturnToHomeAfterAuth { get; private set; }
+
+    /// <summary>
+    /// Apple sign-in exists only on iOS, so the button is hidden rather than shown disabled.
+    /// </summary>
+    public bool IsAppleSignInVisible => _authService.IsAppleSignInSupported;
 
     public RegisterViewModel(
         IAuthService authService,
@@ -88,27 +109,25 @@ public partial class RegisterViewModel : ObservableObject
             return;
         }
 
-        if (IsGoogleRegistrationPending)
+        if (IsExternalRegistrationPending)
         {
             IsBusy = true;
             ErrorMessage = null;
 
             try
             {
-                var (success, message) = await _authService.CompleteGoogleRegistrationAsync(
-                    PendingGoogleRegistrationToken,
-                    AcceptTermsOfUse,
-                    AcceptPrivacyPolicy,
-                    AcceptRefundPolicy);
+                var (success, message) = await CompleteExternalRegistrationAsync(
+                    PendingExternalProvider,
+                    PendingExternalRegistrationToken);
 
                 if (success)
                 {
-                    PendingGoogleRegistrationToken = string.Empty;
+                    PendingExternalRegistrationToken = string.Empty;
                     await NavigateAfterAuthAsync();
                 }
                 else
                 {
-                    ErrorMessage = message ?? "Google registration failed.";
+                    ErrorMessage = message ?? $"{PendingExternalProvider} registration failed.";
                 }
             }
             catch (Exception ex)
@@ -183,6 +202,81 @@ public partial class RegisterViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Routes the pending token to the endpoint that minted it. An unrecognised provider fails
+    /// here rather than defaulting to Google, because posting an Apple token to the Google
+    /// endpoint surfaces as an opaque "invalid token" instead of naming the real problem.
+    /// </summary>
+    private Task<(bool Success, string Error)> CompleteExternalRegistrationAsync(string provider, string token)
+        => provider switch
+        {
+            ExternalLoginProviders.Apple => _authService.CompleteAppleRegistrationAsync(
+                token, AcceptTermsOfUse, AcceptPrivacyPolicy, AcceptRefundPolicy),
+            ExternalLoginProviders.Google => _authService.CompleteGoogleRegistrationAsync(
+                token, AcceptTermsOfUse, AcceptPrivacyPolicy, AcceptRefundPolicy),
+            _ => Task.FromResult((false, $"Unsupported sign-in provider '{provider}'."))
+        };
+
+    [RelayCommand]
+    private async Task RegisterWithAppleAsync()
+    {
+        if (!AcceptTermsOfUse || !AcceptPrivacyPolicy || !AcceptRefundPolicy)
+        {
+            ErrorMessage = "You must accept the Terms of Use, Privacy Policy, and Refund Policy to register.";
+            return;
+        }
+
+        IsBusy = true;
+        ErrorMessage = null;
+
+        try
+        {
+            var result = await _authService.AuthenticateWithAppleAsync();
+            if (result.WasCancelled)
+            {
+                return;
+            }
+
+            if (result.Success)
+            {
+                await NavigateAfterAuthAsync();
+                return;
+            }
+
+            // Consent was already given on this page, so finish inline rather than bouncing the
+            // user to a second acceptance screen.
+            if (result.RequiresRegistration && !string.IsNullOrWhiteSpace(result.PendingRegistrationToken))
+            {
+                var (success, message) = await _authService.CompleteAppleRegistrationAsync(
+                    result.PendingRegistrationToken,
+                    AcceptTermsOfUse,
+                    AcceptPrivacyPolicy,
+                    AcceptRefundPolicy);
+
+                if (success)
+                {
+                    await NavigateAfterAuthAsync();
+                    return;
+                }
+
+                ErrorMessage = message ?? "Apple registration failed.";
+                return;
+            }
+
+            ErrorMessage = string.IsNullOrWhiteSpace(result.ErrorMessage)
+                ? "Apple sign-in failed."
+                : result.ErrorMessage;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Connection error: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
     [RelayCommand]
     private async Task RegisterWithGoogleAsync()
     {
@@ -198,6 +292,11 @@ public partial class RegisterViewModel : ObservableObject
         try
         {
             var result = await _authService.AuthenticateWithGoogleAsync();
+            if (result.WasCancelled)
+            {
+                return;
+            }
+
             if (result.Success)
             {
                 await NavigateAfterAuthAsync();
@@ -258,9 +357,12 @@ public partial class RegisterViewModel : ObservableObject
     {
         ReturnToHomeAfterAuth = false;
 
-        if (query.TryGetValue("PendingGoogleRegistrationToken", out var pendingToken) && pendingToken is string token)
+        if (query.TryGetValue("PendingExternalRegistrationToken", out var pendingToken) && pendingToken is string token)
         {
-            PendingGoogleRegistrationToken = token;
+            PendingExternalProvider = query.TryGetValue("PendingExternalProvider", out var provider) && provider is string providerValue
+                ? providerValue
+                : ExternalLoginProviders.Google;
+            PendingExternalRegistrationToken = token;
             Password = string.Empty;
             ConfirmPassword = string.Empty;
         }

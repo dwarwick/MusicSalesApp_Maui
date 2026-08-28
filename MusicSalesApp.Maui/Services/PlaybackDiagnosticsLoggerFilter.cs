@@ -37,6 +37,12 @@ public static class PlaybackDiagnosticsLoggerFilter
     public const string AndroidBiometricCategoryPrefix = "MusicSalesApp.Maui.Platforms.Android.AndroidBiometricAuthenticator";
     public const string AppleBiometricCategoryPrefix = "MusicSalesApp.Maui.Services.AppleBiometricAuthenticator";
 
+    // Why Sign in with Apple did or did not complete. The whole path below Warning is Information -
+    // whether this was a first authorization (the only time Apple sends an email at all) and whether
+    // the user dismissed the sheet. Without this prefix a successful sign-in, a cancelled one, and a
+    // sheet that never opened all look identical in the file log.
+    public const string AppleSignInCategoryPrefix = "MusicSalesApp.Maui.Services.AppleSignInService";
+
     private static readonly string[] DiagnosticCategoryPrefixes =
     [
         PlaybackServiceCategoryPrefix,
@@ -51,7 +57,8 @@ public static class PlaybackDiagnosticsLoggerFilter
         AppStoreBillingCategoryPrefix,
         AuthServiceCategoryPrefix,
         AndroidBiometricCategoryPrefix,
-        AppleBiometricCategoryPrefix
+        AppleBiometricCategoryPrefix,
+        AppleSignInCategoryPrefix
     ];
 
     public static bool ShouldLog(string categoryName, LogLevel logLevel, LogLevel diagnosticMinimumLevel)

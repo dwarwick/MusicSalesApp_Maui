@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Sign in with Apple. This must be matched by the "Sign In with Apple" capability on the
+	     App ID in the developer portal AND by a provisioning profile regenerated afterwards -
+	     the entitlement alone fails at runtime with an unhelpful "unknown" authorization error. -->
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
+</dict>
+</plist>

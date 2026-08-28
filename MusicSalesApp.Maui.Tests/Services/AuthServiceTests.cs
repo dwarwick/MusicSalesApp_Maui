@@ -23,6 +23,7 @@ public class AuthServiceTests
     private Mock<IConfiguration> _mockConfiguration;
     private Mock<ILogger<AuthService>> _mockLogger;
     private Mock<IWebAuthenticatorService> _mockWebAuthenticatorService;
+    private Mock<IAppleSignInService> _mockAppleSignIn;
     private Mock<IBillingService> _mockBillingService;
     private Mock<IMusicService> _mockMusicService;
     private Mock<ISecureStorage> _mockSecureStorage;
@@ -38,6 +39,8 @@ public class AuthServiceTests
         _mockConfiguration = new Mock<IConfiguration>();
         _mockLogger = new Mock<ILogger<AuthService>>();
         _mockWebAuthenticatorService = new Mock<IWebAuthenticatorService>();
+        _mockAppleSignIn = new Mock<IAppleSignInService>();
+        _mockAppleSignIn.SetupGet(a => a.IsSupported).Returns(true);
         _mockBillingService = new Mock<IBillingService>();
         // So the handler AuthService assigns in its constructor can be read back and invoked.
         _mockBillingService.SetupAllProperties();
@@ -70,7 +73,9 @@ public class AuthServiceTests
             _mockSecureStorage.Object,
             _mockBiometrics.Object,
             _mockOfflinePlaylistStore.Object,
-            _mockOfflineSongCatalogStore.Object);
+            _mockOfflineSongCatalogStore.Object,
+            userStreamedSongStore: null,
+            appleSignIn: _mockAppleSignIn.Object);
     }
 
     // --- Recording a purchase the store delivered with nobody waiting for it ---
@@ -685,6 +690,217 @@ public class AuthServiceTests
 
         Assert.That(success, Is.False);
         Assert.That(error, Does.Contain("Policies must be accepted."));
+    }
+
+    // --- Sign in with Apple ---
+
+    private static AppleSignInResult AnAppleCredential(string email = "", string fullName = "") =>
+        new("identity-token", "auth-code", email, fullName, WasCancelled: false, ErrorMessage: string.Empty);
+
+    private Mock<HttpMessageHandler> StubApiResponse(HttpStatusCode status, string json)
+    {
+        var messageHandler = new Mock<HttpMessageHandler>();
+        messageHandler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage(status)
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            });
+
+        var httpClient = new HttpClient(messageHandler.Object)
+        {
+            BaseAddress = new Uri("https://test.example.com/")
+        };
+        _mockHttpClientFactory.Setup(f => f.CreateClient("MusicSalesApi")).Returns(httpClient);
+        return messageHandler;
+    }
+
+    private static void VerifyServerNotCalled(Mock<HttpMessageHandler> handler) =>
+        handler.Protected().Verify("SendAsync", Times.Never(),
+            ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>());
+
+    [Test]
+    public async Task AuthenticateWithAppleAsync_StoresSession_WhenServerReturnsLogin()
+    {
+        _mockAppleSignIn.Setup(a => a.AuthenticateAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AnAppleCredential());
+        StubApiResponse(HttpStatusCode.OK, """
+            {"requiresRegistration":false,"email":"apple@test.com",
+             "login":{"token":"jwt-token","userId":7,"email":"apple@test.com","roles":["User"],
+                      "emailConfirmed":true}}
+            """);
+
+        var result = await _authService.AuthenticateWithAppleAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Success, Is.True);
+            Assert.That(result.Email, Is.EqualTo("apple@test.com"));
+            Assert.That(_authService.IsLoggedIn, Is.True);
+        });
+        _mockSecureStorage.Verify(s => s.SetAsync("auth_token", "jwt-token"), Times.Once);
+    }
+
+    [Test]
+    public async Task AuthenticateWithAppleAsync_ReturnsPendingRegistration_WhenServerSaysSo()
+    {
+        _mockAppleSignIn.Setup(a => a.AuthenticateAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AnAppleCredential("new-apple@test.com", "New User"));
+        StubApiResponse(HttpStatusCode.OK, """
+            {"requiresRegistration":true,"pendingRegistrationToken":"pending-token",
+             "email":"new-apple@test.com"}
+            """);
+
+        var result = await _authService.AuthenticateWithAppleAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.RequiresRegistration, Is.True);
+            Assert.That(result.PendingRegistrationToken, Is.EqualTo("pending-token"));
+            Assert.That(result.Email, Is.EqualTo("new-apple@test.com"));
+        });
+    }
+
+    [Test]
+    public async Task AuthenticateWithAppleAsync_Cancellation_IsSilentRatherThanAnError()
+    {
+        // Dismissing the native sheet must not raise an error banner - it is a decision, not a fault.
+        _mockAppleSignIn.Setup(a => a.AuthenticateAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AppleSignInResult.Cancelled());
+        var handler = StubApiResponse(HttpStatusCode.OK, "{}");
+
+        var result = await _authService.AuthenticateWithAppleAsync();
+
+        VerifyServerNotCalled(handler);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.WasCancelled, Is.True);
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.RequiresRegistration, Is.False);
+            Assert.That(result.ErrorMessage, Is.Empty);
+        });
+    }
+
+    [Test]
+    public async Task AuthenticateWithAppleAsync_SurfacesSheetFailure_WithoutCallingServer()
+    {
+        _mockAppleSignIn.Setup(a => a.AuthenticateAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AppleSignInResult.Failed("Apple sign-in could not be completed."));
+        var handler = StubApiResponse(HttpStatusCode.OK, "{}");
+
+        var result = await _authService.AuthenticateWithAppleAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.WasCancelled, Is.False);
+            Assert.That(result.ErrorMessage, Is.EqualTo("Apple sign-in could not be completed."));
+        });
+        Assert.That(_authService.IsLoggedIn, Is.False);
+        VerifyServerNotCalled(handler);
+    }
+
+    [Test]
+    public async Task AuthenticateWithAppleAsync_ReturnsServerMessage_OnServerError()
+    {
+        _mockAppleSignIn.Setup(a => a.AuthenticateAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AnAppleCredential());
+        StubApiResponse(HttpStatusCode.Unauthorized, """{"message":"Your account has been suspended."}""");
+
+        var result = await _authService.AuthenticateWithAppleAsync();
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.ErrorMessage, Does.Contain("Your account has been suspended."));
+    }
+
+    [Test]
+    public async Task CompleteAppleRegistrationAsync_StoresSession_OnSuccess()
+    {
+        StubApiResponse(HttpStatusCode.OK, """
+            {"token":"jwt-token","userId":7,"email":"apple@test.com","roles":["User"],"emailConfirmed":true}
+            """);
+
+        var (success, error) = await _authService.CompleteAppleRegistrationAsync("pending-token", true, true, true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(success, Is.True);
+            Assert.That(error, Is.Empty);
+            Assert.That(_authService.IsLoggedIn, Is.True);
+        });
+    }
+
+    [Test]
+    public async Task CompleteAppleRegistrationAsync_ReturnsServerMessage_OnServerError()
+    {
+        StubApiResponse(HttpStatusCode.BadRequest, """{"message":"Policies must be accepted."}""");
+
+        var (success, error) = await _authService.CompleteAppleRegistrationAsync("pending-token", true, false, true);
+
+        Assert.That(success, Is.False);
+        Assert.That(error, Does.Contain("Policies must be accepted."));
+    }
+
+    [Test]
+    public async Task AuthenticateWithAppleAsync_ServerTimeout_IsAnErrorNotACancellation()
+    {
+        // The sheet reports a dismissal through its result, never by throwing - so a
+        // TaskCanceledException can only be the HTTP call timing out. Reporting that as a
+        // cancellation would leave the user staring at an idle page with no explanation.
+        _mockAppleSignIn.Setup(a => a.AuthenticateAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AnAppleCredential());
+
+        var messageHandler = new Mock<HttpMessageHandler>();
+        messageHandler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+            .ThrowsAsync(new TaskCanceledException("The request was canceled due to timeout."));
+        _mockHttpClientFactory.Setup(f => f.CreateClient("MusicSalesApi")).Returns(
+            new HttpClient(messageHandler.Object) { BaseAddress = new Uri("https://test.example.com/") });
+
+        var result = await _authService.AuthenticateWithAppleAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.WasCancelled, Is.False);
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.ErrorMessage, Does.Contain("Unable to connect to server"));
+        });
+    }
+
+    [Test]
+    public async Task AuthenticateWithGoogleAsync_Cancellation_IsSilentLikeApple()
+    {
+        // Dismissing either provider's sheet is the same gesture and must read the same way.
+        var httpClient = new HttpClient(new Mock<HttpMessageHandler>().Object)
+        {
+            BaseAddress = new Uri("https://test.example.com/")
+        };
+        _mockHttpClientFactory.Setup(f => f.CreateClient("MusicSalesApi")).Returns(httpClient);
+        _mockWebAuthenticatorService.Setup(w => w.AuthenticateAsync(It.IsAny<Uri>(), It.IsAny<Uri>()))
+            .ThrowsAsync(new TaskCanceledException());
+
+        var result = await _authService.AuthenticateWithGoogleAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.WasCancelled, Is.True);
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.ErrorMessage, Is.Empty);
+        });
+    }
+
+    [Test]
+    public void IsAppleSignInSupported_MirrorsTheAuthenticator()
+    {
+        Assert.That(_authService.IsAppleSignInSupported, Is.True);
+
+        _mockAppleSignIn.SetupGet(a => a.IsSupported).Returns(false);
+        Assert.That(_authService.IsAppleSignInSupported, Is.False);
     }
 
     [Test]

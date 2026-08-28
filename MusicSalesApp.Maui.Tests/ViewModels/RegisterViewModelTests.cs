@@ -1,4 +1,5 @@
 using Moq;
+using MusicSalesApp.Common.Helpers;
 using MusicSalesApp.Maui.Services;
 using MusicSalesApp.Maui.ViewModels;
 
@@ -286,7 +287,7 @@ public class RegisterViewModelTests
     public async Task RegisterAsync_WhenPendingGoogleRegistration_CompletesGoogleRegistration()
     {
         AcceptAllTerms();
-        _viewModel.PendingGoogleRegistrationToken = "pending-token";
+        _viewModel.PendingExternalRegistrationToken = "pending-token";
         _viewModel.Email = "new-google@test.com";
         _mockAuthService.Setup(a => a.CompleteGoogleRegistrationAsync("pending-token", true, true, true))
             .ReturnsAsync((true, string.Empty));
@@ -303,7 +304,7 @@ public class RegisterViewModelTests
         AcceptAllTerms();
         _viewModel.ApplyQueryAttributes(new Dictionary<string, object>
         {
-            ["PendingGoogleRegistrationToken"] = "pending-token",
+            ["PendingExternalRegistrationToken"] = "pending-token",
             ["Email"] = "new-google@test.com",
             [NavigationRoutes.ReturnToHomeAfterAuthParameter] = true
         });
@@ -346,7 +347,7 @@ public class RegisterViewModelTests
     {
         AcceptAllTerms();
         _mockAuthService.Setup(a => a.AuthenticateWithGoogleAsync())
-            .ReturnsAsync(new GoogleAuthResultDto
+            .ReturnsAsync(new ExternalAuthResultDto
             {
                 RequiresRegistration = true,
                 PendingRegistrationToken = "pending-token",
@@ -359,5 +360,125 @@ public class RegisterViewModelTests
 
         _mockAuthService.Verify(a => a.CompleteGoogleRegistrationAsync("pending-token", true, true, true), Times.Once);
         _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.MusicLibraryRoot), Times.Once);
+    }
+    [Test]
+    public async Task RegisterAsync_WhenPendingAppleRegistration_CompletesAppleRegistration()
+    {
+        AcceptAllTerms();
+        _viewModel.PendingExternalProvider = ExternalLoginProviders.Apple;
+        _viewModel.PendingExternalRegistrationToken = "pending-token";
+        _viewModel.Email = "new-apple@test.com";
+        _mockAuthService.Setup(a => a.CompleteAppleRegistrationAsync("pending-token", true, true, true))
+            .ReturnsAsync((true, string.Empty));
+
+        await _viewModel.RegisterCommand.ExecuteAsync(null);
+
+        _mockAuthService.Verify(a => a.CompleteAppleRegistrationAsync("pending-token", true, true, true), Times.Once);
+        _mockAuthService.Verify(a => a.CompleteGoogleRegistrationAsync(
+            It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>()), Times.Never);
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.MusicLibraryRoot), Times.Once);
+    }
+
+    [Test]
+    public void ApplyQueryAttributes_WithoutProvider_DefaultsToGoogle()
+    {
+        // A build of the app that predates the Apple button navigates without the provider key.
+        _viewModel.ApplyQueryAttributes(new Dictionary<string, object>
+        {
+            ["PendingExternalRegistrationToken"] = "pending-token"
+        });
+
+        Assert.That(_viewModel.PendingExternalProvider, Is.EqualTo(ExternalLoginProviders.Google));
+        Assert.That(_viewModel.RegisterButtonText, Is.EqualTo("Complete Google Sign Up"));
+    }
+
+    [Test]
+    public void ApplyQueryAttributes_WithAppleProvider_NamesAppleInTheCopy()
+    {
+        _viewModel.ApplyQueryAttributes(new Dictionary<string, object>
+        {
+            ["PendingExternalRegistrationToken"] = "pending-token",
+            ["PendingExternalProvider"] = ExternalLoginProviders.Apple
+        });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.IsExternalRegistrationPending, Is.True);
+            Assert.That(_viewModel.RegisterButtonText, Is.EqualTo("Complete Apple Sign Up"));
+            Assert.That(_viewModel.ExternalRegistrationPrompt, Does.Contain("Apple"));
+        });
+    }
+
+    [Test]
+    public async Task RegisterWithAppleAsync_TermsNotAccepted_SetsErrorMessage()
+    {
+        await _viewModel.RegisterWithAppleCommand.ExecuteAsync(null);
+
+        Assert.That(_viewModel.ErrorMessage, Does.Contain("Terms of Use").And.Contain("Privacy Policy").And.Contain("Refund Policy"));
+        _mockAuthService.Verify(a => a.AuthenticateWithAppleAsync(), Times.Never);
+    }
+
+    [Test]
+    public async Task RegisterWithAppleAsync_RequiresRegistration_CompletesInlineWithoutNavigatingAway()
+    {
+        // Consent was collected on this page, so the user must not be bounced to a second one.
+        AcceptAllTerms();
+        _mockAuthService.Setup(a => a.AuthenticateWithAppleAsync())
+            .ReturnsAsync(new ExternalAuthResultDto
+            {
+                RequiresRegistration = true,
+                PendingRegistrationToken = "pending-token",
+                Email = "new-apple@test.com"
+            });
+        _mockAuthService.Setup(a => a.CompleteAppleRegistrationAsync("pending-token", true, true, true))
+            .ReturnsAsync((true, string.Empty));
+
+        await _viewModel.RegisterWithAppleCommand.ExecuteAsync(null);
+
+        _mockAuthService.Verify(a => a.CompleteAppleRegistrationAsync("pending-token", true, true, true), Times.Once);
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.MusicLibraryRoot), Times.Once);
+        _mockNavigationService.Verify(
+            n => n.GoToAsync("register", It.IsAny<IDictionary<string, object>>()), Times.Never);
+    }
+
+    [Test]
+    public async Task RegisterWithAppleAsync_Cancelled_ShowsNoError()
+    {
+        AcceptAllTerms();
+        _mockAuthService.Setup(a => a.AuthenticateWithAppleAsync())
+            .ReturnsAsync(new ExternalAuthResultDto { WasCancelled = true });
+
+        await _viewModel.RegisterWithAppleCommand.ExecuteAsync(null);
+
+        Assert.That(_viewModel.ErrorMessage, Is.Null);
+        _mockNavigationService.Verify(n => n.GoToAsync(It.IsAny<string>()), Times.Never);
+    }
+    [Test]
+    public async Task RegisterWithGoogleAsync_Cancelled_ShowsNoError()
+    {
+        AcceptAllTerms();
+        _mockAuthService.Setup(a => a.AuthenticateWithGoogleAsync())
+            .ReturnsAsync(new ExternalAuthResultDto { WasCancelled = true });
+
+        await _viewModel.RegisterWithGoogleCommand.ExecuteAsync(null);
+
+        Assert.That(_viewModel.ErrorMessage, Is.Null);
+        _mockNavigationService.Verify(n => n.GoToAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    [Test]
+    public async Task RegisterAsync_WithUnknownPendingProvider_FailsInsteadOfPostingToGoogle()
+    {
+        AcceptAllTerms();
+        _viewModel.PendingExternalProvider = "Facebook";
+        _viewModel.PendingExternalRegistrationToken = "pending-token";
+
+        await _viewModel.RegisterCommand.ExecuteAsync(null);
+
+        Assert.That(_viewModel.ErrorMessage, Does.Contain("Facebook"));
+        _mockAuthService.Verify(a => a.CompleteGoogleRegistrationAsync(
+            It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>()), Times.Never);
+        _mockAuthService.Verify(a => a.CompleteAppleRegistrationAsync(
+            It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>()), Times.Never);
     }
 }
