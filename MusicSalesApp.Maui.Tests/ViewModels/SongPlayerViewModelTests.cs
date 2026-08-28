@@ -202,7 +202,7 @@ public class SongPlayerViewModelTests
                 LikeCount = 5,
                 DislikeCount = 1
             }));
-        _viewModel.Song = new SongDto { Id = 42, SongTitle = "Test" };
+        _viewModel.Song = new SongDto { Id = 42, SongTitle = "Test", HasStreamed = true };
 
         await _viewModel.LikeSongCommand.ExecuteAsync(null);
 
@@ -223,7 +223,7 @@ public class SongPlayerViewModelTests
                 LikeCount = 3,
                 DislikeCount = 7
             }));
-        _viewModel.Song = new SongDto { Id = 42, SongTitle = "Test" };
+        _viewModel.Song = new SongDto { Id = 42, SongTitle = "Test", HasStreamed = true };
 
         await _viewModel.DislikeSongCommand.ExecuteAsync(null);
 
@@ -568,7 +568,7 @@ public class SongPlayerViewModelTests
         _viewModel.Song = song;
         _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
         _mockMusicService.Setup(s => s.GetBulkUserLikeStatusAsync(It.IsAny<IEnumerable<int>>()))
-            .ReturnsAsync(new Dictionary<int, bool?> { { 5, true } });
+            .ReturnsAsync(new Dictionary<int, UserSongRatingState> { { 5, new(true, true) } });
         _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
             .ReturnsAsync([new LikeCountDto { SongMetadataId = 5, LikeCount = 10, DislikeCount = 2 }]);
 

@@ -163,7 +163,8 @@
                                                            CommandParameter="{Binding CurrentSong}"
                                                            ButtonSize="52"
                                                            VerticalOptions="Center" />
-                                <Border Padding="12,6"
+                                <Border Opacity="{Binding CurrentSong.CanRate, Converter={StaticResource RateableOpacityConverter}}"
+                                        Padding="12,6"
                                         StrokeShape="RoundRectangle 999"
                                         StrokeThickness="{StaticResource StrokeThin}"
                                         Stroke="{StaticResource PlayerLine}"
@@ -184,7 +185,8 @@
                                         <TapGestureRecognizer Command="{Binding LikeSongCommand}" />
                                     </Border.GestureRecognizers>
                                 </Border>
-                                <Border Padding="12,6"
+                                <Border Opacity="{Binding CurrentSong.CanRate, Converter={StaticResource RateableOpacityConverter}}"
+                                        Padding="12,6"
                                         StrokeShape="RoundRectangle 999"
                                         StrokeThickness="{StaticResource StrokeThin}"
                                         Stroke="{StaticResource PlayerLine}"
@@ -323,7 +325,8 @@
 
                         <!-- Like Button -->
                         <VerticalStackLayout VerticalOptions="Center" Spacing="{StaticResource SpaceHair}">
-                            <Grid HeightRequest="40" WidthRequest="40" HorizontalOptions="Center">
+                            <Grid Opacity="{Binding CurrentSong.CanRate, Converter={StaticResource RateableOpacityConverter}}"
+                                  HeightRequest="40" WidthRequest="40" HorizontalOptions="Center">
                                 <Grid.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding LikeSongCommand}" />
                                 </Grid.GestureRecognizers>
@@ -341,7 +344,8 @@
 
                         <!-- Dislike Button -->
                         <VerticalStackLayout VerticalOptions="Center" Spacing="{StaticResource SpaceHair}">
-                            <Grid HeightRequest="40" WidthRequest="40" HorizontalOptions="Center">
+                            <Grid Opacity="{Binding CurrentSong.CanRate, Converter={StaticResource RateableOpacityConverter}}"
+                                  HeightRequest="40" WidthRequest="40" HorizontalOptions="Center">
                                 <Grid.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding DislikeSongCommand}" />
                                 </Grid.GestureRecognizers>

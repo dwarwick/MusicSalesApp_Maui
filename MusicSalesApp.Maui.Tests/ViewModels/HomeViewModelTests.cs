@@ -54,7 +54,7 @@ public class HomeViewModelTests
         _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
             .ReturnsAsync([]);
         _mockMusicService.Setup(s => s.GetBulkUserLikeStatusAsync(It.IsAny<IEnumerable<int>>()))
-            .ReturnsAsync(new Dictionary<int, bool?>());
+            .ReturnsAsync(new Dictionary<int, UserSongRatingState>());
         _mockPlaylistService.Setup(p => p.GetHomePlaylistsAsync())
             .ReturnsAsync(new HomePlaylistsDto());
 
@@ -713,7 +713,7 @@ public class HomeViewModelTests
             ]);
 
         _mockMusicService.Setup(s => s.GetBulkUserLikeStatusAsync(It.IsAny<IEnumerable<int>>()))
-            .ReturnsAsync(new Dictionary<int, bool?> { [1] = true });
+            .ReturnsAsync(new Dictionary<int, UserSongRatingState> { [1] = new(true, true) });
 
         await _viewModel.LoadCommand.ExecuteAsync(null);
 

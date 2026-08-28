@@ -32,6 +32,7 @@ public partial class PlaylistPlayerPage : ContentPage
         Resources.Add("DislikeGlyphConverter", new DislikeGlyphConverter());
         Resources.Add("LikeFillConverter", new LikeFillConverter());
         Resources.Add("DislikeFillConverter", new DislikeFillConverter());
+        Resources.Add("RateableOpacityConverter", new RateableOpacityConverter());
 
         InitializeComponent();
 

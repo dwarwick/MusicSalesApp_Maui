@@ -542,7 +542,7 @@ public class PlaylistPlayerViewModelTests
             {
                 UserLikeStatus = true, LikeCount = 5, DislikeCount = 1
             }));
-        _viewModel.CurrentSong = new SongDto { Id = 42, SongTitle = "Test" };
+        _viewModel.CurrentSong = new SongDto { Id = 42, SongTitle = "Test", HasStreamed = true };
 
         await _viewModel.LikeSongCommand.ExecuteAsync(null);
 
@@ -560,7 +560,7 @@ public class PlaylistPlayerViewModelTests
             {
                 UserLikeStatus = false, LikeCount = 3, DislikeCount = 7
             }));
-        _viewModel.CurrentSong = new SongDto { Id = 42, SongTitle = "Test" };
+        _viewModel.CurrentSong = new SongDto { Id = 42, SongTitle = "Test", HasStreamed = true };
 
         await _viewModel.DislikeSongCommand.ExecuteAsync(null);
 

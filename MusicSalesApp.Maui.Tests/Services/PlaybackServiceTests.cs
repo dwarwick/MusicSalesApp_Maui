@@ -18,6 +18,7 @@ public class PlaybackServiceTests
     private Mock<IQueuePreparationService> _mockQueuePreparationService;
     private Mock<IPlaybackKeepAliveService> _mockPlaybackKeepAliveService;
     private Mock<IAnonymousFeaturedStreamStore> _mockAnonymousFeaturedStreamStore;
+    private Mock<IUserStreamedSongStore> _mockUserStreamedSongStore;
     private Mock<INetworkStatusService> _mockNetworkStatusService;
     private PlaybackService _service;
     private PlaybackRuntimeState _mediaManagerState;
@@ -34,6 +35,7 @@ public class PlaybackServiceTests
         _mockQueuePreparationService = new Mock<IQueuePreparationService>();
         _mockPlaybackKeepAliveService = new Mock<IPlaybackKeepAliveService>();
         _mockAnonymousFeaturedStreamStore = new Mock<IAnonymousFeaturedStreamStore>();
+        _mockUserStreamedSongStore = new Mock<IUserStreamedSongStore>();
         _mockNetworkStatusService = new Mock<INetworkStatusService>();
         _mediaManagerState = PlaybackRuntimeState.Stopped;
         _isOffline = false;
@@ -116,7 +118,9 @@ public class PlaybackServiceTests
             subscriptionStatusRefreshInterval,
             bufferingStallRecoveryDelay,
             _mockAnonymousFeaturedStreamStore.Object,
-            _mockNetworkStatusService.Object);
+            _mockNetworkStatusService.Object,
+            imageCacheService: null,
+            userStreamedSongStore: _mockUserStreamedSongStore.Object);
     }
 
     [Test]
@@ -733,6 +737,62 @@ public class PlaybackServiceTests
         }
 
         _mockMusicService.Verify(s => s.RecordStreamAsync(10), Times.Once);
+    }
+
+    [Test]
+    public void StreamTracking_QualifyingStream_MakesTheSongRateable()
+    {
+        // Marked here rather than after the server confirms, so the thumbs come alive at the threshold
+        // and still work offline, where the stream is only queued.
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _service.SetStreamQualifyingSeconds(5);
+        var song = new SongDto { Id = 10, SongTitle = "Test", StreamUrl = "https://test.com/song.mp3" };
+        _service.PlaySong(song);
+
+        Assert.That(song.CanRate, Is.False, "Not yet listened to.");
+
+        for (int i = 1; i <= 6; i++)
+        {
+            _service.UpdatePosition(TimeSpan.FromSeconds(i), TimeSpan.FromSeconds(180));
+        }
+
+        Assert.That(song.HasStreamed, Is.True);
+        Assert.That(song.CanRate, Is.True);
+        _mockUserStreamedSongStore.Verify(s => s.MarkStreamed(10), Times.Once);
+    }
+
+    [Test]
+    public void StreamTracking_QualifyingStreamWhileSignedOut_DoesNotMakeTheSongRateable()
+    {
+        // A stream recorded while logged out carries no user, so it entitles nobody to rate.
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(false);
+        _service.SetStreamQualifyingSeconds(5);
+        var song = new SongDto { Id = 10, SongTitle = "Test", StreamUrl = "https://test.com/song.mp3" };
+        _service.PlaySong(song);
+
+        for (int i = 1; i <= 6; i++)
+        {
+            _service.UpdatePosition(TimeSpan.FromSeconds(i), TimeSpan.FromSeconds(180));
+        }
+
+        Assert.That(song.HasStreamed, Is.False);
+        _mockUserStreamedSongStore.Verify(s => s.MarkStreamed(It.IsAny<int>()), Times.Never);
+    }
+
+    [Test]
+    public void StreamTracking_BeforeThreshold_LeavesTheSongUnrateable()
+    {
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _service.SetStreamQualifyingSeconds(30);
+        var song = new SongDto { Id = 10, SongTitle = "Test", StreamUrl = "https://test.com/song.mp3" };
+        _service.PlaySong(song);
+
+        for (int i = 1; i <= 10; i++)
+        {
+            _service.UpdatePosition(TimeSpan.FromSeconds(i), TimeSpan.FromSeconds(180));
+        }
+
+        Assert.That(song.CanRate, Is.False);
     }
 
     [Test]
@@ -3238,6 +3298,119 @@ public class PlaybackServiceTests
         {
             await Task.Delay(10, timeout.Token);
         }
+    }
+
+    /// <summary>
+    /// The listener sees the song's length, not the media's.
+    ///
+    /// <para>
+    /// Once mobile plays encrypted HLS, a free-preview listener is served a manifest truncated to
+    /// the preview limit, so the platform honestly reports a one-minute track. Showing that would
+    /// mislabel every song and leave the progress bar full after a minute — telling the listener the
+    /// opposite of what the preview means.
+    /// </para>
+    /// </summary>
+    [Test]
+    public void UpdatePosition_PrefersTheSongsLengthOverWhatTheMediaReports()
+    {
+        var song = new SongDto
+        {
+            Id = 1,
+            SongTitle = "Test",
+            StreamUrl = "https://test.com/song.mp3",
+            TrackLengthSeconds = 240
+        };
+
+        _service.PlaySong(song);
+
+        // What a truncated preview manifest looks like: 60 seconds of media for a four-minute song.
+        _service.UpdatePosition(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(60));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_service.FormattedDuration, Is.EqualTo("4:00"));
+
+            // 30s of 240s, not 30s of 60s - the bar reflects the song, so the preview reads as the
+            // small slice of it that it is.
+            Assert.That(_service.PlaybackProgress, Is.EqualTo(0.125).Within(0.001));
+        });
+    }
+
+    [Test]
+    public void UpdatePosition_FallsBackToTheMediaDurationWhenTheSongLengthIsUnknown()
+    {
+        // Older rows have no TrackLength, so the platform's figure is all there is.
+        var song = new SongDto { Id = 1, SongTitle = "Test", StreamUrl = "https://test.com/song.mp3" };
+
+        _service.PlaySong(song);
+        _service.UpdatePosition(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(120));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_service.FormattedDuration, Is.EqualTo("2:00"));
+            Assert.That(_service.PlaybackProgress, Is.EqualTo(0.25).Within(0.001));
+        });
+    }
+
+    /// <summary>
+    /// The two durations are measured differently, so progress must not escape 0..1.
+    ///
+    /// <para>
+    /// TrackLength comes from an FFmpeg decode and the platform reports its own; a fraction of a
+    /// second of disagreement would otherwise push the bar past its end exactly when the listener is
+    /// most likely to be watching it.
+    /// </para>
+    /// </summary>
+    [Test]
+    public void UpdatePosition_ClampsProgressWhenTheMediaOutlastsTheReportedSongLength()
+    {
+        // A subscriber, so the position under test is not clawed back to the preview limit before
+        // the clamp is reached - this test is about the two durations disagreeing, nothing else.
+        _mockAuthService.SetupGet(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.SetupGet(a => a.HasActiveSubscription).Returns(true);
+        _mockAuthService.SetupGet(a => a.SubscriptionStatus).Returns("ACTIVE");
+
+        var song = new SongDto
+        {
+            Id = 1,
+            SongTitle = "Test",
+            StreamUrl = "https://test.com/song.mp3",
+            TrackLengthSeconds = 100
+        };
+
+        _service.PlaySong(song);
+        _service.UpdatePosition(TimeSpan.FromSeconds(101), TimeSpan.FromSeconds(102));
+
+        Assert.That(_service.PlaybackProgress, Is.EqualTo(1).Within(0.001));
+    }
+
+    /// <summary>
+    /// A seek is a fraction of the bar the listener dragged, so it is measured against the displayed
+    /// length — then clamped to what the media actually holds, because a position past the end of a
+    /// truncated preview does not exist.
+    /// </summary>
+    [Test]
+    public void GetSeekPosition_MapsAgainstTheSongLengthAndClampsToTheMedia()
+    {
+        var song = new SongDto
+        {
+            Id = 1,
+            SongTitle = "Test",
+            StreamUrl = "https://test.com/song.mp3",
+            TrackLengthSeconds = 240
+        };
+
+        _service.PlaySong(song);
+        _service.UpdatePosition(TimeSpan.Zero, TimeSpan.FromSeconds(60));
+
+        Assert.Multiple(() =>
+        {
+            // A tenth along a four-minute bar is 24s, which the 60s of media can satisfy.
+            Assert.That(_service.GetSeekPosition(0.1).TotalSeconds, Is.EqualTo(24).Within(0.01));
+
+            // Half way is 120s, which it cannot - clamped rather than seeking into nothing.
+            Assert.That(_service.GetSeekPosition(0.5).TotalSeconds, Is.EqualTo(60).Within(0.01));
+        });
     }
 }
 

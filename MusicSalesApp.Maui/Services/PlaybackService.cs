@@ -53,6 +53,7 @@ public class PlaybackService : IPlaybackService
     private readonly IQueuePreparationService _queuePreparationService;
     private readonly IPlaybackKeepAliveService _playbackKeepAliveService;
     private readonly IAnonymousFeaturedStreamStore? _anonymousFeaturedStreamStore;
+    private readonly IUserStreamedSongStore? _userStreamedSongStore;
     private readonly INetworkStatusService? _networkStatusService;
     private readonly IImageCacheService? _imageCacheService;
     private readonly ILogger<PlaybackService> _logger;
@@ -143,7 +144,8 @@ public class PlaybackService : IPlaybackService
         TimeSpan? bufferingStallRecoveryDelay = null,
         IAnonymousFeaturedStreamStore? anonymousFeaturedStreamStore = null,
         INetworkStatusService? networkStatusService = null,
-        IImageCacheService? imageCacheService = null)
+        IImageCacheService? imageCacheService = null,
+        IUserStreamedSongStore? userStreamedSongStore = null)
     {
         _authService = authService;
         _musicService = musicService;
@@ -152,6 +154,7 @@ public class PlaybackService : IPlaybackService
         _queuePreparationService = queuePreparationService;
         _playbackKeepAliveService = playbackKeepAliveService;
         _anonymousFeaturedStreamStore = anonymousFeaturedStreamStore;
+        _userStreamedSongStore = userStreamedSongStore;
         _networkStatusService = networkStatusService;
         _imageCacheService = imageCacheService;
         _logger = logger;
@@ -532,12 +535,20 @@ public class PlaybackService : IPlaybackService
                 effectivePosition = TimeSpan.FromSeconds(PreviewLimitSeconds);
             }
 
-            PlaybackProgress = duration.TotalSeconds > 0
-                ? effectivePosition.TotalSeconds / duration.TotalSeconds
+            // The song's length, not the media's - see ResolveDisplayDuration. The two are the same
+            // while whole files are played; they diverge the moment a preview manifest is truncated.
+            var displayDuration = ResolveDisplayDuration(duration);
+
+            // Clamped, because the two durations are measured differently: TrackLength comes from an
+            // FFmpeg decode and the platform reports its own. A fraction of a second of disagreement
+            // would otherwise push the bar past its end, or leave it just short of it, at the point
+            // a listener is most likely to be looking.
+            PlaybackProgress = displayDuration.TotalSeconds > 0
+                ? Math.Clamp(effectivePosition.TotalSeconds / displayDuration.TotalSeconds, 0, 1)
                 : 0;
 
             FormattedPosition = FormatDuration(effectivePosition.TotalSeconds);
-            FormattedDuration = FormatDuration(duration.TotalSeconds);
+            FormattedDuration = FormatDuration(displayDuration.TotalSeconds);
 
             // Raised explicitly because Position has no setter to raise it - it reads the field
             // assigned above. Subscribers treat each of these as a resync anchor.
@@ -559,9 +570,45 @@ public class PlaybackService : IPlaybackService
         }
     }
 
+    /// <summary>
+    /// The duration to <em>show</em>, which is not always the duration the media holds.
+    ///
+    /// <para>
+    /// The server tells us the song's real length in <see cref="SongDto.TrackLengthSeconds"/>, and
+    /// that is what a listener should see. The media's own duration is only the same thing while the
+    /// app plays whole files: once mobile moves to encrypted HLS, a free-preview listener is served
+    /// a manifest truncated to <see cref="PreviewLimitSeconds"/> and the platform will honestly
+    /// report a one-minute song — which would mislabel every track and put the progress bar at 100%
+    /// after a minute.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>Only for display and for interpreting a seek gesture.</b> Everything that reasons about
+    /// what the media actually contains — the <c>MediaItemFinished</c> guards especially — must keep
+    /// using <c>_playbackDuration</c>. Feeding them a nominal length longer than the media would make
+    /// a preview ending at 0:60 look like a track that stopped early, so the finish event would be
+    /// discarded and playback would stall instead of advancing.
+    /// </para>
+    /// </summary>
+    private TimeSpan ResolveDisplayDuration(TimeSpan mediaDuration)
+    {
+        var nominal = CurrentSong?.TrackLengthSeconds;
+
+        return nominal is > 0
+            ? TimeSpan.FromSeconds(nominal.Value)
+            : mediaDuration;
+    }
+
     public TimeSpan GetSeekPosition(double progress)
     {
-        return TimeSpan.FromSeconds(progress * _playbackDuration.TotalSeconds);
+        // The gesture is a fraction of the bar the listener sees, so it is measured against the
+        // displayed length. Clamped to what the media actually holds, because seeking past the end
+        // of a truncated preview is not a position that exists.
+        var target = TimeSpan.FromSeconds(progress * ResolveDisplayDuration(_playbackDuration).TotalSeconds);
+
+        return _playbackDuration > TimeSpan.Zero && target > _playbackDuration
+            ? _playbackDuration
+            : target;
     }
 
     public void Seek(double progress)
@@ -1033,8 +1080,26 @@ public class PlaybackService : IPlaybackService
         {
             _streamRecordedForCurrentSong = true;
             MarkAnonymousFeaturedStreamRecorded(CurrentSong);
+            MarkSongStreamedByCurrentUser(CurrentSong);
             _ = RecordQualifiedStreamAsync(CurrentSong.Id);
         }
+    }
+
+    /// <summary>
+    /// Records that the signed-in user has now streamed this song, which is what entitles them to rate
+    /// it. Done here rather than after <see cref="RecordQualifiedStreamAsync"/> returns, so the thumbs
+    /// light up the moment the threshold is crossed and keep working offline, where the stream itself is
+    /// only queued.
+    /// </summary>
+    private void MarkSongStreamedByCurrentUser(SongDto song)
+    {
+        if (!_authService.IsLoggedIn || song.Id <= 0)
+        {
+            return;
+        }
+
+        _userStreamedSongStore?.MarkStreamed(song.Id);
+        song.HasStreamed = true;
     }
 
     private bool IsAnonymousFeaturedStreamAlreadyRecorded(SongDto song)
@@ -1656,8 +1721,13 @@ public class PlaybackService : IPlaybackService
         }
 
         var previewPosition = TimeSpan.FromSeconds(PreviewLimitSeconds);
-        PlaybackProgress = _playbackDuration.TotalSeconds > 0
-            ? previewPosition.TotalSeconds / _playbackDuration.TotalSeconds
+
+        // Against the SONG's length, so the bar shows how little of the track the preview covered.
+        // Against the media's, a truncated preview would sit at 100% and say the opposite.
+        var displayDuration = ResolveDisplayDuration(_playbackDuration);
+
+        PlaybackProgress = displayDuration.TotalSeconds > 0
+            ? Math.Clamp(previewPosition.TotalSeconds / displayDuration.TotalSeconds, 0, 1)
             : 0;
         FormattedPosition = FormatDuration(previewPosition.TotalSeconds);
     }

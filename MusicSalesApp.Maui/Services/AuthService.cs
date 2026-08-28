@@ -19,6 +19,7 @@ public class AuthService : IAuthService
     private readonly IWebAuthenticatorService _webAuthenticatorService;
     private readonly IBillingService _billingService;
     private readonly IMusicService _musicService;
+    private readonly IUserStreamedSongStore? _userStreamedSongStore;
     private readonly ISecureStorage _secureStorage;
     private readonly IBiometricAuthenticator _biometrics;
     private readonly SemaphoreSlim _biometricStateLock = new(1, 1);
@@ -93,7 +94,8 @@ public class AuthService : IAuthService
         IBillingService billingService, IMusicService musicService, ISecureStorage secureStorage,
         IBiometricAuthenticator biometrics,
         IOfflinePlaylistStore? offlinePlaylistStore = null,
-        IOfflineSongCatalogStore? offlineSongCatalogStore = null)
+        IOfflineSongCatalogStore? offlineSongCatalogStore = null,
+        IUserStreamedSongStore? userStreamedSongStore = null)
     {
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
@@ -105,6 +107,7 @@ public class AuthService : IAuthService
         _biometrics = biometrics;
         _offlinePlaylistStore = offlinePlaylistStore;
         _offlineSongCatalogStore = offlineSongCatalogStore;
+        _userStreamedSongStore = userStreamedSongStore;
 
         // The store can hand the app a purchase nobody asked for - an interrupted one replayed at
         // launch. Only this service can record it, and the billing service cannot depend on it
@@ -490,6 +493,9 @@ public class AuthService : IAuthService
         // Queued like/dislike intents belong to the outgoing user - replaying them under the next
         // account would attribute their opinions to someone else.
         await _musicService.ClearPendingLikeStatesAsync();
+        // Same reasoning for what the outgoing user has listened to: it is what entitles them to rate a
+        // song, so leaving it behind would hand the next account those ratings.
+        _userStreamedSongStore?.Clear();
         await ClearOfflineSnapshotsAsync();
         _secureStorage.Remove(TokenStorageKey);
         _secureStorage.Remove(AuthStorageKeys.UserId);

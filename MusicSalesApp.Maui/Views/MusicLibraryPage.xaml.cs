@@ -29,6 +29,7 @@ public partial class MusicLibraryPage : ContentPage
         Resources.Add("DislikeColorConverter", new DislikeColorConverter());
         Resources.Add("LikeFillConverter", new LikeFillConverter());
         Resources.Add("DislikeFillConverter", new DislikeFillConverter());
+        Resources.Add("RateableOpacityConverter", new RateableOpacityConverter());
 
         InitializeComponent();
 
