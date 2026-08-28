@@ -27,6 +27,25 @@ public class GoogleRegisterRequestDto
     public bool AcceptRefundPolicy { get; set; }
 }
 
+public class AppleTokenRequestDto
+{
+    public string IdentityToken { get; set; } = string.Empty;
+    public string AuthorizationCode { get; set; } = string.Empty;
+
+    // Apple supplies these on the first authorization only, so they are sent when present and
+    // simply absent afterwards - the server keys off the identity token's subject either way.
+    public string Email { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
+}
+
+public class AppleRegisterRequestDto
+{
+    public string PendingRegistrationToken { get; set; } = string.Empty;
+    public bool AcceptTermsOfUse { get; set; }
+    public bool AcceptPrivacyPolicy { get; set; }
+    public bool AcceptRefundPolicy { get; set; }
+}
+
 public class VerifyCodeRequestDto
 {
     public int UserId { get; set; }
@@ -81,13 +100,34 @@ public class RegisterResponseDto
     public string Message { get; set; } = string.Empty;
 }
 
-public class GoogleAuthResultDto
+public class AppleTokenResponseDto
+{
+    public bool RequiresRegistration { get; set; }
+    public string PendingRegistrationToken { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+
+    /// <summary>Populated only when <see cref="RequiresRegistration"/> is false.</summary>
+    public LoginResponseDto? Login { get; set; }
+}
+
+/// <summary>
+/// The outcome of an external sign-in attempt, shared by Google and Apple - the wire shapes
+/// differ but the three outcomes the UI cares about (signed in / needs to accept policies /
+/// failed) do not.
+/// </summary>
+public class ExternalAuthResultDto
 {
     public bool Success { get; set; }
     public bool RequiresRegistration { get; set; }
     public string ErrorMessage { get; set; } = string.Empty;
     public string PendingRegistrationToken { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
+
+    /// <summary>
+    /// True when the user dismissed the provider's sheet. Distinct from a failure: the UI shows
+    /// nothing at all rather than an error banner.
+    /// </summary>
+    public bool WasCancelled { get; set; }
 }
 
 public class ApiMessageResponse

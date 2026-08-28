@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using MusicSalesApp.Common.Helpers;
 using MusicSalesApp.Maui.Services;
 
 namespace MusicSalesApp.Maui.ViewModels;
@@ -169,15 +170,27 @@ public partial class LoginViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Apple sign-in exists only on iOS, so the button is hidden rather than shown disabled.
+    /// </summary>
+    public bool IsAppleSignInVisible => _authService.IsAppleSignInSupported;
+
     [RelayCommand]
-    private async Task GoogleLoginAsync()
+    private async Task AppleLoginAsync()
     {
         IsBusy = true;
         ErrorMessage = null;
 
         try
         {
-            var result = await _authService.AuthenticateWithGoogleAsync();
+            var result = await _authService.AuthenticateWithAppleAsync();
+
+            // The native sheet is trivially dismissed, so a cancellation shows nothing at all.
+            if (result.WasCancelled)
+            {
+                return;
+            }
+
             if (result.Success)
             {
                 await NavigateAfterAuthAsync();
@@ -188,7 +201,54 @@ public partial class LoginViewModel : ObservableObject
             {
                 await _navigationService.GoToAsync("register", new Dictionary<string, object>
                 {
-                    ["PendingGoogleRegistrationToken"] = result.PendingRegistrationToken,
+                    ["PendingExternalRegistrationToken"] = result.PendingRegistrationToken,
+                    ["PendingExternalProvider"] = ExternalLoginProviders.Apple,
+                    ["Email"] = result.Email,
+                    [NavigationRoutes.ReturnToHomeAfterAuthParameter] = ReturnToHomeAfterAuth
+                });
+                return;
+            }
+
+            ErrorMessage = string.IsNullOrWhiteSpace(result.ErrorMessage)
+                ? "Apple sign-in failed."
+                : result.ErrorMessage;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Connection error: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task GoogleLoginAsync()
+    {
+        IsBusy = true;
+        ErrorMessage = null;
+
+        try
+        {
+            var result = await _authService.AuthenticateWithGoogleAsync();
+            if (result.WasCancelled)
+            {
+                return;
+            }
+
+            if (result.Success)
+            {
+                await NavigateAfterAuthAsync();
+                return;
+            }
+
+            if (result.RequiresRegistration && !string.IsNullOrWhiteSpace(result.PendingRegistrationToken))
+            {
+                await _navigationService.GoToAsync("register", new Dictionary<string, object>
+                {
+                    ["PendingExternalRegistrationToken"] = result.PendingRegistrationToken,
+                    ["PendingExternalProvider"] = ExternalLoginProviders.Google,
                     ["Email"] = result.Email,
                     [NavigationRoutes.ReturnToHomeAfterAuthParameter] = ReturnToHomeAfterAuth
                 });

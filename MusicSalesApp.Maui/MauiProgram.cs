@@ -174,6 +174,13 @@ public static class MauiProgram
 #else
 		builder.Services.AddSingleton<IBiometricAuthenticator, UnsupportedBiometricAuthenticator>();
 #endif
+		// Sign in with Apple. Native ASAuthorizationController on iOS; everywhere else answers
+		// "not supported" so the button is simply not offered.
+#if IOS
+		builder.Services.AddSingleton<IAppleSignInService, AppleSignInService>();
+#else
+		builder.Services.AddSingleton<IAppleSignInService, UnsupportedAppleSignInService>();
+#endif
 		builder.Services.AddSingleton<IAuthService, AuthService>();
 		builder.Services.AddSingleton<IWebAuthenticatorService, WebAuthenticatorService>();
 		builder.Services.AddSingleton<IAppSettingsService, AppSettingsService>();

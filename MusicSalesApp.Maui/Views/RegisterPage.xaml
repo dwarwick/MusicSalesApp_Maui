@@ -27,8 +27,8 @@
                    IsVisible="{Binding ErrorMessage, Converter={toolkit:IsNotNullConverter}}"
                    TextColor="Red" FontSize="{StaticResource FontSizeSmall}" HorizontalOptions="Center" />
 
-                 <Label Text="Finish creating your Google account by accepting the policies below."
-                     IsVisible="{Binding IsGoogleRegistrationPending}"
+                 <Label Text="{Binding ExternalRegistrationPrompt}"
+                     IsVisible="{Binding IsExternalRegistrationPending}"
                      FontSize="{StaticResource FontSizeSmall}"
                      HorizontalTextAlignment="Center"
                      TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}" />
@@ -36,7 +36,7 @@
             <!-- Email -->
             <Entry Placeholder="Email"
                    Text="{Binding Email}"
-                     IsReadOnly="{Binding IsGoogleRegistrationPending}"
+                     IsReadOnly="{Binding IsExternalRegistrationPending}"
                    Keyboard="Email"
                    ReturnType="Next"
                    ClearButtonVisibility="WhileEditing"
@@ -45,7 +45,7 @@
                    PlaceholderColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray500}}" />
 
             <!-- Password -->
-                 <Grid IsVisible="{Binding IsGoogleRegistrationPending, Converter={toolkit:InvertedBoolConverter}}">
+                 <Grid IsVisible="{Binding IsExternalRegistrationPending, Converter={toolkit:InvertedBoolConverter}}">
                 <Entry x:Name="PasswordEntry"
                        Placeholder="Password"
                        Text="{Binding Password}"
@@ -62,7 +62,7 @@
             </Grid>
 
             <!-- Confirm Password -->
-            <Grid IsVisible="{Binding IsGoogleRegistrationPending, Converter={toolkit:InvertedBoolConverter}}">
+            <Grid IsVisible="{Binding IsExternalRegistrationPending, Converter={toolkit:InvertedBoolConverter}}">
                 <Entry x:Name="ConfirmPasswordEntry"
                        Placeholder="Confirm Password"
                        Text="{Binding ConfirmPassword}"
@@ -156,6 +156,19 @@
                     CornerRadius="{StaticResource RadiusSmInt}"
                     HeightRequest="{StaticResource ArtSizeThumb}" />
 
+
+            <!-- Above Google and the same size, per App Store guideline 4.8. iOS only. -->
+            <ImageButton Source="{AppThemeBinding Light=apple_logo.png, Dark=apple_logo_dark.png}"
+                         Command="{Binding RegisterWithAppleCommand}"
+                         IsVisible="{Binding IsAppleSignInVisible}"
+                         IsEnabled="{Binding IsBusy, Converter={toolkit:InvertedBoolConverter}}"
+                         BackgroundColor="{AppThemeBinding Light={StaticResource AppleButtonBackground}, Dark={StaticResource AppleButtonBackgroundDark}}"
+                         CornerRadius="{StaticResource RadiusSmInt}"
+                         HeightRequest="{StaticResource ArtSizeThumb}"
+                         Padding="12"
+                         Aspect="AspectFit"
+                         HorizontalOptions="Fill"
+                         SemanticProperties.Description="Sign in with Apple" />
 
             <ImageButton Source="google_logo.png"
                          Command="{Binding RegisterWithGoogleCommand}"

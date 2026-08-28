@@ -79,6 +79,21 @@
             </Grid>
 
 
+                <!-- Sign in with Apple sits above Google and matches its size: App Store guideline
+                     4.8 requires it be offered at least as prominently as any other third-party
+                     login. iOS only - IsAppleSignInVisible is false everywhere else. -->
+                <ImageButton Source="{AppThemeBinding Light=apple_logo.png, Dark=apple_logo_dark.png}"
+                             Command="{Binding AppleLoginCommand}"
+                             IsVisible="{Binding IsAppleSignInVisible}"
+                             IsEnabled="{Binding IsBusy, Converter={toolkit:InvertedBoolConverter}}"
+                             BackgroundColor="{AppThemeBinding Light={StaticResource AppleButtonBackground}, Dark={StaticResource AppleButtonBackgroundDark}}"
+                             CornerRadius="{StaticResource RadiusSmInt}"
+                             HeightRequest="{StaticResource ArtSizeThumb}"
+                             Padding="12"
+                             Aspect="AspectFit"
+                             HorizontalOptions="Fill"
+                             SemanticProperties.Description="Sign in with Apple" />
+
                 <ImageButton Source="google_logo.png"
                              Command="{Binding GoogleLoginCommand}"
                              IsEnabled="{Binding IsBusy, Converter={toolkit:InvertedBoolConverter}}"

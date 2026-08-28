@@ -218,6 +218,13 @@
          Do not re-theme these to match the blues.
          =================================================================== -->
     <Color x:Key="GoogleButtonBorder">#DADCE0</Color>
+    <!-- Apple's HIG allows only black, white, or white-with-a-black-outline for the Sign in with
+         Apple button, and requires the variant to contrast with the background behind it. Hence
+         both: the black button on the light theme, the white one on the dark theme, where a black
+         button would sit near-invisibly on OffBlack (#1F1F1F). The glyph is swapped to match by
+         AppThemeBinding on the ImageButton Source. -->
+    <Color x:Key="AppleButtonBackground">#000000</Color>
+    <Color x:Key="AppleButtonBackgroundDark">#FFFFFF</Color>
     <Color x:Key="FacebookBrand">#3B5998</Color>
     <Color x:Key="FacebookBrandPressed">#334B82</Color>
 

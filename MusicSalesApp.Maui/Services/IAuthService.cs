@@ -57,8 +57,18 @@ public interface IAuthService
     SessionExpiryNotice? PendingSessionExpiryNotice { get; }
 
     Task<(bool Success, string Error)> LoginAsync(string email, string password);
-    Task<GoogleAuthResultDto> AuthenticateWithGoogleAsync();
+    Task<ExternalAuthResultDto> AuthenticateWithGoogleAsync();
     Task<(bool Success, string Error)> CompleteGoogleRegistrationAsync(string pendingRegistrationToken,
+        bool acceptTermsOfUse, bool acceptPrivacyPolicy, bool acceptRefundPolicy);
+
+    /// <summary>
+    /// False off iOS, where there is no native Apple sheet. The UI hides the button rather than
+    /// disabling it.
+    /// </summary>
+    bool IsAppleSignInSupported { get; }
+
+    Task<ExternalAuthResultDto> AuthenticateWithAppleAsync();
+    Task<(bool Success, string Error)> CompleteAppleRegistrationAsync(string pendingRegistrationToken,
         bool acceptTermsOfUse, bool acceptPrivacyPolicy, bool acceptRefundPolicy);
     Task<(bool Success, string Error, int UserId)> RegisterAsync(string email, string password);
     Task<(bool Success, string Error, LoginResponseDto? LoginData)> VerifyCodeAsync(int userId, string code);
