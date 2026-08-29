@@ -128,8 +128,7 @@
       "osx": {
         "command": "zsh",
         "args": [
-          "-lc",
-          "echo 'maui-deploy-phone is only configured for Windows/PowerShell in this workspace.' >&2; exit 1"
+          "${workspaceFolder:MusicSalesApp_Maui}/.vscode/deploy-phone-macos.sh"
         ]
       },
       "problemMatcher": "$msCompile",
@@ -155,8 +154,11 @@
       "osx": {
         "command": "zsh",
         "args": [
-          "-lc",
-          "echo 'maui-deploy-phone-prod is only configured for Windows/PowerShell in this workspace.' >&2; exit 1"
+          "${workspaceFolder:MusicSalesApp_Maui}/.vscode/deploy-phone-macos.sh",
+          "--configuration",
+          "Release",
+          "--appsettings-environment",
+          "Production"
         ]
       },
       "problemMatcher": "$msCompile",
