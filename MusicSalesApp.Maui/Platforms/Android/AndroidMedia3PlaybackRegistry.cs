@@ -1,3 +1,4 @@
+using Android.App;
 using Android.Content;
 using AndroidX.Media3.Common;
 using AndroidX.Media3.ExoPlayer;
@@ -76,9 +77,7 @@ internal static class AndroidMedia3PlaybackRegistry
                 return _mediaSession;
             }
 
-            _mediaSession = new MediaSession.Builder(applicationContext, player)
-                .Build()
-                ?? throw new InvalidOperationException("Media3 MediaSession.Builder returned null.");
+            _mediaSession = BuildMediaSession(applicationContext, player);
             _mediaSessionInitializationTask = Task.FromResult(_mediaSession);
             return _mediaSession;
         }
@@ -130,12 +129,51 @@ internal static class AndroidMedia3PlaybackRegistry
                 return _mediaSession;
             }
 
-            _mediaSession = new MediaSession.Builder(context, player)
-                .Build()
-                ?? throw new InvalidOperationException("Media3 MediaSession.Builder returned null.");
+            _mediaSession = BuildMediaSession(context, player);
             _mediaSessionInitializationTask = Task.FromResult(_mediaSession);
             return _mediaSession;
         }
+    }
+
+    // Both session-creation paths funnel through here so the notification's content intent is
+    // never set on only one of them: the async path serves normal in-app playback, while
+    // GetOrCreateMediaSessionSync serves the system-initiated cold start (media button,
+    // Bluetooth, playback resumption) - exactly the case where getting back to the app matters.
+    private static MediaSession BuildMediaSession(Context context, IExoPlayer player)
+    {
+        var builder = new MediaSession.Builder(context, player);
+
+        var sessionActivity = CreateSessionActivityIntent(context);
+        if (sessionActivity != null)
+        {
+            builder.SetSessionActivity(sessionActivity);
+        }
+
+        return builder.Build()
+            ?? throw new InvalidOperationException("Media3 MediaSession.Builder returned null.");
+    }
+
+    // Media3's DefaultMediaNotificationProvider uses the session activity as the notification's
+    // content intent, so without one the notification body is a dead tap - only the transport
+    // buttons respond. This is the package launch intent (ACTION_MAIN + CATEGORY_LAUNCHER) rather
+    // than a bare explicit Intent because it matches the task's base intent, so the system resumes
+    // the existing task on whatever page the user left instead of restarting MainActivity into a
+    // duplicate. MainActivity.HandleDeepLink ignores it (it requires ACTION_VIEW plus a data URI),
+    // so this cannot trigger a spurious app-link navigation.
+    private static PendingIntent? CreateSessionActivityIntent(Context context)
+    {
+        var launchIntent = context.PackageName is { } packageName
+            ? context.PackageManager?.GetLaunchIntentForPackage(packageName)
+            : null;
+
+        launchIntent ??= new Intent(context, typeof(MainActivity))
+            .SetFlags(ActivityFlags.NewTask);
+
+        return PendingIntent.GetActivity(
+            context,
+            0,
+            launchIntent,
+            PendingIntentFlags.Immutable | PendingIntentFlags.UpdateCurrent);
     }
 
     public static void ReleaseMediaSession()
