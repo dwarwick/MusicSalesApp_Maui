@@ -39,6 +39,17 @@ public partial class NowPlayingView : ContentView
     /// </summary>
     public bool CollapseWhenEmpty { get; set; } = true;
 
+    /// <summary>
+    /// The listener tapped the song title, artwork or artist name.
+    /// </summary>
+    /// <remarks>
+    /// Raised rather than acted on, because what the tap should DO depends on the page: the music
+    /// library and the playlist player scroll their list to the playing song, and the home page and
+    /// single-song player have no list to scroll. Those two simply never subscribe, which is what
+    /// makes the tap inert there without a per-page conditional in here.
+    /// </remarks>
+    public event Action? SongInfoTapped;
+
     public NowPlayingView()
     {
         InitializeComponent();
@@ -51,6 +62,7 @@ public partial class NowPlayingView : ContentView
             action => MainThread.BeginInvokeOnMainThread(action),
             ApplyScheduledPlaybackUpdates);
 
+        SongInfoTap.Tapped += OnSongInfoClicked;
         PlayPauseTap.Tapped += OnPlayPauseClicked;
         RepeatTap.Tapped += OnRepeatClicked;
         ShuffleTap.Tapped += OnShuffleClicked;
@@ -177,6 +189,18 @@ public partial class NowPlayingView : ContentView
     }
 
     private bool _isSeeking;
+
+    private void OnSongInfoClicked(object? sender, TappedEventArgs e)
+    {
+        // Nothing is playing, so there is nothing to scroll to - and the empty state occupies this
+        // same space, where a tap must not look like it failed to do something.
+        if (_playbackService?.CurrentSong == null)
+        {
+            return;
+        }
+
+        SongInfoTapped?.Invoke();
+    }
 
     private async void OnPlayPauseClicked(object? sender, TappedEventArgs e)
     {

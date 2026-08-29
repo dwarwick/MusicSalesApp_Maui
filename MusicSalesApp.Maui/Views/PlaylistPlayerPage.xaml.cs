@@ -13,15 +13,23 @@ public partial class PlaylistPlayerPage : ContentPage
     private int _lyricsLoadedForSongId = -1;
     private bool? _isWideLayout;
     private View? _sidePanels;
+    private readonly IPlaybackService _playbackService;
+    private readonly IAutoScrollSettingsService _autoScrollSettingsService;
+    private readonly NowPlayingScrollCoordinator _scrollCoordinator;
 
     public PlaylistPlayerPage(
         PlaylistPlayerViewModel viewModel,
         IPlaybackService playbackService,
         IAuthService authService,
-        ILyricsService lyricsService)
+        ILyricsService lyricsService,
+        IAutoScrollSettingsService autoScrollSettingsService)
     {
         _viewModel = viewModel;
         _lyricsService = lyricsService;
+        _playbackService = playbackService;
+        _autoScrollSettingsService = autoScrollSettingsService;
+        _scrollCoordinator = new NowPlayingScrollCoordinator(
+            () => autoScrollSettingsService.ScrollAutomatically);
         BindingContext = viewModel;
 
         // Reuse converters defined in SongPlayerPage.xaml.cs (same namespace)
@@ -44,6 +52,8 @@ public partial class PlaylistPlayerPage : ContentPage
 
         LyricsPanel.Initialize(playbackService);
 
+        NowPlayingBar.SongInfoTapped += OnNowPlayingSongInfoTapped;
+
         // Unlike the single-song player, the subject here changes underneath us as the playlist
         // advances - so the lyrics have to be re-fetched per track rather than once per visit.
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
@@ -54,6 +64,11 @@ public partial class PlaylistPlayerPage : ContentPage
         if (e.PropertyName != nameof(PlaylistPlayerViewModel.CurrentSong))
         {
             return;
+        }
+
+        if (_scrollCoordinator.ShouldScrollOnTrackChange(_viewModel.CurrentSong?.Id ?? 0))
+        {
+            ScrollToCurrentSong();
         }
 
         // Marshalled rather than awaited here: the track can advance from a playback callback on
@@ -254,6 +269,10 @@ public partial class PlaylistPlayerPage : ContentPage
         NowPlayingBar.Activate();
         _viewModel.Activate();
 
+        // Re-armed per visit: the queue can have advanced while this page was away.
+        _scrollCoordinator.Reset();
+        _autoScrollSettingsService.Changed += OnAutoScrollSettingChanged;
+
         if (_showingLyrics)
         {
             LyricsPanel.Activate();
@@ -267,10 +286,65 @@ public partial class PlaylistPlayerPage : ContentPage
     {
         base.OnDisappearing();
         NowPlayingBar.Deactivate();
+        _autoScrollSettingsService.Changed -= OnAutoScrollSettingChanged;
         LyricsPanel.Deactivate();
         _lyricsLoad?.Cancel();
         _viewModel.Cleanup();
     }
+
+    private void OnNowPlayingSongInfoTapped()
+    {
+        // An explicit request, so it ignores both the setting and any manual-scroll pause.
+        if (_scrollCoordinator.ShouldScrollOnRequest(_playbackService.CurrentSong?.Id ?? 0))
+        {
+            ScrollToCurrentSong();
+        }
+    }
+
+    private void OnAutoScrollSettingChanged()
+    {
+        if (!_autoScrollSettingsService.ScrollAutomatically)
+        {
+            return;
+        }
+
+        // Ticking the box acts immediately rather than waiting for the queue to advance.
+        if (_scrollCoordinator.ShouldScrollOnRequest(_playbackService.CurrentSong?.Id ?? 0))
+        {
+            MainThread.BeginInvokeOnMainThread(ScrollToCurrentSong);
+        }
+    }
+
+    private void OnSongsScrolled(object? sender, ItemsViewScrolledEventArgs e) =>
+        _scrollCoordinator.NotifyScrolled();
+
+    /// <summary>
+    /// Bring the playing track's row into view.
+    /// </summary>
+    /// <remarks>
+    /// Dispatched rather than called straight through: a track change routinely arrives alongside a
+    /// list rebuild, and a ScrollTo issued before that re-layout lands is silently dropped. The
+    /// index counts ITEMS only - the hero header is a CollectionView.Header, not row 0.
+    /// </remarks>
+    private void ScrollToCurrentSong() => Dispatcher.Dispatch(() =>
+    {
+        var index = PlaybackQueueSelection.TryResolveCurrentSongIndex(_playbackService, _viewModel.Songs);
+        if (index < 0)
+        {
+            return;
+        }
+
+        try
+        {
+            _scrollCoordinator.BeginProgrammaticScroll();
+            SongsCollectionView.ScrollTo(index, position: ScrollToPosition.Center, animate: true);
+        }
+        catch
+        {
+            // The page is being torn down, or the list is not laid out yet. The next change
+            // tries again.
+        }
+    });
 
     protected override bool OnBackButtonPressed()
     {

@@ -185,6 +185,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IWebAuthenticatorService, WebAuthenticatorService>();
 		builder.Services.AddSingleton<IAppSettingsService, AppSettingsService>();
 		builder.Services.AddSingleton<IOfflineCacheSettingsService, OfflineCacheSettingsService>();
+		builder.Services.AddSingleton<IAutoScrollSettingsService, AutoScrollSettingsService>();
 		builder.Services.AddSingleton<IOfflineSongCatalogStore, OfflineSongCatalogStore>();
 		// MusicService is registered concretely so OfflineAwareMusicService can decorate it. Every
 		// consumer resolves IMusicService and therefore gets the offline fallback for free.
