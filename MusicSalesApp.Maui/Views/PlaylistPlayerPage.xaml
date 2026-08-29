@@ -28,8 +28,10 @@
             <RefreshView Grid.Column="0"
                      Command="{Binding RefreshCommand}"
                      IsRefreshing="{Binding IsLoading, Mode=OneWay}">
-            <CollectionView ItemsSource="{Binding Songs}"
+            <CollectionView x:Name="SongsCollectionView"
+                            ItemsSource="{Binding Songs}"
                             SelectionMode="None"
+                            Scrolled="OnSongsScrolled"
                             ItemSizingStrategy="MeasureFirstItem">
                 <CollectionView.Header>
                 <VerticalStackLayout Spacing="0">

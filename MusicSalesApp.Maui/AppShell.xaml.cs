@@ -12,6 +12,10 @@ public partial class AppShell : Shell
 	private readonly IAppConfig _appConfig;
 	private string _testingServerBannerUrl = string.Empty;
 	private ImageSource _currentLogo = ImageSource.FromFile("logo_light_small.png");
+	private readonly IAutoScrollSettingsService _autoScrollSettingsService;
+	private bool _isAutoScrollToggleVisible;
+	private Color _navBarAccentColor = AppColors.AccentFill;
+	private Color _navBarTextColor = Colors.Black;
 
 	/// <summary>
 	/// The logo artwork for the bar as it is currently coloured.
@@ -37,13 +41,97 @@ public partial class AppShell : Shell
 		}
 	}
 
+	/// <summary>
+	/// Whether the navigation bar's Auto-scroll checkbox is shown.
+	/// </summary>
+	/// <remarks>
+	/// Only the music library and the playlist player have a song list for it to govern, so it is
+	/// hidden everywhere else rather than sitting inert on pages it cannot affect. Like
+	/// <see cref="CurrentLogo"/>, this is a bound PROPERTY and never an assignment to an x:Name -
+	/// the title view can be rebuilt, and the field would then point at a discarded instance.
+	/// </remarks>
+	public bool IsAutoScrollToggleVisible
+	{
+		get => _isAutoScrollToggleVisible;
+		private set
+		{
+			if (_isAutoScrollToggleVisible == value)
+			{
+				return;
+			}
+
+			_isAutoScrollToggleVisible = value;
+			OnPropertyChanged();
+		}
+	}
+
+	/// <summary>
+	/// The Auto-scroll setting, surfaced for the checkbox's two-way binding.
+	/// </summary>
+	public bool IsAutoScrollEnabled
+	{
+		get => _autoScrollSettingsService.ScrollAutomatically;
+		set
+		{
+			if (_autoScrollSettingsService.ScrollAutomatically == value)
+			{
+				return;
+			}
+
+			_autoScrollSettingsService.ScrollAutomatically = value;
+			OnPropertyChanged();
+		}
+	}
+
+	/// <summary>
+	/// Tick colour for the Auto-scroll checkbox, and the colour of its label.
+	/// </summary>
+	/// <remarks>
+	/// Recomputed per page for the same reason the logo is: the bar is dark in either OS theme on
+	/// the playlist player and follows the theme on the music library, so no single value is right
+	/// on both. A converter cannot do this either - it resolves the theme once and freezes it, which
+	/// is the fault written up on PillStyleConverter in MusicLibraryPage.xaml.cs.
+	/// </remarks>
+	public Color NavBarAccentColor
+	{
+		get => _navBarAccentColor;
+		private set
+		{
+			if (_navBarAccentColor == value)
+			{
+				return;
+			}
+
+			_navBarAccentColor = value;
+			OnPropertyChanged();
+		}
+	}
+
+	public Color NavBarTextColor
+	{
+		get => _navBarTextColor;
+		private set
+		{
+			if (_navBarTextColor == value)
+			{
+				return;
+			}
+
+			_navBarTextColor = value;
+			OnPropertyChanged();
+		}
+	}
+
 	public AppShell(
 		IAuthService authService,
 		IAdminMessageCoordinator adminMessageCoordinator,
 		ITestingServerBannerService testingServerBannerService,
 		IBrowserService browserService,
-		IAppConfig appConfig)
+		IAppConfig appConfig,
+		IAutoScrollSettingsService autoScrollSettingsService)
 	{
+		_autoScrollSettingsService = autoScrollSettingsService;
+
 		InitializeComponent();
 
 		_authService = authService;
@@ -111,6 +199,13 @@ public partial class AppShell : Shell
 		await _browserService.OpenExternalAsync(_testingServerBannerUrl);
 	}
 
+	/// <summary>
+	/// The label is part of the checkbox's hit target - a bare CheckBox is a small target in a
+	/// navigation bar, and the words are the larger half of the control.
+	/// </summary>
+	private void OnAutoScrollLabelTapped(object? sender, TappedEventArgs e) =>
+		IsAutoScrollEnabled = !IsAutoScrollEnabled;
+
 	private void UpdateMenuVisibility()
 	{
 		Shell.SetFlyoutItemIsVisible(LoginMenuItem, !_authService.IsLoggedIn);
@@ -167,6 +262,9 @@ public partial class AppShell : Shell
 		{
 			var onPlayer = CurrentPage is SongPlayerPage or PlaylistPlayerPage;
 
+			// Only these two pages own a song list for Auto-scroll to move.
+			IsAutoScrollToggleVisible = CurrentPage is MusicLibraryPage or PlaylistPlayerPage;
+
 			if (onPlayer)
 			{
 				SetValue(Shell.BackgroundColorProperty, AppColors.PlayerBg);
@@ -175,16 +273,21 @@ public partial class AppShell : Shell
 				// The light-theme logo is dark ink on an opaque light ground; it shows as a
 				// white block on a dark bar.
 				CurrentLogo = ImageSource.FromFile("logo_dark_small.png");
+				NavBarAccentColor = AppColors.BlueBright;
+				NavBarTextColor = AppColors.PlayerText;
 				return;
 			}
 
 			this.SetAppThemeColor(Shell.BackgroundColorProperty, Colors.White, AppColors.NavBarDark);
 			this.SetAppThemeColor(Shell.ForegroundColorProperty, Colors.Black, Colors.White);
 			this.SetAppThemeColor(Shell.TitleColorProperty, Colors.Black, Colors.White);
+			var isDarkTheme = Application.Current?.RequestedTheme == AppTheme.Dark;
 			CurrentLogo = ImageSource.FromFile(
-				Application.Current?.RequestedTheme == AppTheme.Dark
+				isDarkTheme
 					? "logo_dark_small.png"
 					: "logo_light_small.png");
+			NavBarAccentColor = AppColors.AccentFill;
+			NavBarTextColor = isDarkTheme ? Colors.White : Colors.Black;
 		}
 		catch (Exception ex)
 		{

@@ -70,9 +70,17 @@
                                    VerticalOptions="Center" />
                         </Grid>
 
+                        <!-- The art, title and artist are ONE hit target: tapping any of them
+                             scrolls the list behind the bar to the playing song. The gesture sits on
+                             the Grid rather than on each child so the gap between them is live too.
+                             SongArtworkView's root is InputTransparent, so the artwork Border below
+                             does not swallow the touch. -->
                         <Grid ColumnDefinitions="36,*"
                               ColumnSpacing="{StaticResource Space2}"
                               Padding="12,4,12,0">
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer x:Name="SongInfoTap" />
+                            </Grid.GestureRecognizers>
                             <Border StrokeShape="RoundRectangle 4"
                                     StrokeThickness="0"
                                     HeightRequest="{StaticResource ArtSizeMini}"

@@ -22,6 +22,23 @@
          nothing at all. Dark never noticed because SurfaceDark is lighter than the page. -->
     <Border Style="{StaticResource CardSurface}"
             Margin="8,4">
+        <!-- THE PLAYING CARD, marked the way the playlist marks its playing row: an accent edge over
+             a soft accent fill, so the card the player bar scrolled to answers "which one?" without
+             the listener having to spot the animating equalizer button.
+
+             The accent is the THEMED pair, not the playlist's StBlueBright. That colour is legal
+             there because the player page is dark in either OS theme; Colors.xaml records it at
+             ~2.1:1 on white, so on this themed page it would fail in light mode. -->
+        <Border.Triggers>
+            <DataTrigger TargetType="Border"
+                         Binding="{Binding IsNowPlaying}"
+                         Value="True">
+                <Setter Property="Stroke"
+                        Value="{AppThemeBinding Light={StaticResource AccentFillLight}, Dark={StaticResource AccentFillDark}}" />
+                <Setter Property="BackgroundColor"
+                        Value="{AppThemeBinding Light={StaticResource AccentSoftLight}, Dark={StaticResource AccentSoftDark}}" />
+            </DataTrigger>
+        </Border.Triggers>
         <Border.GestureRecognizers>
             <TapGestureRecognizer
                 Command="{Binding Source={x:Reference Root}, Path=OpenSongCommand}"

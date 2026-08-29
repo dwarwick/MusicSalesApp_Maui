@@ -9,11 +9,23 @@ public partial class MusicLibraryPage : ContentPage
 {
     private readonly MusicLibraryViewModel _viewModel;
     private readonly ILogger<MusicLibraryPage> _logger;
+    private readonly IPlaybackService _playbackService;
+    private readonly IAutoScrollSettingsService _autoScrollSettingsService;
+    private readonly NowPlayingScrollCoordinator _scrollCoordinator;
 
-    public MusicLibraryPage(MusicLibraryViewModel viewModel, IPlaybackService playbackService, ILogger<MusicLibraryPage> logger, IAuthService authService)
+    public MusicLibraryPage(
+        MusicLibraryViewModel viewModel,
+        IPlaybackService playbackService,
+        ILogger<MusicLibraryPage> logger,
+        IAuthService authService,
+        IAutoScrollSettingsService autoScrollSettingsService)
     {
         _viewModel = viewModel;
         _logger = logger;
+        _playbackService = playbackService;
+        _autoScrollSettingsService = autoScrollSettingsService;
+        _scrollCoordinator = new NowPlayingScrollCoordinator(
+            () => autoScrollSettingsService.ScrollAutomatically);
         BindingContext = viewModel;
 
         // Add converters to page resources before InitializeComponent
@@ -41,6 +53,8 @@ public partial class MusicLibraryPage : ContentPage
         // Wire RefreshView command in code-behind to avoid MAUIG2045
         SongsRefreshView.Command = _viewModel.LoadSongsCommand;
 
+        NowPlayingBar.SongInfoTapped += OnNowPlayingSongInfoTapped;
+
         _logger.LogInformation("[Audio] MusicLibraryPage constructed.");
     }
 
@@ -50,6 +64,12 @@ public partial class MusicLibraryPage : ContentPage
 
         NowPlayingBar.Activate();
         _viewModel.Activate();
+
+        // Re-armed per visit: the queue can have advanced while this page was away, and the
+        // coordinator would otherwise still consider that song "already scrolled to".
+        _scrollCoordinator.Reset();
+        _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+        _autoScrollSettingsService.Changed += OnAutoScrollSettingChanged;
 
         if (_viewModel.Songs.Count == 0)
         {
@@ -64,6 +84,8 @@ public partial class MusicLibraryPage : ContentPage
     {
         base.OnDisappearing();
         NowPlayingBar.Deactivate();
+        _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        _autoScrollSettingsService.Changed -= OnAutoScrollSettingChanged;
         _viewModel.Cleanup();
         // Don't stop playback when navigating away — it keeps playing in background
     }
@@ -77,6 +99,75 @@ public partial class MusicLibraryPage : ContentPage
 
         return base.OnBackButtonPressed();
     }
+
+    private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(MusicLibraryViewModel.CurrentSong))
+        {
+            return;
+        }
+
+        var songId = _viewModel.CurrentSong?.Id ?? 0;
+        if (_scrollCoordinator.ShouldScrollOnTrackChange(songId))
+        {
+            ScrollToCurrentSong();
+        }
+    }
+
+    private void OnNowPlayingSongInfoTapped()
+    {
+        // An explicit request, so it ignores both the setting and any manual-scroll pause.
+        if (_scrollCoordinator.ShouldScrollOnRequest(_playbackService.CurrentSong?.Id ?? 0))
+        {
+            ScrollToCurrentSong();
+        }
+    }
+
+    private void OnAutoScrollSettingChanged()
+    {
+        if (!_autoScrollSettingsService.ScrollAutomatically)
+        {
+            return;
+        }
+
+        // Ticking the box acts immediately rather than waiting for the queue to advance.
+        if (_scrollCoordinator.ShouldScrollOnRequest(_playbackService.CurrentSong?.Id ?? 0))
+        {
+            MainThread.BeginInvokeOnMainThread(ScrollToCurrentSong);
+        }
+    }
+
+    private void OnSongsScrolled(object? sender, ItemsViewScrolledEventArgs e) =>
+        _scrollCoordinator.NotifyScrolled();
+
+    /// <summary>
+    /// Bring the playing song's card into view.
+    /// </summary>
+    /// <remarks>
+    /// Dispatched rather than called straight through: a track change routinely arrives with a list
+    /// rebuild - ApplyFilters raises a single Reset through ReplaceAll - and a ScrollTo issued
+    /// before that re-layout lands is silently dropped.
+    /// </remarks>
+    private void ScrollToCurrentSong() => Dispatcher.Dispatch(() =>
+    {
+        var index = PlaybackQueueSelection.TryResolveCurrentSongIndex(_playbackService, _viewModel.Songs);
+        if (index < 0)
+        {
+            return;
+        }
+
+        try
+        {
+            _scrollCoordinator.BeginProgrammaticScroll();
+            SongsCollectionView.ScrollTo(index, position: ScrollToPosition.Center, animate: true);
+        }
+        catch (Exception ex)
+        {
+            // A scroll that cannot complete - the page is being torn down, or the list is not laid
+            // out yet - is not worth surfacing. The next change tries again.
+            _logger.LogDebug(ex, "[Audio] Could not scroll the library to the playing song.");
+        }
+    });
 
     private void OnFilterOptionTapped(object? sender, TappedEventArgs e) => DismissFilterSearchInputs();
 

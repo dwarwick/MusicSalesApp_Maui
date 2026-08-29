@@ -33,6 +33,7 @@
     <Compile Include="..\MusicSalesApp.Maui\ViewModels\*.cs" Link="ViewModels\%(Filename)%(Extension)" />
     <Compile Include="..\MusicSalesApp.Maui\Services\*.cs" Link="Services\%(Filename)%(Extension)" Exclude="..\MusicSalesApp.Maui\Services\AlertService.cs;..\MusicSalesApp.Maui\Services\SignalRService.cs;..\MusicSalesApp.Maui\Services\NavigationService.cs;..\MusicSalesApp.Maui\Services\BrowserService.cs" />
     <Compile Include="..\MusicSalesApp.Maui\Views\NowPlayingDrawerController.cs" Link="Views\NowPlayingDrawerController.cs" />
+    <Compile Include="..\MusicSalesApp.Maui\Views\NowPlayingScrollCoordinator.cs" Link="Views\NowPlayingScrollCoordinator.cs" />
     <!-- The colour tokens. Pulled in because the C#-built pages compiled above reference
          them, and because a palette is worth having under test like anything else. -->
     <Compile Include="..\MusicSalesApp.Maui\Resources\Styles\AppColors.cs" Link="Resources\Styles\AppColors.cs" />

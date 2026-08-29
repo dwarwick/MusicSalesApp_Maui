@@ -380,8 +380,10 @@
                      IsRefreshing="{Binding IsLoading, Mode=OneWay}">
             <!-- No MeasureFirstItem here: SongCardView height varies (AI badge row), so
                  first-item sizing clips the action buttons on taller cards. -->
-            <CollectionView ItemsSource="{Binding Songs}"
-                            SelectionMode="None">
+            <CollectionView x:Name="SongsCollectionView"
+                            ItemsSource="{Binding Songs}"
+                            SelectionMode="None"
+                            Scrolled="OnSongsScrolled">
                 <CollectionView.EmptyView>
                     <VerticalStackLayout HorizontalOptions="Center"
                                          VerticalOptions="Center"
