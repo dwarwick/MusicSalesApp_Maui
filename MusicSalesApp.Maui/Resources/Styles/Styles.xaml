@@ -302,7 +302,10 @@
     <Style TargetType="Shadow">
         <Setter Property="Radius" Value="15" />
         <Setter Property="Opacity" Value="0.5" />
-        <Setter Property="Brush" Value="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource White}}" />
+        <!-- A SHADOW IS ALWAYS DARK, IN BOTH THEMES (Tokens.xaml elevation note, AGENTS.md
+             invariant 4). This stock template style shipped white in both, which reads as a halo
+             rather than as height for any inline <Shadow> that does not set Brush itself. -->
+        <Setter Property="Brush" Value="{StaticResource Black}" />
         <Setter Property="Offset" Value="10,10" />
     </Style>
 
@@ -497,7 +500,10 @@
          has to be drawn by a Border, which clamps the shape to its own bounds. -->
     <Style TargetType="Border" x:Key="FilterPill">
         <Setter Property="BackgroundColor" Value="{AppThemeBinding Light={StaticResource SurfaceLight}, Dark={StaticResource SurfaceDark}}" />
-        <Setter Property="Stroke" Value="{AppThemeBinding Light={StaticResource LineLight}, Dark={StaticResource LineDark}}" />
+        <!-- ControlLine*, not Line*: a pill is an interactive control, and Line* is 1.30:1 on the
+             surface it sits on. At that ratio the outline reads as absent - which is how this
+             shipped, invisible on a light page. -->
+        <Setter Property="Stroke" Value="{AppThemeBinding Light={StaticResource ControlLineLight}, Dark={StaticResource ControlLineDark}}" />
         <Setter Property="StrokeThickness" Value="{StaticResource StrokeThick}" />
         <Setter Property="StrokeShape" Value="RoundRectangle 999" />
         <Setter Property="HeightRequest" Value="{StaticResource ControlHeightSmall}" />

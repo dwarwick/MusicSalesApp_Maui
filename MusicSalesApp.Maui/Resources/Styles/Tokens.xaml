@@ -198,7 +198,14 @@
          Each of these collapses the web's two-layer shadow to its larger stop; MAUI supports
          one shadow per element.
          =================================================================== -->
-    <Shadow x:Key="ShadowCard" Brush="Black" Offset="0,6" Radius="22" Opacity="0.35" />
+    <!-- ShadowCard is the one token that does NOT match the web's stop, and the reason is
+         layout, not taste. The web's card sits in a padded page column; ours is a list row with
+         an 8 DIP side margin, near enough edge to edge. A 22 DIP blur cannot finish falling off
+         inside 8 DIP, so the screen edge cuts it mid-gradient and the card wears a hard-edged
+         grey band instead of a shadow - measured at the boundary as #E1E2E3 against a #F8F9FA
+         page. The extent here (radius + offset) stays inside the margin so the falloff completes
+         and the corners read as round. Widen the card's margin and this can go back up. -->
+    <Shadow x:Key="ShadowCard" Brush="Black" Offset="0,2" Radius="6" Opacity="0.22" />
     <Shadow x:Key="ShadowArt" Brush="Black" Offset="0,22" Radius="52" Opacity="0.7" />
     <Shadow x:Key="ShadowFloat" Brush="Black" Offset="0,20" Radius="50" Opacity="0.6" />
     <!-- The play button's glow is BLUE, not black - it is the one coloured shadow. -->

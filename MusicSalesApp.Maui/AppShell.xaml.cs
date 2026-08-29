@@ -53,6 +53,16 @@ public partial class AppShell : Shell
 		_authService.AuthStateChanged += OnAuthStateChanged;
 		InitializeTestingServerBanner(testingServerBannerService.GetBannerInfo());
 
+		// The bar's COLOURS follow the theme on their own - they are SetAppThemeColor bindings.
+		// The logo cannot: it is an image chosen by an if, resolved once, and ApplyChromeForCurrentPage
+		// only runs on navigation. So an OS theme switch mid-session repainted the bar and left the
+		// previous theme's artwork on it - a black block on a white bar, and the reverse going the
+		// other way. Re-running the whole method keeps the two in step.
+		if (Application.Current is { } app)
+		{
+			app.RequestedThemeChanged += OnRequestedThemeChanged;
+		}
+
 		CopyrightLabel.Text = $"\u00A9 {DateTime.Now.Year} Streamtunes";
 		VersionLabel.Text = $"version: {AppInfo.Current.VersionString} ({AppInfo.Current.BuildString})";
 
@@ -113,6 +123,9 @@ public partial class AppShell : Shell
 		UploadYourOwnMusicFooterRow.IsVisible =
 			FlyoutMenuVisibilityPolicy.ShouldShowUploadYourOwnMusic(_authService.IsLoggedIn, _authService.IsCreator);
 	}
+
+	private void OnRequestedThemeChanged(object? sender, AppThemeChangedEventArgs e) =>
+		Dispatcher.Dispatch(ApplyChromeForCurrentPage);
 
 	protected override void OnNavigated(ShellNavigatedEventArgs args)
 	{

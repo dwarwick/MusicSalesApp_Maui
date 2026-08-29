@@ -75,6 +75,21 @@
         </Grid>
     </Shell.FlyoutHeader>
 
+    <!-- KNOWN LIMITATION, and it is Shell's, not this binding's. These two icons are correct on a
+         cold start in either theme, and STALE after an OS theme switch mid-session: white glyphs
+         left on the light panel, where Music Library vanishes entirely, and black ones on the dark
+         panel. The MenuItems below never have this problem.
+         MEASURED ON BOTH PLATFORMS, and they behave identically - do not assume this one is
+         Android-only. After a live switch to dark the Home and Music Library glyphs peak at
+         luminance 31 and 53 (no white pixels at all) while the MenuItem glyphs beside them reach
+         255, on an Android emulator and an iPhone simulator alike.
+         The cause is that Shell builds a FlyoutItem row once and keeps the drawable it was handed,
+         so nothing that reaches the Icon PROPERTY repaints it - verified by assigning it from code
+         on RequestedThemeChanged, and again while forcing the row to rebuild through
+         FlyoutItemIsVisible. Both update the property; neither repaints the row.
+         The fix is a Shell.ItemTemplate drawing the row with a MAUI Image, which restyles every
+         flyout row and is a bigger change than it looks. Note also that forcing FlyoutIsPresented
+         from OnNavigated to inspect this CRASHES the app on iOS - open the flyout by hand. -->
     <FlyoutItem Title="Home"
                 Icon="{AppThemeBinding Light=flyout_home_black.svg, Dark=flyout_home_white.svg}">
         <ShellContent

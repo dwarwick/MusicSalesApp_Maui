@@ -17,11 +17,11 @@
         <views:RateableOpacityConverter x:Key="RateableOpacityConverter" />
     </ContentView.Resources>
 
-    <Border Margin="8,4"
-            Padding="12"
-            StrokeShape="RoundRectangle 8"
-            Stroke="Transparent"
-            BackgroundColor="{AppThemeBinding Light={StaticResource CardBackgroundLight}, Dark={StaticResource CardBackgroundDark}}">
+    <!-- CardSurface, not a hand-rolled Border: this shipped as Stroke="Transparent" over a white
+         fill with no shadow, which on a light page is a white card on a white ground and reads as
+         nothing at all. Dark never noticed because SurfaceDark is lighter than the page. -->
+    <Border Style="{StaticResource CardSurface}"
+            Margin="8,4">
         <Border.GestureRecognizers>
             <TapGestureRecognizer
                 Command="{Binding Source={x:Reference Root}, Path=OpenSongCommand}"
