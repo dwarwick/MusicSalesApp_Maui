@@ -46,6 +46,9 @@
                                        AutomationId="OfflineLibraryBanner"
                                        Text="You&apos;re offline. Showing only downloaded songs &#8212; reconnect to browse the full library." />
 
+            <!-- Horizontal scroll, not wrap: five pills plus the clear button overflow a narrow
+                 phone, and a wrapped second row would push the song list down permanently. -->
+            <ScrollView Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
             <HorizontalStackLayout Spacing="{StaticResource SpaceTight}">
             <Border Style="{StaticResource FilterPill}"
                     BackgroundColor="{Binding HasActiveAiFilter, Converter={StaticResource ActivePillBgConverter}}">
@@ -94,6 +97,22 @@
                 </Border.GestureRecognizers>
             </Border>
 
+            <!-- Title Pill -->
+            <Border Style="{StaticResource FilterPill}"
+                    BackgroundColor="{Binding HasActiveTitleFilter, Converter={StaticResource ActivePillBgConverter}}">
+                <Border.Stroke>
+                    <!-- SolidColorBrush rather than a direct bind: Stroke is a Brush and the converter
+                         returns a Color, so the Color goes on the brush where the types already agree. -->
+                    <SolidColorBrush Color="{Binding HasActiveTitleFilter, Converter={StaticResource ActivePillBorderConverter}}" />
+                </Border.Stroke>
+                <Label Text="{Binding TitlePillText}"
+                       Style="{StaticResource FilterPillText}"
+                       TextColor="{Binding HasActiveTitleFilter, Converter={StaticResource ActivePillTextConverter}}" />
+                <Border.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding ToggleTitlePanelCommand}" Tapped="OnFilterOptionTapped" />
+                </Border.GestureRecognizers>
+            </Border>
+
             <!-- Downloaded-only filter -->
             <Border Style="{StaticResource FilterPill}"
                     BackgroundColor="{Binding IsDownloadedFilterActive, Converter={StaticResource ActivePillBgConverter}}">
@@ -125,6 +144,7 @@
                 </Border.GestureRecognizers>
             </Border>
             </HorizontalStackLayout>
+            </ScrollView>
         </VerticalStackLayout>
 
         <!-- Expandable Filter Panel -->
@@ -363,6 +383,25 @@
                     </CollectionView.ItemTemplate>
                 </CollectionView>
             </VerticalStackLayout>
+        </Border>
+
+        <!-- Title filter panel. Same Row 1 as the other three, mutually exclusive via IsVisible,
+             so no row renumbering. No CollectionView: the typed query is the whole filter. -->
+        <Border Grid.Row="1"
+                IsVisible="{Binding IsTitlePanelOpen}"
+                StrokeShape="RoundRectangle 8"
+                Stroke="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray600}}"
+                StrokeThickness="1"
+                Margin="8,0,8,4"
+                Padding="8"
+                BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource CardBackgroundDark}}">
+            <Border Style="{StaticResource FilterSearchContainerStyle}">
+                <Entry x:Name="TitleSearchEntry"
+                       Style="{StaticResource FilterSearchEntryStyle}"
+                       Placeholder="Search titles..."
+                       Unfocused="OnFilterSearchEntryUnfocused"
+                       Text="{Binding TitleSearchText}" />
+            </Border>
         </Border>
 
         <!-- Song List -->

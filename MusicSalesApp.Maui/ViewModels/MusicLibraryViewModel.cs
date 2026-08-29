@@ -156,16 +156,29 @@ public partial class MusicLibraryViewModel : ObservableObject
     public partial bool IsArtistPanelOpen { get; set; }
 
     [ObservableProperty]
+    public partial bool IsTitlePanelOpen { get; set; }
+
+    [ObservableProperty]
     public partial string? GenreSearchText { get; set; }
 
     [ObservableProperty]
     public partial string? ArtistSearchText { get; set; }
+
+    /// <summary>
+    /// The Title filter's query. Unlike GenreSearchText/ArtistSearchText, which only narrow an
+    /// option list, this one is itself a filter - every reset path has to clear it.
+    /// </summary>
+    [ObservableProperty]
+    public partial string? TitleSearchText { get; set; }
 
     [ObservableProperty]
     public partial string GenrePillText { get; set; } = "Genre";
 
     [ObservableProperty]
     public partial string ArtistPillText { get; set; } = "Artist";
+
+    [ObservableProperty]
+    public partial string TitlePillText { get; set; } = "Title";
 
     [ObservableProperty]
     public partial string AiPillText { get; set; } = "Music Type";
@@ -178,6 +191,9 @@ public partial class MusicLibraryViewModel : ObservableObject
 
     [ObservableProperty]
     public partial bool HasActiveArtistFilters { get; set; }
+
+    [ObservableProperty]
+    public partial bool HasActiveTitleFilter { get; set; }
 
     [ObservableProperty]
     public partial bool HasAnyActiveFilters { get; set; }
@@ -197,6 +213,7 @@ public partial class MusicLibraryViewModel : ObservableObject
         IsAiPanelOpen = false;
         IsGenrePanelOpen = false;
         IsArtistPanelOpen = false;
+        IsTitlePanelOpen = false;
         UpdateHasAnyActiveFilters();
         RefreshAvailableGenres();
         RefreshAvailableArtists();
@@ -208,6 +225,16 @@ public partial class MusicLibraryViewModel : ObservableObject
     partial void OnGenreSearchTextChanged(string? value) => RefreshGenreFilterItems();
     partial void OnArtistSearchTextChanged(string? value) => RefreshArtistFilterItems();
 
+    partial void OnTitleSearchTextChanged(string? value)
+    {
+        UpdateTitlePillText();
+        RefreshAvailableGenres();
+        RefreshAvailableArtists();
+        RefreshGenreFilterItems();
+        RefreshArtistFilterItems();
+        ApplyFilters();
+    }
+
     [RelayCommand]
     private void ToggleAiPanel()
     {
@@ -216,6 +243,7 @@ public partial class MusicLibraryViewModel : ObservableObject
         {
             IsGenrePanelOpen = false;
             IsArtistPanelOpen = false;
+            IsTitlePanelOpen = false;
         }
     }
 
@@ -227,6 +255,7 @@ public partial class MusicLibraryViewModel : ObservableObject
         {
             IsAiPanelOpen = false;
             IsArtistPanelOpen = false;
+            IsTitlePanelOpen = false;
             GenreSearchText = null;
             RefreshGenreFilterItems();
         }
@@ -240,8 +269,25 @@ public partial class MusicLibraryViewModel : ObservableObject
         {
             IsAiPanelOpen = false;
             IsGenrePanelOpen = false;
+            IsTitlePanelOpen = false;
             ArtistSearchText = null;
             RefreshArtistFilterItems();
+        }
+    }
+
+    [RelayCommand]
+    private void ToggleTitlePanel()
+    {
+        IsTitlePanelOpen = !IsTitlePanelOpen;
+        if (IsTitlePanelOpen)
+        {
+            IsAiPanelOpen = false;
+            IsGenrePanelOpen = false;
+            IsArtistPanelOpen = false;
+            // Deliberately NOT clearing TitleSearchText the way the genre and artist panels clear
+            // theirs: those search boxes only narrow an option list, so reopening one wants a clean
+            // slate. This one holds the live filter - clearing it here would drop the user's filter
+            // every time they reopened the panel to edit it.
         }
     }
 
@@ -314,6 +360,12 @@ public partial class MusicLibraryViewModel : ObservableObject
         UpdateHasAnyActiveFilters();
     }
 
+    private void UpdateTitlePillText()
+    {
+        HasActiveTitleFilter = !string.IsNullOrWhiteSpace(TitleSearchText);
+        UpdateHasAnyActiveFilters();
+    }
+
     private void UpdateAiPillText()
     {
         HasActiveAiFilter = _selectedAiFilter != AiFilterAll;
@@ -331,7 +383,8 @@ public partial class MusicLibraryViewModel : ObservableObject
 
     private void UpdateHasAnyActiveFilters()
     {
-        HasAnyActiveFilters = HasActiveAiFilter || HasActiveGenreFilters || HasActiveArtistFilters || IsDownloadedFilterActive;
+        HasAnyActiveFilters = HasActiveAiFilter || HasActiveGenreFilters || HasActiveArtistFilters
+            || HasActiveTitleFilter || IsDownloadedFilterActive;
     }
 
     private void RefreshGenreFilterItems()
@@ -392,7 +445,7 @@ public partial class MusicLibraryViewModel : ObservableObject
 
     private IEnumerable<SongDto> CrossFilterSongsByArtist()
     {
-        IEnumerable<SongDto> songs = FilterSongsByActiveTypeSelections(_allSongs);
+        IEnumerable<SongDto> songs = ApplyGlobalFilters(_allSongs);
         if (SelectedArtists.Count > 0)
             songs = songs.Where(s => SelectedArtists.Contains(s.ArtistName));
         return songs;
@@ -400,7 +453,7 @@ public partial class MusicLibraryViewModel : ObservableObject
 
     private IEnumerable<SongDto> CrossFilterSongsByGenre()
     {
-        IEnumerable<SongDto> songs = FilterSongsByActiveTypeSelections(_allSongs);
+        IEnumerable<SongDto> songs = ApplyGlobalFilters(_allSongs);
         if (SelectedGenres.Count > 0)
             songs = songs.Where(s => SelectedGenres.Contains(s.Genre));
         return songs;
@@ -419,9 +472,12 @@ public partial class MusicLibraryViewModel : ObservableObject
         UpdateAiPillText();
         GenreSearchText = null;
         ArtistSearchText = null;
+        TitleSearchText = null;
+        UpdateTitlePillText();
         IsAiPanelOpen = false;
         IsGenrePanelOpen = false;
         IsArtistPanelOpen = false;
+        IsTitlePanelOpen = false;
         RefreshAvailableGenres();
         RefreshAvailableArtists();
         RefreshGenreFilterItems();
@@ -434,7 +490,7 @@ public partial class MusicLibraryViewModel : ObservableObject
     /// </summary>
     internal void ApplyFilters()
     {
-        IEnumerable<SongDto> filtered = FilterSongsByActiveTypeSelections(_allSongs);
+        IEnumerable<SongDto> filtered = ApplyGlobalFilters(_allSongs);
 
         if (SelectedGenres.Count > 0)
         {
@@ -491,6 +547,12 @@ public partial class MusicLibraryViewModel : ObservableObject
             filters.Add($"Artists: {string.Join(", ", SelectedArtists.OrderBy(artist => artist, StringComparer.OrdinalIgnoreCase))}");
         }
 
+        var title = TitleSearchText?.Trim();
+        if (!string.IsNullOrEmpty(title))
+        {
+            filters.Add($"Title: {title}");
+        }
+
         var musicTypeFilter = _selectedAiFilter switch
         {
             AiFilterAny => "Music Type: Any AI",
@@ -528,11 +590,22 @@ public partial class MusicLibraryViewModel : ObservableObject
         };
     }
 
-    private IEnumerable<SongDto> FilterSongsByActiveTypeSelections(IEnumerable<SongDto> songs)
+    /// <summary>
+    /// The filters that apply everywhere: downloaded, music type, and title. Sits underneath
+    /// ApplyFilters and both cross-filter helpers, so a clause added here narrows the visible songs
+    /// and the genre/artist option lists and counts together.
+    /// </summary>
+    private IEnumerable<SongDto> ApplyGlobalFilters(IEnumerable<SongDto> songs)
     {
         if (IsDownloadedFilterActive)
         {
             songs = songs.Where(song => _downloadedSongIds.Contains(song.Id));
+        }
+
+        var title = TitleSearchText?.Trim();
+        if (!string.IsNullOrEmpty(title))
+        {
+            songs = songs.Where(song => song.SongTitle.Contains(title, StringComparison.OrdinalIgnoreCase));
         }
 
         return FilterSongsByAiSelection(songs);
@@ -816,11 +889,14 @@ public partial class MusicLibraryViewModel : ObservableObject
             SelectedArtists.Clear();
             _selectedAiFilter = AiFilterAll;
             IsDownloadedFilterActive = false;
+            TitleSearchText = null;
             NotifyAiFilterSelectionChanged();
             UpdateGenrePillText();
             UpdateArtistPillText();
+            UpdateTitlePillText();
             IsGenrePanelOpen = false;
             IsArtistPanelOpen = false;
+            IsTitlePanelOpen = false;
             RefreshAvailableGenres();
             RefreshAvailableArtists();
             ApplyFilters();

@@ -1078,6 +1078,176 @@ public class MusicLibraryViewModelTests
         Assert.That(_viewModel.Songs, Has.Count.EqualTo(0));
     }
 
+    // --- Title filter ---
+
+    [Test]
+    public async Task Filter_ByTitle_MatchesSubstringCaseInsensitively()
+    {
+        LoadTestSongsDirectly();
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        _viewModel.TitleSearchText = "rock";
+        Assert.That(_viewModel.Songs.Select(s => s.SongTitle),
+            Is.EquivalentTo(new[] { "Rock Anthem", "Rock Ballad" }));
+
+        // Same match from the opposite casing.
+        _viewModel.TitleSearchText = "ROCK";
+        Assert.That(_viewModel.Songs.Select(s => s.SongTitle),
+            Is.EquivalentTo(new[] { "Rock Anthem", "Rock Ballad" }));
+
+        // A substring that straddles a word boundary, so this cannot pass on a prefix match.
+        _viewModel.TitleSearchText = "ck a";
+        Assert.That(_viewModel.Songs.Select(s => s.SongTitle), Is.EquivalentTo(new[] { "Rock Anthem" }));
+
+        // Matches mid-word, not just at the start of a word.
+        _viewModel.TitleSearchText = "bo";
+        Assert.That(_viewModel.Songs.Select(s => s.SongTitle), Is.EquivalentTo(new[] { "Pop Bop" }));
+    }
+
+    [Test]
+    public async Task Filter_ByTitle_NoMatch_ShowsEmptyCollection()
+    {
+        LoadTestSongsDirectly();
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        _viewModel.TitleSearchText = "nothing matches this";
+
+        Assert.That(_viewModel.Songs, Is.Empty);
+    }
+
+    [Test]
+    public async Task Filter_ByTitle_IgnoresSurroundingWhitespace()
+    {
+        LoadTestSongsDirectly();
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        _viewModel.TitleSearchText = "  jazz  ";
+
+        Assert.That(_viewModel.Songs.Select(s => s.SongTitle), Is.EquivalentTo(new[] { "Jazz Tune" }));
+    }
+
+    [Test]
+    public async Task Filter_ByTitleAndArtist_ShowsIntersection()
+    {
+        LoadTestSongsDirectly();
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        _viewModel.TitleSearchText = "rock";
+        _viewModel.ToggleArtistFilterCommand.Execute("Bob");
+
+        Assert.That(_viewModel.Songs.Select(s => s.SongTitle), Is.EquivalentTo(new[] { "Rock Ballad" }));
+    }
+
+    [Test]
+    public async Task TitleFilter_SetsPillActiveAndClearsBackOffWhenEmptied()
+    {
+        LoadTestSongsDirectly();
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        Assert.That(_viewModel.TitlePillText, Is.EqualTo("Title"));
+        Assert.That(_viewModel.HasActiveTitleFilter, Is.False);
+        Assert.That(_viewModel.HasAnyActiveFilters, Is.False);
+
+        _viewModel.TitleSearchText = "rock";
+        Assert.That(_viewModel.HasActiveTitleFilter, Is.True);
+        Assert.That(_viewModel.HasAnyActiveFilters, Is.True);
+
+        // Whitespace alone is not a filter, so the pill must not read as active.
+        _viewModel.TitleSearchText = "   ";
+        Assert.That(_viewModel.HasActiveTitleFilter, Is.False);
+        Assert.That(_viewModel.HasAnyActiveFilters, Is.False);
+
+        _viewModel.TitleSearchText = string.Empty;
+        Assert.That(_viewModel.HasActiveTitleFilter, Is.False);
+        Assert.That(_viewModel.Songs, Has.Count.EqualTo(5));
+    }
+
+    [Test]
+    public async Task TitleFilter_CrossFiltersArtistAndGenreItems()
+    {
+        LoadTestSongsDirectly();
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        _viewModel.TitleSearchText = "jazz";
+
+        Assert.That(_viewModel.ArtistFilterItems.Select(i => i.Name), Is.EquivalentTo(new[] { "Charlie" }));
+        Assert.That(_viewModel.GenreFilterItems.Select(i => i.Name), Is.EquivalentTo(new[] { "Jazz" }));
+    }
+
+    [Test]
+    public async Task ClearFilters_ResetsTitleFilter()
+    {
+        LoadTestSongsDirectly();
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+        _viewModel.TitleSearchText = "rock";
+
+        _viewModel.ClearFiltersCommand.Execute(null);
+
+        Assert.That(_viewModel.TitleSearchText, Is.Null);
+        Assert.That(_viewModel.HasActiveTitleFilter, Is.False);
+        Assert.That(_viewModel.IsTitlePanelOpen, Is.False);
+        Assert.That(_viewModel.Songs, Has.Count.EqualTo(5));
+    }
+
+    [Test]
+    public async Task LoadSongs_ResetsTitleFilter()
+    {
+        LoadTestSongsDirectly();
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+        _viewModel.TitleSearchText = "rock";
+
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+
+        // TitleSearchText is the filter itself, not just an option-list search, so a reload that
+        // left it set would show a filtered library with the pill still reading active.
+        Assert.That(_viewModel.TitleSearchText, Is.Null);
+        Assert.That(_viewModel.HasActiveTitleFilter, Is.False);
+        Assert.That(_viewModel.Songs, Has.Count.EqualTo(5));
+    }
+
+    [Test]
+    public void ToggleTitlePanel_ClosesOtherPanels()
+    {
+        _viewModel.IsGenrePanelOpen = true;
+        _viewModel.IsArtistPanelOpen = true;
+        _viewModel.IsAiPanelOpen = true;
+
+        _viewModel.ToggleTitlePanelCommand.Execute(null);
+
+        Assert.That(_viewModel.IsTitlePanelOpen, Is.True);
+        Assert.That(_viewModel.IsGenrePanelOpen, Is.False);
+        Assert.That(_viewModel.IsArtistPanelOpen, Is.False);
+        Assert.That(_viewModel.IsAiPanelOpen, Is.False);
+    }
+
+    [Test]
+    public void ToggleGenrePanel_ClosesTitlePanel()
+    {
+        _viewModel.IsTitlePanelOpen = true;
+
+        _viewModel.ToggleGenrePanelCommand.Execute(null);
+
+        Assert.That(_viewModel.IsGenrePanelOpen, Is.True);
+        Assert.That(_viewModel.IsTitlePanelOpen, Is.False);
+    }
+
+    [Test]
+    public async Task ToggleTitlePanel_ReopeningKeepsTheQuery()
+    {
+        LoadTestSongsDirectly();
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+        _viewModel.TitleSearchText = "rock";
+
+        // The genre and artist panels null their search text on open, because theirs only narrows an
+        // option list. Doing that here would drop the user's filter every time they reopened it.
+        _viewModel.ToggleTitlePanelCommand.Execute(null);
+        _viewModel.ToggleTitlePanelCommand.Execute(null);
+        _viewModel.ToggleTitlePanelCommand.Execute(null);
+
+        Assert.That(_viewModel.TitleSearchText, Is.EqualTo("rock"));
+        Assert.That(_viewModel.Songs, Has.Count.EqualTo(2));
+    }
+
     // --- Multi-select filter tests ---
 
     [Test]
@@ -1522,6 +1692,58 @@ public class MusicLibraryViewModelTests
                 It.IsAny<int>(),
                 It.IsAny<string>()), Times.Never);
         _mockMediaPlaybackOnboardingService.Verify(s => s.EnsureBackgroundPlaybackExplainedAsync(), Times.Once);
+    }
+
+    [Test]
+    public async Task PlaySong_WithActiveTitleFilter_SetsPlaylistWithOnlyFilteredSongs()
+    {
+        var songs = new List<SongDto>
+        {
+            new() { Id = 1, SongTitle = "Song A", Genre = "Rock", ArtistName = "A" },
+            new() { Id = 2, SongTitle = "Song B", Genre = "Pop", ArtistName = "B" },
+            new() { Id = 3, SongTitle = "Song C", Genre = "Rock", ArtistName = "C" },
+        };
+
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+        _viewModel.TitleSearchText = "song a";
+
+        await _viewModel.PlaySongCommand.ExecuteAsync(songs[0]);
+
+        _mockPlaybackService.Verify(p =>
+            p.SetPlaylist(
+                It.Is<List<SongDto>>(l => l.Select(song => song.Id).SequenceEqual(new[] { 1 })),
+                0,
+                "Filtered media library (Title: song a)"), Times.Once);
+        _mockPlaybackService.Verify(p =>
+            p.SetPlaylist(
+                It.Is<List<SongDto>>(l => l.Any(song => song.Id == 2 || song.Id == 3)),
+                It.IsAny<int>(),
+                It.IsAny<string>()), Times.Never);
+    }
+
+    [Test]
+    public async Task PlaySong_WithTitleAndGenreFilters_DescribesBothInQueueSource()
+    {
+        var songs = new List<SongDto>
+        {
+            new() { Id = 1, SongTitle = "Rock Anthem", Genre = "Rock", ArtistName = "A" },
+            new() { Id = 2, SongTitle = "Rock Ballad", Genre = "Pop", ArtistName = "B" },
+        };
+
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+        _viewModel.ToggleGenreFilterCommand.Execute("Rock");
+        _viewModel.TitleSearchText = "anthem";
+
+        await _viewModel.PlaySongCommand.ExecuteAsync(songs[0]);
+
+        // Segment order follows the pill order: genre, artist, title.
+        _mockPlaybackService.Verify(p =>
+            p.SetPlaylist(
+                It.Is<List<SongDto>>(l => l.Select(song => song.Id).SequenceEqual(new[] { 1 })),
+                0,
+                "Filtered media library (Genres: Rock; Title: anthem)"), Times.Once);
     }
 
     [Test]
