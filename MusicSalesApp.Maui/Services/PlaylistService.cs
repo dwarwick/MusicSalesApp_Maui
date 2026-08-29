@@ -73,6 +73,33 @@ public class PlaylistService : IPlaylistService
         }
     }
 
+    public async Task<List<PlaylistDto>> GetTopStreamedPlaylistsAsync()
+    {
+        try
+        {
+            return await CreateClient().GetFromJsonAsync<List<PlaylistDto>>($"{BaseRoute}/top-streamed") ?? [];
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load the most-streamed playlists");
+            return [];
+        }
+    }
+
+    public async Task<PlaylistSongsDto?> GetTopStreamedSongsAsync(string window)
+    {
+        try
+        {
+            return await CreateClient()
+                .GetFromJsonAsync<PlaylistSongsDto>($"{BaseRoute}/top-streamed/{Uri.EscapeDataString(window)}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load the most-streamed playlist {Window}", window);
+            return null;
+        }
+    }
+
     public async Task<PlaylistOperationResult<PlaylistDto>> CreatePlaylistAsync(string name)
     {
         try

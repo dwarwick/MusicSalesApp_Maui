@@ -54,6 +54,9 @@ public partial class HomeViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SubscriptionOfferDisclosureText))]
     [NotifyPropertyChangedFor(nameof(ShowSubscriptionUnavailableBanner))]
     [NotifyPropertyChangedFor(nameof(SubscriptionUnavailableBannerText))]
+    [NotifyPropertyChangedFor(nameof(ShowHero))]
+    [NotifyPropertyChangedFor(nameof(ShowBrowseMusic))]
+    [NotifyPropertyChangedFor(nameof(ShowHeroContainer))]
     public partial bool IsAuthenticated { get; set; }
 
     [ObservableProperty]
@@ -62,6 +65,9 @@ public partial class HomeViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowSubscribeNow))]
     [NotifyPropertyChangedFor(nameof(ShowSubscriptionOfferCard))]
     [NotifyPropertyChangedFor(nameof(SubscriptionAccessText))]
+    [NotifyPropertyChangedFor(nameof(ShowHero))]
+    [NotifyPropertyChangedFor(nameof(ShowBrowseMusic))]
+    [NotifyPropertyChangedFor(nameof(ShowHeroContainer))]
     public partial bool HasActiveSubscription { get; set; }
 
     [ObservableProperty]
@@ -204,7 +210,37 @@ public partial class HomeViewModel : ObservableObject
         && !HasActiveSubscription
         && (!IsAuthenticated || !IsEmailVerified || HasEligibleAndroidFreeTrial || ShouldShowFallbackAndroidFreeTrial || !HasResolvedAndroidSubscriptionOffer)
         && (!HasPreviousSubscriptionHistory || HasEligibleAndroidFreeTrial || !HasResolvedAndroidSubscriptionOffer);
-    public bool ShowBrowseMusic => true;
+    /// <summary>
+    /// Whether to show the marketing hero - the "Discover your next favorite artist!" block and its
+    /// Browse Music button.
+    /// </summary>
+    /// <remarks>
+    /// A signed-in subscriber has already been sold to, so it is dropped for them and the page opens
+    /// on Featured Music followed by their playlists. They keep a route into the library through
+    /// "View All" in the Featured Music header.
+    ///
+    /// <para>
+    /// The two warning banners inside the hero block are NOT gated on this. They are diagnostics
+    /// rather than marketing, and one of them fires precisely when a subscription cannot be verified -
+    /// which is a state a user with a cached active subscription can be in.
+    /// </para>
+    /// </remarks>
+    public bool ShowHero => !(IsAuthenticated && HasActiveSubscription);
+
+    /// <summary>
+    /// The hero's own CTA, so it comes and goes with the hero rather than outliving it.
+    /// </summary>
+    public bool ShowBrowseMusic => ShowHero;
+
+    /// <summary>
+    /// Whether the hero block occupies any space at all.
+    /// </summary>
+    /// <remarks>
+    /// The container carries the block's padding, so leaving it visible with every child hidden
+    /// leaves a dead gap between Featured Music and the playlists. It stays for the two warning
+    /// banners, which are not gated on <see cref="ShowHero"/>.
+    /// </remarks>
+    public bool ShowHeroContainer => ShowHero || ShowSessionExpiredNotice || ShowSubscriptionUnavailableBanner;
     public bool ShowFeaturedMusic => FeaturedSongs.Count > 0;
 
     public string SubscriptionPriceDisplay => SubscriptionOfferDisplayBuilder.FormatMonthlyPrice(SubscriptionPriceForDisplay);
@@ -251,6 +287,21 @@ public partial class HomeViewModel : ObservableObject
 
     public bool ShowRecommended => RecommendedPlaylist != null;
     public bool ShowLikedSongs => LikedSongsPlaylist != null;
+
+    /// <summary>
+    /// The five global "most streamed" playlists, in the order the server sent them.
+    /// </summary>
+    public ObservableCollection<PlaylistDto> TopStreamedPlaylists { get; } = [];
+
+    /// <summary>
+    /// Whether to show the "Most Streamed" section.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately NOT gated on <see cref="IsAuthenticated"/> the way <see cref="ShowPlaylists"/> is.
+    /// Those two tiles are personal; these five are identical for every visitor and must be visible
+    /// before sign-in.
+    /// </remarks>
+    public bool ShowTopStreamed => TopStreamedPlaylists.Count > 0;
 
     /// <summary>
     /// False when the device has no network at all. Reporting a song, tipping and adding to a playlist
@@ -448,16 +499,34 @@ public partial class HomeViewModel : ObservableObject
 
     private async Task LoadHomePlaylistsAsync()
     {
+        // Signed out, the personal tiles are cleared but the global ones are still fetched - they are
+        // the same for everybody, and the endpoint that serves them allows anonymous callers.
         if (!_authService.IsLoggedIn || !_authService.EmailConfirmed)
         {
             RecommendedPlaylist = null;
             LikedSongsPlaylist = null;
+            ReplaceTopStreamed(await _playlistService.GetTopStreamedPlaylistsAsync());
             return;
         }
 
         var home = await _playlistService.GetHomePlaylistsAsync();
         RecommendedPlaylist = home?.Recommended;
         LikedSongsPlaylist = home?.LikedSongs;
+        ReplaceTopStreamed(home?.TopStreamedOrEmpty);
+    }
+
+    /// <summary>
+    /// Swaps in a new set of most-streamed tiles, preserving the server's order.
+    /// </summary>
+    private void ReplaceTopStreamed(IEnumerable<PlaylistDto>? playlists)
+    {
+        TopStreamedPlaylists.Clear();
+        foreach (var playlist in playlists ?? [])
+        {
+            TopStreamedPlaylists.Add(playlist);
+        }
+
+        OnPropertyChanged(nameof(ShowTopStreamed));
     }
 
     private async Task LoadFeaturedSongsAsync()
@@ -753,20 +822,28 @@ public partial class HomeViewModel : ObservableObject
     {
         var userId = _authService.UserId;
         if (userId == null) return Task.CompletedTask;
-        return _navigationService.GoToAsync("playlist-player", new Dictionary<string, object>
+        return _navigationService.GoToAsync(NavigationRoutes.PlaylistPlayer, new Dictionary<string, object>
         {
-            ["RecommendedUserId"] = userId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            [PlaylistNavigationTarget.RecommendedUserIdKey] =
+                userId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
         });
     }
 
+    /// <summary>
+    /// Opens any playlist tile.
+    /// </summary>
+    /// <remarks>
+    /// Routed through <see cref="PlaylistNavigationTarget"/> rather than navigating on
+    /// <c>playlist.Id</c>: the generated playlists all report id 0, so opening them by id would send
+    /// every most-streamed tile to the same wrong page.
+    /// </remarks>
     [RelayCommand]
     private Task OpenPlaylistAsync(PlaylistDto? playlist)
     {
-        if (playlist == null) return Task.CompletedTask;
-        return _navigationService.GoToAsync("playlist-player", new Dictionary<string, object>
-        {
-            ["PlaylistId"] = playlist.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)
-        });
+        var target = PlaylistNavigationTarget.For(playlist, _authService.UserId);
+        return target is null
+            ? Task.CompletedTask
+            : _navigationService.GoToAsync(target.Value.Route, target.Value.Query);
     }
 
     [RelayCommand]
@@ -873,6 +950,9 @@ public partial class HomeViewModel : ObservableObject
         IsEmailVerified = _authService.EmailConfirmed;
         RefreshSessionExpiredNotice();
         OnPropertyChanged(nameof(ShowPlaylists));
+        OnPropertyChanged(nameof(ShowHero));
+        OnPropertyChanged(nameof(ShowBrowseMusic));
+        OnPropertyChanged(nameof(ShowHeroContainer));
         OnPropertyChanged(nameof(ManageSubscriptionText));
         OnPropertyChanged(nameof(ShowManageSubscriptionLink));
         OnPropertyChanged(nameof(SubscriptionOfferPrimaryButtonText));

@@ -103,6 +103,11 @@ public class NowPlayingArtworkCoordinatorTests
         _coordinator.Observe(first);
         var abandonedLoad = _coordinator.InFlightLoad!;
 
+        // Observe only queues the load onto the thread pool, so without this the supersede below can
+        // land before the first load has started - and then the two in-flight loads claim their
+        // results in thread-pool order rather than call order.
+        await _loader.FirstLoadStarted;
+
         _coordinator.Observe(second);
         gate.SetResult();
         await abandonedLoad;
@@ -334,9 +339,29 @@ public class NowPlayingArtworkCoordinatorTests
         public void Dispose() => IsDisposed = true;
     }
 
+    /// <summary>
+    /// Stand-in loader.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It has to be thread-safe, and it has to take its result at call entry.</b> The coordinator
+    /// starts a new load without awaiting the previous one, so a superseding test genuinely has two
+    /// loads running on the thread pool at once - and they block on the same <see cref="Gate"/>, so
+    /// they are released together.
+    /// </para>
+    /// <para>
+    /// Dequeuing after the gate made which caller got which result a coin toss, which is what made
+    /// the supersede test fail roughly one run in eight: when the second load won the race it took
+    /// the enqueued image and applied it, leaving the first load with nothing to dispose. Taking the
+    /// result up front pins each caller to the result its call order earned.
+    /// </para>
+    /// </remarks>
     private sealed class FakeArtworkLoader : INowPlayingArtworkLoader
     {
         private readonly Queue<NowPlayingArtworkLoadResult> _results = new();
+        private readonly TaskCompletionSource _firstLoadStarted =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly Lock _sync = new();
 
         public int CallCount { get; private set; }
 
@@ -349,11 +374,25 @@ public class NowPlayingArtworkCoordinatorTests
 
         public bool Throw { get; set; }
 
+        /// <summary>
+        /// Completes once a load has entered the loader and claimed its result.
+        /// </summary>
+        /// <remarks>
+        /// A test that supersedes an in-flight load must await this first. Without it the supersede
+        /// can land before the first load has even begun - <c>Observe</c> only queues the work onto
+        /// the thread pool - and then the two loads claim their results in whatever order the pool
+        /// happens to run them.
+        /// </remarks>
+        public Task FirstLoadStarted => _firstLoadStarted.Task;
+
         public void Enqueue(params NowPlayingArtworkLoadResult[] results)
         {
-            foreach (var result in results)
+            lock (_sync)
             {
-                _results.Enqueue(result);
+                foreach (var result in results)
+                {
+                    _results.Enqueue(result);
+                }
             }
         }
 
@@ -364,9 +403,16 @@ public class NowPlayingArtworkCoordinatorTests
             int contentVersion = 0,
             CancellationToken cancellationToken = default)
         {
-            CallCount++;
-            RequestedUris.Add(artworkUri);
-            RequestedVersions.Add(contentVersion);
+            NowPlayingArtworkLoadResult result;
+            lock (_sync)
+            {
+                CallCount++;
+                RequestedUris.Add(artworkUri);
+                RequestedVersions.Add(contentVersion);
+                result = _results.Count > 0 ? _results.Dequeue() : DefaultResult;
+            }
+
+            _firstLoadStarted.TrySetResult();
 
             if (Gate is { } gate)
             {
@@ -378,7 +424,7 @@ public class NowPlayingArtworkCoordinatorTests
                 throw new InvalidOperationException("decode failed");
             }
 
-            return _results.Count > 0 ? _results.Dequeue() : DefaultResult;
+            return result;
         }
     }
 }

@@ -145,6 +145,49 @@ public sealed class OfflineAwarePlaylistService : IPlaylistService, IPlaylistDat
             .ConfigureAwait(false);
     }
 
+    public async Task<List<PlaylistDto>> GetTopStreamedPlaylistsAsync()
+    {
+        if (!HasNoNetwork)
+        {
+            var live = await _inner.GetTopStreamedPlaylistsAsync().ConfigureAwait(false);
+            if (live.Count > 0)
+            {
+                await SafelyAsync(() => _playlistStore.SaveTopStreamedPlaylistsAsync(live)).ConfigureAwait(false);
+                LastPlaylistSource = PlaylistDataSource.Live;
+                return live;
+            }
+
+            // An empty live result is only trusted when the device is definitely online - the same
+            // reasoning as GetMyPlaylistsAsync, since the inner call also returns [] on failure.
+            if (_connectivity.NetworkAccess == NetworkAccess.Internet)
+            {
+                LastPlaylistSource = PlaylistDataSource.Live;
+                return live;
+            }
+        }
+
+        var cached = await SafelyAsync(() => _playlistStore.LoadTopStreamedPlaylistsAsync()).ConfigureAwait(false) ?? [];
+        LastPlaylistSource = cached.Count == 0 ? PlaylistDataSource.Unavailable : PlaylistDataSource.OfflineCache;
+        return cached;
+    }
+
+    public async Task<PlaylistSongsDto?> GetTopStreamedSongsAsync(string window)
+    {
+        if (!HasNoNetwork)
+        {
+            var live = await _inner.GetTopStreamedSongsAsync(window).ConfigureAwait(false);
+            if (live != null)
+            {
+                await SafelyAsync(() => _playlistStore.SaveTopStreamedSongsAsync(window, live)).ConfigureAwait(false);
+                LastPlaylistSource = PlaylistDataSource.Live;
+                return live;
+            }
+        }
+
+        return await RestorePlaylistSongsAsync(() => _playlistStore.LoadTopStreamedSongsAsync(window))
+            .ConfigureAwait(false);
+    }
+
     private async Task<PlaylistSongsDto?> RestorePlaylistSongsAsync(Func<Task<PlaylistSongsDto?>> load)
     {
         var cached = await SafelyAsync(load).ConfigureAwait(false);
@@ -172,6 +215,7 @@ public sealed class OfflineAwarePlaylistService : IPlaylistService, IPlaylistDat
             PlaylistId = cached.PlaylistId,
             PlaylistName = cached.PlaylistName,
             IsSystemGenerated = cached.IsSystemGenerated,
+            PeriodLabel = cached.PeriodLabel,
             Songs = playableSongs
         };
     }

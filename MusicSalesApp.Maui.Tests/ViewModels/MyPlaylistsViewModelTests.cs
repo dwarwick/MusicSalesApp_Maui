@@ -22,10 +22,103 @@ public class MyPlaylistsViewModelTests
         _mockNav = new Mock<INavigationService>();
 
         _mockPlaylist.Setup(s => s.GetMyPlaylistsAsync()).ReturnsAsync([]);
+        _mockPlaylist.Setup(s => s.GetTopStreamedPlaylistsAsync()).ReturnsAsync([]);
     }
 
     private MyPlaylistsViewModel CreateVm() =>
         new(_mockPlaylist.Object, _mockAuth.Object, _mockAlert.Object, _mockNav.Object);
+
+    private static PlaylistDto TopStreamedTile(string window) => new()
+    {
+        Id = 0,
+        Key = window,
+        Name = $"Top 10 {window}",
+        SongCount = 10,
+        IsSystemGenerated = true,
+        Kind = PlaylistKinds.TopStreamed
+    };
+
+    // ---- The global "most streamed" playlists -------------------------------------
+
+    [Test]
+    public async Task LoadAsync_PopulatesTheMostStreamedPlaylistsInServerOrder()
+    {
+        _mockPlaylist.Setup(s => s.GetTopStreamedPlaylistsAsync()).ReturnsAsync(
+            [TopStreamedTile("Day"), TopStreamedTile("Week"), TopStreamedTile("AllTime")]);
+
+        var vm = CreateVm();
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(vm.TopStreamedPlaylists.Select(p => p.Key),
+                Is.EqualTo(new[] { "Day", "Week", "AllTime" }),
+                "The server dictates the order; the ViewModel must not re-sort.");
+            Assert.That(vm.ShowTopStreamed, Is.True);
+        });
+    }
+
+    [Test]
+    public async Task LoadAsync_KeepsTheMostStreamedPlaylistsOutOfTheUsersOwnList()
+    {
+        // They have no id and must never get the rename/delete affordances, which are bound against
+        // the Playlists collection.
+        _mockPlaylist.Setup(s => s.GetMyPlaylistsAsync()).ReturnsAsync(
+            [new PlaylistDto { Id = 1, Name = "Rock", Kind = PlaylistKinds.Custom }]);
+        _mockPlaylist.Setup(s => s.GetTopStreamedPlaylistsAsync()).ReturnsAsync([TopStreamedTile("Day")]);
+
+        var vm = CreateVm();
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(vm.Playlists, Has.Count.EqualTo(1));
+            Assert.That(vm.Playlists.Any(p => p.Kind == PlaylistKinds.TopStreamed), Is.False);
+            Assert.That(vm.TopStreamedPlaylists, Has.Count.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task TheMostStreamedPlaylistsDoNotSuppressTheEmptyState()
+    {
+        // A user with none of their own playlists must still be told to create one, even though the
+        // page is no longer visually empty.
+        _mockPlaylist.Setup(s => s.GetTopStreamedPlaylistsAsync()).ReturnsAsync([TopStreamedTile("Day")]);
+
+        var vm = CreateVm();
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(vm.ShowEmptyState, Is.True);
+            Assert.That(vm.ShowTopStreamed, Is.True);
+        });
+    }
+
+    [Test]
+    public async Task OpenPlaylistAsync_OpensAMostStreamedPlaylistByWindowNotById()
+    {
+        // All five report Id = 0, so navigating on the id would send every one to the same page.
+        var vm = CreateVm();
+
+        await vm.OpenPlaylistCommand.ExecuteAsync(TopStreamedTile("Month"));
+
+        _mockNav.Verify(n => n.GoToAsync(
+            NavigationRoutes.PlaylistPlayer,
+            It.Is<Dictionary<string, object>>(query =>
+                (string)query[PlaylistNavigationTarget.TopStreamedWindowKey] == "Month"
+                && !query.ContainsKey(PlaylistNavigationTarget.PlaylistIdKey))),
+            Times.Once);
+    }
+
+    [Test]
+    public async Task ShowTopStreamed_IsFalseWhenTheServerReturnsNone()
+    {
+        var vm = CreateVm();
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        Assert.That(vm.ShowTopStreamed, Is.False);
+    }
 
     [Test]
     public async Task LoadAsync_PopulatesPlaylistsAndSubscriptionFlag()

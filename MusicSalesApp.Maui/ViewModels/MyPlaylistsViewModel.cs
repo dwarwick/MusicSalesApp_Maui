@@ -67,6 +67,17 @@ public partial class MyPlaylistsViewModel : ObservableObject
 
     public ObservableCollection<PlaylistDto> Playlists { get; } = [];
 
+    /// <summary>
+    /// The five global "most streamed" playlists, shown above the user's own.
+    /// </summary>
+    /// <remarks>
+    /// Kept out of <see cref="Playlists"/> on purpose. Those rows are addressed by id and carry
+    /// rename/delete affordances; these have no id and must never offer either.
+    /// </remarks>
+    public ObservableCollection<PlaylistDto> TopStreamedPlaylists { get; } = [];
+
+    public bool ShowTopStreamed => TopStreamedPlaylists.Count > 0;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowEmptyState))]
     [NotifyPropertyChangedFor(nameof(ShowPlaylists))]
@@ -80,6 +91,10 @@ public partial class MyPlaylistsViewModel : ObservableObject
 
     /// <summary>
     /// True when the user has no playlists to show (and loading is complete).
+    /// </summary>
+    /// <summary>
+    /// True when the user has none of their OWN playlists. The most-streamed ones are always there
+    /// and deliberately do not count, or the "create one to get started" prompt would never appear.
     /// </summary>
     public bool ShowEmptyState => !IsLoading && Playlists.Count == 0;
 
@@ -109,7 +124,7 @@ public partial class MyPlaylistsViewModel : ObservableObject
     /// Banner copy shown above the list when the user lacks an active subscription.
     /// </summary>
     public string SubscriptionBannerText =>
-        "To create playlists, you need an active subscription. Tap a system playlist above to listen.";
+        "To create playlists, you need an active subscription. Tap a playlist above to listen.";
 
     [RelayCommand]
     public async Task LoadAsync()
@@ -124,6 +139,12 @@ public partial class MyPlaylistsViewModel : ObservableObject
             Playlists.Clear();
             foreach (var p in items)
                 Playlists.Add(p);
+
+            // Server order is the display order - Day, Week, Month, Year, All Time.
+            var topStreamed = await _playlistService.GetTopStreamedPlaylistsAsync();
+            TopStreamedPlaylists.Clear();
+            foreach (var p in topStreamed)
+                TopStreamedPlaylists.Add(p);
         }
         catch (Exception ex)
         {
@@ -134,19 +155,25 @@ public partial class MyPlaylistsViewModel : ObservableObject
             IsLoading = false;
             OnPropertyChanged(nameof(ShowEmptyState));
             OnPropertyChanged(nameof(ShowPlaylists));
+            OnPropertyChanged(nameof(ShowTopStreamed));
         }
     }
 
+    /// <summary>
+    /// Opens any playlist row, the user's own or a most-streamed one.
+    /// </summary>
+    /// <remarks>
+    /// Routed through <see cref="PlaylistNavigationTarget"/> rather than navigating on
+    /// <c>playlist.Id</c>: the most-streamed playlists have no row and all report id 0, so opening
+    /// them by id would send every one of them to the same wrong page.
+    /// </remarks>
     [RelayCommand]
     public Task OpenPlaylistAsync(PlaylistDto? playlist)
     {
-        if (playlist == null) return Task.CompletedTask;
-        return _navigationService.GoToAsync("playlist-player", new Dictionary<string, object>
-        {
-            // Shell.ApplyQueryAttributes does a direct cast for non-string values; the
-            // target PlaylistIdParam property is string?, so pass the int as a string.
-            ["PlaylistId"] = playlist.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)
-        });
+        var target = PlaylistNavigationTarget.For(playlist, _authService.UserId);
+        return target is null
+            ? Task.CompletedTask
+            : _navigationService.GoToAsync(target.Value.Route, target.Value.Query);
     }
 
     [RelayCommand]

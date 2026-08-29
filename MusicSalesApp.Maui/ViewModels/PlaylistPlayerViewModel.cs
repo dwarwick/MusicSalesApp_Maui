@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MusicSalesApp.Maui.Services;
 
@@ -8,6 +8,7 @@ namespace MusicSalesApp.Maui.ViewModels;
 [QueryProperty(nameof(ArtistName), "ArtistName")]
 [QueryProperty(nameof(PlaylistIdParam), "PlaylistId")]
 [QueryProperty(nameof(RecommendedUserIdParam), "RecommendedUserId")]
+[QueryProperty(nameof(TopStreamedWindow), "TopStreamedWindow")]
 public partial class PlaylistPlayerViewModel : ObservableObject
 {
     private readonly IMusicService _musicService;
@@ -199,6 +200,27 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     [ObservableProperty]
     public partial string? RecommendedUserIdParam { get; set; }
 
+    /// <summary>
+    /// Window key of a "most streamed" playlist ("Day", "Week", ...), when that is what was opened.
+    /// </summary>
+    [ObservableProperty]
+    public partial string? TopStreamedWindow { get; set; }
+
+    /// <summary>
+    /// Heading for the period stream count column - "Today", "This Week" and so on - or null when the
+    /// list has no period of its own.
+    /// </summary>
+    /// <remarks>
+    /// Set only by the four rolling most-streamed playlists. The list is ranked on the period count
+    /// while <c>SongDto.StreamCount</c> is the lifetime total, so without the extra column a correctly
+    /// ordered "Top 10 Today" reads as mis-sorted.
+    /// </remarks>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowPeriodStreamCount))]
+    public partial string? PeriodStreamLabel { get; set; }
+
+    public bool ShowPeriodStreamCount => !string.IsNullOrEmpty(PeriodStreamLabel);
+
     /// <summary>True when the loaded playlist is a user-owned custom playlist (reorder/remove allowed).</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsReorderEnabled))]
@@ -266,6 +288,12 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     }
 
     partial void OnRecommendedUserIdParamChanged(string? value)
+    {
+        if (!string.IsNullOrEmpty(value))
+            _ = LoadPlaylistAsync();
+    }
+
+    partial void OnTopStreamedWindowChanged(string? value)
     {
         if (!string.IsNullOrEmpty(value))
             _ = LoadPlaylistAsync();
@@ -383,6 +411,14 @@ public partial class PlaylistPlayerViewModel : ObservableObject
             return;
         }
 
+        // Branch 3: one of the five global "most streamed" playlists, addressed by window key
+        // because none of them has an id.
+        if (!string.IsNullOrEmpty(TopStreamedWindow))
+        {
+            await LoadTopStreamedAsync(Uri.UnescapeDataString(TopStreamedWindow));
+            return;
+        }
+
         // Legacy: filter by Genre / Artist using full song list
         IsUserPlaylist = false;
         _loadedPlaylistId = null;
@@ -489,6 +525,53 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         var mapped = result.Songs.Select(MapToSongDto).ToList();
         foreach (var ps in result.Songs.Where(ps => ps.UserPlaylistId.HasValue))
             _userPlaylistIdBySongId[ps.SongMetadataId] = ps.UserPlaylistId!.Value;
+
+        await FinalizeLoadedSongsAsync(mapped);
+    }
+
+    /// <summary>
+    /// Loads one "most streamed" playlist.
+    /// </summary>
+    /// <remarks>
+    /// The server returns the songs in rank order - most streamed first - and this deliberately does
+    /// not sort, so that order reaches the list intact.
+    /// </remarks>
+    private async Task LoadTopStreamedAsync(string window)
+    {
+        _userPlaylistIdBySongId.Clear();
+        _loadedPlaylistId = null;
+        IsUserPlaylist = false;
+
+        var result = await _playlistService.GetTopStreamedSongsAsync(window);
+        if (result == null)
+        {
+            ErrorMessage = ResolveLoadFailureMessage("Failed to load playlist.");
+            return;
+        }
+
+        PlaylistTitle = result.PlaylistName;
+        PeriodStreamLabel = result.PeriodLabel;
+
+        if (result.Songs.Count == 0)
+        {
+            ErrorMessage = "This playlist has no songs yet.";
+            Songs.ReplaceAll([]);
+            return;
+        }
+
+        var mapped = result.Songs.Select(MapToSongDto).ToList();
+
+        // The period count travels on the playlist DTO, not the song DTO the rest of the app shares,
+        // so it is copied across here by song id.
+        var periodCounts = result.Songs
+            .Where(song => song.PeriodStreamCount.HasValue)
+            .GroupBy(song => song.SongMetadataId)
+            .ToDictionary(group => group.Key, group => group.First().PeriodStreamCount!.Value);
+
+        foreach (var song in mapped)
+        {
+            song.PeriodStreamCount = periodCounts.TryGetValue(song.Id, out var count) ? count : null;
+        }
 
         await FinalizeLoadedSongsAsync(mapped);
     }
