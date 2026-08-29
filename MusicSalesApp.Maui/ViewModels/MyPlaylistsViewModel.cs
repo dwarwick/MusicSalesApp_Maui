@@ -68,6 +68,22 @@ public partial class MyPlaylistsViewModel : ObservableObject
     public ObservableCollection<PlaylistDto> Playlists { get; } = [];
 
     /// <summary>
+    /// The personal "Recommended For You" list, or null when the server omitted it.
+    /// </summary>
+    /// <remarks>
+    /// Kept out of <see cref="Playlists"/> for the same reason as <see cref="TopStreamedPlaylists"/>:
+    /// it is generated per request, has no <c>Playlists</c> row, and must not offer rename or delete.
+    /// The server omits it entirely when it has no playable songs, so null is the normal empty case
+    /// rather than a failure.
+    /// </remarks>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowRecommended))]
+    [NotifyPropertyChangedFor(nameof(ShowGeneratedPlaylists))]
+    public partial PlaylistDto? RecommendedPlaylist { get; set; }
+
+    public bool ShowRecommended => RecommendedPlaylist != null;
+
+    /// <summary>
     /// The five global "most streamed" playlists, shown above the user's own.
     /// </summary>
     /// <remarks>
@@ -77,6 +93,12 @@ public partial class MyPlaylistsViewModel : ObservableObject
     public ObservableCollection<PlaylistDto> TopStreamedPlaylists { get; } = [];
 
     public bool ShowTopStreamed => TopStreamedPlaylists.Count > 0;
+
+    /// <summary>
+    /// Whether anything server-generated precedes the user's own list. Gates the "My Playlists"
+    /// heading, which only earns its place when there is a preceding section to distinguish it from.
+    /// </summary>
+    public bool ShowGeneratedPlaylists => ShowRecommended || ShowTopStreamed;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowEmptyState))]
@@ -140,11 +162,7 @@ public partial class MyPlaylistsViewModel : ObservableObject
             foreach (var p in items)
                 Playlists.Add(p);
 
-            // Server order is the display order - Day, Week, Month, Year, All Time.
-            var topStreamed = await _playlistService.GetTopStreamedPlaylistsAsync();
-            TopStreamedPlaylists.Clear();
-            foreach (var p in topStreamed)
-                TopStreamedPlaylists.Add(p);
+            await LoadGeneratedPlaylistsAsync();
         }
         catch (Exception ex)
         {
@@ -156,7 +174,47 @@ public partial class MyPlaylistsViewModel : ObservableObject
             OnPropertyChanged(nameof(ShowEmptyState));
             OnPropertyChanged(nameof(ShowPlaylists));
             OnPropertyChanged(nameof(ShowTopStreamed));
+            OnPropertyChanged(nameof(ShowGeneratedPlaylists));
         }
+    }
+
+    /// <summary>
+    /// Loads the two server-generated sections: Recommended, and the most-streamed tiles.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Mirrors <c>HomeViewModel.LoadHomePlaylistsAsync</c>. Recommended is personal and is synthesised
+    /// only inside the <c>/home</c> payload - <c>GET api/mobile/playlists</c> returns real rows, so it
+    /// can never appear there. The most-streamed tiles ride along in that same response, which is why
+    /// signed in this is one request rather than two.
+    /// </para>
+    /// <para>
+    /// Signed out or unverified, <c>/home</c> answers 401 and there is no Recommended list to show;
+    /// the most-streamed tiles are fetched from the anonymous endpoint instead so that section still
+    /// renders. The flyout hides this page unless signed in, so that branch covers an expired session
+    /// rather than a genuinely anonymous visitor.
+    /// </para>
+    /// </remarks>
+    private async Task LoadGeneratedPlaylistsAsync()
+    {
+        if (_authService.IsLoggedIn && _authService.EmailConfirmed)
+        {
+            var home = await _playlistService.GetHomePlaylistsAsync();
+            RecommendedPlaylist = home?.Recommended;
+            // Server order is the display order - Day, Week, Month, Year, All Time.
+            ReplaceTopStreamed(home?.TopStreamedOrEmpty);
+            return;
+        }
+
+        RecommendedPlaylist = null;
+        ReplaceTopStreamed(await _playlistService.GetTopStreamedPlaylistsAsync());
+    }
+
+    private void ReplaceTopStreamed(IEnumerable<PlaylistDto>? playlists)
+    {
+        TopStreamedPlaylists.Clear();
+        foreach (var playlist in playlists ?? [])
+            TopStreamedPlaylists.Add(playlist);
     }
 
     /// <summary>

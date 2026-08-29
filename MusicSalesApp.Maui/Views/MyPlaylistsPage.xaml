@@ -60,54 +60,91 @@
                                 ItemSizingStrategy="MeasureFirstItem"
                                 SelectionMode="None">
                     <CollectionView.Header>
-                        <VerticalStackLayout IsVisible="{Binding ShowTopStreamed}"
-                                             Spacing="{StaticResource Space3}"
+                        <VerticalStackLayout Spacing="{StaticResource Space3}"
                                              Padding="0,0,0,16">
-                            <VerticalStackLayout Spacing="{StaticResource SpaceHair}">
-                                <Label Text="Most Streamed"
-                                       FontSize="{StaticResource FontSizeH2Compact}"
-                                       FontAttributes="Bold"
-                                       TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
-                                <Label Text="Updated daily"
-                                       FontSize="{StaticResource FontSizeSmall}"
-                                       TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
+                            <!--
+                                Recommended. Deliberately unheaded: the server names the row
+                                "Recommended For You", so a "Recommended" heading above a single row
+                                of that name would only repeat itself.
+                            -->
+                            <Border IsVisible="{Binding ShowRecommended}"
+                                    StrokeShape="RoundRectangle 12"
+                                    Stroke="{AppThemeBinding Light={StaticResource LineLight}, Dark={StaticResource LineDark}}"
+                                    StrokeThickness="{StaticResource StrokeThin}"
+                                    BackgroundColor="{AppThemeBinding Light={StaticResource SurfaceLight}, Dark={StaticResource SurfaceDark}}"
+                                    Padding="14">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding OpenPlaylistCommand}"
+                                                          CommandParameter="{Binding RecommendedPlaylist}" />
+                                </Border.GestureRecognizers>
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space2}" VerticalOptions="Center">
+                                    <VerticalStackLayout Grid.Column="0" Spacing="{StaticResource SpaceHair}">
+                                        <Label Text="{Binding RecommendedPlaylist.Name}"
+                                               FontSize="{StaticResource FontSizeCardTitle}"
+                                               FontAttributes="Bold"
+                                               TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
+                                        <Label Text="{Binding RecommendedPlaylist.SongCount, StringFormat='{0} songs'}"
+                                               FontSize="{StaticResource FontSizeSmall}"
+                                               TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
+                                    </VerticalStackLayout>
+                                    <Label Grid.Column="1"
+                                           Text="▶"
+                                           FontSize="{StaticResource FontSizeH2}"
+                                           TextColor="{StaticResource Primary}"
+                                           VerticalTextAlignment="Center" />
+                                </Grid>
+                            </Border>
+
+                            <VerticalStackLayout IsVisible="{Binding ShowTopStreamed}"
+                                                 Spacing="{StaticResource Space3}">
+                                <VerticalStackLayout Spacing="{StaticResource SpaceHair}">
+                                    <Label Text="Most Streamed"
+                                           FontSize="{StaticResource FontSizeH2Compact}"
+                                           FontAttributes="Bold"
+                                           TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
+                                    <Label Text="Updated daily"
+                                           FontSize="{StaticResource FontSizeSmall}"
+                                           TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
+                                </VerticalStackLayout>
+
+                                <VerticalStackLayout BindableLayout.ItemsSource="{Binding TopStreamedPlaylists}"
+                                                     Spacing="{StaticResource Space2}">
+                                    <BindableLayout.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:PlaylistDto">
+                                            <Border StrokeShape="RoundRectangle 12"
+                                                    Stroke="{AppThemeBinding Light={StaticResource LineLight}, Dark={StaticResource LineDark}}"
+                                                    StrokeThickness="{StaticResource StrokeThin}"
+                                                    BackgroundColor="{AppThemeBinding Light={StaticResource SurfaceLight}, Dark={StaticResource SurfaceDark}}"
+                                                    Padding="14">
+                                                <Border.GestureRecognizers>
+                                                    <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MyPlaylistsViewModel}}, Path=OpenPlaylistCommand}"
+                                                                          CommandParameter="{Binding .}" />
+                                                </Border.GestureRecognizers>
+                                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space2}" VerticalOptions="Center">
+                                                    <VerticalStackLayout Grid.Column="0" Spacing="{StaticResource SpaceHair}">
+                                                        <Label Text="{Binding Name}"
+                                                               FontSize="{StaticResource FontSizeCardTitle}"
+                                                               FontAttributes="Bold"
+                                                               TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
+                                                        <Label Text="{Binding SongCount, StringFormat='{0} songs'}"
+                                                               FontSize="{StaticResource FontSizeSmall}"
+                                                               TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
+                                                    </VerticalStackLayout>
+                                                    <Label Grid.Column="1"
+                                                           Text="▶"
+                                                           FontSize="{StaticResource FontSizeH2}"
+                                                           TextColor="{StaticResource Primary}"
+                                                           VerticalTextAlignment="Center" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </BindableLayout.ItemTemplate>
+                                </VerticalStackLayout>
                             </VerticalStackLayout>
 
-                            <VerticalStackLayout BindableLayout.ItemsSource="{Binding TopStreamedPlaylists}"
-                                                 Spacing="{StaticResource Space2}">
-                                <BindableLayout.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:PlaylistDto">
-                                        <Border StrokeShape="RoundRectangle 12"
-                                                Stroke="{AppThemeBinding Light={StaticResource LineLight}, Dark={StaticResource LineDark}}"
-                                                StrokeThickness="{StaticResource StrokeThin}"
-                                                BackgroundColor="{AppThemeBinding Light={StaticResource SurfaceLight}, Dark={StaticResource SurfaceDark}}"
-                                                Padding="14">
-                                            <Border.GestureRecognizers>
-                                                <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MyPlaylistsViewModel}}, Path=OpenPlaylistCommand}"
-                                                                      CommandParameter="{Binding .}" />
-                                            </Border.GestureRecognizers>
-                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space2}" VerticalOptions="Center">
-                                                <VerticalStackLayout Grid.Column="0" Spacing="{StaticResource SpaceHair}">
-                                                    <Label Text="{Binding Name}"
-                                                           FontSize="{StaticResource FontSizeCardTitle}"
-                                                           FontAttributes="Bold"
-                                                           TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
-                                                    <Label Text="{Binding SongCount, StringFormat='{0} songs'}"
-                                                           FontSize="{StaticResource FontSizeSmall}"
-                                                           TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
-                                                </VerticalStackLayout>
-                                                <Label Grid.Column="1"
-                                                       Text="▶"
-                                                       FontSize="{StaticResource FontSizeH2}"
-                                                       TextColor="{StaticResource Primary}"
-                                                       VerticalTextAlignment="Center" />
-                                            </Grid>
-                                        </Border>
-                                    </DataTemplate>
-                                </BindableLayout.ItemTemplate>
-                            </VerticalStackLayout>
-
+                            <!-- Only earns its place below a generated section it has to be told apart from. -->
                             <Label Text="My Playlists"
+                                   IsVisible="{Binding ShowGeneratedPlaylists}"
                                    FontSize="{StaticResource FontSizeH2Compact}"
                                    FontAttributes="Bold"
                                    TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
