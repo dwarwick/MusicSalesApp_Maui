@@ -8,8 +8,7 @@
              x:DataType="vm:MusicLibraryViewModel"
              Title="Music Library"
              HideSoftInputOnTapped="True"
-             SafeAreaEdges="All"
-             BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
+             SafeAreaEdges="All">
 
     <ContentPage.Resources>
         <Style x:Key="FilterSearchContainerStyle" TargetType="Border">
@@ -50,95 +49,65 @@
                  phone, and a wrapped second row would push the song list down permanently. -->
             <ScrollView Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
             <HorizontalStackLayout Spacing="{StaticResource SpaceTight}">
-            <Border Style="{StaticResource FilterPill}"
-                    BackgroundColor="{Binding HasActiveAiFilter, Converter={StaticResource ActivePillBgConverter}}">
-                <Border.Stroke>
-                    <!-- SolidColorBrush rather than a direct bind: Stroke is a Brush and the converter
-                         returns a Color, so the Color goes on the brush where the types already agree. -->
-                    <SolidColorBrush Color="{Binding HasActiveAiFilter, Converter={StaticResource ActivePillBorderConverter}}" />
-                </Border.Stroke>
+            <!-- The active state swaps the whole Style, it does not override colours per pill.
+                 Colours overridden here came from converters reading AppColors.*, which resolve the
+                 theme ONCE and freeze it, so the pills kept whatever theme was current while the
+                 page was built while every AppThemeBinding around them moved on. Inside a Style the
+                 bindings stay live. See PillStyleConverter. -->
+            <Border Style="{Binding HasActiveAiFilter, Converter={StaticResource PillStyleConverter}}">
                 <Label Text="{Binding AiPillText}"
-                       Style="{StaticResource FilterPillText}"
-                       TextColor="{Binding HasActiveAiFilter, Converter={StaticResource ActivePillTextConverter}}" />
+                       Style="{Binding HasActiveAiFilter, Converter={StaticResource PillTextStyleConverter}}" />
                 <Border.GestureRecognizers>
                     <TapGestureRecognizer Command="{Binding ToggleAiPanelCommand}" Tapped="OnFilterOptionTapped" />
                 </Border.GestureRecognizers>
             </Border>
 
             <!-- Genre Pill -->
-            <Border Style="{StaticResource FilterPill}"
-                    BackgroundColor="{Binding HasActiveGenreFilters, Converter={StaticResource ActivePillBgConverter}}">
-                <Border.Stroke>
-                    <!-- SolidColorBrush rather than a direct bind: Stroke is a Brush and the converter
-                         returns a Color, so the Color goes on the brush where the types already agree. -->
-                    <SolidColorBrush Color="{Binding HasActiveGenreFilters, Converter={StaticResource ActivePillBorderConverter}}" />
-                </Border.Stroke>
+            <Border Style="{Binding HasActiveGenreFilters, Converter={StaticResource PillStyleConverter}}">
                 <Label Text="{Binding GenrePillText}"
-                       Style="{StaticResource FilterPillText}"
-                       TextColor="{Binding HasActiveGenreFilters, Converter={StaticResource ActivePillTextConverter}}" />
+                       Style="{Binding HasActiveGenreFilters, Converter={StaticResource PillTextStyleConverter}}" />
                 <Border.GestureRecognizers>
                     <TapGestureRecognizer Command="{Binding ToggleGenrePanelCommand}" Tapped="OnFilterOptionTapped" />
                 </Border.GestureRecognizers>
             </Border>
 
             <!-- Artist Pill -->
-            <Border Style="{StaticResource FilterPill}"
-                    BackgroundColor="{Binding HasActiveArtistFilters, Converter={StaticResource ActivePillBgConverter}}">
-                <Border.Stroke>
-                    <!-- SolidColorBrush rather than a direct bind: Stroke is a Brush and the converter
-                         returns a Color, so the Color goes on the brush where the types already agree. -->
-                    <SolidColorBrush Color="{Binding HasActiveArtistFilters, Converter={StaticResource ActivePillBorderConverter}}" />
-                </Border.Stroke>
+            <Border Style="{Binding HasActiveArtistFilters, Converter={StaticResource PillStyleConverter}}">
                 <Label Text="{Binding ArtistPillText}"
-                       Style="{StaticResource FilterPillText}"
-                       TextColor="{Binding HasActiveArtistFilters, Converter={StaticResource ActivePillTextConverter}}" />
+                       Style="{Binding HasActiveArtistFilters, Converter={StaticResource PillTextStyleConverter}}" />
                 <Border.GestureRecognizers>
                     <TapGestureRecognizer Command="{Binding ToggleArtistPanelCommand}" Tapped="OnFilterOptionTapped" />
                 </Border.GestureRecognizers>
             </Border>
 
             <!-- Title Pill -->
-            <Border Style="{StaticResource FilterPill}"
-                    BackgroundColor="{Binding HasActiveTitleFilter, Converter={StaticResource ActivePillBgConverter}}">
-                <Border.Stroke>
-                    <!-- SolidColorBrush rather than a direct bind: Stroke is a Brush and the converter
-                         returns a Color, so the Color goes on the brush where the types already agree. -->
-                    <SolidColorBrush Color="{Binding HasActiveTitleFilter, Converter={StaticResource ActivePillBorderConverter}}" />
-                </Border.Stroke>
+            <Border Style="{Binding HasActiveTitleFilter, Converter={StaticResource PillStyleConverter}}">
                 <Label Text="{Binding TitlePillText}"
-                       Style="{StaticResource FilterPillText}"
-                       TextColor="{Binding HasActiveTitleFilter, Converter={StaticResource ActivePillTextConverter}}" />
+                       Style="{Binding HasActiveTitleFilter, Converter={StaticResource PillTextStyleConverter}}" />
                 <Border.GestureRecognizers>
                     <TapGestureRecognizer Command="{Binding ToggleTitlePanelCommand}" Tapped="OnFilterOptionTapped" />
                 </Border.GestureRecognizers>
             </Border>
 
             <!-- Downloaded-only filter -->
-            <Border Style="{StaticResource FilterPill}"
-                    BackgroundColor="{Binding IsDownloadedFilterActive, Converter={StaticResource ActivePillBgConverter}}">
-                <Border.Stroke>
-                    <!-- SolidColorBrush rather than a direct bind: Stroke is a Brush and the converter
-                         returns a Color, so the Color goes on the brush where the types already agree. -->
-                    <SolidColorBrush Color="{Binding IsDownloadedFilterActive, Converter={StaticResource ActivePillBorderConverter}}" />
-                </Border.Stroke>
+            <Border Style="{Binding IsDownloadedFilterActive, Converter={StaticResource PillStyleConverter}}">
                 <Label Text="Downloaded"
-                       Style="{StaticResource FilterPillText}"
-                       TextColor="{Binding IsDownloadedFilterActive, Converter={StaticResource ActivePillTextConverter}}" />
+                       Style="{Binding IsDownloadedFilterActive, Converter={StaticResource PillTextStyleConverter}}" />
                 <Border.GestureRecognizers>
                     <TapGestureRecognizer Command="{Binding ToggleDownloadedFilterCommand}" Tapped="OnFilterOptionTapped" />
                 </Border.GestureRecognizers>
             </Border>
 
             <!-- Clear Filters Button -->
-            <Border Style="{StaticResource FilterPill}"
-                    BackgroundColor="{Binding HasAnyActiveFilters, Converter={StaticResource ActivePillBgConverter}}"
+            <!-- Bound like the rest rather than pinned to FilterPill: it is only ever visible while
+                 a filter is applied, so it is always the active treatment. -->
+            <Border Style="{Binding HasAnyActiveFilters, Converter={StaticResource PillStyleConverter}}"
                     IsVisible="{Binding HasAnyActiveFilters}"
                     WidthRequest="{StaticResource ControlHeightSmall}"
                     Padding="0">
                 <Label Text="✕"
-                       Style="{StaticResource FilterPillText}"
-                       FontSize="{StaticResource FontSizeSmall}"
-                       TextColor="{Binding HasAnyActiveFilters, Converter={StaticResource ActivePillTextConverter}}" />
+                       Style="{Binding HasAnyActiveFilters, Converter={StaticResource PillTextStyleConverter}}"
+                       FontSize="{StaticResource FontSizeSmall}" />
                 <Border.GestureRecognizers>
                     <TapGestureRecognizer Command="{Binding ClearFiltersCommand}" Tapped="OnFilterOptionTapped" />
                 </Border.GestureRecognizers>

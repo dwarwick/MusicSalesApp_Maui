@@ -103,7 +103,18 @@
     <Color x:Key="SurfaceHoverLight">#F1F4F8</Color>
     <Color x:Key="SurfaceHoverDark">#333C49</Color>
     <Color x:Key="LineLight">#DEE2E6</Color>
-    <Color x:Key="LineDark">#1AFFFFFF</Color>
+    <!-- 20% white, not the web's 10%. At 10% a card edge composites to #3E4650 on SurfaceDark,
+         1.35:1 against the card's own fill, and on a phone it simply is not there. The web leans
+         on a wider page gutter to separate its cards; our list rows are near edge to edge. -->
+    <Color x:Key="LineDark">#33FFFFFF</Color>
+    <!-- Control boundaries ONLY - the st-control-line pair in light.css/dark.css. Line* is 1.30:1
+         on Surface*, which is fine for a CARD edge but below the 3:1 WCAG 1.4.11 asks for on the
+         border of an INTERACTIVE control: at that ratio the control reads as absent rather than
+         as quiet. That is exactly how the library's filter pills shipped. -->
+    <Color x:Key="ControlLineLight">#7F8894</Color>
+    <!-- 3.59:1 on SurfaceLight, 3.40:1 on PageLight, 3.25:1 on SurfaceHoverLight -->
+    <Color x:Key="ControlLineDark">#7E8B9E</Color>
+    <!-- 3.74:1 on SurfaceDark, 4.46:1 on PageDark, 3.23:1 on SurfaceHoverDark -->
 
     <!-- Text. Text3 is the dimmest that still passes AA in each theme - do not go below it. -->
     <Color x:Key="TextLight">#0F1B2D</Color>

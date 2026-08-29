@@ -8,8 +8,7 @@
              x:Class="MusicSalesApp.Maui.Views.HomePage"
              x:DataType="vm:HomeViewModel"
              Title="Home"
-             SafeAreaEdges="Container"
-             BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
+             SafeAreaEdges="Container">
 
     <Grid RowDefinitions="*,Auto">
         <ScrollView Grid.Row="0">
@@ -69,7 +68,7 @@
 
             <!-- ========== HERO SECTION ========== -->
             <VerticalStackLayout Padding="24,4,24,4" Spacing="{StaticResource SpaceHair}"
-                  BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
+                  BackgroundColor="{AppThemeBinding Light={StaticResource PageLight}, Dark={StaticResource PageDark}}">
 
                 <!-- Title row: text + Lottie, wraps like flex-row -->
                 <FlexLayout Direction="Row" Wrap="Wrap" JustifyContent="SpaceBetween" AlignItems="Center">
@@ -181,7 +180,8 @@
                 <!-- Recommended tile -->
                 <Border IsVisible="{Binding ShowRecommended}"
                         StrokeShape="RoundRectangle 16"
-                        Stroke="Transparent"
+                        Stroke="{AppThemeBinding Light={StaticResource LineLight}, Dark={StaticResource LineDark}}"
+                        StrokeThickness="{StaticResource StrokeThin}"
                         BackgroundColor="{AppThemeBinding Light={StaticResource SurfaceLight}, Dark={StaticResource SurfaceDark}}"
                         Padding="16">
                     <Border.GestureRecognizers>
@@ -220,7 +220,8 @@
                 <!-- Liked Songs tile -->
                 <Border IsVisible="{Binding ShowLikedSongs}"
                         StrokeShape="RoundRectangle 16"
-                        Stroke="Transparent"
+                        Stroke="{AppThemeBinding Light={StaticResource LineLight}, Dark={StaticResource LineDark}}"
+                        StrokeThickness="{StaticResource StrokeThin}"
                         BackgroundColor="{AppThemeBinding Light={StaticResource SurfaceLight}, Dark={StaticResource SurfaceDark}}"
                         Padding="16">
                     <Border.GestureRecognizers>

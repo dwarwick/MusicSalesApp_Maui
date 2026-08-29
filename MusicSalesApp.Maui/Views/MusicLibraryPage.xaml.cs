@@ -2,7 +2,6 @@
 using Microsoft.Extensions.Logging;
 using MusicSalesApp.Maui.Services;
 using MusicSalesApp.Maui.ViewModels;
-using MusicSalesApp.Maui.Resources.Styles;
 
 namespace MusicSalesApp.Maui.Views;
 
@@ -20,9 +19,8 @@ public partial class MusicLibraryPage : ContentPage
         // Add converters to page resources before InitializeComponent
         Resources.Add("PlayPauseGlyphConverter", new PlayPauseGlyphConverter());
         Resources.Add("DurationConverter", new DurationConverter());
-        Resources.Add("ActivePillBgConverter", new ActivePillBgConverter());
-        Resources.Add("ActivePillTextConverter", new ActivePillTextConverter());
-        Resources.Add("ActivePillBorderConverter", new ActivePillBorderConverter());
+        Resources.Add("PillStyleConverter", new PillStyleConverter());
+        Resources.Add("PillTextStyleConverter", new PillTextStyleConverter());
         Resources.Add("LikeGlyphConverter", new LikeGlyphConverter());
         Resources.Add("DislikeGlyphConverter", new DislikeGlyphConverter());
         Resources.Add("LikeColorConverter", new LikeColorConverter());
@@ -140,16 +138,33 @@ public class DurationConverter : IValueConverter
 }
 
 /// <summary>
-/// Converts bool (isActive) to pill background color using the StreamTunes green CTA treatment.
+/// Picks a filter pill's Style from whether its filter is applied.
 /// </summary>
-public class ActivePillBgConverter : IValueConverter
+/// <remarks>
+/// <para>
+/// <b>These return a Style, never a Color, and that is the whole point.</b> The pills used to
+/// override BackgroundColor, Border.Stroke and TextColor per instance from converters that read
+/// <c>AppColors.Surface</c> / <c>Text2</c> / <c>Line</c>. Those go through
+/// <c>AppColors.ForCurrentTheme</c>, which resolves the theme once and freezes it - and a
+/// converter runs exactly once, when the binding is first evaluated, whereas an AppThemeBinding
+/// re-evaluates on every RequestedThemeChanged.
+/// </para>
+/// <para>
+/// So the pills baked in whatever theme was current while the page was being built. Android reads
+/// Dark early in startup and corrects itself once the real theme arrives; every AppThemeBinding in
+/// the app followed, and the pills could not - they came up dark-on-light in light mode. iOS reads
+/// Light early, froze the right values, and merely looked washed out. Both were the same fault.
+/// </para>
+/// <para>
+/// Handing over a Style instead keeps every colour in an AppThemeBinding setter in Styles.xaml,
+/// where it stays live. The converter itself never touches the theme, so there is nothing to
+/// freeze.
+/// </para>
+/// </remarks>
+public class PillStyleConverter : IValueConverter
 {
-    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        return value is true
-            ? AppColors.AccentFill
-            : AppColors.Surface;
-    }
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        PillStyles.Resolve(value is true ? "FilterPillActive" : "FilterPill");
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
@@ -158,18 +173,13 @@ public class ActivePillBgConverter : IValueConverter
 }
 
 /// <summary>
-/// Converts bool (isActive) to pill text color using white for the green CTA pill treatment.
+/// The label counterpart to <see cref="PillStyleConverter"/>. Split for the same reason the styles
+/// are: the fill lives on the Border and the foreground on the Label, and the two move together.
 /// </summary>
-public class ActivePillTextConverter : IValueConverter
+public class PillTextStyleConverter : IValueConverter
 {
-    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        // Was unconditionally white. On the dark theme's bright fill that measures 2.26:1 and
-        // fails AA - the On* family is the only foreground allowed on top of a fill.
-        return value is true
-            ? AppColors.OnAccent
-            : AppColors.Text2;
-    }
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        PillStyles.Resolve(value is true ? "FilterPillTextActive" : "FilterPillText");
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
@@ -177,20 +187,15 @@ public class ActivePillTextConverter : IValueConverter
     }
 }
 
-/// <summary>
-/// Converts bool (isActive) to a thin purple pill border marking pills with an applied filter.
-/// </summary>
-public class ActivePillBorderConverter : IValueConverter
+internal static class PillStyles
 {
-    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        return value is true
-            ? AppColors.AccentFill
-            : AppColors.Line;
-    }
-
-    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        throw new NotSupportedException();
-    }
+    /// <summary>
+    /// Looks a pill style up in the merged application dictionaries. Returns null rather than
+    /// throwing on a miss: null leaves the element on whatever Style it already had, so a renamed
+    /// key degrades to an unhighlighted pill instead of taking the library page down.
+    /// </summary>
+    public static Style? Resolve(string key) =>
+        Application.Current?.Resources.TryGetValue(key, out var style) == true
+            ? style as Style
+            : null;
 }
