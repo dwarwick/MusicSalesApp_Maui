@@ -12,6 +12,7 @@ public partial class App : Application
 	private readonly ITestingServerBannerService _testingServerBannerService;
 	private readonly IBrowserService _browserService;
 	private readonly IAppConfig _appConfig;
+	private readonly IAutoScrollSettingsService _autoScrollSettingsService;
 	private readonly ITipFlowHandler _tipFlowHandler;
 	private readonly ISignalRConnectionManager _signalRConnectionManager;
 	private readonly PlaybackFailureNotificationCoordinator _playbackFailureNotificationCoordinator;
@@ -25,6 +26,7 @@ public partial class App : Application
 		ITestingServerBannerService testingServerBannerService,
 		IBrowserService browserService,
 		IAppConfig appConfig,
+		IAutoScrollSettingsService autoScrollSettingsService,
 		ITipFlowHandler tipFlowHandler,
 		ISignalRConnectionManager signalRConnectionManager,
 		PlaybackFailureNotificationCoordinator playbackFailureNotificationCoordinator,
@@ -39,6 +41,7 @@ public partial class App : Application
 		_testingServerBannerService = testingServerBannerService;
 		_browserService = browserService;
 		_appConfig = appConfig;
+		_autoScrollSettingsService = autoScrollSettingsService;
 		_tipFlowHandler = tipFlowHandler;
 		_signalRConnectionManager = signalRConnectionManager;
 		_playbackFailureNotificationCoordinator = playbackFailureNotificationCoordinator;
@@ -59,7 +62,7 @@ public partial class App : Application
 
 	protected override Window CreateWindow(IActivationState? activationState)
 	{
-		var window = new Window(new AppShell(_authService, _adminMessageCoordinator, _testingServerBannerService, _browserService, _appConfig));
+		var window = new Window(new AppShell(_authService, _adminMessageCoordinator, _testingServerBannerService, _browserService, _appConfig, _autoScrollSettingsService));
 
 		window.Created += async (_, _) =>
 		{

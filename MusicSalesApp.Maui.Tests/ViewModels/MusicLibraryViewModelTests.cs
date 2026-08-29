@@ -49,6 +49,84 @@ public class MusicLibraryViewModelTests
     }
 
     [Test]
+    public async Task Activate_MarksThePlayingCardAndClearsTheRest()
+    {
+        // The library had no now-playing awareness at all before this - only the playlist did. The
+        // flag lives on the DTO because a DataTemplate cannot reach the playback service.
+        await GivenLoadedSongsAsync();
+        GivenCurrentSong(2);
+
+        _viewModel.Activate();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.CurrentSong?.Id, Is.EqualTo(2));
+            Assert.That(SongWithId(2).IsNowPlaying, Is.True);
+            Assert.That(SongWithId(1).IsNowPlaying, Is.False);
+        });
+    }
+
+    [Test]
+    public async Task Activate_WhenTheTrackAdvances_MovesTheFlagRatherThanLightingBoth()
+    {
+        await GivenLoadedSongsAsync();
+        GivenCurrentSong(1);
+        _viewModel.Activate();
+
+        GivenCurrentSong(2);
+        _viewModel.Activate();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(SongWithId(2).IsNowPlaying, Is.True);
+            Assert.That(SongWithId(1).IsNowPlaying, Is.False);
+        });
+    }
+
+    [Test]
+    public async Task Activate_WhenNothingIsPlaying_LeavesEveryCardUnmarked()
+    {
+        await GivenLoadedSongsAsync();
+        GivenCurrentSong(null);
+
+        _viewModel.Activate();
+
+        Assert.That(_viewModel.Songs.Any(song => song.IsNowPlaying), Is.False);
+    }
+
+    [Test]
+    public async Task ApplyFilters_ReappliesTheFlagToTheRebuiltCollection()
+    {
+        // ReplaceAll rebuilds Songs wholesale, so the flag has to be re-applied or the playing card
+        // comes back unmarked after any filter change.
+        await GivenLoadedSongsAsync();
+        GivenCurrentSong(2);
+        _viewModel.Activate();
+
+        _viewModel.TitleSearchText = "Song";
+
+        Assert.That(SongWithId(2).IsNowPlaying, Is.True);
+    }
+
+    private async Task GivenLoadedSongsAsync()
+    {
+        var songs = new List<SongDto>
+        {
+            new() { Id = 1, SongTitle = "Song One" },
+            new() { Id = 2, SongTitle = "Song Two" }
+        };
+        _mockMusicService.Setup(service => service.GetSongsAsync()).ReturnsAsync(songs);
+        await _viewModel.LoadSongsCommand.ExecuteAsync(null);
+    }
+
+    private void GivenCurrentSong(int? songId) =>
+        _mockPlaybackService
+            .SetupGet(service => service.CurrentSong)
+            .Returns(songId is null ? null : new SongDto { Id = songId.Value });
+
+    private SongDto SongWithId(int songId) => _viewModel.Songs.Single(song => song.Id == songId);
+
+    [Test]
     public async Task LoadSongsAsync_PopulatesSongsCollection()
     {
         // Arrange

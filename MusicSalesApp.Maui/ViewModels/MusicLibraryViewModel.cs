@@ -73,6 +73,7 @@ public partial class MusicLibraryViewModel : ObservableObject
     {
         AttachSubscriptions();
         SynchronizeVisibleQueue();
+        SyncCurrentSongFromPlayback();
     }
 
     public void Cleanup()
@@ -84,6 +85,7 @@ public partial class MusicLibraryViewModel : ObservableObject
         _signalRService.OnStreamCountUpdated -= HandleStreamCountUpdated;
         _signalRService.OnLikeCountUpdated -= HandleLikeCountUpdated;
         _playbackService.ShowSubscribeCtaRequested -= OnShowSubscribeCta;
+        _playbackService.StateChanged -= OnPlaybackStateChanged;
         if (_networkStatusService != null)
             _networkStatusService.PropertyChanged -= HandleNetworkStatusChanged;
         _subscriptionsAttached = false;
@@ -98,6 +100,7 @@ public partial class MusicLibraryViewModel : ObservableObject
         _signalRService.OnStreamCountUpdated += HandleStreamCountUpdated;
         _signalRService.OnLikeCountUpdated += HandleLikeCountUpdated;
         _playbackService.ShowSubscribeCtaRequested += OnShowSubscribeCta;
+        _playbackService.StateChanged += OnPlaybackStateChanged;
         if (_networkStatusService != null)
             _networkStatusService.PropertyChanged += HandleNetworkStatusChanged;
         _subscriptionsAttached = true;
@@ -121,6 +124,50 @@ public partial class MusicLibraryViewModel : ObservableObject
             return;
 
         _ = LoadSongsCommand.ExecuteAsync(null);
+    }
+
+    /// <summary>
+    /// The song the player is on, resolved to this page's own copy.
+    /// </summary>
+    /// <remarks>
+    /// Mirrors <c>PlaylistPlayerViewModel.CurrentSong</c> so both list pages give their code-behind
+    /// the same change signal to scroll on. Resolved against the visible list rather than taken off
+    /// the service, so it is the SongDto instance this page's cards are bound to.
+    /// </remarks>
+    [ObservableProperty]
+    public partial SongDto? CurrentSong { get; set; }
+
+    private void OnPlaybackStateChanged(string propertyName)
+    {
+        if (propertyName == nameof(IPlaybackService.CurrentSong))
+        {
+            SyncCurrentSongFromPlayback();
+        }
+    }
+
+    private void SyncCurrentSongFromPlayback()
+    {
+        CurrentSong = Songs.Count == 0
+            ? _playbackService.CurrentSong
+            : PlaybackQueueSelection.ResolveCurrentSong(_playbackService, Songs);
+        MarkNowPlayingRow();
+    }
+
+    /// <summary>
+    /// Flag the card the player is on, so the library shows WHICH song is playing.
+    /// </summary>
+    /// <remarks>
+    /// Walks the list rather than tracking the previous card, for the reason written up on the
+    /// playlist's copy of this: ApplyFilters replaces Songs wholesale, so a remembered reference
+    /// would clear the flag on a card no longer displayed and leave the real one lit.
+    /// </remarks>
+    private void MarkNowPlayingRow()
+    {
+        var playingId = CurrentSong?.Id;
+        foreach (var song in Songs)
+        {
+            song.IsNowPlaying = song.Id == playingId;
+        }
     }
 
     /// <summary>Expose the shared playback service so the page can bind NowPlayingView.</summary>
@@ -507,6 +554,10 @@ public partial class MusicLibraryViewModel : ObservableObject
         Songs.ReplaceAll(filtered);
 
         SynchronizeVisibleQueue();
+
+        // ReplaceAll rebuilt the collection, so the flag has to be re-applied to the new rows -
+        // and SynchronizeVisibleQueue may itself have moved the queue underneath us.
+        SyncCurrentSongFromPlayback();
     }
 
     private void SynchronizeVisibleQueue()

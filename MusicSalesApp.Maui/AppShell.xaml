@@ -30,6 +30,32 @@
                    VerticalOptions="Center"
                    HorizontalOptions="Start" />
 
+            <!-- AUTO-SCROLL, pinned to the right edge. Every value is BOUND to ShellRoot for the
+                 reason given above the logo: Shell rebuilds this view, and an x:Name would be left
+                 addressing a discarded instance. The 8-unit right margin is the whole inset there
+                 is - unlike the banner below, this row needs no negative margin, and at Margin=0 the
+                 label's last letter lands on the final pixel column. -->
+            <HorizontalStackLayout Grid.Row="0"
+                                   Spacing="{StaticResource SpaceHair}"
+                                   HorizontalOptions="End"
+                                   VerticalOptions="Center"
+                                   Margin="0,0,8,0"
+                                   IsVisible="{Binding IsAutoScrollToggleVisible, Source={x:Reference ShellRoot}}">
+                <CheckBox AutomationId="AutoScrollCheckBox"
+                          IsChecked="{Binding IsAutoScrollEnabled, Source={x:Reference ShellRoot}, Mode=TwoWay}"
+                          Color="{Binding NavBarAccentColor, Source={x:Reference ShellRoot}}"
+                          VerticalOptions="Center" />
+                <Label Text="Auto-scroll"
+                       AutomationId="AutoScrollLabel"
+                       FontSize="{StaticResource FontSizeMicro}"
+                       VerticalOptions="Center"
+                       TextColor="{Binding NavBarTextColor, Source={x:Reference ShellRoot}}">
+                    <Label.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnAutoScrollLabelTapped" />
+                    </Label.GestureRecognizers>
+                </Label>
+            </HorizontalStackLayout>
+
             <Border x:Name="TestingServerBannerBorder"
                     Grid.Row="1"
                     IsVisible="False"
