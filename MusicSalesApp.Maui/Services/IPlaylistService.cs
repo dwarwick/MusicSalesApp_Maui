@@ -13,6 +13,18 @@ public interface IPlaylistService
     Task<PlaylistSongsDto?> GetPlaylistSongsAsync(int playlistId);
     Task<PlaylistSongsDto?> GetRecommendedSongsAsync();
 
+    /// <summary>
+    /// The five global "most streamed" playlists as tiles, in display order, empty ones omitted.
+    /// Not personal, so this works signed out.
+    /// </summary>
+    Task<List<PlaylistDto>> GetTopStreamedPlaylistsAsync();
+
+    /// <summary>
+    /// One "most streamed" playlist's songs, in rank order - most streamed first. Callers must not
+    /// re-sort the result.
+    /// </summary>
+    Task<PlaylistSongsDto?> GetTopStreamedSongsAsync(string window);
+
     Task<PlaylistOperationResult<PlaylistDto>> CreatePlaylistAsync(string name);
     Task<PlaylistOperationResult> RenamePlaylistAsync(int playlistId, string name);
     Task<PlaylistOperationResult> DeletePlaylistAsync(int playlistId);

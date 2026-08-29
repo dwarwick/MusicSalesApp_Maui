@@ -240,4 +240,104 @@ public class PlaylistServiceTests
 
         Assert.That(result.RequiresSubscription, Is.True);
     }
+
+    // ---- The global "most streamed" playlists -------------------------------------
+
+    /// <summary>Captures the URL the service asked for, so the route can be asserted.</summary>
+    private Mock<HttpMessageHandler> CreateUrlCapturingHandler(object content, List<string> requestedUrls)
+    {
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync((HttpRequestMessage request, CancellationToken _) =>
+            {
+                // AbsoluteUri, not ToString(): ToString() un-escapes for display, which would hide
+                // the very escaping one of these tests is checking for.
+                requestedUrls.Add(request.RequestUri!.AbsoluteUri);
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(content) };
+            });
+        return handler;
+    }
+
+    [Test]
+    public async Task GetTopStreamedPlaylistsAsync_ReturnsTilesInServerOrder()
+    {
+        List<PlaylistDto> expected =
+        [
+            new() { Id = 0, Key = "Day", Name = "Top 10 Today", SongCount = 10, Kind = PlaylistKinds.TopStreamed, IsSystemGenerated = true },
+            new() { Id = 0, Key = "AllTime", Name = "Top 10 of All Time", SongCount = 10, Kind = PlaylistKinds.TopStreamed, IsSystemGenerated = true }
+        ];
+        CreateMockHttpClient(CreateHandlerWithResponse(HttpStatusCode.OK, expected).Object);
+
+        var result = await CreateService().GetTopStreamedPlaylistsAsync();
+
+        Assert.That(result.Select(p => p.Key), Is.EqualTo(new[] { "Day", "AllTime" }));
+    }
+
+    [Test]
+    public async Task GetTopStreamedPlaylistsAsync_ReturnsEmpty_OnFailure()
+    {
+        CreateMockHttpClient(CreateHandlerWithResponse(HttpStatusCode.InternalServerError).Object);
+
+        Assert.That(await CreateService().GetTopStreamedPlaylistsAsync(), Is.Empty);
+    }
+
+    [Test]
+    public async Task GetTopStreamedSongsAsync_ReturnsBothStreamCounts()
+    {
+        var expected = new PlaylistSongsDto
+        {
+            PlaylistId = 0,
+            PlaylistName = "Top 10 Today",
+            IsSystemGenerated = true,
+            PeriodLabel = "Today",
+            Songs =
+            [
+                new PlaylistSongDto { SongMetadataId = 1, SongTitle = "One", StreamCount = 5000, PeriodStreamCount = 42 }
+            ]
+        };
+        CreateMockHttpClient(CreateHandlerWithResponse(HttpStatusCode.OK, expected).Object);
+
+        var result = await CreateService().GetTopStreamedSongsAsync("Day");
+
+        Assert.That(result, Is.Not.Null);
+        Assert.Multiple(() =>
+        {
+            Assert.That(result!.PeriodLabel, Is.EqualTo("Today"));
+            Assert.That(result.Songs[0].StreamCount, Is.EqualTo(5000), "Lifetime.");
+            Assert.That(result.Songs[0].PeriodStreamCount, Is.EqualTo(42), "What the list was ranked on.");
+        });
+    }
+
+    [Test]
+    public async Task GetTopStreamedSongsAsync_AddressesThePlaylistByWindow()
+    {
+        var requestedUrls = new List<string>();
+        CreateMockHttpClient(CreateUrlCapturingHandler(new PlaylistSongsDto(), requestedUrls).Object);
+
+        await CreateService().GetTopStreamedSongsAsync("AllTime");
+
+        Assert.That(requestedUrls.Single(), Does.EndWith("api/mobile/playlists/top-streamed/AllTime"));
+    }
+
+    [Test]
+    public async Task GetTopStreamedSongsAsync_EscapesTheWindow()
+    {
+        var requestedUrls = new List<string>();
+        CreateMockHttpClient(CreateUrlCapturingHandler(new PlaylistSongsDto(), requestedUrls).Object);
+
+        await CreateService().GetTopStreamedSongsAsync("not a window");
+
+        Assert.That(requestedUrls.Single(), Does.EndWith("top-streamed/not%20a%20window"));
+    }
+
+    [Test]
+    public async Task GetTopStreamedSongsAsync_ReturnsNull_OnFailure()
+    {
+        CreateMockHttpClient(CreateHandlerWithResponse(HttpStatusCode.NotFound).Object);
+
+        Assert.That(await CreateService().GetTopStreamedSongsAsync("Day"), Is.Null);
+    }
 }

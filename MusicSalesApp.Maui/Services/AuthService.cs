@@ -647,11 +647,19 @@ public class AuthService : IAuthService
     /// Clears the outgoing user's data out of the offline snapshots.
     ///
     /// Neither store is namespaced by account, so without this the next person to sign in would see the
-    /// previous user's playlists and votes while offline. The two are treated differently on purpose:
-    /// playlists are wholly personal and go entirely, whereas the song catalog is public and only the
-    /// thumbs-up/down state on it is personal. Deleting the catalog would take offline playback away
-    /// too - including on the session-expiry logout that can fire at startup with no network - so only
-    /// the votes are stripped.
+    /// previous user's playlists and votes while offline. What each store keeps differs by how personal
+    /// its contents are, and there are three cases rather than two:
+    ///
+    /// <list type="bullet">
+    /// <item>The song catalog is public and only the thumbs-up/down state on it is personal, so only
+    /// the votes are stripped. Deleting the catalog would take offline playback away too - including
+    /// on the session-expiry logout that can fire at startup with no network.</item>
+    /// <item>A user's own playlists, Liked Songs and Recommended are wholly personal and go entirely.</item>
+    /// <item>The five "most streamed" playlists are neither - they are identical for every visitor and
+    /// are shown to signed-out ones, so <c>ClearAsync</c> deliberately keeps them. Wiping them would
+    /// blank the home page for precisely the user who has just lost their account context, with the
+    /// same no-network startup case making it unrecoverable.</item>
+    /// </list>
     /// </summary>
     private async Task ClearOfflineSnapshotsAsync()
     {

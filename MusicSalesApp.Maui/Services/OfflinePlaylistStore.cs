@@ -22,6 +22,16 @@ public interface IOfflinePlaylistStore
     Task<PlaylistSongsDto?> LoadRecommendedSongsAsync(CancellationToken cancellationToken = default);
     Task SaveRecommendedSongsAsync(PlaylistSongsDto songs, CancellationToken cancellationToken = default);
 
+    Task<List<PlaylistDto>> LoadTopStreamedPlaylistsAsync(CancellationToken cancellationToken = default);
+    Task SaveTopStreamedPlaylistsAsync(IReadOnlyList<PlaylistDto> playlists, CancellationToken cancellationToken = default);
+
+    Task<PlaylistSongsDto?> LoadTopStreamedSongsAsync(string window, CancellationToken cancellationToken = default);
+    Task SaveTopStreamedSongsAsync(string window, PlaylistSongsDto songs, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Drops everything personal to the signed-in user, keeping the global "most streamed" sections.
+    /// Called on sign-out.
+    /// </summary>
     Task ClearAsync(CancellationToken cancellationToken = default);
 }
 
@@ -42,6 +52,24 @@ public sealed class OfflinePlaylistDocument
     public Dictionary<int, PlaylistSongsDto> PlaylistSongs { get; set; } = [];
 
     public PlaylistSongsDto? RecommendedSongs { get; set; }
+
+    /// <summary>
+    /// The five global "most streamed" tiles.
+    /// </summary>
+    /// <remarks>
+    /// Not personal, so unlike everything above it survives sign-out - see <c>ClearAsync</c>.
+    /// </remarks>
+    public List<PlaylistDto> TopStreamedPlaylists { get; set; } = [];
+
+    /// <summary>
+    /// Their song lists, keyed by <b>window</b> rather than by id.
+    /// </summary>
+    /// <remarks>
+    /// These playlists have no row and all report <c>Id = 0</c>, so they cannot share
+    /// <see cref="PlaylistSongs"/> - all five would collide on key 0, and with the Recommended list
+    /// too.
+    /// </remarks>
+    public Dictionary<string, PlaylistSongsDto> TopStreamedSongs { get; set; } = [];
 }
 
 /// <summary>
@@ -51,7 +79,9 @@ public sealed class OfflinePlaylistDocument
 /// </summary>
 public sealed class OfflinePlaylistStore : IOfflinePlaylistStore
 {
-    internal const int CurrentVersion = 1;
+    // 2: added the global top-streamed sections. Nothing validates this on read - an older document
+    // simply deserialises with the new collections empty, which is the correct starting state.
+    internal const int CurrentVersion = 2;
     internal const int MaxCachedPlaylists = 200;
     private const string PlaylistFileName = "playlists-v1.json";
 
@@ -125,12 +155,71 @@ public sealed class OfflinePlaylistStore : IOfflinePlaylistStore
     public Task SaveRecommendedSongsAsync(PlaylistSongsDto songs, CancellationToken cancellationToken = default)
         => MutateAsync(document => document.RecommendedSongs = songs, cancellationToken);
 
+    public async Task<List<PlaylistDto>> LoadTopStreamedPlaylistsAsync(CancellationToken cancellationToken = default)
+        => (await ReadDocumentAsync(cancellationToken).ConfigureAwait(false))?.TopStreamedPlaylists ?? [];
+
+    public Task SaveTopStreamedPlaylistsAsync(
+        IReadOnlyList<PlaylistDto> playlists,
+        CancellationToken cancellationToken = default)
+        => MutateAsync(document => document.TopStreamedPlaylists = playlists.ToList(), cancellationToken);
+
+    public async Task<PlaylistSongsDto?> LoadTopStreamedSongsAsync(
+        string window,
+        CancellationToken cancellationToken = default)
+    {
+        var document = await ReadDocumentAsync(cancellationToken).ConfigureAwait(false);
+        return document is not null && document.TopStreamedSongs.TryGetValue(window, out var songs)
+            ? songs
+            : null;
+    }
+
+    public Task SaveTopStreamedSongsAsync(
+        string window,
+        PlaylistSongsDto songs,
+        CancellationToken cancellationToken = default)
+        // Bounded by construction: there are exactly five windows, so no eviction pass is needed here
+        // the way there is for user playlists.
+        => MutateAsync(document => document.TopStreamedSongs[window] = songs, cancellationToken);
+
+    /// <summary>
+    /// Clears the signed-out user's playlists while keeping the global "most streamed" ones.
+    /// </summary>
+    /// <remarks>
+    /// This used to delete the whole file, which was right when every section of it was personal. The
+    /// top-streamed playlists are not: they are the same for every visitor and are shown to signed-out
+    /// ones, so wiping them on sign-out would blank the home page for exactly the user who has just
+    /// lost their account context - including on the session-expiry sign-out that fires at start-up
+    /// with no network to refill them.
+    /// </remarks>
     public async Task ClearAsync(CancellationToken cancellationToken = default)
     {
         await _fileLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await Task.Run(DeletePlaylistFile, cancellationToken).ConfigureAwait(false);
+            var existing = await ReadDocumentUnlockedAsync(cancellationToken).ConfigureAwait(false);
+
+            var globalPlaylists = existing?.TopStreamedPlaylists ?? [];
+            var globalSongs = existing?.TopStreamedSongs ?? [];
+
+            if (globalPlaylists.Count == 0 && globalSongs.Count == 0)
+            {
+                await Task.Run(DeletePlaylistFile, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            await WriteDocumentAsync(
+                new OfflinePlaylistDocument
+                {
+                    Version = CurrentVersion,
+                    UpdatedUtc = DateTimeOffset.UtcNow,
+                    TopStreamedPlaylists = globalPlaylists,
+                    TopStreamedSongs = globalSongs
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to clear the offline playlist snapshot");
         }
         finally
         {

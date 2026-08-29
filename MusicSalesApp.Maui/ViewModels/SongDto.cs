@@ -1,4 +1,4 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace MusicSalesApp.Maui.ViewModels;
@@ -114,6 +114,24 @@ public partial class SongDto : ObservableObject
 
     [ObservableProperty]
     public partial int StreamCount { get; set; }
+
+    /// <summary>
+    /// Streams inside the period of the list this song is being shown in, or null when the list has
+    /// no period.
+    /// </summary>
+    /// <remarks>
+    /// Set only by the four rolling "most streamed" playlists, which are RANKED on this while
+    /// <see cref="StreamCount"/> is the lifetime total kept live by SignalR. Showing only the lifetime
+    /// figure there would render a correctly ordered list that looks mis-sorted.
+    ///
+    /// <para>
+    /// Not serialized: it belongs to the list being viewed, not to the song, and the offline catalogue
+    /// store persists this type verbatim.
+    /// </para>
+    /// </remarks>
+    [JsonIgnore]
+    [ObservableProperty]
+    public partial int? PeriodStreamCount { get; set; }
 
     // Populated from bulk likes endpoint, not from songs API
     [ObservableProperty]

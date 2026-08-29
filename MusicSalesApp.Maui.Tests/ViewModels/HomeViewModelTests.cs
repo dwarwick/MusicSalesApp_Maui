@@ -57,6 +57,8 @@ public class HomeViewModelTests
             .ReturnsAsync(new Dictionary<int, UserSongRatingState>());
         _mockPlaylistService.Setup(p => p.GetHomePlaylistsAsync())
             .ReturnsAsync(new HomePlaylistsDto());
+        _mockPlaylistService.Setup(p => p.GetTopStreamedPlaylistsAsync())
+            .ReturnsAsync([]);
 
         _viewModel = CreateViewModel();
     }
@@ -1521,6 +1523,210 @@ public class HomeViewModelTests
         {
             Assert.That(_viewModel.ShowSessionExpiredNotice, Is.False);
             Assert.That(_viewModel.SessionExpiredMessage, Is.Null);
+        });
+    }
+
+    // ---- The global "most streamed" playlists -------------------------------------
+
+    private static PlaylistDto TopStreamedTile(string window) => new()
+    {
+        Id = 0,
+        Key = window,
+        Name = $"Top 10 {window}",
+        SongCount = 10,
+        IsSystemGenerated = true,
+        Kind = PlaylistKinds.TopStreamed
+    };
+
+    [Test]
+    public async Task TheMostStreamedPlaylistsLoadForASignedOutVisitor()
+    {
+        // The point of the feature: these five are identical for everybody, so unlike Recommended and
+        // Liked Songs they must not be behind the sign-in gate.
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(false);
+        _mockPlaylistService.Setup(p => p.GetTopStreamedPlaylistsAsync())
+            .ReturnsAsync([TopStreamedTile("Day"), TopStreamedTile("AllTime")]);
+
+        var viewModel = CreateViewModel();
+        await viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(viewModel.TopStreamedPlaylists, Has.Count.EqualTo(2));
+            Assert.That(viewModel.ShowTopStreamed, Is.True);
+            Assert.That(viewModel.RecommendedPlaylist, Is.Null, "Personal tiles stay hidden.");
+            Assert.That(viewModel.LikedSongsPlaylist, Is.Null);
+            Assert.That(viewModel.ShowPlaylists, Is.False);
+        });
+    }
+
+    [Test]
+    public async Task TheMostStreamedPlaylistsComeFromTheHomeResponseWhenSignedIn()
+    {
+        // Signed in they ride along on the home payload, so no second request is made.
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
+        _mockPlaylistService.Setup(p => p.GetHomePlaylistsAsync()).ReturnsAsync(new HomePlaylistsDto
+        {
+            TopStreamed = [TopStreamedTile("Day"), TopStreamedTile("Week")]
+        });
+
+        var viewModel = CreateViewModel();
+        await viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.That(viewModel.TopStreamedPlaylists.Select(p => p.Key), Is.EqualTo(new[] { "Day", "Week" }));
+        _mockPlaylistService.Verify(p => p.GetTopStreamedPlaylistsAsync(), Times.Never);
+    }
+
+    [Test]
+    public async Task AnOlderServerOmittingTheMostStreamedListIsNotACrash()
+    {
+        // TopStreamed is nullable because a server that predates it sends no such property, and
+        // System.Text.Json would overwrite the initialiser if one ever sent an explicit null.
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
+        _mockPlaylistService.Setup(p => p.GetHomePlaylistsAsync())
+            .ReturnsAsync(new HomePlaylistsDto { TopStreamed = null });
+
+        var viewModel = CreateViewModel();
+        await viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(viewModel.TopStreamedPlaylists, Is.Empty);
+            Assert.That(viewModel.ShowTopStreamed, Is.False);
+        });
+    }
+
+    [Test]
+    public async Task ShowTopStreamed_IsIndependentOfShowPlaylists()
+    {
+        // ShowPlaylists gates the two personal tiles on sign-in + email verification. The most
+        // streamed section must not inherit that.
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(false);
+        _mockPlaylistService.Setup(p => p.GetTopStreamedPlaylistsAsync())
+            .ReturnsAsync([TopStreamedTile("Day")]);
+
+        var viewModel = CreateViewModel();
+        await viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(viewModel.ShowPlaylists, Is.False);
+            Assert.That(viewModel.ShowTopStreamed, Is.True);
+        });
+    }
+
+    [Test]
+    public async Task OpenPlaylistAsync_OpensAMostStreamedPlaylistByWindowNotById()
+    {
+        var viewModel = CreateViewModel();
+
+        await viewModel.OpenPlaylistCommand.ExecuteAsync(TopStreamedTile("Year"));
+
+        _mockNavigationService.Verify(n => n.GoToAsync(
+            NavigationRoutes.PlaylistPlayer,
+            It.Is<Dictionary<string, object>>(query =>
+                (string)query[PlaylistNavigationTarget.TopStreamedWindowKey] == "Year"
+                && !query.ContainsKey(PlaylistNavigationTarget.PlaylistIdKey))),
+            Times.Once);
+    }
+
+    // ---- The marketing hero -------------------------------------------------------
+
+    [TestCase(false, false, true, Description = "Anonymous visitor")]
+    [TestCase(false, true, true, Description = "Anonymous, stale subscription flag")]
+    [TestCase(true, false, true, Description = "Signed in, not subscribed")]
+    [TestCase(true, true, false, Description = "Signed-in subscriber")]
+    public void ShowHero_IsOffOnlyForASignedInSubscriber(bool isAuthenticated, bool hasSubscription, bool expected)
+    {
+        var viewModel = CreateViewModel();
+        viewModel.IsAuthenticated = isAuthenticated;
+        viewModel.HasActiveSubscription = hasSubscription;
+
+        Assert.That(viewModel.ShowHero, Is.EqualTo(expected));
+    }
+
+    [Test]
+    public void ShowBrowseMusic_TracksTheHero()
+    {
+        // Browse Music is the hero's own CTA, so it must not outlive the block it sits in.
+        var viewModel = CreateViewModel();
+        viewModel.IsAuthenticated = true;
+        viewModel.HasActiveSubscription = true;
+
+        Assert.That(viewModel.ShowBrowseMusic, Is.False);
+    }
+
+    [Test]
+    public void ShowHero_RaisesChangeNotificationsWhenSubscriptionResolves()
+    {
+        // The subscription is confirmed after the page has already rendered, so the hero has to
+        // disappear on notification rather than only on a fresh navigation.
+        var viewModel = CreateViewModel();
+        viewModel.IsAuthenticated = true;
+        var changed = new List<string?>();
+        viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName);
+
+        viewModel.HasActiveSubscription = true;
+
+        Assert.That(changed, Does.Contain(nameof(HomeViewModel.ShowHero))
+            .And.Contain(nameof(HomeViewModel.ShowBrowseMusic)));
+    }
+
+    [Test]
+    public void TheHeroBlockCollapsesEntirelyForASubscriber()
+    {
+        // The container holds the block's padding, so leaving it visible with every child hidden
+        // leaves a dead gap between Featured Music and the playlists.
+        //
+        // Verified matters here: an authenticated user whose entitlement has NOT been confirmed this
+        // session is shown the "we couldn't confirm your subscription" banner, which legitimately
+        // keeps the container alive - that case is the test below.
+        var viewModel = CreateViewModel();
+        viewModel.IsAuthenticated = true;
+        viewModel.HasActiveSubscription = true;
+        viewModel.SubscriptionVerification = SubscriptionVerificationState.Verified;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(viewModel.ShowSubscriptionUnavailableBanner, Is.False, "Precondition.");
+            Assert.That(viewModel.ShowHeroContainer, Is.False);
+        });
+    }
+
+    [Test]
+    public void TheHeroBlockStaysWhenASubscriberHasAWarningToRead()
+    {
+        // The banners are diagnostics, not marketing, and one of them fires exactly when a
+        // subscription cannot be verified - which a user with a cached subscription can hit.
+        var viewModel = CreateViewModel();
+        viewModel.IsAuthenticated = true;
+        viewModel.HasActiveSubscription = true;
+        viewModel.SubscriptionVerification = SubscriptionVerificationState.Verified;
+        viewModel.SessionExpiredMessage = "Your session expired. Please sign in again.";
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(viewModel.ShowHero, Is.False, "The marketing still goes.");
+            Assert.That(viewModel.ShowHeroContainer, Is.True, "But the notice must still be readable.");
+        });
+    }
+
+    [Test]
+    public void ASubscriberStillSeesTheMostStreamedPlaylists()
+    {
+        // Hiding the hero must not take the playlists with it - that is the point of the change.
+        var viewModel = CreateViewModel();
+        viewModel.IsAuthenticated = true;
+        viewModel.HasActiveSubscription = true;
+        viewModel.TopStreamedPlaylists.Add(TopStreamedTile("Day"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(viewModel.ShowHero, Is.False);
+            Assert.That(viewModel.ShowTopStreamed, Is.True);
         });
     }
 }

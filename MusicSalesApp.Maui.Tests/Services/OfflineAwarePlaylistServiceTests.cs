@@ -24,6 +24,8 @@ public class OfflineAwarePlaylistServiceTests
         _connectivity = new TestConnectivity();
 
         _store.Setup(s => s.LoadMyPlaylistsAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        _store.Setup(s => s.LoadTopStreamedPlaylistsAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        _inner.Setup(s => s.GetTopStreamedPlaylistsAsync()).ReturnsAsync([]);
 
         _service = new OfflineAwarePlaylistService(
             _inner.Object,
@@ -320,5 +322,113 @@ public class OfflineAwarePlaylistServiceTests
         _inner.Verify(s => s.RemoveSongAsync(1, 2), Times.Once);
         _inner.Verify(s => s.ReorderAsync(1, It.IsAny<IReadOnlyList<int>>()), Times.Once);
         _inner.Verify(s => s.GetAvailableSongsAsync(1), Times.Once);
+    }
+
+    // ---- The global "most streamed" playlists -------------------------------------
+
+    private static PlaylistDto TopStreamedTile(string window) => new()
+    {
+        Id = 0,
+        Key = window,
+        Name = $"Top 10 {window}",
+        SongCount = 10,
+        IsSystemGenerated = true,
+        Kind = PlaylistKinds.TopStreamed
+    };
+
+    private static PlaylistSongsDto TopStreamedSongsDto(params int[] songIds) => new()
+    {
+        PlaylistId = 0,
+        PlaylistName = "Top 10 Today",
+        IsSystemGenerated = true,
+        PeriodLabel = "Today",
+        Songs = songIds.Select(CreatePlaylistSong).ToList()
+    };
+
+    [Test]
+    public async Task GetTopStreamedPlaylistsAsync_SnapshotsOnSuccess()
+    {
+        _connectivity.NetworkAccess = NetworkAccess.Internet;
+        _inner.Setup(s => s.GetTopStreamedPlaylistsAsync()).ReturnsAsync([TopStreamedTile("Day")]);
+
+        var result = await _service.GetTopStreamedPlaylistsAsync();
+
+        Assert.That(result, Has.Count.EqualTo(1));
+        Assert.That(_service.LastPlaylistSource, Is.EqualTo(PlaylistDataSource.Live));
+        _store.Verify(s => s.SaveTopStreamedPlaylistsAsync(
+            It.Is<IReadOnlyList<PlaylistDto>>(p => p.Count == 1), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Test]
+    public async Task GetTopStreamedPlaylistsAsync_RestoresTheSnapshotOffline()
+    {
+        _connectivity.NetworkAccess = NetworkAccess.None;
+        _store.Setup(s => s.LoadTopStreamedPlaylistsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([TopStreamedTile("Day"), TopStreamedTile("Week")]);
+
+        var result = await _service.GetTopStreamedPlaylistsAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Select(p => p.Key), Is.EqualTo(new[] { "Day", "Week" }));
+            Assert.That(_service.LastPlaylistSource, Is.EqualTo(PlaylistDataSource.OfflineCache));
+        });
+        _inner.Verify(s => s.GetTopStreamedPlaylistsAsync(), Times.Never);
+    }
+
+    [Test]
+    public async Task GetTopStreamedSongsAsync_SnapshotsUnderItsWindow()
+    {
+        _connectivity.NetworkAccess = NetworkAccess.Internet;
+        _inner.Setup(s => s.GetTopStreamedSongsAsync("Day")).ReturnsAsync(TopStreamedSongsDto(1, 2));
+
+        var result = await _service.GetTopStreamedSongsAsync("Day");
+
+        Assert.That(result!.Songs, Has.Count.EqualTo(2));
+        _store.Verify(s => s.SaveTopStreamedSongsAsync("Day", It.IsAny<PlaylistSongsDto>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Test]
+    public async Task GetTopStreamedSongsAsync_NarrowsToDownloadedTracksOffline()
+    {
+        _connectivity.NetworkAccess = NetworkAccess.None;
+        _store.Setup(s => s.LoadTopStreamedSongsAsync("Day", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(TopStreamedSongsDto(1, 2, 3));
+        GivenLocallyReady(1, 3);
+
+        var result = await _service.GetTopStreamedSongsAsync("Day");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result!.Songs.Select(song => song.SongMetadataId), Is.EqualTo(new[] { 1, 3 }));
+            Assert.That(_service.LastPlaylistSource, Is.EqualTo(PlaylistDataSource.OfflineCache));
+        });
+    }
+
+    [Test]
+    public async Task GetTopStreamedSongsAsync_KeepsThePeriodLabelWhenRestoring()
+    {
+        // Without it the restored list loses its second stream-count column and reads as mis-sorted.
+        _connectivity.NetworkAccess = NetworkAccess.None;
+        _store.Setup(s => s.LoadTopStreamedSongsAsync("Day", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(TopStreamedSongsDto(1));
+        GivenLocallyReady(1);
+
+        var result = await _service.GetTopStreamedSongsAsync("Day");
+
+        Assert.That(result!.PeriodLabel, Is.EqualTo("Today"));
+    }
+
+    [Test]
+    public async Task GetTopStreamedSongsAsync_ReturnsNullWhenNothingIsDownloaded()
+    {
+        _connectivity.NetworkAccess = NetworkAccess.None;
+        _store.Setup(s => s.LoadTopStreamedSongsAsync("Day", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(TopStreamedSongsDto(1, 2));
+        GivenLocallyReady();
+
+        Assert.That(await _service.GetTopStreamedSongsAsync("Day"), Is.Null);
+        Assert.That(_service.LastPlaylistSource, Is.EqualTo(PlaylistDataSource.Unavailable));
     }
 }

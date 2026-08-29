@@ -9,6 +9,12 @@ public static class PlaylistKinds
     public const string Custom = "Custom";
     public const string LikedSongs = "LikedSongs";
     public const string Recommended = "Recommended";
+
+    /// <summary>
+    /// One of the five global "most streamed" playlists. Identified by <see cref="PlaylistDto.Key"/>,
+    /// because these have no id of their own.
+    /// </summary>
+    public const string TopStreamed = "TopStreamed";
 }
 
 /// <summary>
@@ -22,6 +28,20 @@ public class PlaylistDto
     public int SongCount { get; set; }
     public bool IsSystemGenerated { get; set; }
     public string Kind { get; set; } = PlaylistKinds.Custom;
+
+    /// <summary>
+    /// For a <see cref="PlaylistKinds.TopStreamed"/> playlist, its window key ("Day", "Week", ...);
+    /// null for every other kind.
+    /// </summary>
+    /// <remarks>
+    /// <b>These playlists all report <see cref="Id"/> = 0</b>, the same value Recommended uses, so
+    /// they cannot be told apart by id and must be opened by key. That is what
+    /// <see cref="PlaylistNavigationTarget"/> exists to enforce.
+    /// </remarks>
+    public string? Key { get; set; }
+
+    /// <summary>Server-dictated position when several playlists are listed together. Lower first.</summary>
+    public int DisplayOrder { get; set; }
 }
 
 /// <summary>
@@ -32,6 +52,20 @@ public class HomePlaylistsDto
 {
     public PlaylistDto? Recommended { get; set; }
     public PlaylistDto? LikedSongs { get; set; }
+
+    /// <summary>
+    /// The five global "most streamed" playlists, already in display order, empty ones omitted.
+    /// </summary>
+    /// <remarks>
+    /// Unlike the two above, these are not personal and are populated for signed-out callers too.
+    /// Read it through <see cref="TopStreamedOrEmpty"/> rather than directly: an older server does not
+    /// send the property at all, and System.Text.Json would overwrite the initialiser with null if a
+    /// server ever sent an explicit null.
+    /// </remarks>
+    public List<PlaylistDto>? TopStreamed { get; set; } = new();
+
+    /// <summary>The top-streamed playlists, never null.</summary>
+    public List<PlaylistDto> TopStreamedOrEmpty => TopStreamed ?? [];
 }
 
 /// <summary>
@@ -71,6 +105,16 @@ public class PlaylistSongDto
     public string? PersonaBio { get; set; }
     public string StreamUrl { get; set; } = string.Empty;
     public int StreamQualifyingSeconds { get; set; }
+
+    /// <summary>
+    /// Streams inside this list's period, or null when the list has no period of its own.
+    /// </summary>
+    /// <remarks>
+    /// This is what the top-streamed playlists are RANKED on, whereas <c>StreamCount</c> is the
+    /// lifetime total the player keeps live. On "Top 10 Today" the two differ, so showing only the
+    /// lifetime figure would render a correctly ordered list that looks mis-sorted.
+    /// </remarks>
+    public int? PeriodStreamCount { get; set; }
     public double? TrackLengthSeconds { get; set; }
     public bool DisplayOnHomePage { get; set; }
     public int? DisplayOrder { get; set; }
@@ -91,6 +135,13 @@ public class PlaylistSongsDto
     public string PlaylistName { get; set; } = string.Empty;
     public bool IsSystemGenerated { get; set; }
     public List<PlaylistSongDto> Songs { get; set; } = new();
+
+    /// <summary>
+    /// Heading for each song's <see cref="PlaylistSongDto.PeriodStreamCount"/> - "Today", "This Week"
+    /// and so on - or null when the list has no period. Null for everything except the four rolling
+    /// top-streamed playlists.
+    /// </summary>
+    public string? PeriodLabel { get; set; }
 }
 
 /// <summary>
