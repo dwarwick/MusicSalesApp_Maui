@@ -88,6 +88,7 @@ public partial class MusicLibraryPage : ContentPage
     {
         UnfocusEntry(GenreSearchEntry);
         UnfocusEntry(ArtistSearchEntry);
+        UnfocusEntry(TitleSearchEntry);
     }
 
     private static void UnfocusEntry(Entry? entry)
