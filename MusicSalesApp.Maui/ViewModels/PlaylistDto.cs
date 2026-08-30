@@ -147,9 +147,6 @@ public class PlaylistSongsDto
     /// top-streamed playlists.
     /// </summary>
     public string? PeriodLabel { get; set; }
-
-    /// <summary>UTC time this playlist was last ranked, or null when it is not a top-streamed one.</summary>
-    public DateTime? GeneratedAtUtc { get; set; }
 }
 
 /// <summary>

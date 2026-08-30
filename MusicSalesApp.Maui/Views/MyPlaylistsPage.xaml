@@ -102,7 +102,7 @@
                                            FontSize="{StaticResource FontSizeH2Compact}"
                                            FontAttributes="Bold"
                                            TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
-                                    <Label Text="{Binding TopStreamedRankedAtDisplay}"
+                                    <Label Text="Updated daily"
                                            FontSize="{StaticResource FontSizeSmall}"
                                            TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
                                 </VerticalStackLayout>

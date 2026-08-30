@@ -330,7 +330,6 @@ public partial class HomeViewModel : ObservableObject
         }
     }
 
-
     /// <summary>
     /// False when the device has no network at all. Reporting a song, tipping and adding to a playlist
     /// all need the server, so their controls are hidden rather than left to fail on tap. Uses

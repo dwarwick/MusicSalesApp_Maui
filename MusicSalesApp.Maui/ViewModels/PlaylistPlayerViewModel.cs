@@ -221,28 +221,6 @@ public partial class PlaylistPlayerViewModel : ObservableObject
 
     public bool ShowPeriodStreamCount => !string.IsNullOrEmpty(PeriodStreamLabel);
 
-    /// <summary>
-    /// When this playlist's ranking was taken, or null when it is not a top-streamed one.
-    /// </summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(RankedAtDisplay))]
-    [NotifyPropertyChangedFor(nameof(ShowRankedAt))]
-    public partial DateTime? RankedAtUtc { get; set; }
-
-    /// <summary>
-    /// The ranking time in the device's timezone.
-    /// </summary>
-    /// <remarks>
-    /// Worth showing because the order is up to a day old while the counts beside it are live, so the
-    /// two can disagree slightly. Unlike the web, ToLocalTime is correct here - the device knows its
-    /// own timezone.
-    /// </remarks>
-    public string RankedAtDisplay => RankedAtUtc is { } utc
-        ? $"Ranked {DateTime.SpecifyKind(utc, DateTimeKind.Utc).ToLocalTime():MM/dd/yyyy} at {DateTime.SpecifyKind(utc, DateTimeKind.Utc).ToLocalTime():h:mm tt}"
-        : string.Empty;
-
-    public bool ShowRankedAt => RankedAtUtc.HasValue;
-
     /// <summary>True when the loaded playlist is a user-owned custom playlist (reorder/remove allowed).</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsReorderEnabled))]
@@ -573,7 +551,6 @@ public partial class PlaylistPlayerViewModel : ObservableObject
 
         PlaylistTitle = result.PlaylistName;
         PeriodStreamLabel = result.PeriodLabel;
-        RankedAtUtc = result.GeneratedAtUtc;
 
         if (result.Songs.Count == 0)
         {
