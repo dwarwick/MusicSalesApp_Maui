@@ -919,11 +919,34 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Applies a new lifetime stream count, and moves the period count with it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A stream recorded now falls inside every rolling window, so one new stream is one more for the
+    /// period as well as for all time. Without this the two columns on a top-streamed playlist drift
+    /// apart as songs play - the lifetime one climbing, the period one frozen at whatever the server
+    /// last counted.
+    /// </para>
+    /// <para>
+    /// <b>The period moves by the lifetime DELTA, not by one per notification.</b> The stream-count
+    /// broadcast fires even when the stream was deliberately not recorded - a creator playing their
+    /// own song, or a non-subscriber past the featured free-stream cap - and in those cases the
+    /// lifetime count is unchanged, so this correctly adds nothing.
+    /// </para>
+    /// </remarks>
     private void HandleStreamCountUpdated(int songMetadataId, int newCount)
     {
         var song = Songs.FirstOrDefault(s => s.Id == songMetadataId);
-        if (song != null)
-            song.StreamCount = newCount;
+        if (song == null)
+            return;
+
+        var delta = newCount - song.StreamCount;
+        song.StreamCount = newCount;
+
+        if (delta > 0 && song.PeriodStreamCount.HasValue)
+            song.PeriodStreamCount += delta;
     }
 
     private void HandleLikeCountUpdated(int songMetadataId, int likeCount, int dislikeCount)

@@ -42,6 +42,11 @@ public class PlaylistDto
 
     /// <summary>Server-dictated position when several playlists are listed together. Lower first.</summary>
     public int DisplayOrder { get; set; }
+
+    /// <summary>
+    /// UTC time the top-streamed playlists were last ranked, or null for every other kind.
+    /// </summary>
+    public DateTime? GeneratedAtUtc { get; set; }
 }
 
 /// <summary>

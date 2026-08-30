@@ -1,4 +1,4 @@
-﻿using Moq;
+using Moq;
 using MusicSalesApp.Maui.Services;
 using MusicSalesApp.Maui.ViewModels;
 
@@ -627,6 +627,74 @@ public class PlaylistPlayerViewModelTests
     }
 
     // --- SignalR updates ---
+
+    [Test]
+    public async Task SignalR_StreamCountUpdate_AlsoMovesThePeriodCount()
+    {
+        // A stream recorded now falls inside every rolling window, so the period column has to climb
+        // with the lifetime one. Frozen, it would make a correctly ordered "Top 10 Today" look wrong.
+        var songs = CreateTestSongs();
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+
+        _viewModel.GenreName = "Rock";
+        await Task.Delay(100);
+
+        var song = _viewModel.Songs.First(s => s.Id == 1);
+        var lifetimeBefore = song.StreamCount;
+        song.PeriodStreamCount = 4;
+
+        _mockSignalRService.Raise(s => s.OnStreamCountUpdated += null, 1, lifetimeBefore + 3);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(song.StreamCount, Is.EqualTo(lifetimeBefore + 3));
+            Assert.That(song.PeriodStreamCount, Is.EqualTo(7), "Moved by the same three streams.");
+        });
+    }
+
+    [Test]
+    public async Task SignalR_StreamCountUpdate_LeavesThePeriodCountAloneWhenNothingWasRecorded()
+    {
+        // The broadcast fires even when the stream was deliberately not counted - a creator playing
+        // their own song, or a non-subscriber past the featured cap. The lifetime count is unchanged
+        // in that case, so deriving the period from the delta correctly adds nothing.
+        var songs = CreateTestSongs();
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+
+        _viewModel.GenreName = "Rock";
+        await Task.Delay(100);
+
+        var song = _viewModel.Songs.First(s => s.Id == 1);
+        song.PeriodStreamCount = 4;
+
+        _mockSignalRService.Raise(s => s.OnStreamCountUpdated += null, 1, song.StreamCount);
+
+        Assert.That(song.PeriodStreamCount, Is.EqualTo(4));
+    }
+
+    [Test]
+    public async Task SignalR_StreamCountUpdate_LeavesAPlaylistWithNoPeriodAlone()
+    {
+        // Everything except the four rolling playlists has no period column at all.
+        var songs = CreateTestSongs();
+        _mockMusicService.Setup(s => s.GetSongsAsync()).ReturnsAsync(songs);
+        _mockMusicService.Setup(s => s.GetBulkLikeCountsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync(new List<LikeCountDto>());
+
+        _viewModel.GenreName = "Rock";
+        await Task.Delay(100);
+
+        var song = _viewModel.Songs.First(s => s.Id == 1);
+        song.PeriodStreamCount = null;
+
+        _mockSignalRService.Raise(s => s.OnStreamCountUpdated += null, 1, song.StreamCount + 5);
+
+        Assert.That(song.PeriodStreamCount, Is.Null);
+    }
 
     [Test]
     public async Task SignalR_StreamCountUpdate_UpdatesSong()

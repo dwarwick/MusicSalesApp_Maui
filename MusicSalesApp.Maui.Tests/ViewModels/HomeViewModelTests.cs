@@ -1729,4 +1729,41 @@ public class HomeViewModelTests
             Assert.That(viewModel.ShowTopStreamed, Is.True);
         });
     }
+
+    // ---- When the ranking was taken -----------------------------------------------
+
+    [Test]
+    public async Task TopStreamedRankedAtDisplay_ShowsTheRankingTimeInLocalTime()
+    {
+        var generatedAtUtc = new DateTime(2026, 8, 29, 2, 0, 0, DateTimeKind.Utc);
+        var tile = TopStreamedTile("Day");
+        tile.GeneratedAtUtc = generatedAtUtc;
+        _mockPlaylistService.Setup(p => p.GetTopStreamedPlaylistsAsync()).ReturnsAsync([tile]);
+
+        var viewModel = CreateViewModel();
+        await viewModel.LoadCommand.ExecuteAsync(null);
+
+        var expectedLocal = generatedAtUtc.ToLocalTime();
+        Assert.That(
+            viewModel.TopStreamedRankedAtDisplay,
+            Is.EqualTo($"Ranked {expectedLocal:MM/dd/yyyy} at {expectedLocal:h:mm tt}"));
+    }
+
+    [Test]
+    public void TopStreamedRankedAtDisplay_FallsBackBeforeAnythingIsLoaded()
+    {
+        Assert.That(CreateViewModel().TopStreamedRankedAtDisplay, Is.EqualTo("Updated daily"));
+    }
+
+    [Test]
+    public async Task TopStreamedRankedAtDisplay_FallsBackWhenTheServerSendsNoTimestamp()
+    {
+        // An older server does not send the property at all.
+        _mockPlaylistService.Setup(p => p.GetTopStreamedPlaylistsAsync()).ReturnsAsync([TopStreamedTile("Day")]);
+
+        var viewModel = CreateViewModel();
+        await viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.That(viewModel.TopStreamedRankedAtDisplay, Is.EqualTo("Updated daily"));
+    }
 }

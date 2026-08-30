@@ -304,6 +304,33 @@ public partial class HomeViewModel : ObservableObject
     public bool ShowTopStreamed => TopStreamedPlaylists.Count > 0;
 
     /// <summary>
+    /// When the top-streamed playlists were last ranked, in the device's timezone, or "Updated daily"
+    /// before that is known.
+    /// </summary>
+    /// <remarks>
+    /// The order these five are listed in is up to a day old, while the stream counts inside them are
+    /// live - so the two can disagree slightly. Naming the moment the ranking was taken is what makes
+    /// that read as a daily chart rather than as a sorting bug.
+    /// </remarks>
+    public string TopStreamedRankedAtDisplay
+    {
+        get
+        {
+            var utc = TopStreamedPlaylists
+                .Select(playlist => playlist.GeneratedAtUtc)
+                .FirstOrDefault(generatedAt => generatedAt.HasValue);
+
+            if (utc is null)
+            {
+                return "Updated daily";
+            }
+
+            var local = DateTime.SpecifyKind(utc.Value, DateTimeKind.Utc).ToLocalTime();
+            return $"Ranked {local:MM/dd/yyyy} at {local:h:mm tt}";
+        }
+    }
+
+    /// <summary>
     /// False when the device has no network at all. Reporting a song, tipping and adding to a playlist
     /// all need the server, so their controls are hidden rather than left to fail on tap. Uses
     /// <see cref="INetworkStatusService.HasNoNetworkAccess"/>, not the pessimistic
@@ -527,6 +554,7 @@ public partial class HomeViewModel : ObservableObject
         }
 
         OnPropertyChanged(nameof(ShowTopStreamed));
+        OnPropertyChanged(nameof(TopStreamedRankedAtDisplay));
     }
 
     private async Task LoadFeaturedSongsAsync()
