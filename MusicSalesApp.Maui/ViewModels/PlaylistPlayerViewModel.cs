@@ -221,6 +221,28 @@ public partial class PlaylistPlayerViewModel : ObservableObject
 
     public bool ShowPeriodStreamCount => !string.IsNullOrEmpty(PeriodStreamLabel);
 
+    /// <summary>
+    /// When this playlist's ranking was taken, or null when it is not a top-streamed one.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RankedAtDisplay))]
+    [NotifyPropertyChangedFor(nameof(ShowRankedAt))]
+    public partial DateTime? RankedAtUtc { get; set; }
+
+    /// <summary>
+    /// The ranking time in the device's timezone.
+    /// </summary>
+    /// <remarks>
+    /// Worth showing because the order is up to a day old while the counts beside it are live, so the
+    /// two can disagree slightly. Unlike the web, ToLocalTime is correct here - the device knows its
+    /// own timezone.
+    /// </remarks>
+    public string RankedAtDisplay => RankedAtUtc is { } utc
+        ? $"Ranked {DateTime.SpecifyKind(utc, DateTimeKind.Utc).ToLocalTime():MM/dd/yyyy} at {DateTime.SpecifyKind(utc, DateTimeKind.Utc).ToLocalTime():h:mm tt}"
+        : string.Empty;
+
+    public bool ShowRankedAt => RankedAtUtc.HasValue;
+
     /// <summary>True when the loaded playlist is a user-owned custom playlist (reorder/remove allowed).</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsReorderEnabled))]
@@ -551,6 +573,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
 
         PlaylistTitle = result.PlaylistName;
         PeriodStreamLabel = result.PeriodLabel;
+        RankedAtUtc = result.GeneratedAtUtc;
 
         if (result.Songs.Count == 0)
         {
@@ -919,11 +942,34 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Applies a new lifetime stream count, and moves the period count with it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A stream recorded now falls inside every rolling window, so one new stream is one more for the
+    /// period as well as for all time. Without this the two columns on a top-streamed playlist drift
+    /// apart as songs play - the lifetime one climbing, the period one frozen at whatever the server
+    /// last counted.
+    /// </para>
+    /// <para>
+    /// <b>The period moves by the lifetime DELTA, not by one per notification.</b> The stream-count
+    /// broadcast fires even when the stream was deliberately not recorded - a creator playing their
+    /// own song, or a non-subscriber past the featured free-stream cap - and in those cases the
+    /// lifetime count is unchanged, so this correctly adds nothing.
+    /// </para>
+    /// </remarks>
     private void HandleStreamCountUpdated(int songMetadataId, int newCount)
     {
         var song = Songs.FirstOrDefault(s => s.Id == songMetadataId);
-        if (song != null)
-            song.StreamCount = newCount;
+        if (song == null)
+            return;
+
+        var delta = newCount - song.StreamCount;
+        song.StreamCount = newCount;
+
+        if (delta > 0 && song.PeriodStreamCount.HasValue)
+            song.PeriodStreamCount += delta;
     }
 
     private void HandleLikeCountUpdated(int songMetadataId, int likeCount, int dislikeCount)
