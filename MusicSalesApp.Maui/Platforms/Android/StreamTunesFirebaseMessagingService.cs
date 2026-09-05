@@ -1,8 +1,7 @@
 using Android.App;
 using Android.Content;
-using Firebase.Messaging;
-using MusicSalesApp.Common.Helpers;
 using AndroidX.Core.App;
+using Firebase.Messaging;
 using Application = Android.App.Application;
 
 namespace MusicSalesApp.Maui.Platforms.Android;
@@ -26,6 +25,11 @@ namespace MusicSalesApp.Maui.Platforms.Android;
 [IntentFilter(["com.google.firebase.MESSAGING_EVENT"])]
 public sealed class StreamTunesFirebaseMessagingService : FirebaseMessagingService
 {
+    // The binding marks OnNewToken [Obsolete("deprecated")] because the Java method carries
+    // @Deprecated in firebase-messaging 25.x, but it is still the ONLY token-rotation callback the
+    // binding exposes - there is nothing to migrate to. Suppressed here rather than project-wide so
+    // the day a replacement ships, removing this block surfaces it.
+#pragma warning disable CS0672, CS0618
     public override void OnNewToken(string token)
     {
         base.OnNewToken(token);
@@ -35,6 +39,7 @@ public sealed class StreamTunesFirebaseMessagingService : FirebaseMessagingServi
         // dead, and the user silently stops receiving anything.
         AndroidPushTokenBroker.RaiseTokenRefreshed(token);
     }
+#pragma warning restore CS0672, CS0618
 
     public override void OnMessageReceived(RemoteMessage message)
     {
@@ -74,12 +79,13 @@ public sealed class StreamTunesFirebaseMessagingService : FirebaseMessagingServi
             return;
         }
 
+        AndroidNotificationChannels.EnsureCreated(context);
+
         var launchIntent = context.PackageManager?.GetLaunchIntentForPackage(packageName);
 
         if (launchIntent is not null && data is not null)
         {
-            // Carried through so the app can route the tap once it is open. Read back in
-            // MainActivity via PushDataKeys.
+            // Carried through so the app can route the tap once it is open.
             foreach (var pair in data)
             {
                 launchIntent.PutExtra(pair.Key, pair.Value);
@@ -88,24 +94,29 @@ public sealed class StreamTunesFirebaseMessagingService : FirebaseMessagingServi
             launchIntent.AddFlags(ActivityFlags.SingleTop);
         }
 
-        var pendingIntent = PendingIntent.GetActivity(
-            context,
-            0,
-            launchIntent,
-            // Immutable is required from Android 12, and UpdateCurrent so a second notification
-            // replaces the first one's extras rather than reusing stale ones.
-            PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable);
-
         // Written as statements rather than a fluent chain: every NotificationCompat.Builder
         // setter is bound as returning a nullable Builder, so chaining them produces a
         // dereference warning per call for no benefit.
-        var builder = new NotificationCompat.Builder(context, PushNotificationChannels.ArtistUpdates);
+        var builder = new NotificationCompat.Builder(context, AndroidNotificationChannels.ArtistUpdates);
         builder.SetContentTitle(title);
         builder.SetContentText(body);
         builder.SetStyle(new NotificationCompat.BigTextStyle().BigText(body));
         builder.SetSmallIcon(global::Android.Resource.Drawable.IcDialogInfo);
         builder.SetAutoCancel(true);
-        builder.SetContentIntent(pendingIntent);
+
+        if (launchIntent is not null)
+        {
+            // Only when there is something to launch: PendingIntent.GetActivity throws on a null
+            // intent, and losing the whole notification to that would be worse than losing the tap
+            // target, since the throw is swallowed by the caller and leaves no trace.
+            builder.SetContentIntent(PendingIntent.GetActivity(
+                context,
+                0,
+                launchIntent,
+                // Immutable is required from Android 12, and UpdateCurrent so a second notification
+                // replaces the first one's extras rather than reusing stale ones.
+                PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable));
+        }
 
         // A per-message id, so several notifications stack rather than each replacing the last.
         var notificationId = (int)(DateTime.UtcNow.Ticks % int.MaxValue);
@@ -119,9 +130,9 @@ public sealed class StreamTunesFirebaseMessagingService : FirebaseMessagingServi
 /// </summary>
 /// <remarks>
 /// Static because <see cref="StreamTunesFirebaseMessagingService"/> is constructed by the platform
-/// with no access to the DI container, and can run when no activity exists. Handlers are held
-/// weakly by convention - the registration service subscribes for the life of the app, so there is
-/// nothing to leak.
+/// with no access to the DI container, and can run when no activity exists. Subscribers are held
+/// strongly for the life of the process, so anything that subscribes must either live as long as
+/// the app or unsubscribe explicitly.
 /// </remarks>
 public static class AndroidPushTokenBroker
 {

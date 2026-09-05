@@ -31,7 +31,29 @@ public sealed class ApplePushRegistrationService : IPushRegistrationService
         ApplePushTokenBroker.TokenRefreshed += OnBrokerTokenRefreshed;
     }
 
-    public bool IsSupported => true;
+    /// <summary>
+    /// <b>False until the Firebase iOS SDK is wired in.</b>
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Everything below is correct and still needed - FCM on iOS is a RELAY, so the app must still
+    /// ask for authorization and still call RegisterForRemoteNotifications to get an APNs device
+    /// token. What is missing is the last hop: Firebase exchanges that APNs token for an FCM
+    /// registration token, and the FCM token is what the server must store.
+    /// </para>
+    /// <para>
+    /// Reporting true today would register the raw APNs token instead, which FCM rejects on every
+    /// send - filling PushDeviceTokens with rows that can never be delivered to and look, from the
+    /// dispatcher's side, exactly like uninstalled devices. Returning false keeps iOS out of the
+    /// table entirely until the exchange exists, which is the honest state.
+    /// </para>
+    /// <para>
+    /// To finish: add the Firebase iOS Cloud Messaging binding, call
+    /// <c>Messaging.SharedInstance.ApnsToken = deviceToken</c> from the AppDelegate callback, and
+    /// return <c>Messaging.SharedInstance.FcmToken</c> from <see cref="GetTokenAsync"/>.
+    /// </para>
+    /// </remarks>
+    public bool IsSupported => false;
 
     /// <inheritdoc />
     public async Task<PushPermissionStatus> GetPermissionStatusAsync()

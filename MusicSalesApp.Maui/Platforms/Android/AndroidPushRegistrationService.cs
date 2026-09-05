@@ -7,12 +7,8 @@ using AndroidX.Core.Content;
 using Firebase;
 using Firebase.Messaging;
 using Microsoft.Extensions.Logging;
-using MusicSalesApp.Common.Helpers;
 using MusicSalesApp.Maui.Services;
 using Application = Android.App.Application;
-// MusicSalesApp.Common.Helpers.Permissions (the server's authorization policy names) collides with
-// MAUI's permission API, and both are in scope here. Aliased rather than dropping the Common using,
-// which is what supplies PushNotificationChannels.
 using MauiPermissions = Microsoft.Maui.ApplicationModel.Permissions;
 
 namespace MusicSalesApp.Maui.Platforms.Android;
@@ -28,7 +24,6 @@ namespace MusicSalesApp.Maui.Platforms.Android;
 public sealed class AndroidPushRegistrationService : IPushRegistrationService
 {
     private readonly ILogger<AndroidPushRegistrationService> _logger;
-    private bool _channelCreated;
 
     public AndroidPushRegistrationService(ILogger<AndroidPushRegistrationService> logger)
     {
@@ -98,7 +93,7 @@ public sealed class AndroidPushRegistrationService : IPushRegistrationService
             return PushPermissionStatus.Unsupported;
         }
 
-        EnsureChannel();
+        AndroidNotificationChannels.EnsureCreated(Application.Context);
 
         if (!OperatingSystem.IsAndroidVersionAtLeast(33))
         {
@@ -128,7 +123,7 @@ public sealed class AndroidPushRegistrationService : IPushRegistrationService
             return null;
         }
 
-        EnsureChannel();
+        AndroidNotificationChannels.EnsureCreated(Application.Context);
 
         try
         {
@@ -150,40 +145,4 @@ public sealed class AndroidPushRegistrationService : IPushRegistrationService
     public event EventHandler<string>? TokenRefreshed;
 
     private void OnBrokerTokenRefreshed(object? sender, string token) => TokenRefreshed?.Invoke(this, token);
-
-    /// <summary>
-    /// Creates the notification channel the server names in every payload.
-    /// </summary>
-    /// <remarks>
-    /// From Android 8 a notification whose channel does not exist is dropped by the system with no
-    /// error and nothing on screen, which is indistinguishable from push not working at all. The
-    /// channel id comes from the shared constants so the two ends cannot drift.
-    /// </remarks>
-    private void EnsureChannel()
-    {
-        if (_channelCreated || !OperatingSystem.IsAndroidVersionAtLeast(26))
-        {
-            return;
-        }
-
-        try
-        {
-            var manager = Application.Context.GetSystemService(Context.NotificationService) as NotificationManager;
-
-            var channel = new NotificationChannel(
-                PushNotificationChannels.ArtistUpdates,
-                PushNotificationChannels.ArtistUpdatesName,
-                NotificationImportance.Default)
-            {
-                Description = PushNotificationChannels.ArtistUpdatesDescription,
-            };
-
-            manager?.CreateNotificationChannel(channel);
-            _channelCreated = true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Could not create the artist updates notification channel.");
-        }
-    }
 }

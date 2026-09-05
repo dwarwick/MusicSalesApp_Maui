@@ -78,6 +78,51 @@ There's **no shared library inside this repo**. Both projects reference the sibl
 
   `AlbumArtDisplaySource`/`PersonaImageDisplaySource` still exist as the un-tiered originals but have no production bindings left; prefer a tiered source in new code.
 
+## Push notifications
+
+Delivery goes through **Firebase Cloud Messaging for both Android and iOS** — the server never calls
+APNs directly. That is the reason there is no sandbox/production switch anywhere: FCM records the
+APNs environment against each token when the device registers, so a development-signed build and a
+TestFlight build can both be pushed to without anything server-side knowing which is which. iOS
+delivery depends on the APNs auth key (Key ID `9RTLMRH4GX`, Team ID `K7ZGP97YV6`) having been
+uploaded in the **Firebase console** under Cloud Messaging — it is console configuration, not a file
+in either repo, and forgetting it fails silently on iOS only.
+
+**Test and Production are separate Firebase projects**, so a test broadcast can never reach a
+production device. The build picks between them via the `FirebaseEnvironment` MSBuild property
+(`MusicSalesApp.Maui.csproj`), which maps `Production` to Production and everything else — including
+`Development` — to Test, because Development and Test both point at `davidtest.dev`. Note this is
+*not* how appsettings works, and the difference matters:
+
+> All three `appsettings.{Env}.json` are embedded and `AppConfig` picks one at **startup**.
+> `google-services.json` is compiled into Android string resources at **build** time, so the
+> environment is baked into the APK and cannot be switched at runtime.
+
+Concretely, `Platforms/Android/google-services.{Test,Production}.json` and
+`Platforms/iOS/GoogleService-Info.{Test,Production}.plist` (the latter linked to its stock name at
+build time). Both are gitignored like the appsettings they mirror, and both item groups are
+`Exists()`-guarded, so **a fresh clone builds fine and simply has no push** — restore the files from
+the Firebase console before concluding push is broken. The package name / bundle id inside them must
+be `net.streamtunes.musicsalesapp.maui` or the Android build fails outright.
+
+Unlike the iOS `Info.plist` stamp trap, this path re-runs correctly on change: the
+`ProcessGoogleServicesJson` target takes the file itself as an `Inputs` and additionally hashes the
+item list, so both editing a file and switching environments are detected without cleaning `obj/`.
+
+On the Android side, `StreamTunesFirebaseMessagingService` receives messages and token rotations.
+It is constructed by the platform outside the DI container, so it reports back through the static
+`AndroidPushTokenBroker`; its `MESSAGING_EVENT` intent filter is what makes it discoverable at all,
+and without it FCM delivers nothing with no error to notice. Two build-level traps:
+
+> `Xamarin.Firebase.Messaging` drags in `GooglePlayServices.Basement 118.10.0.3`, which wants
+> `AndroidX.Fragment 1.9.0`, while MAUI still asks for `Fragment.Ktx 1.8.8.1` — and androidx folded
+> the ktx extensions into the main artifact at 1.9.0, so both aars define `FragmentKt` and D8 fails
+> with "Type ... is defined multiple times". The csproj pins `Fragment.Ktx` to 1.9.0 to match.
+
+> The binding marks `OnNewToken` obsolete because the Java method carries `@Deprecated`, but it is
+> the only token-rotation callback it exposes. The override suppresses `CS0672`/`CS0618` locally, so
+> that when a replacement does ship, deleting the pragma is what surfaces it.
+
 ## Playback & cache architecture
 
 Android's playback stack (`Platforms/Android/`) is built on Media3/ExoPlayer: `AndroidMedia3PlaybackRegistry` (owns the singleton `IExoPlayer`/`MediaSession`), `AndroidMedia3PlaybackRuntime` (implements `IPlatformPlaybackRuntime`), `PlaybackMediaSessionService` (the foreground `MediaSessionService`), `AudioVisualizerService` (spectrum/equalizer, driven off `AudioSessionId`).

@@ -24,6 +24,14 @@
 		<AppSettingsEnvironment Condition="'$(AppSettingsEnvironment)' == '' and '$(Configuration)' == 'Debug'">Development</AppSettingsEnvironment>
 		<AppSettingsEnvironment Condition="'$(AppSettingsEnvironment)' == '' and '$(Configuration)' == 'Release'">Production</AppSettingsEnvironment>
 
+		<!-- Which Firebase project this build's push notifications belong to. Test and Production are
+		     SEPARATE Firebase projects so a test broadcast can never reach a production device, and
+		     Development maps to Test because both point at davidtest.dev. Unlike appsettings - where all
+		     three files are embedded and AppConfig picks one at startup - google-services.json is
+		     compiled into Android string resources at BUILD time, so the choice has to be made here. -->
+		<FirebaseEnvironment Condition="'$(FirebaseEnvironment)' == '' and '$(AppSettingsEnvironment)' == 'Production'">Production</FirebaseEnvironment>
+		<FirebaseEnvironment Condition="'$(FirebaseEnvironment)' == ''">Test</FirebaseEnvironment>
+
 		<!-- Enable XAML source generation for faster build times and improved performance.
 		     This generates C# code from XAML at compile time instead of runtime inflation.
 		     To disable, remove this line.
@@ -142,6 +150,21 @@
 		<EmbeddedResource Include="appsettings.Production.json" Condition="Exists('appsettings.Production.json')" />
 	</ItemGroup>
 
+	<!-- Firebase Cloud Messaging config, one file per Firebase project (see FirebaseEnvironment above).
+	     Both are gitignored like the appsettings they mirror, so a fresh clone builds without push
+	     rather than failing - hence the Exists() guards. The Android package name / iOS bundle id
+	     inside these files must be net.streamtunes.musicsalesapp.maui, or the build fails outright. -->
+	<ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
+		<GoogleServicesJson Include="Platforms\Android\google-services.$(FirebaseEnvironment).json"
+		                    Condition="Exists('Platforms\Android\google-services.$(FirebaseEnvironment).json')" />
+	</ItemGroup>
+
+	<ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">
+		<BundleResource Include="Platforms\iOS\GoogleService-Info.$(FirebaseEnvironment).plist"
+		                Link="GoogleService-Info.plist"
+		                Condition="Exists('Platforms\iOS\GoogleService-Info.$(FirebaseEnvironment).plist')" />
+	</ItemGroup>
+
 	<ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">
 		<PartialAppManifest Include="Platforms\iOS\ExportCompliance.plist" />
 	</ItemGroup>
@@ -173,28 +196,19 @@
 	<ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
 		<PackageReference Include="Xamarin.AndroidX.Biometric" Version="1.1.0.33" />
 		<PackageReference Include="Xamarin.Android.Google.BillingClient" Version="9.1.0.1" />
+		<PackageReference Include="Xamarin.Firebase.Messaging" Version="125.1.1.1" />
+		<!-- Firebase.Messaging pulls GooglePlayServices.Basement 118.10.0.3, which requires
+		     AndroidX.Fragment 1.9.0. MAUI's Navigation.Fragment still asks for Fragment.Ktx 1.8.8.1,
+		     and androidx merged the ktx extensions into the main artifact at 1.9.0 - so the two aars
+		     both define FragmentKt and the build dies in D8 with "Type ... is defined multiple times".
+		     Pinning Ktx to match Fragment is what resolves it; do not drop this when bumping Firebase. -->
+		<PackageReference Include="Xamarin.AndroidX.Fragment.Ktx" Version="1.9.0" />
 		<PackageReference Include="Xamarin.AndroidX.Media3.Common" Version="$(AndroidXMedia3Version)" />
 		<PackageReference Include="Xamarin.AndroidX.Media3.DataSource" Version="$(AndroidXMedia3Version)" />
 		<PackageReference Include="Xamarin.AndroidX.Media3.Database" Version="$(AndroidXMedia3Version)" />
 		<PackageReference Include="Xamarin.AndroidX.Media3.Extractor" Version="$(AndroidXMedia3Version)" />
 		<PackageReference Include="Xamarin.AndroidX.Media3.ExoPlayer" Version="$(AndroidXMedia3Version)" />
 		<PackageReference Include="Xamarin.AndroidX.Media3.Session" Version="1.10.1.2" />
-
-		<!--
-			Firebase Cloud Messaging, for push notifications.
-
-			The binding package alone builds fine with no google-services.json - it is only
-			bindings. What NEEDS the file is FirebaseApp.InitializeApp at runtime, which returns
-			null without it; AndroidPushRegistrationService treats that as "push unavailable" and
-			the app runs normally, minus notifications. That is deliberate, so a developer who has
-			not been given the Firebase project can still build and run.
-
-			The file itself is gitignored and per-environment. Drop it at
-			Platforms/Android/google-services.json and the GoogleServicesJson item below picks it
-			up; without it the item matches nothing and the build is unaffected.
-		-->
-		<PackageReference Include="Xamarin.Firebase.Messaging" Version="125.0.0" />
-		<GoogleServicesJson Include="Platforms\Android\google-services.json" Condition="Exists('Platforms\Android\google-services.json')" />
 	</ItemGroup>
 
 </Project>
