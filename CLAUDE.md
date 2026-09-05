@@ -147,12 +147,27 @@ The current branch is a systematic sweep replacing synchronous main-thread I/O a
 
 ## Push notifications
 
-Added 2026-09-04, for the artist follow feature. **Android goes through Firebase Cloud Messaging;
-iOS registers with APNs natively and the SERVER talks to Apple directly — there is deliberately no
-Firebase SDK in the iOS head.** That head already carries documented App Store launch-crash
-workarounds (`MtouchRegistrar=static`, `MtouchUseLlvm`), and a large native SDK is exactly the kind
-of change that reopens them. Windows and Mac Catalyst get `NoPushRegistrationService` /
-`NoPushNotificationCoordinator`, so no calling code branches on platform.
+Added 2026-09-04, for the artist follow feature. **Push goes through Firebase Cloud Messaging for
+both platforms** - FCM relays to APNs for iOS, so the server never talks to Apple and the APNs auth
+key is uploaded to the Firebase console instead. That is what removes the sandbox/production token
+split: FCM records the APNs environment against each token at registration, so a development-signed
+build and a TestFlight build both just work. Windows and Mac Catalyst get
+`NoPushRegistrationService` / `NoPushNotificationCoordinator`, so no calling code branches on
+platform.
+
+**Test and Production are separate Firebase projects.** The `FirebaseEnvironment` MSBuild property
+follows `AppSettingsEnvironment`, selecting `google-services.{Test,Production}.json` on Android and
+`GoogleService-Info.{Test,Production}.plist` on iOS. A test broadcast therefore cannot reach a
+production device.
+
+**iOS registration is switched off for now** (`ApplePushRegistrationService.IsSupported => false`).
+The authorization and `RegisterForRemoteNotifications` work is correct and still needed - FCM on
+iOS is a relay, so the device must still obtain an APNs token - but the last hop is missing:
+Firebase has to exchange that APNs token for an FCM registration token, and the FCM token is what
+the server stores. Reporting supported today would register raw APNs tokens that FCM rejects on
+every send, which look exactly like uninstalled devices from the dispatcher's side. To finish: add
+the Firebase iOS Cloud Messaging binding, set `Messaging.SharedInstance.ApnsToken` from the
+AppDelegate callback, and return `Messaging.SharedInstance.FcmToken` from `GetTokenAsync`.
 
 ### Where the pieces are
 
@@ -161,7 +176,7 @@ of change that reopens them. Windows and Mac Catalyst get `NoPushRegistrationSer
 | Platform-neutral core (compiled into tests) | `Services/IPushRegistrationService.cs`, `PushNotificationCoordinator.cs`, `IPushNotificationCoordinator.cs`, `PushApiService.cs` |
 | Android | `Platforms/Android/AndroidPushRegistrationService.cs`, `StreamTunesFirebaseMessagingService.cs` |
 | iOS | `Platforms/iOS/ApplePushRegistrationService.cs`, plus the two exports on `AppDelegate.cs` |
-| Shared with the server | `MusicSalesApp.Common/Helpers/PushPlatforms.cs`, `PushNotificationChannels.cs` |
+| Shared with the server | `MusicSalesApp.Common/Helpers/PushPlatforms.cs`, `PushNotificationChannels.cs` (the app reads the channel id from here via `AndroidNotificationChannels`) |
 
 The split is not cosmetic. `Services/*.cs` is compiled into `MusicSalesApp.Maui.Tests` by glob, so
 everything that decides *when* to register lives there and is covered by
@@ -201,16 +216,28 @@ either moment is unexplained and is how people come to deny it. Prompting is onl
 different token, and unregistering the wrong one leaves the old registration live — which is how a
 signed-out phone carries on receiving the previous user's notifications.
 
-### google-services.json is not in the repo
+### The Firebase config files are not in the repo
 
 `Xamarin.Firebase.Messaging` is referenced unconditionally — the binding package alone builds fine
-without the file. What needs it is `FirebaseApp.InitializeApp` at runtime, which returns null;
+without them. What needs them is `FirebaseApp.InitializeApp` at runtime, which returns null;
 `AndroidPushRegistrationService.IsSupported` reads that as "no push" and the app runs normally
-without notifications. That is deliberate, so a developer who has not been given the Firebase project
-can still build and run.
+without notifications. That is deliberate, so a developer who has not been given the Firebase
+project can still build and run.
 
-Drop the file at `Platforms/Android/google-services.json` and the conditional `GoogleServicesJson`
-item in the csproj picks it up. It is per-environment and gitignored.
+Four files, all gitignored, one pair per Firebase project:
+
+```
+Platforms/Android/google-services.Test.json
+Platforms/Android/google-services.Production.json
+Platforms/iOS/GoogleService-Info.Test.plist
+Platforms/iOS/GoogleService-Info.Production.plist
+```
+
+The `FirebaseEnvironment` property picks the pair (`Production` when `AppSettingsEnvironment` is
+`Production`, otherwise `Test`), and the conditional `GoogleServicesJson` / `BundleResource` items
+match nothing when a file is absent, so the build is unaffected either way.
+
+The two iOS plists do not exist yet — they are only needed once the Firebase iOS binding lands.
 
 ### Still to build
 
