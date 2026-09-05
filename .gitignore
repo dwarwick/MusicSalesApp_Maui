@@ -60,6 +60,14 @@ pulled-logs/
 **/appsettings.Production.json
 **/appsettings.Test.json
 
+## Firebase Cloud Messaging config — one file per Firebase project (Test / Production), selected by
+## the FirebaseEnvironment property in MusicSalesApp.Maui.csproj. Kept out of source control for the
+## same reason as the appsettings above: they are per-environment config carrying project keys.
+**/google-services.Test.json
+**/google-services.Production.json
+**/GoogleService-Info.Test.plist
+**/GoogleService-Info.Production.plist
+
 ## Test Results
 [Tt]est[Rr]esult*/
 [Bb]uild[Ll]og.*
