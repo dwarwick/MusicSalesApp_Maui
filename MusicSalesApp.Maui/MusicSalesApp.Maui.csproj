@@ -179,6 +179,22 @@
 		<PackageReference Include="Xamarin.AndroidX.Media3.Extractor" Version="$(AndroidXMedia3Version)" />
 		<PackageReference Include="Xamarin.AndroidX.Media3.ExoPlayer" Version="$(AndroidXMedia3Version)" />
 		<PackageReference Include="Xamarin.AndroidX.Media3.Session" Version="1.10.1.2" />
+
+		<!--
+			Firebase Cloud Messaging, for push notifications.
+
+			The binding package alone builds fine with no google-services.json - it is only
+			bindings. What NEEDS the file is FirebaseApp.InitializeApp at runtime, which returns
+			null without it; AndroidPushRegistrationService treats that as "push unavailable" and
+			the app runs normally, minus notifications. That is deliberate, so a developer who has
+			not been given the Firebase project can still build and run.
+
+			The file itself is gitignored and per-environment. Drop it at
+			Platforms/Android/google-services.json and the GoogleServicesJson item below picks it
+			up; without it the item matches nothing and the build is unaffected.
+		-->
+		<PackageReference Include="Xamarin.Firebase.Messaging" Version="125.0.0" />
+		<GoogleServicesJson Include="Platforms\Android\google-services.json" Condition="Exists('Platforms\Android\google-services.json')" />
 	</ItemGroup>
 
 </Project>

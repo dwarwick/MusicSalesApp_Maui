@@ -9,5 +9,16 @@
 	<array>
 		<string>Default</string>
 	</array>
+	<!-- Push notifications. Same trap as Sign in with Apple above: this line is necessary but not
+	     sufficient. The App ID needs the "Push Notifications" capability enabled in the developer
+	     portal and the provisioning profile regenerated afterwards, or signing succeeds and
+	     RegisterForRemoteNotifications fails at runtime.
+
+	     "development" is correct for Debug and TestFlight builds. An App Store build needs
+	     "production"; the value is rewritten per configuration rather than being switched by hand,
+	     because a production build carrying the development value gets tokens APNs then rejects as
+	     BadDeviceToken - which reads as a server misconfiguration rather than a build one. -->
+	<key>aps-environment</key>
+	<string>development</string>
 </dict>
 </plist>

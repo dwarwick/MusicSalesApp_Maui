@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 	<application android:allowBackup="true" android:icon="@mipmap/appicon" android:roundIcon="@mipmap/appicon_round" android:supportsRtl="true" android:usesCleartextTraffic="true">
 		<meta-data android:name="asset_statements" android:resource="@string/asset_statements" />
@@ -11,4 +11,11 @@
 	<uses-permission android:name="android.permission.RECORD_AUDIO" />
 	<uses-permission android:name="android.permission.USE_BIOMETRIC" />
 	<uses-permission android:name="android.permission.WAKE_LOCK" />
+	<!--
+		Push notifications. From Android 13 this is a RUNTIME permission, not a manifest-only one:
+		declaring it here is necessary but does nothing on its own, and a notification posted without
+		the user having granted it is dropped by the system silently - no error, no log line.
+		AndroidPushRegistrationService asks for it.
+	-->
+	<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

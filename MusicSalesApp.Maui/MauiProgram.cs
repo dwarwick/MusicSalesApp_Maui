@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using CommunityToolkit.Maui;
 #if !ANDROID
 using MediaManager;
@@ -230,6 +230,23 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IAppActivationCoordinator, AppActivationCoordinator>();
 		builder.Services.AddSingleton<IAdminMessageApiService, AdminMessageApiService>();
 		builder.Services.AddSingleton<IAdminMessageCoordinator, AdminMessageCoordinator>();
+
+		// Push notifications. Android goes through Firebase Cloud Messaging; iOS registers with
+		// APNs natively and the SERVER talks to Apple directly, so there is deliberately no
+		// Firebase SDK in the iOS head - it already carries App Store launch-crash workarounds
+		// around static registration and LLVM AOT, and a large native SDK is what reopens those.
+		// Windows and Mac Catalyst get the no-op, so no calling code branches on platform.
+		builder.Services.AddSingleton<IPushApiService, PushApiService>();
+#if ANDROID
+		builder.Services.AddSingleton<IPushRegistrationService, MusicSalesApp.Maui.Platforms.Android.AndroidPushRegistrationService>();
+		builder.Services.AddSingleton<IPushNotificationCoordinator, PushNotificationCoordinator>();
+#elif IOS
+		builder.Services.AddSingleton<IPushRegistrationService, MusicSalesApp.Maui.Platforms.iOS.ApplePushRegistrationService>();
+		builder.Services.AddSingleton<IPushNotificationCoordinator, PushNotificationCoordinator>();
+#else
+		builder.Services.AddSingleton<IPushRegistrationService, NoPushRegistrationService>();
+		builder.Services.AddSingleton<IPushNotificationCoordinator, NoPushNotificationCoordinator>();
+#endif
 		builder.Services.AddSingleton<INavigationService, NavigationService>();
 	#if ANDROID
 		builder.Services.AddSingleton<IPlatformPlaybackRuntime, MusicSalesApp.Maui.Platforms.Android.AndroidMedia3PlaybackRuntime>();

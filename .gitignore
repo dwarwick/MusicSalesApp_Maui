@@ -204,3 +204,11 @@ $RECYCLE.BIN/
 
 ## Xcode StoreKit local user state
 *.storekituser
+
+## Firebase Cloud Messaging config — one file per Firebase project, selected by the
+## FirebaseEnvironment MSBuild property. Each identifies its Firebase project; the build works
+## without them (push is simply unavailable), so they are never committed.
+**/google-services.Test.json
+**/google-services.Production.json
+**/GoogleService-Info.Test.plist
+**/GoogleService-Info.Production.plist

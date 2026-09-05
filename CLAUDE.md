@@ -46,7 +46,7 @@ There's **no shared library inside this repo**. Both projects reference the sibl
 - **DI**: standard `MauiProgram.CreateMauiApp()` builder — read this file to see the entire service/ViewModel/platform-swap graph in one place.
 - **Auth tokens**: server-issued JWT, decoded client-side only (`System.IdentityModel.Tokens.Jwt`) for expiry checks — there is **no refresh-token flow**; once the JWT expires the user must log in again.
 - **Playback**: Android uses Media3/ExoPlayer (`Xamarin.AndroidX.Media3.*`); iOS/MacCatalyst/Windows still use the legacy `Plugin.MediaManager` and are **not yet at cache/reliability parity** with Android (see "Playback & cache architecture" below).
-- **Other notable packages**: `Microsoft.AspNetCore.SignalR.Client` (live stream/like count updates), `SkiaSharp.Extended.UI.Maui` (equalizer/visualizer drawing), `Xamarin.AndroidX.Biometric`, `Xamarin.Android.Google.BillingClient` (Google Play Billing).
+- **Other notable packages**: `Microsoft.AspNetCore.SignalR.Client` (live stream/like count updates), `SkiaSharp.Extended.UI.Maui` (equalizer/visualizer drawing), `Xamarin.AndroidX.Biometric`, `Xamarin.Android.Google.BillingClient` (Google Play Billing), `Xamarin.Firebase.Messaging` (**Android only** - iOS talks to APNs natively, see "Push notifications" below).
 - iOS Release builds carry a documented workaround (`MusicSalesApp.Maui.csproj`, the `net10.0-ios` Release PropertyGroup) for an App Store launch crash on iPadOS 26 (`MtouchRegistrar=static`, `MtouchUseLlvm=true`, etc.) — read the inline comment before touching iOS build settings.
 - **Android Release builds use full AOT**, not the SDK default. `.NET`'s Android SDK defaults Release/MonoVM to `RunAOTCompilation=true` **and** `AndroidEnableProfiledAot=true`, which precompiles only the methods in the stock `dotnet.aotprofile` and leaves the rest of the app to JIT on first use — on whatever thread touches it first, which for a UI app is the main thread. A production ANR in 1.0.93 caught the main thread inside `mono_method_get_generic_container` holding Mono's image lock. The csproj now pins `AndroidEnableProfiledAot=false`; cost is roughly +12 MB of install size and ~3 minutes of publish time. Note `AndroidAotMode` is still `Normal`, so a JIT fallback remains — this reduces first-use JIT, it does not eliminate it.
 
@@ -100,6 +100,81 @@ The current branch is a systematic sweep replacing synchronous main-thread I/O a
 - **`ViewModels/ObservableRangeCollection.cs`** (new) — adds `ReplaceAll()` to raise one `CollectionChanged`/`Reset` instead of one per item during bulk list rebuilds.
 - **`Services/AudioVisualizerLifecycleCoordinator.cs`**, **`Services/PlaybackFailureNotificationCoordinator.cs`** (new) — lifecycle-safe visualizer suspend/resume and de-duped failure-toast notifications.
 
+## Push notifications
+
+Added 2026-09-04, for the artist follow feature. **Android goes through Firebase Cloud Messaging;
+iOS registers with APNs natively and the SERVER talks to Apple directly — there is deliberately no
+Firebase SDK in the iOS head.** That head already carries documented App Store launch-crash
+workarounds (`MtouchRegistrar=static`, `MtouchUseLlvm`), and a large native SDK is exactly the kind
+of change that reopens them. Windows and Mac Catalyst get `NoPushRegistrationService` /
+`NoPushNotificationCoordinator`, so no calling code branches on platform.
+
+### Where the pieces are
+
+| Piece | Path |
+|---|---|
+| Platform-neutral core (compiled into tests) | `Services/IPushRegistrationService.cs`, `PushNotificationCoordinator.cs`, `IPushNotificationCoordinator.cs`, `PushApiService.cs` |
+| Android | `Platforms/Android/AndroidPushRegistrationService.cs`, `StreamTunesFirebaseMessagingService.cs` |
+| iOS | `Platforms/iOS/ApplePushRegistrationService.cs`, plus the two exports on `AppDelegate.cs` |
+| Shared with the server | `MusicSalesApp.Common/Helpers/PushPlatforms.cs`, `PushNotificationChannels.cs` |
+
+The split is not cosmetic. `Services/*.cs` is compiled into `MusicSalesApp.Maui.Tests` by glob, so
+everything that decides *when* to register lives there and is covered by
+`PushNotificationCoordinatorTests`; `Platforms/` is not compiled into tests at all, so anything put
+there is only ever verified by building the head.
+
+### Traps
+
+**The notification channel id must match the server's.** From Android 8 a notification whose channel
+does not exist is dropped by the system with no error, no log line and nothing on screen — which
+looks exactly like push not working at all. Both ends use
+`PushNotificationChannels.ArtistUpdates` from `Common`, so they cannot drift.
+
+**`POST_NOTIFICATIONS` is a runtime permission from Android 13.** The manifest entry is necessary
+and does nothing on its own. `MauiPermissions.ShouldShowRationale` is what distinguishes "never
+asked" from "asked and refused", which is what stops the app re-prompting someone who said no —
+neither platform shows the system prompt twice, so a denial is close to permanent.
+
+**On iOS, authorization and registration are separate steps.** `RequestAuthorizationAsync` returning
+true does *not* produce a token; `RegisterForRemoteNotifications` does, on the main thread. Miss it
+and the app looks permitted and receives nothing.
+
+**The iOS device token only ever arrives on the AppDelegate.** There is no method that returns it,
+which is why `ApplePushTokenBroker` exists — the callback fires where the DI container is not
+reachable. It converts APNs' raw bytes to lowercase hex; get that wrong and APNs rejects the token
+as `BadDeviceToken`, which reads like a server misconfiguration rather than a formatting one.
+
+**`RegisteredForRemoteNotifications` is `[Export]`, not `override`.** `MauiUIApplicationDelegate`
+does not declare these virtual, so overriding does not compile. Binding the Objective-C selector
+works whatever shape the managed base class has.
+
+**`SyncAsync` never prompts.** It runs on app activation and on auth changes; a system prompt at
+either moment is unexplained and is how people come to deny it. Prompting is only ever done from
+`RequestPermissionAndRegisterAsync`, which a UI calls when the user has just asked for notifications.
+
+**The registered token is remembered in preferences.** By sign-out the platform may hand back a
+different token, and unregistering the wrong one leaves the old registration live — which is how a
+signed-out phone carries on receiving the previous user's notifications.
+
+### google-services.json is not in the repo
+
+`Xamarin.Firebase.Messaging` is referenced unconditionally — the binding package alone builds fine
+without the file. What needs it is `FirebaseApp.InitializeApp` at runtime, which returns null;
+`AndroidPushRegistrationService.IsSupported` reads that as "no push" and the app runs normally
+without notifications. That is deliberate, so a developer who has not been given the Firebase project
+can still build and run.
+
+Drop the file at `Platforms/Android/google-services.json` and the conditional `GoogleServicesJson`
+item in the csproj picks it up. It is per-environment and gitignored.
+
+### Still to build
+
+Push delivery works end to end, but the rest of the mobile follow experience does not exist yet —
+no Following page, no Artist Messages page, no in-app preference toggles, and no deep-link routing
+for a notification tap (the payload carries `PushDataKeys.Kind` / `PersonaId` / `SongId` /
+`EntityId` ready for it; `StreamTunesFirebaseMessagingService` already puts them on the launch
+intent). The account-level push preferences are settable on the web at `/manage-account` meanwhile.
+
 ## Reading device logs
 
 The app writes a rolling file log to `/sdcard/Android/data/net.streamtunes.musicsalesapp.maui/files/logs` (`.vscode/pull-latest-runtime-log.ps1` pulls the latest). Before drawing any conclusion from it, know the filter:
@@ -152,4 +227,15 @@ The backend web/API app lives at `../MusicSalesApp` (dual-root VS Code workspace
 
 - References `MusicSalesApp.Common` directly from that repo (`../../MusicSalesApp/MusicSalesApp.Common`) — shared constants change in lockstep across both repos.
 - Consumes that repo's `api/mobile*`, `api/mobile-auth`, and `api/subscription/*` controllers — see that repo's `CLAUDE.md` for the server-side contract and the mobile API key + JWT auth scheme.
+- **Artist follow is built server-side and unconsumed here.** The backend ships `api/mobile/follows`
+  (follow/unfollow, followed artists, release notifications, artist messages, per-artist mute,
+  block, email preferences) and `SongListItemDto` now carries **`PersonaId`** — the first *stable*
+  artist identifier this app has ever been given, since `ArtistName` is a display string resolved
+  through a fallback chain and changes when a creator renames a persona. A null `PersonaId` means
+  the song has no artist entity, so the client must offer no Follow button rather than inventing
+  one from the name. `PUT api/mobile/follows/{personaId}` is idempotent and answers **400 for every
+  domain refusal**, matching the `like-state` contract the offline intent queue depends on. Read
+  that repo's `CLAUDE.md` § "Artist follow & listener engagement" before starting the client;
+  `ArtistMessageContentPolicy` in `Common` is already shared, and push notifications are wired up
+  on both sides (see above).
 - Its backend URL (`streamtunes.net` vs `davidtest.dev`) is resolved independently on this side via `AppConfig` (above) — the two repos must agree on which environment they're pointed at when testing end-to-end.
