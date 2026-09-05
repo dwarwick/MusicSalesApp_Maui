@@ -123,51 +123,33 @@ and without it FCM delivers nothing with no error to notice. Two build-level tra
 > the only token-rotation callback it exposes. The override suppresses `CS0672`/`CS0618` locally, so
 > that when a replacement does ship, deleting the pragma is what surfaces it.
 
-## Playback & cache architecture
-
-Android's playback stack (`Platforms/Android/`) is built on Media3/ExoPlayer: `AndroidMedia3PlaybackRegistry` (owns the singleton `IExoPlayer`/`MediaSession`), `AndroidMedia3PlaybackRuntime` (implements `IPlatformPlaybackRuntime`), `PlaybackMediaSessionService` (the foreground `MediaSessionService`), `AudioVisualizerService` (spectrum/equalizer, driven off `AudioSessionId`).
-
-The full design — including the "sleep-safe" reliability contract, the queue-preparation contract, cache-staleness detection, and failure-recovery rules — is documented in **`PLAYBACK_CACHE_ARCHITECTURE.md`**; read that instead of re-deriving it. Two hard invariants from that doc govern all future playback work:
-
-> The player must never require fresh DNS/network access to advance into any item represented as sleep-safe.
-
-> User-requested pause/stop must never be interpreted as an unexpected playback failure that should restart the queue.
-
-Note the Android/non-Android gap called out in that doc: Android prepares the entire active queue as sleep-safe (`FullQueueSleepSafeContinuityWindow = TimeSpan.Zero`); non-Android platforms still use a 90-minute rolling window (`DefaultSleepSafeContinuityWindow`), an open TODO gated on iOS local-cache trustworthiness.
-
-## In-flight work: perceived-ANR reduction (branch `work/reduce-user-perceived-anr`)
-
-The current branch is a systematic sweep replacing synchronous main-thread I/O and native calls with async/batched/coalesced equivalents. Representative, already-implemented examples to use as templates for future performance fixes:
-
-- **`Services/RollingFileLoggerProvider.cs`** — logging rewritten from synchronous `File.AppendAllText` under a lock (blocking whatever thread logged) to a bounded `Channel<T>` + single background writer batching up to 64 entries / 250ms.
-- **`Platforms/Android/AndroidMedia3PlaybackRuntime.cs`** — native ExoPlayer construction changed from eager (in the constructor, on the main thread) to lazy (`EnsureInitializedAsync`, deferred until first playback request).
-- **`Services/CoalescedUiUpdateScheduler.cs`** (new) — combines rapidly-arriving update flags into a single dispatched UI update instead of one dispatch per event.
-- **`ViewModels/ObservableRangeCollection.cs`** (new) — adds `ReplaceAll()` to raise one `CollectionChanged`/`Reset` instead of one per item during bulk list rebuilds.
-- **`Services/AudioVisualizerLifecycleCoordinator.cs`**, **`Services/PlaybackFailureNotificationCoordinator.cs`** (new) — lifecycle-safe visualizer suspend/resume and de-duped failure-toast notifications.
-
-## Push notifications
-
-Added 2026-09-04, for the artist follow feature. **Push goes through Firebase Cloud Messaging for
-both platforms** - FCM relays to APNs for iOS, so the server never talks to Apple and the APNs auth
-key is uploaded to the Firebase console instead. That is what removes the sandbox/production token
-split: FCM records the APNs environment against each token at registration, so a development-signed
-build and a TestFlight build both just work. Windows and Mac Catalyst get
-`NoPushRegistrationService` / `NoPushNotificationCoordinator`, so no calling code branches on
-platform.
-
-**Test and Production are separate Firebase projects.** The `FirebaseEnvironment` MSBuild property
-follows `AppSettingsEnvironment`, selecting `google-services.{Test,Production}.json` on Android and
-`GoogleService-Info.{Test,Production}.plist` on iOS. A test broadcast therefore cannot reach a
-production device.
+Windows and Mac Catalyst get `NoPushRegistrationService` / `NoPushNotificationCoordinator`, so no
+calling code branches on platform.
 
 **iOS registration is switched off for now** (`ApplePushRegistrationService.IsSupported => false`).
-The authorization and `RegisterForRemoteNotifications` work is correct and still needed - FCM on
-iOS is a relay, so the device must still obtain an APNs token - but the last hop is missing:
-Firebase has to exchange that APNs token for an FCM registration token, and the FCM token is what
-the server stores. Reporting supported today would register raw APNs tokens that FCM rejects on
-every send, which look exactly like uninstalled devices from the dispatcher's side. To finish: add
-the Firebase iOS Cloud Messaging binding, set `Messaging.SharedInstance.ApnsToken` from the
-AppDelegate callback, and return `Messaging.SharedInstance.FcmToken` from `GetTokenAsync`.
+The authorization and `RegisterForRemoteNotifications` work is correct and still needed — FCM on iOS
+is a relay, so the device must still obtain an APNs token — but the last hop is missing: Firebase has
+to exchange that APNs token for an FCM registration token, and the FCM token is what the server
+stores. Reporting supported today would register raw APNs tokens that FCM rejects on every send,
+which look exactly like uninstalled devices from the dispatcher's side. To finish: add the Firebase
+iOS Cloud Messaging binding, set `Messaging.SharedInstance.ApnsToken` from the AppDelegate callback,
+and return `Messaging.SharedInstance.FcmToken` from `GetTokenAsync`.
+
+### Delivery is gated on the server, twice, and both gates default off
+
+**A device that registers cleanly and then receives nothing is the expected state today**, not a bug
+in this app. Check both of these before debugging the client:
+
+- **`PushNotificationsEnabled`** — the admin kill switch, at `/admin/settings` → "Phone
+  Notifications". While it is off, `ArtistPushDispatchService` returns before it looks at anything,
+  and the phone checkboxes vanish from `/manage-account` entirely.
+- **`ReceiveArtistReleasePush` / `ReceiveArtistMessagePush`** on the listener's own account, which
+  also default off. Following an artist is consent to the in-app record, not to a phone buzz.
+
+Neither gate consumes the notification — rows stay pending, so switching either on later delivers
+the backlog rather than a silence that has already eaten it. And **registration deliberately keeps
+working while both are off**, because registering is how the round trip gets proven before delivery
+is switched on.
 
 ### Where the pieces are
 
@@ -187,8 +169,8 @@ there is only ever verified by building the head.
 
 **The notification channel id must match the server's.** From Android 8 a notification whose channel
 does not exist is dropped by the system with no error, no log line and nothing on screen — which
-looks exactly like push not working at all. Both ends use
-`PushNotificationChannels.ArtistUpdates` from `Common`, so they cannot drift.
+looks exactly like push not working at all. Both ends use `PushNotificationChannels.ArtistUpdates`
+from `Common`, so they cannot drift.
 
 **`POST_NOTIFICATIONS` is a runtime permission from Android 13.** The manifest entry is necessary
 and does nothing on its own. `MauiPermissions.ShouldShowRationale` is what distinguishes "never
@@ -210,42 +192,50 @@ works whatever shape the managed base class has.
 
 **`SyncAsync` never prompts.** It runs on app activation and on auth changes; a system prompt at
 either moment is unexplained and is how people come to deny it. Prompting is only ever done from
-`RequestPermissionAndRegisterAsync`, which a UI calls when the user has just asked for notifications.
+`RequestPermissionAndRegisterAsync`, which a UI calls when the user has just asked for
+notifications.
 
 **The registered token is remembered in preferences.** By sign-out the platform may hand back a
 different token, and unregistering the wrong one leaves the old registration live — which is how a
 signed-out phone carries on receiving the previous user's notifications.
 
-### The Firebase config files are not in the repo
-
-`Xamarin.Firebase.Messaging` is referenced unconditionally — the binding package alone builds fine
-without them. What needs them is `FirebaseApp.InitializeApp` at runtime, which returns null;
+**Missing Firebase config disables push rather than breaking the build.**
+`Xamarin.Firebase.Messaging` is referenced unconditionally and the binding package alone builds
+fine. What needs the files is `FirebaseApp.InitializeApp` at runtime, which returns null;
 `AndroidPushRegistrationService.IsSupported` reads that as "no push" and the app runs normally
 without notifications. That is deliberate, so a developer who has not been given the Firebase
-project can still build and run.
-
-Four files, all gitignored, one pair per Firebase project:
-
-```
-Platforms/Android/google-services.Test.json
-Platforms/Android/google-services.Production.json
-Platforms/iOS/GoogleService-Info.Test.plist
-Platforms/iOS/GoogleService-Info.Production.plist
-```
-
-The `FirebaseEnvironment` property picks the pair (`Production` when `AppSettingsEnvironment` is
-`Production`, otherwise `Test`), and the conditional `GoogleServicesJson` / `BundleResource` items
-match nothing when a file is absent, so the build is unaffected either way.
-
-The two iOS plists do not exist yet — they are only needed once the Firebase iOS binding lands.
+project can still build and run — and it is another reason silence is not evidence of a bug.
 
 ### Still to build
 
 Push delivery works end to end, but the rest of the mobile follow experience does not exist yet —
-no Following page, no Artist Messages page, no in-app preference toggles, and no deep-link routing
-for a notification tap (the payload carries `PushDataKeys.Kind` / `PersonaId` / `SongId` /
-`EntityId` ready for it; `StreamTunesFirebaseMessagingService` already puts them on the launch
-intent). The account-level push preferences are settable on the web at `/manage-account` meanwhile.
+no follow button, no Following page, no Artist Messages page, no in-app preference toggles, and no
+deep-link routing for a notification tap (the payload carries `PushDataKeys.Kind` / `PersonaId` /
+`SongId` / `EntityId` ready for it, and `StreamTunesFirebaseMessagingService` already puts them on
+the launch intent). The account-level push preferences are settable on the web at `/manage-account`
+meanwhile.
+
+## Playback & cache architecture
+
+Android's playback stack (`Platforms/Android/`) is built on Media3/ExoPlayer: `AndroidMedia3PlaybackRegistry` (owns the singleton `IExoPlayer`/`MediaSession`), `AndroidMedia3PlaybackRuntime` (implements `IPlatformPlaybackRuntime`), `PlaybackMediaSessionService` (the foreground `MediaSessionService`), `AudioVisualizerService` (spectrum/equalizer, driven off `AudioSessionId`).
+
+The full design — including the "sleep-safe" reliability contract, the queue-preparation contract, cache-staleness detection, and failure-recovery rules — is documented in **`PLAYBACK_CACHE_ARCHITECTURE.md`**; read that instead of re-deriving it. Two hard invariants from that doc govern all future playback work:
+
+> The player must never require fresh DNS/network access to advance into any item represented as sleep-safe.
+
+> User-requested pause/stop must never be interpreted as an unexpected playback failure that should restart the queue.
+
+Note the Android/non-Android gap called out in that doc: Android prepares the entire active queue as sleep-safe (`FullQueueSleepSafeContinuityWindow = TimeSpan.Zero`); non-Android platforms still use a 90-minute rolling window (`DefaultSleepSafeContinuityWindow`), an open TODO gated on iOS local-cache trustworthiness.
+
+## Perceived-ANR reduction: the patterns to copy
+
+`work/reduce-user-perceived-anr` has landed on master. It was a systematic sweep replacing synchronous main-thread I/O and native calls with async/batched/coalesced equivalents, and these are the templates to follow for future performance fixes:
+
+- **`Services/RollingFileLoggerProvider.cs`** — logging rewritten from synchronous `File.AppendAllText` under a lock (blocking whatever thread logged) to a bounded `Channel<T>` + single background writer batching up to 64 entries / 250ms.
+- **`Platforms/Android/AndroidMedia3PlaybackRuntime.cs`** — native ExoPlayer construction changed from eager (in the constructor, on the main thread) to lazy (`EnsureInitializedAsync`, deferred until first playback request).
+- **`Services/CoalescedUiUpdateScheduler.cs`** (new) — combines rapidly-arriving update flags into a single dispatched UI update instead of one dispatch per event.
+- **`ViewModels/ObservableRangeCollection.cs`** (new) — adds `ReplaceAll()` to raise one `CollectionChanged`/`Reset` instead of one per item during bulk list rebuilds.
+- **`Services/AudioVisualizerLifecycleCoordinator.cs`**, **`Services/PlaybackFailureNotificationCoordinator.cs`** (new) — lifecycle-safe visualizer suspend/resume and de-duped failure-toast notifications.
 
 ## Reading device logs
 
@@ -310,4 +300,23 @@ The backend web/API app lives at `../MusicSalesApp` (dual-root VS Code workspace
   that repo's `CLAUDE.md` § "Artist follow & listener engagement" before starting the client;
   `ArtistMessageContentPolicy` in `Common` is already shared, and push notifications are wired up
   on both sides (see above).
+
+  Three server rules the client has to mirror rather than discover:
+
+  - **A creator cannot follow their own persona.** The API answers `CannotFollowSelf` (a 400 like
+    any other domain refusal), so the button has to be absent on your own songs rather than present
+    and failing. The web hit this because a creator browsing the library sees their own catalogue
+    like anyone else.
+  - **"Follow as" is a consent-gated choice, not a default.** A follower who is also a creator may
+    opt in (`RevealPersonaToFollowedArtists`) to being named to the artists they follow, and picks
+    which persona per follow; without consent the follow is anonymous and nothing is asked.
+    `PUT api/mobile/follows/{personaId}` already accepts `followAsPersonaId`, but **there is no
+    mobile endpoint that returns the options** — `GetFollowAsOptionsAsync` is service-only and the
+    web reads it directly. Building the picker here needs that endpoint added server-side first;
+    until then the client should send nothing and follow anonymously, which is the safe default in
+    a privacy feature anyway.
+  - **One artist owns many cards.** Following from one card has to move every other card for that
+    persona on screen. The web does this with a shared followed-persona set on the parent, not a
+    broadcast — the equivalent here is a notifier the card ViewModels subscribe to, and it is the
+    piece that has to exist before `IsFollowingArtist` on `SongDto` is worth anything.
 - Its backend URL (`streamtunes.net` vs `davidtest.dev`) is resolved independently on this side via `AppConfig` (above) — the two repos must agree on which environment they're pointed at when testing end-to-end.
