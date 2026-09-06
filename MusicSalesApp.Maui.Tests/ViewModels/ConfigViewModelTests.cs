@@ -89,97 +89,220 @@ public class ConfigViewModelTests
         Assert.That(_viewModel.IsCacheUsageLoading, Is.False);
     }
 
-    // --- Notification frequency: an account setting the server enforces, not a local one ---
+    // --- Notifications: one place for the OS permission and the account preferences ---
 
-    private (ConfigViewModel ViewModel, Mock<INotificationPreferenceApiService> Api) CreateWithPreferences(
-        NotificationPreferences? stored)
+    private (ConfigViewModel ViewModel, Mock<INotificationPreferenceApiService> Api, Mock<IPushNotificationCoordinator> Push)
+        CreateWithNotifications(NotificationPreferences? stored, PushPermissionStatus permission)
     {
         var api = new Mock<INotificationPreferenceApiService>();
         api.Setup(x => x.GetAsync(It.IsAny<CancellationToken>())).ReturnsAsync(stored);
         api.Setup(x => x.SetAsync(It.IsAny<NotificationPreferences>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
-        return (new ConfigViewModel(_settings.Object, _audioCacheService.Object, api.Object), api);
+        var push = new Mock<IPushNotificationCoordinator>();
+        push.Setup(x => x.GetPermissionStatusAsync()).ReturnsAsync(permission);
+        push.Setup(x => x.RequestPermissionAndRegisterAsync()).ReturnsAsync(PushPermissionStatus.Granted);
+
+        var viewModel = new ConfigViewModel(
+            _settings.Object, _audioCacheService.Object, api.Object, push.Object);
+
+        return (viewModel, api, push);
     }
 
-    [Test]
-    public async Task LoadNotificationPreferences_ShowsWhatTheServerHasStored()
+    private static NotificationPreferences Stored(
+        bool release = true,
+        bool message = true,
+        ArtistPushFrequency frequency = ArtistPushFrequency.Instant) => new()
     {
-        var (viewModel, _) = CreateWithPreferences(new NotificationPreferences
-        {
-            ArtistPushFrequency = ArtistPushFrequency.Daily,
-        });
+        ReceiveArtistReleasePush = release,
+        ReceiveArtistMessagePush = message,
+        ArtistPushFrequency = frequency,
+    };
+
+    [Test]
+    public async Task Load_ShowsWhatTheServerAndTheDeviceBothSay()
+    {
+        var (viewModel, _, _) = CreateWithNotifications(
+            Stored(frequency: ArtistPushFrequency.Daily), PushPermissionStatus.Granted);
 
         await viewModel.LoadNotificationPreferencesAsync();
 
         Assert.Multiple(() =>
         {
-            Assert.That(viewModel.IsNotificationFrequencyAvailable, Is.True);
+            Assert.That(viewModel.IsNotificationSectionAvailable, Is.True);
+            Assert.That(viewModel.AllowPushNotifications, Is.True);
+            Assert.That(viewModel.ReceiveReleasePush, Is.True);
+            Assert.That(viewModel.ReceiveMessagePush, Is.True);
             Assert.That(viewModel.NotificationFrequency, Is.EqualTo(ArtistPushFrequency.Daily));
-            Assert.That(viewModel.NotificationFrequencyDescription, Does.Contain("one notification a day"));
         });
     }
 
     [Test]
-    public async Task LoadNotificationPreferences_DoesNotEchoTheValueStraightBack()
+    public async Task Load_WithPermissionButNothingWanted_ShowsTheMasterOff()
     {
-        // Reading the page must not be a write. Setting the backing field through the property
-        // would post the freshly-loaded value to the server on every appearance.
-        var (viewModel, api) = CreateWithPreferences(new NotificationPreferences
+        // The master means "a notification could actually arrive", so it must not claim to be on
+        // while every category is off.
+        var (viewModel, _, _) = CreateWithNotifications(
+            Stored(release: false, message: false), PushPermissionStatus.Granted);
+
+        await viewModel.LoadNotificationPreferencesAsync();
+
+        Assert.Multiple(() =>
         {
-            ArtistPushFrequency = ArtistPushFrequency.TwelveHours,
+            Assert.That(viewModel.AllowPushNotifications, Is.False);
+            Assert.That(viewModel.CanEditNotificationCategories, Is.False, "categories mean nothing while the master is off");
         });
-
-        await viewModel.LoadNotificationPreferencesAsync();
-
-        api.Verify(
-            x => x.SetAsync(It.IsAny<NotificationPreferences>(), It.IsAny<CancellationToken>()),
-            Times.Never);
     }
 
     [Test]
-    public async Task LoadNotificationPreferences_WhenTheServerCannotBeReached_HidesTheSection()
+    public async Task Load_WhenTheDeviceRefusedThePermission_ShowsTheMasterOffAndSaysWhy()
     {
-        // A picker that cannot save is worse than no picker.
-        var (viewModel, _) = CreateWithPreferences(stored: null);
+        // The account may well still want both kinds; the phone is what is refusing.
+        var (viewModel, _, _) = CreateWithNotifications(Stored(), PushPermissionStatus.Denied);
 
         await viewModel.LoadNotificationPreferencesAsync();
 
-        Assert.That(viewModel.IsNotificationFrequencyAvailable, Is.False);
-    }
-
-    [Test]
-    public async Task ChangingTheFrequency_SendsTheWholeRecordBack()
-    {
-        // The endpoint replaces every preference, so sending only the frequency would silently
-        // switch off the two push toggles the listener set on the web.
-        var (viewModel, api) = CreateWithPreferences(new NotificationPreferences
+        Assert.Multiple(() =>
         {
-            ReceiveArtistReleasePush = true,
-            ReceiveArtistMessageEmails = true,
-            ArtistPushFrequency = ArtistPushFrequency.Instant,
+            Assert.That(viewModel.IsNotificationSectionAvailable, Is.True, "hiding it reads as the feature missing");
+            Assert.That(viewModel.AllowPushNotifications, Is.False);
+            Assert.That(viewModel.IsPushBlockedBySystem, Is.True);
+            Assert.That(viewModel.CanEditNotifications, Is.False);
+            Assert.That(viewModel.NotificationBlockedMessage, Does.Contain("device settings"));
         });
+    }
+
+    [Test]
+    public async Task Load_DoesNotEchoAnythingBackToTheServer()
+    {
+        var (viewModel, api, _) = CreateWithNotifications(Stored(), PushPermissionStatus.Granted);
 
         await viewModel.LoadNotificationPreferencesAsync();
-        viewModel.NotificationFrequency = ArtistPushFrequency.TwelveHours;
+
+        api.Verify(x => x.SetAsync(It.IsAny<NotificationPreferences>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [TestCase(PushPermissionStatus.Unsupported)]
+    public async Task Load_OnAPlatformWithNoTransport_HidesTheSection(PushPermissionStatus permission)
+    {
+        var (viewModel, _, _) = CreateWithNotifications(Stored(), permission);
+
+        await viewModel.LoadNotificationPreferencesAsync();
+
+        Assert.That(viewModel.IsNotificationSectionAvailable, Is.False);
+    }
+
+    [Test]
+    public async Task Load_WhenTheServerCannotBeReached_HidesTheSection()
+    {
+        var (viewModel, _, _) = CreateWithNotifications(stored: null, PushPermissionStatus.Granted);
+
+        await viewModel.LoadNotificationPreferencesAsync();
+
+        Assert.That(viewModel.IsNotificationSectionAvailable, Is.False);
+    }
+
+    [Test]
+    public async Task TurningTheMasterOn_AsksTheOsAndSwitchesTheCategoriesOn()
+    {
+        var (viewModel, api, push) = CreateWithNotifications(
+            Stored(release: false, message: false), PushPermissionStatus.NotDetermined);
+
+        await viewModel.LoadNotificationPreferencesAsync();
+
+        api.Setup(x => x.GetAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Stored());
+        viewModel.AllowPushNotifications = true;
+        await Task.Delay(50);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(viewModel.ReceiveReleasePush, Is.True);
+            Assert.That(viewModel.ReceiveMessagePush, Is.True);
+            Assert.That(viewModel.AllowPushNotifications, Is.True);
+        });
+
+        // Through the coordinator, because "allow" is both halves: the OS prompt and the account.
+        push.Verify(x => x.RequestPermissionAndRegisterAsync(), Times.Once);
+    }
+
+    [Test]
+    public async Task TurningTheMasterOn_WhenTheUserRefuses_GoesBackOffAndExplains()
+    {
+        var (viewModel, _, push) = CreateWithNotifications(
+            Stored(release: false, message: false), PushPermissionStatus.NotDetermined);
+        push.Setup(x => x.RequestPermissionAndRegisterAsync()).ReturnsAsync(PushPermissionStatus.Denied);
+
+        await viewModel.LoadNotificationPreferencesAsync();
+        viewModel.AllowPushNotifications = true;
+        await Task.Delay(50);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(viewModel.AllowPushNotifications, Is.False, "a switch that stays on while nothing arrives is a lie");
+            Assert.That(viewModel.IsPushBlockedBySystem, Is.True);
+            Assert.That(viewModel.NotificationStatus, Does.Contain("device settings"));
+        });
+    }
+
+    [Test]
+    public async Task TurningTheMasterOff_SwitchesBothCategoriesOffOnTheServer()
+    {
+        // Off cannot revoke the OS permission, so it means "send me nothing" - which is the two
+        // category switches. The device stays registered, so turning it back on needs no prompt.
+        var (viewModel, api, push) = CreateWithNotifications(Stored(), PushPermissionStatus.Granted);
+        await viewModel.LoadNotificationPreferencesAsync();
+
+        api.Setup(x => x.GetAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Stored(release: false, message: false));
+
+        viewModel.AllowPushNotifications = false;
+        await Task.Delay(50);
 
         api.Verify(
             x => x.SetAsync(
-                It.Is<NotificationPreferences>(p =>
-                    p.ArtistPushFrequency == ArtistPushFrequency.TwelveHours &&
-                    p.ReceiveArtistReleasePush &&
-                    p.ReceiveArtistMessageEmails),
+                It.Is<NotificationPreferences>(p => !p.ReceiveArtistReleasePush && !p.ReceiveArtistMessagePush),
                 It.IsAny<CancellationToken>()),
             Times.Once);
+        push.Verify(x => x.RequestPermissionAndRegisterAsync(), Times.Never);
     }
 
     [Test]
-    public async Task ConfigPage_WithNoPreferenceService_HasNoNotificationSection()
+    public async Task TurningTheMasterOn_WritesOnce_NotOncePerCategory()
     {
-        // The dependency is optional and trailing, so every pre-existing construction passes null.
-        await _viewModel.LoadNotificationPreferencesAsync();
+        // The master sets both categories; without suppression each setter would fire its own
+        // save, giving three round trips for one tap in a racing order.
+        var (viewModel, api, _) = CreateWithNotifications(
+            Stored(release: false, message: false), PushPermissionStatus.NotDetermined);
 
-        Assert.That(_viewModel.IsNotificationFrequencyAvailable, Is.False);
+        await viewModel.LoadNotificationPreferencesAsync();
+        api.Setup(x => x.GetAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Stored());
+
+        viewModel.AllowPushNotifications = true;
+        await Task.Delay(50);
+
+        api.Verify(
+            x => x.SetAsync(It.IsAny<NotificationPreferences>(), It.IsAny<CancellationToken>()),
+            Times.Never,
+            "the coordinator writes them; this must not write again on top");
+    }
+
+    [Test]
+    public async Task TurningOffOneCategory_KeepsTheEmailPreferencesItDidNotAskAbout()
+    {
+        var stored = Stored();
+        stored.ReceiveArtistReleaseEmails = true;
+
+        var (viewModel, api, _) = CreateWithNotifications(stored, PushPermissionStatus.Granted);
+        await viewModel.LoadNotificationPreferencesAsync();
+
+        viewModel.ReceiveMessagePush = false;
+        await Task.Delay(50);
+
+        api.Verify(
+            x => x.SetAsync(
+                It.Is<NotificationPreferences>(p => p.ReceiveArtistReleaseEmails && !p.ReceiveArtistMessagePush),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Test]
@@ -187,23 +310,20 @@ public class ConfigViewModelTests
     {
         // Exactly what an app newer than its server does: the unknown property is dropped, the PUT
         // answers OK, and the choice is gone by the next page open. Saying "Saved" there is a lie.
-        var api = new Mock<INotificationPreferenceApiService>();
-        api.Setup(x => x.GetAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new NotificationPreferences { ArtistPushFrequency = ArtistPushFrequency.Instant });
-        api.Setup(x => x.SetAsync(It.IsAny<NotificationPreferences>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+        var (viewModel, api, _) = CreateWithNotifications(Stored(), PushPermissionStatus.Granted);
 
-        var viewModel = new ConfigViewModel(_settings.Object, _audioCacheService.Object, api.Object);
+        // A fresh record per read, so the view model's own mutation cannot be mistaken for the
+        // server having stored it - which is precisely what an older server does.
+        api.Setup(x => x.GetAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => Stored());
+
         await viewModel.LoadNotificationPreferencesAsync();
 
         viewModel.NotificationFrequency = ArtistPushFrequency.Daily;
-
-        // The save is fire-and-forget from the setter, so let it finish.
         await Task.Delay(50);
 
         Assert.Multiple(() =>
         {
-            Assert.That(viewModel.NotificationFrequencyStatus, Does.Contain("does not support"));
+            Assert.That(viewModel.NotificationStatus, Does.Contain("does not support"));
             Assert.That(viewModel.NotificationFrequency, Is.EqualTo(ArtistPushFrequency.Instant));
         });
     }
@@ -211,13 +331,10 @@ public class ConfigViewModelTests
     [Test]
     public async Task ChangingTheFrequency_WhenItSticks_SaysSaved()
     {
-        var stored = new NotificationPreferences { ArtistPushFrequency = ArtistPushFrequency.Instant };
-        var api = new Mock<INotificationPreferenceApiService>();
+        var stored = Stored();
+        var (viewModel, api, _) = CreateWithNotifications(stored, PushPermissionStatus.Granted);
         api.Setup(x => x.GetAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => stored);
-        api.Setup(x => x.SetAsync(It.IsAny<NotificationPreferences>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
 
-        var viewModel = new ConfigViewModel(_settings.Object, _audioCacheService.Object, api.Object);
         await viewModel.LoadNotificationPreferencesAsync();
 
         viewModel.NotificationFrequency = ArtistPushFrequency.Daily;
@@ -225,8 +342,18 @@ public class ConfigViewModelTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(viewModel.NotificationFrequencyStatus, Is.EqualTo("Saved."));
+            Assert.That(viewModel.NotificationStatus, Is.EqualTo("Saved."));
             Assert.That(viewModel.NotificationFrequency, Is.EqualTo(ArtistPushFrequency.Daily));
         });
+    }
+
+    [Test]
+    public async Task WithNoPushServices_TheSectionIsSimplyAbsent()
+    {
+        // Both dependencies are optional and trailing, so every pre-existing construction passes
+        // null - that must stay harmless.
+        await _viewModel.LoadNotificationPreferencesAsync();
+
+        Assert.That(_viewModel.IsNotificationSectionAvailable, Is.False);
     }
 }

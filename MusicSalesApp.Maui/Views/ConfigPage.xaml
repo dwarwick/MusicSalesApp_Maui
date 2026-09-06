@@ -113,39 +113,91 @@
                         Padding="20,0" />
             </VerticalStackLayout>
 
-            <!-- Notification frequency. Hidden until the preferences have been read, because it is
-                 an account setting the server enforces - a picker that could not save would be
-                 worse than no picker. -->
+            <!-- Notifications. Every user-facing push preference lives here now - the website
+                 no longer offers a second, contradictory place to set them. Hidden until the
+                 preferences load, because toggles that cannot save are worse than none. -->
             <VerticalStackLayout Spacing="{StaticResource Space4}"
-                                 IsVisible="{Binding IsNotificationFrequencyAvailable}">
+                                 IsVisible="{Binding IsNotificationSectionAvailable}">
                 <BoxView HeightRequest="1"
                          Color="{AppThemeBinding Light={StaticResource LineLight}, Dark={StaticResource LineDark}}" />
 
-                <VerticalStackLayout Spacing="{StaticResource Space1}">
-                    <Label Text="Notifications"
-                           FontSize="{StaticResource FontSizeH4}"
-                           FontAttributes="Bold"
-                           TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
-                    <Label Text="How often artists you follow may notify you."
-                           FontSize="{StaticResource FontSizeCardTitle}"
-                           TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
-                </VerticalStackLayout>
+                <Label Text="Notifications"
+                       FontSize="{StaticResource FontSizeH4}"
+                       FontAttributes="Bold"
+                       TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
 
-                <Picker ItemsSource="{Binding NotificationFrequencies}"
-                        SelectedItem="{Binding NotificationFrequency}"
-                        IsEnabled="{Binding IsSavingNotificationFrequency, Converter={toolkit:InvertedBoolConverter}}"
-                        ItemDisplayBinding="{Binding ., Converter={StaticResource PushFrequencyConverter}}"
-                        TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}"
-                        HorizontalOptions="Fill" />
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space4}">
+                    <VerticalStackLayout Grid.Column="0" Spacing="{StaticResource Space1}">
+                        <Label Text="Allow push notifications"
+                               FontSize="{StaticResource FontSizeCardTitle}"
+                               FontAttributes="Bold"
+                               TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
+                        <Label Text="Let StreamTunes notify you about the artists you follow."
+                               FontSize="{StaticResource FontSizeSmall}"
+                               LineBreakMode="WordWrap"
+                               TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
+                    </VerticalStackLayout>
 
-                <Label Text="{Binding NotificationFrequencyDescription}"
+                    <Switch Grid.Column="1"
+                            IsToggled="{Binding AllowPushNotifications}"
+                            IsEnabled="{Binding CanEditNotifications}"
+                            VerticalOptions="Center" />
+                </Grid>
+
+                <!-- Shown rather than hidden when the OS permission was refused: neither platform
+                     asks twice, so the only way back is device settings, and hiding the controls
+                     would read as the feature being missing. -->
+                <Label Text="{Binding NotificationBlockedMessage}"
+                       IsVisible="{Binding IsPushBlockedBySystem}"
                        FontSize="{StaticResource FontSizeSmall}"
                        LineBreakMode="WordWrap"
                        TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
 
-                <Label Text="{Binding NotificationFrequencyStatus}"
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space4}" Margin="16,0,0,0">
+                    <Label Grid.Column="0"
+                           Text="New music from artists I follow"
+                           FontSize="{StaticResource FontSizeCardTitle}"
+                           VerticalOptions="Center"
+                           LineBreakMode="WordWrap"
+                           TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
+                    <Switch Grid.Column="1"
+                            IsToggled="{Binding ReceiveReleasePush}"
+                            IsEnabled="{Binding CanEditNotificationCategories}"
+                            VerticalOptions="Center" />
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space4}" Margin="16,0,0,0">
+                    <Label Grid.Column="0"
+                           Text="Messages from artists I follow"
+                           FontSize="{StaticResource FontSizeCardTitle}"
+                           VerticalOptions="Center"
+                           LineBreakMode="WordWrap"
+                           TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
+                    <Switch Grid.Column="1"
+                            IsToggled="{Binding ReceiveMessagePush}"
+                            IsEnabled="{Binding CanEditNotificationCategories}"
+                            VerticalOptions="Center" />
+                </Grid>
+
+                <VerticalStackLayout Spacing="{StaticResource Space1}" Margin="16,0,0,0">
+                    <Label Text="How often"
+                           FontSize="{StaticResource FontSizeCardTitle}"
+                           TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
+                    <Picker ItemsSource="{Binding NotificationFrequencies}"
+                            SelectedItem="{Binding NotificationFrequency}"
+                            IsEnabled="{Binding CanEditNotificationCategories}"
+                            ItemDisplayBinding="{Binding ., Converter={StaticResource PushFrequencyConverter}}"
+                            TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}"
+                            HorizontalOptions="Fill" />
+                    <Label Text="{Binding NotificationFrequencyDescription}"
+                           FontSize="{StaticResource FontSizeSmall}"
+                           LineBreakMode="WordWrap"
+                           TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
+                </VerticalStackLayout>
+
+                <Label Text="{Binding NotificationStatus}"
                        FontSize="{StaticResource FontSizeSmall}"
-                       IsVisible="{Binding NotificationFrequencyStatus, Converter={toolkit:IsStringNotNullOrEmptyConverter}}"
+                       IsVisible="{Binding NotificationStatus, Converter={toolkit:IsStringNotNullOrEmptyConverter}}"
                        TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
             </VerticalStackLayout>
         </VerticalStackLayout>

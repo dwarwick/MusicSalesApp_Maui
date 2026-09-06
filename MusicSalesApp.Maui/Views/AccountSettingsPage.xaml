@@ -98,36 +98,6 @@
                              Color="{AppThemeBinding Light={StaticResource LineLight}, Dark={StaticResource LineDark}}" />
                 </VerticalStackLayout>
 
-                <!-- Notifications. Hidden where the platform has no push transport (Windows, Mac
-                     Catalyst). The button is the ONLY place the app asks for the OS permission -
-                     see the view model for why it cannot be asked at launch. -->
-                <VerticalStackLayout Spacing="{StaticResource Space3}"
-                                     IsVisible="{Binding IsPushNotificationsSupported}">
-                    <Label Text="Notifications"
-                           FontSize="{StaticResource FontSizeH4}"
-                           FontAttributes="Bold"
-                           TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
-                    <Label Text="{Binding PushNotificationStatusText}"
-                           FontSize="{StaticResource FontSizeCardTitle}"
-                           LineBreakMode="WordWrap"
-                           TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
-                    <Button Text="Turn on notifications"
-                            Command="{Binding EnablePushNotificationsCommand}"
-                            IsVisible="{Binding ShowEnablePushNotifications}"
-                            IsEnabled="{Binding IsEnablingPushNotifications, Converter={toolkit:InvertedBoolConverter}}"
-                            BackgroundColor="{StaticResource GenreFillLight}"
-                            TextColor="White"
-                            FontAttributes="Bold"
-                            CornerRadius="{StaticResource RadiusSmInt}"
-                            HeightRequest="{StaticResource ControlHeight}"
-                            HorizontalOptions="Start"
-                            Padding="20,0" />
-
-                    <!-- Divider -->
-                    <BoxView HeightRequest="1"
-                             Color="{AppThemeBinding Light={StaticResource LineLight}, Dark={StaticResource LineDark}}" />
-                </VerticalStackLayout>
-
                 <!-- Sign-In Section. Hidden where the device has no biometrics enrolled, on either platform. -->
                 <VerticalStackLayout Spacing="{StaticResource Space3}"
                                      IsVisible="{Binding IsBiometricLoginSupported}">

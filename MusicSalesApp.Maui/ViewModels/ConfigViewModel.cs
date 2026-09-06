@@ -16,15 +16,18 @@ public partial class ConfigViewModel : ObservableObject
     // Trailing and optional, so the existing tests that construct this with two services keep
     // working and simply get no notification section.
     private readonly INotificationPreferenceApiService? _notificationPreferences;
+    private readonly IPushNotificationCoordinator? _pushNotifications;
 
     public ConfigViewModel(
         IOfflineCacheSettingsService offlineCacheSettingsService,
         IAudioCacheService audioCacheService,
-        INotificationPreferenceApiService? notificationPreferences = null)
+        INotificationPreferenceApiService? notificationPreferences = null,
+        IPushNotificationCoordinator? pushNotifications = null)
     {
         _offlineCacheSettingsService = offlineCacheSettingsService;
         _audioCacheService = audioCacheService;
         _notificationPreferences = notificationPreferences;
+        _pushNotifications = pushNotifications;
         _offlineCacheLimitMb = offlineCacheSettingsService.GetOfflineCacheLimitMb();
     }
 
@@ -130,35 +133,128 @@ public partial class ConfigViewModel : ObservableObject
         return $"{kilobytes:0.#} KB";
     }
 
-    // ---- Notification frequency ----------------------------------------------------------------
+    // ---- Notifications --------------------------------------------------------------------------
     //
-    // A cap on interruptions, not a delay dial: on a window the server sends ONE push summarising
-    // everything that happened in it. It has to be enforced server-side - once FCM has delivered a
-    // push the phone cannot retract it - so this is a round trip rather than a local preference,
-    // and the section hides entirely when the server cannot be reached or nobody is signed in.
+    // Every user-facing push preference lives here, and only here. They used to be split between
+    // this app and the website, which meant someone could allow notifications on their phone, have
+    // the account switches still off on the web, and receive nothing - with no way to tell those
+    // two states apart from the device. The OS permission and the account preferences are still
+    // different things, but they are now asked for in one place, in the order they depend on each
+    // other: permission first, then what to be told about, then how often.
+
+    private NotificationPreferences? _preferences;
+    private ArtistPushFrequency _notificationFrequency;
+    private bool _allowPushNotifications;
+    private bool _receiveReleasePush;
+    private bool _receiveMessagePush;
+    private bool _isNotificationSectionAvailable;
+    private bool _isPushBlockedBySystem;
+    private bool _isSavingNotifications;
+
+    // Guards the writes the toggles trigger. Switching the master on sets both categories, and
+    // each category setter would otherwise fire its own save - three round trips for one tap, in a
+    // racing order.
+    private bool _suppressNotificationWrites;
 
     public IReadOnlyList<ArtistPushFrequency> NotificationFrequencies { get; } =
         Enum.GetValues<ArtistPushFrequency>();
 
-    private NotificationPreferences? _preferences;
-    private ArtistPushFrequency _notificationFrequency;
-    private bool _isNotificationFrequencyAvailable;
-    private bool _isSavingNotificationFrequency;
-
-    /// <summary>False until the preferences have been read, which hides the whole section.</summary>
-    public bool IsNotificationFrequencyAvailable
+    /// <summary>False on a platform with no push transport, or before the preferences load.</summary>
+    public bool IsNotificationSectionAvailable
     {
-        get => _isNotificationFrequencyAvailable;
-        private set => SetProperty(ref _isNotificationFrequencyAvailable, value);
+        get => _isNotificationSectionAvailable;
+        private set => SetProperty(ref _isNotificationSectionAvailable, value);
     }
 
-    public bool IsSavingNotificationFrequency
+    /// <summary>
+    /// The user refused at the OS level. Neither platform will ask again, so the toggles are shown
+    /// disabled with an explanation rather than hidden - hiding them reads as the feature being
+    /// missing rather than as something they turned off.
+    /// </summary>
+    public bool IsPushBlockedBySystem
     {
-        get => _isSavingNotificationFrequency;
-        private set => SetProperty(ref _isSavingNotificationFrequency, value);
+        get => _isPushBlockedBySystem;
+        private set
+        {
+            if (SetProperty(ref _isPushBlockedBySystem, value))
+            {
+                OnPropertyChanged(nameof(CanEditNotifications));
+                OnPropertyChanged(nameof(NotificationBlockedMessage));
+            }
+        }
     }
 
-    public string NotificationFrequencyStatus { get; private set; } = string.Empty;
+    public bool IsSavingNotifications
+    {
+        get => _isSavingNotifications;
+        private set
+        {
+            if (SetProperty(ref _isSavingNotifications, value))
+            {
+                OnPropertyChanged(nameof(CanEditNotifications));
+                OnPropertyChanged(nameof(CanEditNotificationCategories));
+            }
+        }
+    }
+
+    public bool CanEditNotifications => !IsPushBlockedBySystem && !IsSavingNotifications;
+
+    /// <summary>The per-kind toggles only mean anything while push is allowed at all.</summary>
+    public bool CanEditNotificationCategories => CanEditNotifications && AllowPushNotifications;
+
+    public string NotificationBlockedMessage => IsPushBlockedBySystem
+        ? "Notifications are turned off for StreamTunes on this device. Turn them back on in your device settings."
+        : string.Empty;
+
+    public string NotificationStatus { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// The master switch. On means the OS permission is granted AND at least one kind is wanted,
+    /// which is exactly the condition under which a notification can actually arrive - so it can
+    /// never claim to be on while the user would receive nothing.
+    /// </summary>
+    public bool AllowPushNotifications
+    {
+        get => _allowPushNotifications;
+        set
+        {
+            if (!SetProperty(ref _allowPushNotifications, value))
+            {
+                return;
+            }
+
+            OnPropertyChanged(nameof(CanEditNotificationCategories));
+
+            if (!_suppressNotificationWrites)
+            {
+                _ = ApplyMasterToggleAsync(value);
+            }
+        }
+    }
+
+    public bool ReceiveReleasePush
+    {
+        get => _receiveReleasePush;
+        set
+        {
+            if (SetProperty(ref _receiveReleasePush, value) && !_suppressNotificationWrites)
+            {
+                _ = SaveNotificationsAsync();
+            }
+        }
+    }
+
+    public bool ReceiveMessagePush
+    {
+        get => _receiveMessagePush;
+        set
+        {
+            if (SetProperty(ref _receiveMessagePush, value) && !_suppressNotificationWrites)
+            {
+                _ = SaveNotificationsAsync();
+            }
+        }
+    }
 
     public ArtistPushFrequency NotificationFrequency
     {
@@ -172,9 +268,10 @@ public partial class ConfigViewModel : ObservableObject
 
             OnPropertyChanged(nameof(NotificationFrequencyDescription));
 
-            // Saved on change rather than behind a button, matching the cache slider above it,
-            // which also commits as you move it.
-            _ = SaveNotificationFrequencyAsync(value);
+            if (!_suppressNotificationWrites)
+            {
+                _ = SaveNotificationsAsync();
+            }
         }
     }
 
@@ -189,7 +286,17 @@ public partial class ConfigViewModel : ObservableObject
     {
         if (_notificationPreferences is null)
         {
-            IsNotificationFrequencyAvailable = false;
+            IsNotificationSectionAvailable = false;
+            return;
+        }
+
+        var permission = _pushNotifications is null
+            ? PushPermissionStatus.Unsupported
+            : await _pushNotifications.GetPermissionStatusAsync().ConfigureAwait(true);
+
+        if (permission == PushPermissionStatus.Unsupported)
+        {
+            IsNotificationSectionAvailable = false;
             return;
         }
 
@@ -197,34 +304,146 @@ public partial class ConfigViewModel : ObservableObject
 
         if (_preferences is null)
         {
-            // Signed out, or the server is unreachable. Showing a picker that cannot save would be
-            // worse than showing nothing.
-            IsNotificationFrequencyAvailable = false;
+            // Signed out, or the server is unreachable. Toggles that cannot save are worse than
+            // no toggles.
+            IsNotificationSectionAvailable = false;
             return;
         }
 
-        // Set through the field, not the property: going through the setter would post the value
-        // straight back to the server on every page open.
-        SetProperty(ref _notificationFrequency, _preferences.ArtistPushFrequency, nameof(NotificationFrequency));
-        OnPropertyChanged(nameof(NotificationFrequencyDescription));
-        IsNotificationFrequencyAvailable = true;
+        IsPushBlockedBySystem = permission == PushPermissionStatus.Denied;
+        ApplyPreferences(_preferences, permission);
+        IsNotificationSectionAvailable = true;
     }
 
-    private async Task SaveNotificationFrequencyAsync(ArtistPushFrequency frequency)
+    private void ApplyPreferences(NotificationPreferences preferences, PushPermissionStatus permission)
+    {
+        // Assigned with writes suppressed: this is displaying what the server already has, and
+        // going through the setters would post it straight back on every page open.
+        _suppressNotificationWrites = true;
+
+        try
+        {
+            ReceiveReleasePush = preferences.ReceiveArtistReleasePush;
+            ReceiveMessagePush = preferences.ReceiveArtistMessagePush;
+            NotificationFrequency = preferences.ArtistPushFrequency;
+            AllowPushNotifications =
+                permission == PushPermissionStatus.Granted &&
+                (preferences.ReceiveArtistReleasePush || preferences.ReceiveArtistMessagePush);
+        }
+        finally
+        {
+            _suppressNotificationWrites = false;
+        }
+    }
+
+    private async Task ApplyMasterToggleAsync(bool allow)
+    {
+        if (_pushNotifications is null || _notificationPreferences is null)
+        {
+            return;
+        }
+
+        IsSavingNotifications = true;
+        SetStatus(string.Empty);
+
+        try
+        {
+            if (allow)
+            {
+                // Asks the OS if it has not been asked, and switches the account preferences on -
+                // both halves of "allow", which is why this goes through the coordinator rather
+                // than writing preferences directly.
+                var status = await _pushNotifications.RequestPermissionAndRegisterAsync().ConfigureAwait(true);
+
+                if (status != PushPermissionStatus.Granted)
+                {
+                    IsPushBlockedBySystem = status == PushPermissionStatus.Denied;
+                    RevertMaster(false);
+                    SetStatus(status == PushPermissionStatus.Denied
+                        ? "Notifications are turned off for StreamTunes in your device settings."
+                        : "Notifications could not be turned on.");
+                    return;
+                }
+
+                IsPushBlockedBySystem = false;
+
+                // Re-read rather than assume: the coordinator has just written both categories on,
+                // and this is what the server actually stored.
+                var refreshed = await _notificationPreferences.GetAsync().ConfigureAwait(true);
+
+                if (refreshed is not null)
+                {
+                    _preferences = refreshed;
+                    ApplyPreferences(refreshed, PushPermissionStatus.Granted);
+                }
+                else
+                {
+                    SetCategoriesQuietly(true, true);
+                }
+
+                SetStatus("Saved.");
+                return;
+            }
+
+            // Off means "send me nothing", which is the two category switches - the OS permission
+            // cannot be revoked from here, and asking the user to do it in Settings to turn one
+            // feature off would be absurd. The device stays registered, so turning this back on
+            // does not need another prompt.
+            SetCategoriesQuietly(false, false);
+            await SaveNotificationsAsync().ConfigureAwait(true);
+        }
+        finally
+        {
+            IsSavingNotifications = false;
+        }
+    }
+
+    private void SetCategoriesQuietly(bool release, bool message)
+    {
+        _suppressNotificationWrites = true;
+
+        try
+        {
+            ReceiveReleasePush = release;
+            ReceiveMessagePush = message;
+        }
+        finally
+        {
+            _suppressNotificationWrites = false;
+        }
+    }
+
+    private void RevertMaster(bool value)
+    {
+        _suppressNotificationWrites = true;
+
+        try
+        {
+            AllowPushNotifications = value;
+        }
+        finally
+        {
+            _suppressNotificationWrites = false;
+        }
+    }
+
+    private async Task SaveNotificationsAsync()
     {
         if (_notificationPreferences is null || _preferences is null)
         {
             return;
         }
 
-        IsSavingNotificationFrequency = true;
+        IsSavingNotifications = true;
         SetStatus(string.Empty);
 
         try
         {
             // The whole record goes back, because the endpoint replaces all of it - sending only
-            // the frequency would switch every other preference off.
-            _preferences.ArtistPushFrequency = frequency;
+            // what changed would switch the listener's email preferences off.
+            _preferences.ReceiveArtistReleasePush = ReceiveReleasePush;
+            _preferences.ReceiveArtistMessagePush = ReceiveMessagePush;
+            _preferences.ArtistPushFrequency = NotificationFrequency;
 
             if (!await _notificationPreferences.SetAsync(_preferences).ConfigureAwait(true))
             {
@@ -232,11 +451,9 @@ public partial class ConfigViewModel : ObservableObject
                 return;
             }
 
-            // Read back rather than trusting the 200. A server older than this build simply ignores
-            // a property it does not know, answers OK, and drops the choice - so without this the
-            // app says "Saved" and the setting is back to its old value next time the page opens.
-            // A mobile client is always some other version than the server it is talking to, which
-            // makes that worth one extra round trip.
+            // Read back rather than trusting the 200. A server older than this build ignores a
+            // property it does not know, answers OK, and drops the choice - so without this the app
+            // says "Saved" and the setting is back to its old value next time the page opens.
             var confirmed = await _notificationPreferences.GetAsync().ConfigureAwait(true);
 
             if (confirmed is null)
@@ -245,27 +462,26 @@ public partial class ConfigViewModel : ObservableObject
                 return;
             }
 
+            var frequencyIgnored = confirmed.ArtistPushFrequency != NotificationFrequency;
+
             _preferences = confirmed;
+            ApplyPreferences(confirmed, IsPushBlockedBySystem
+                ? PushPermissionStatus.Denied
+                : PushPermissionStatus.Granted);
 
-            if (confirmed.ArtistPushFrequency != frequency)
-            {
-                SetProperty(ref _notificationFrequency, confirmed.ArtistPushFrequency, nameof(NotificationFrequency));
-                OnPropertyChanged(nameof(NotificationFrequencyDescription));
-                SetStatus("This server does not support notification frequency yet.");
-                return;
-            }
-
-            SetStatus("Saved.");
+            SetStatus(frequencyIgnored
+                ? "This server does not support notification frequency yet."
+                : "Saved.");
         }
         finally
         {
-            IsSavingNotificationFrequency = false;
+            IsSavingNotifications = false;
         }
     }
 
     private void SetStatus(string status)
     {
-        NotificationFrequencyStatus = status;
-        OnPropertyChanged(nameof(NotificationFrequencyStatus));
+        NotificationStatus = status;
+        OnPropertyChanged(nameof(NotificationStatus));
     }
 }
