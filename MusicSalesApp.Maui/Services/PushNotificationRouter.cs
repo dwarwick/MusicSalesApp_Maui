@@ -84,26 +84,45 @@ public sealed class PushNotificationRouter : IPushNotificationRouter
             _pending = null;
         }
 
-        if (pending is not null)
+        if (pending is null)
         {
-            await HandleAsync(pending);
+            return;
+        }
+
+        if (!await TryRouteAsync(pending))
+        {
+            // Navigation was not possible yet - Shell does not exist, or is mid-transition. Put it
+            // back rather than dropping it: the next activation tries again, and losing the payload
+            // here is the difference between a tap that works and one that just opens the app.
+            lock (_pendingLock)
+            {
+                _pending ??= pending;
+            }
         }
     }
 
     /// <inheritdoc />
-    public async Task HandleAsync(IReadOnlyDictionary<string, string?>? data)
+    public Task HandleAsync(IReadOnlyDictionary<string, string?>? data) => TryRouteAsync(data);
+
+    /// <summary>
+    /// Routes one payload. False means "could not navigate yet, try again"; true means the
+    /// decision is made, including deciding there is nowhere to go.
+    /// </summary>
+    private async Task<bool> TryRouteAsync(IReadOnlyDictionary<string, string?>? data)
     {
         if (data is null || data.Count == 0)
         {
-            return;
+            return true;
         }
 
         try
         {
             if (!TryGetValue(data, PushDataKeys.Kind, out var kind))
             {
-                return;
+                return true;
             }
+
+            _logger.LogInformation("Routing a tapped push notification. Kind={Kind}", kind);
 
             // The destination has to match what the notification said. A summary that names an
             // artist and a count opens that artist; one naming a song opens the song. Anything
@@ -111,21 +130,21 @@ public sealed class PushNotificationRouter : IPushNotificationRouter
             // leaves the user on Home, which is where the app opens anyway.
             if (string.Equals(kind, PushNotificationKinds.Digest, StringComparison.Ordinal))
             {
-                await HandleDigestAsync(data);
-                return;
+                return await HandleDigestAsync(data);
             }
 
             if (!string.Equals(kind, PushNotificationKinds.Release, StringComparison.Ordinal))
             {
                 // Artist messages have no destination yet - the Artist Messages page does not
                 // exist. Landing on Home is the current behaviour and stays correct until it does.
-                return;
+                return true;
             }
 
             if (!TryGetValue(data, PushDataKeys.SongId, out var rawSongId) ||
                 !int.TryParse(rawSongId, out var songId))
             {
-                return;
+                _logger.LogInformation("A tapped release notification carried no usable song id.");
+                return true;
             }
 
             var song = await FindSongAsync(songId);
@@ -136,7 +155,7 @@ public sealed class PushNotificationRouter : IPushNotificationRouter
                 // offline snapshot does not have it. Home is a better answer than an error.
                 _logger.LogInformation(
                     "A tapped release notification named song {SongId}, which is not in the catalogue.", songId);
-                return;
+                return true;
             }
 
             // The same parameter the library and Home pass, because the player takes the whole
@@ -145,21 +164,26 @@ public sealed class PushNotificationRouter : IPushNotificationRouter
             {
                 ["Song"] = song
             });
+
+            _logger.LogInformation("Opened song {SongId} from a tapped notification.", songId);
+            return true;
         }
         catch (Exception ex)
         {
-            // A tap must never be able to crash the app on launch, which is exactly when this runs.
-            _logger.LogWarning(ex, "Could not route a tapped push notification.");
+            // A tap must never crash the app on launch, which is exactly when this runs. False so
+            // the caller keeps it queued: the usual cause is navigating before Shell is ready.
+            _logger.LogWarning(ex, "Could not route a tapped push notification; it stays queued.");
+            return false;
         }
     }
 
-    private async Task HandleDigestAsync(IReadOnlyDictionary<string, string?> data)
+    private async Task<bool> HandleDigestAsync(IReadOnlyDictionary<string, string?> data)
     {
         if (!TryGetValue(data, PushDataKeys.ArtistName, out var artistName))
         {
             // A digest spanning several artists carries no name, because it has no single
             // destination. Home is the honest answer.
-            return;
+            return true;
         }
 
         // The artist page is the playlist player filtered by artist - the same route
@@ -170,6 +194,9 @@ public sealed class PushNotificationRouter : IPushNotificationRouter
         {
             ["ArtistName"] = artistName
         });
+
+        _logger.LogInformation("Opened artist {ArtistName} from a tapped digest.", artistName);
+        return true;
     }
 
     private async Task<SongDto?> FindSongAsync(int songId)

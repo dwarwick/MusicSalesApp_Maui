@@ -77,12 +77,12 @@ public class AppDelegate : MauiUIApplicationDelegate
 
 				router?.QueuePending(data);
 
-				// Only navigate now if the app was already running. On a cold start Shell does not
-				// exist yet, so the payload stays queued and AppActivationCoordinator replays it.
-				if (router is not null && UIApplication.SharedApplication.ApplicationState == UIApplicationState.Active)
-				{
-					_ = router.FlushPendingAsync();
-				}
+				// Always attempted, never gated on ApplicationState. Resuming from a background tap
+				// reports Inactive while iOS transitions, and OnActivated has usually already run
+				// and found nothing pending - so gating on Active left the payload queued forever
+				// and the tap merely opened the app. The router puts it back if Shell is not ready,
+				// which is what makes the cold-start case work instead.
+				_ = router?.FlushPendingAsync();
 			}
 			finally
 			{

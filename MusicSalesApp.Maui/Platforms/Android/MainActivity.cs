@@ -77,9 +77,11 @@ public class MainActivity : MauiAppCompatActivity
         // Handle deep link from initial launch
         HandleDeepLink(Intent);
 
-        // Cold start: queue only. Shell does not exist yet, so navigating here does nothing -
-        // AppActivationCoordinator replays it once the app is up.
+        // Cold start: queued and attempted. Shell usually does not exist yet, in which case the
+        // router puts the payload back and OnResume replays it - so trying costs nothing and
+        // covers the case where it IS ready.
         QueueTappedNotification(Intent);
+        FlushTappedNotification();
     }
 
     protected override void OnNewIntent(Intent? intent)

@@ -117,6 +117,51 @@ public class PushNotificationRouterTests
     }
 
     [Test]
+    public async Task FlushPendingAsync_WhenNavigationIsNotReadyYet_KeepsThePayloadForTheNextTry()
+    {
+        // The bug behind "tapping the notification just opens the app": the payload was taken off
+        // the queue, navigation failed because Shell was mid-transition, and nothing held it - so
+        // no later activation could route it.
+        var failing = true;
+        _navigation
+            .Setup(x => x.GoToAsync(It.IsAny<string>(), It.IsAny<IDictionary<string, object>>()))
+            .Returns(() => failing
+                ? Task.FromException(new InvalidOperationException("Shell is not ready"))
+                : Task.CompletedTask);
+
+        _router.QueuePending(ReleasePayload());
+        await _router.FlushPendingAsync();
+
+        failing = false;
+        await _router.FlushPendingAsync();
+
+        // Twice: the attempt that failed, then the retry that stuck. The point is that the second
+        // one happened at all - before this, the payload was gone after the first.
+        _navigation.Verify(
+            x => x.GoToAsync(
+                NavigationRoutes.SongPlayer,
+                It.Is<IDictionary<string, object>>(p => ReferenceEquals(p["Song"], Song))),
+            Times.Exactly(2));
+    }
+
+    [Test]
+    public async Task FlushPendingAsync_WhenThereIsNowhereToGo_DoesNotKeepRetrying()
+    {
+        // "Handled" includes deciding there is no destination. Re-queueing those would make every
+        // later activation try to route an artist message that has nowhere to go.
+        _router.QueuePending(new Dictionary<string, string?>
+        {
+            [PushDataKeys.Kind] = PushNotificationKinds.ArtistMessage,
+        });
+
+        await _router.FlushPendingAsync();
+        await _router.FlushPendingAsync();
+
+        VerifyNoNavigation();
+        _musicService.Verify(x => x.GetSongsAsync(), Times.Never);
+    }
+
+    [Test]
     public async Task FlushPendingAsync_ReplaysATapThatArrivedBeforeTheAppCouldNavigate()
     {
         _router.QueuePending(ReleasePayload());
