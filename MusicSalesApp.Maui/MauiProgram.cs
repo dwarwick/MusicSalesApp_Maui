@@ -237,6 +237,8 @@ public static class MauiProgram
 		// around static registration and LLVM AOT, and a large native SDK is what reopens those.
 		// Windows and Mac Catalyst get the no-op, so no calling code branches on platform.
 		builder.Services.AddSingleton<IPushApiService, PushApiService>();
+		builder.Services.AddSingleton<IPushNotificationRouter, PushNotificationRouter>();
+		builder.Services.AddSingleton<INotificationPreferenceApiService, NotificationPreferenceApiService>();
 #if ANDROID
 		builder.Services.AddSingleton<IPushRegistrationService, MusicSalesApp.Maui.Platforms.Android.AndroidPushRegistrationService>();
 		builder.Services.AddSingleton<IPushNotificationCoordinator, PushNotificationCoordinator>();

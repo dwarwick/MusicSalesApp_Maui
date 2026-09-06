@@ -265,6 +265,15 @@ Two things about this split are easy to get wrong:
 - **The iOS simulator gate cannot catch an LLVM-AOT bug** — simulator builds JIT, so `MtouchUseLlvm` is inert. It is still the *only* pre-submission iPad signal, because there is no iPad hardware here, and iPad is the form factor review rejected before. Neither gate substitutes for the other. The Android emulator gate has no such gap: Android Release AOT runs on the emulator.
 - **Scoring is calibrated, not naive.** A healthy run contains ~250 lines matching a bare `System.*Exception:` (SignalR reconnects logged at Warning) and ~20 `[Warning]` lines, so neither is a failure. On Android, Google Play Billing errors are filtered out entirely — Play only answers for a build it recognises, so those errors are expected on a locally-signed APK (this is the same trap described under "Reading device logs").
 
+> **A gate failure straight after adding a NuGet package is probably a stale `obj/Release`.**
+> Adding assemblies (the Firebase iOS binding did this) without clearing `obj/Release/net10.0-ios`
+> leaves AOT images that no longer match, and every simulator aborts inside
+> `mono_runtime_init_checked` → `load_aot_module` → `monoeg_g_log` before a line of managed app code
+> runs. It reads as "the new SDK broke startup" and it is not: `rm -rf obj/Release/net10.0-ios
+> bin/Release/net10.0-ios` and re-run. A Debug build does **not** show this, so a clean Debug build
+> is no evidence either way. Related but distinct from the `0xe8008014` codesign-stamp problem on
+> device builds.
+
 `.vscode/publish-and-upload-ios-appstore-macos.sh` runs the simulator gate before bumping `ApplicationVersion` (so a failure doesn't burn a build number) — `quick` for Test, `full` for Production — plus the device gate for Production. Override with `--skip-smoke-test` / `--skip-device-test`. The device gate signs `ios-arm64` with the Apple **Development** identity, so the publish deletes that output afterwards to stop an incremental build reusing a development-signed artifact.
 
 Tasks: `maui-smoke-test-ios-simulators[-quick]`, `maui-smoke-test-ios-device`, `maui-smoke-test-android-emulators`. Artifacts land in `DeviceLogs/{simulator,device,emulator}-smoke/latest/` — read `summary.txt`, then the failing target's `launch-N.stdio.log`, which is where Mono prints `Unhandled managed exception:` and the managed stack trace.

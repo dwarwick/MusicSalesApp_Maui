@@ -129,7 +129,15 @@ public sealed class AndroidPushRegistrationService : IPushRegistrationService
         {
             // GetToken returns a Google Play Services Task, not a System.Threading.Task, so it
             // cannot be awaited directly - AsAsync from Android.Gms.Extensions bridges the two.
+            //
+            // The binding marks GetToken [Obsolete("deprecated")] because the Java method carries
+            // @Deprecated in firebase-messaging 25.x, but getToken/deleteToken are the only token
+            // members it exposes - there is nothing to migrate to. Suppressed here rather than
+            // project-wide, so the day a replacement ships, removing this surfaces it. Same
+            // treatment as OnNewToken in StreamTunesFirebaseMessagingService.
+#pragma warning disable CS0618
             var token = await FirebaseMessaging.Instance.GetToken().AsAsync<Java.Lang.Object>();
+#pragma warning restore CS0618
             return token?.ToString();
         }
         catch (Exception ex)

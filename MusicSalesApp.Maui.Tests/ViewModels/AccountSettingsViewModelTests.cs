@@ -1160,4 +1160,117 @@ public class AccountSettingsViewModelTests
             It.IsAny<string>(),
             It.IsAny<string>()), Times.Once);
     }
+
+    // --- Push notifications: the one place the app spends the platform's single permission prompt ---
+
+    private static AccountSettingsViewModel CreateViewModelWithPush(
+        AccountSettingsViewModelTests fixture,
+        Mock<IPushNotificationCoordinator> push)
+    {
+        return new AccountSettingsViewModel(
+            fixture._mockAuthService.Object,
+            fixture._mockAlertService.Object,
+            fixture._mockNavigationService.Object,
+            fixture._mockBrowserService.Object,
+            fixture._mockConfiguration.Object,
+            fixture._mockMusicService.Object,
+            fixture._mockBillingService.Object,
+            fixture._mockNetworkStatus.Object,
+            push.Object);
+    }
+
+    [Test]
+    public async Task PushNotifications_WhenGranted_ShowsTheConfirmationRatherThanTheButton()
+    {
+        var push = new Mock<IPushNotificationCoordinator>();
+        push.Setup(x => x.GetPermissionStatusAsync()).ReturnsAsync(PushPermissionStatus.Granted);
+        var viewModel = CreateViewModelWithPush(this, push);
+
+        await viewModel.OnAppearingAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(viewModel.IsPushNotificationsSupported, Is.True);
+            Assert.That(viewModel.IsPushNotificationsEnabled, Is.True);
+            Assert.That(viewModel.ShowEnablePushNotifications, Is.False);
+        });
+    }
+
+    [Test]
+    public async Task PushNotifications_WhenDenied_HidesTheButtonBecauseAskingAgainDoesNothing()
+    {
+        var push = new Mock<IPushNotificationCoordinator>();
+        push.Setup(x => x.GetPermissionStatusAsync()).ReturnsAsync(PushPermissionStatus.Denied);
+        var viewModel = CreateViewModelWithPush(this, push);
+
+        await viewModel.OnAppearingAsync();
+
+        Assert.Multiple(() =>
+        {
+            // Neither platform shows the prompt twice, so a button here would simply do nothing.
+            Assert.That(viewModel.ShowEnablePushNotifications, Is.False);
+            Assert.That(viewModel.IsPushNotificationsDenied, Is.True);
+            Assert.That(viewModel.PushNotificationStatusText, Does.Contain("device settings"));
+        });
+    }
+
+    [Test]
+    public async Task PushNotifications_WhenTheTransportIsMissing_HidesTheWholeSection()
+    {
+        var push = new Mock<IPushNotificationCoordinator>();
+        push.Setup(x => x.GetPermissionStatusAsync()).ReturnsAsync(PushPermissionStatus.Unsupported);
+        var viewModel = CreateViewModelWithPush(this, push);
+
+        await viewModel.OnAppearingAsync();
+
+        Assert.That(viewModel.IsPushNotificationsSupported, Is.False);
+    }
+
+    [Test]
+    public async Task EnablePushNotifications_WhenGranted_RegistersAndUpdatesTheSection()
+    {
+        var push = new Mock<IPushNotificationCoordinator>();
+        push.Setup(x => x.GetPermissionStatusAsync()).ReturnsAsync(PushPermissionStatus.NotDetermined);
+        push.Setup(x => x.RequestPermissionAndRegisterAsync()).ReturnsAsync(PushPermissionStatus.Granted);
+        var viewModel = CreateViewModelWithPush(this, push);
+
+        await viewModel.OnAppearingAsync();
+        Assert.That(viewModel.ShowEnablePushNotifications, Is.True, "the button should be offered before asking");
+
+        await viewModel.EnablePushNotificationsCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(viewModel.IsPushNotificationsEnabled, Is.True);
+            Assert.That(viewModel.IsEnablingPushNotifications, Is.False);
+        });
+        push.Verify(x => x.RequestPermissionAndRegisterAsync(), Times.Once);
+    }
+
+    [Test]
+    public async Task EnablePushNotifications_WhenRefused_ExplainsThatSettingsIsTheOnlyWayBack()
+    {
+        var push = new Mock<IPushNotificationCoordinator>();
+        push.Setup(x => x.GetPermissionStatusAsync()).ReturnsAsync(PushPermissionStatus.NotDetermined);
+        push.Setup(x => x.RequestPermissionAndRegisterAsync()).ReturnsAsync(PushPermissionStatus.Denied);
+        var viewModel = CreateViewModelWithPush(this, push);
+
+        await viewModel.OnAppearingAsync();
+        await viewModel.EnablePushNotificationsCommand.ExecuteAsync(null);
+
+        Assert.That(viewModel.IsPushNotificationsDenied, Is.True);
+        _mockAlertService.Verify(
+            x => x.DisplayAlertAsync(It.IsAny<string>(), It.Is<string>(m => m.Contains("device settings")), It.IsAny<string>()),
+            Times.Once);
+    }
+
+    [Test]
+    public async Task OnAppearing_WithNoPushCoordinator_HidesTheSectionAndDoesNotThrow()
+    {
+        // The coordinator is an optional trailing dependency, so every pre-existing construction of
+        // this view model passes null - that must stay harmless.
+        await _viewModel.OnAppearingAsync();
+
+        Assert.That(_viewModel.IsPushNotificationsSupported, Is.False);
+    }
 }

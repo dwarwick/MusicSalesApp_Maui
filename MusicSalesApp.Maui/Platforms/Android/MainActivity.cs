@@ -76,13 +76,64 @@ public class MainActivity : MauiAppCompatActivity
 
         // Handle deep link from initial launch
         HandleDeepLink(Intent);
+
+        // Cold start: queue only. Shell does not exist yet, so navigating here does nothing -
+        // AppActivationCoordinator replays it once the app is up.
+        QueueTappedNotification(Intent);
     }
 
     protected override void OnNewIntent(Intent? intent)
     {
         base.OnNewIntent(intent);
         HandleDeepLink(intent);
+
+        // Warm start: the app is already running and can navigate immediately.
+        QueueTappedNotification(intent);
+        FlushTappedNotification();
     }
+
+    /// <summary>
+    /// FCM puts the message's data payload on the launch intent as extras - both for a notification
+    /// Android displayed itself while the app was backgrounded, and for one
+    /// StreamTunesFirebaseMessagingService posted in the foreground, which copies the same keys.
+    /// </summary>
+    private static void QueueTappedNotification(Intent? intent)
+    {
+        var extras = intent?.Extras;
+
+        if (extras is null)
+        {
+            return;
+        }
+
+        var data = new Dictionary<string, string?>(StringComparer.Ordinal);
+
+        foreach (var key in extras.KeySet() ?? [])
+        {
+            // Only strings: the extras also carry Android's own bundles, and GetString on those
+            // returns null rather than throwing, so this stays quiet about them.
+            var value = extras.GetString(key);
+
+            if (value is not null)
+            {
+                data[key] = value;
+            }
+        }
+
+        Router?.QueuePending(data);
+    }
+
+    private static void FlushTappedNotification()
+    {
+        if (Router is { } router)
+        {
+            _ = router.FlushPendingAsync();
+        }
+    }
+
+    private static MusicSalesApp.Maui.Services.IPushNotificationRouter? Router =>
+        IPlatformApplication.Current?.Services.GetService(typeof(MusicSalesApp.Maui.Services.IPushNotificationRouter))
+            as MusicSalesApp.Maui.Services.IPushNotificationRouter;
 
     private void HandleDeepLink(Intent? intent)
     {

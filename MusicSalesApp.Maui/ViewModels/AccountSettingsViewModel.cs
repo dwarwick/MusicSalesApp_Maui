@@ -16,6 +16,10 @@ public partial class AccountSettingsViewModel : ObservableObject
     private readonly IMusicService _musicService;
     private readonly IBillingService _billingService;
     private readonly INetworkStatusService _networkStatus;
+
+    // Trailing and optional, matching AppActivationCoordinator: existing tests construct this view
+    // model without knowing about push, and null simply hides the section.
+    private readonly IPushNotificationCoordinator? _pushNotificationCoordinator;
     private bool _hasBillingDerivedSubscriptionPrice;
     private bool _authSubscriptionAttached;
 
@@ -371,7 +375,8 @@ public partial class AccountSettingsViewModel : ObservableObject
         IConfiguration configuration,
         IMusicService musicService,
         IBillingService billingService,
-        INetworkStatusService networkStatus)
+        INetworkStatusService networkStatus,
+        IPushNotificationCoordinator? pushNotificationCoordinator = null)
     {
         _authService = authService;
         _alertService = alertService;
@@ -381,6 +386,7 @@ public partial class AccountSettingsViewModel : ObservableObject
         _musicService = musicService;
         _billingService = billingService;
         _networkStatus = networkStatus;
+        _pushNotificationCoordinator = pushNotificationCoordinator;
 
         AttachAuthSubscription();
         ApplySubscriptionState(null);
@@ -399,7 +405,10 @@ public partial class AccountSettingsViewModel : ObservableObject
         {
             await _authService.RefreshUserStatusAsync();
             ApplySubscriptionState(null);
-            await Task.WhenAll(RefreshBiometricLoginStateAsync(), LoadAndroidSubscriptionOfferAsync());
+            await Task.WhenAll(
+                RefreshBiometricLoginStateAsync(),
+                LoadAndroidSubscriptionOfferAsync(),
+                RefreshPushNotificationStateAsync());
         }
         finally
         {
@@ -415,7 +424,10 @@ public partial class AccountSettingsViewModel : ObservableObject
         {
             var status = await _musicService.GetSubscriptionStatusAsync();
             ApplySubscriptionState(status);
-            await Task.WhenAll(RefreshBiometricLoginStateAsync(), LoadAndroidSubscriptionOfferAsync());
+            await Task.WhenAll(
+                RefreshBiometricLoginStateAsync(),
+                LoadAndroidSubscriptionOfferAsync(),
+                RefreshPushNotificationStateAsync());
         }
         finally
         {
@@ -767,4 +779,91 @@ public partial class AccountSettingsViewModel : ObservableObject
 
     private DateTime GetTrialEndDateForDisplay()
         => (TrialEndDate ?? SubscriptionEndDate ?? DateTime.UtcNow).ToLocalTime();
+
+    // ---- Push notifications -------------------------------------------------------------------
+    //
+    // This is the ONLY place the app asks for the notification permission. It cannot be asked at
+    // launch or on sign-in: both platforms show the system prompt once and only once, and a prompt
+    // that appears unexplained is how people deny it - after which neither platform will ask again
+    // and the user has to go to system settings. Here they have just tapped a button that says what
+    // it is for. PushNotificationCoordinator.SyncAsync handles every later re-registration and
+    // never prompts.
+
+    /// <summary>False on Windows and Mac Catalyst, which have no push transport - the section hides.</summary>
+    [ObservableProperty]
+    public partial bool IsPushNotificationsSupported { get; set; }
+
+    /// <summary>Granted. The button is replaced by a confirmation.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowEnablePushNotifications))]
+    [NotifyPropertyChangedFor(nameof(PushNotificationStatusText))]
+    public partial bool IsPushNotificationsEnabled { get; set; }
+
+    /// <summary>
+    /// Refused. Asking again does nothing on either platform, so the button must not be offered -
+    /// it would look broken. The copy points at system settings instead.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowEnablePushNotifications))]
+    [NotifyPropertyChangedFor(nameof(PushNotificationStatusText))]
+    public partial bool IsPushNotificationsDenied { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsEnablingPushNotifications { get; set; }
+
+    public bool ShowEnablePushNotifications => !IsPushNotificationsEnabled && !IsPushNotificationsDenied;
+
+    public string PushNotificationStatusText =>
+        IsPushNotificationsEnabled
+            ? "You will be notified when artists you follow release new music or send you a message."
+            : IsPushNotificationsDenied
+                ? "Notifications are turned off for StreamTunes. You can turn them back on in your device settings."
+                : "Get notified when artists you follow release new music or send you a message.";
+
+    [RelayCommand]
+    private async Task EnablePushNotificationsAsync()
+    {
+        if (_pushNotificationCoordinator is null || IsEnablingPushNotifications)
+        {
+            return;
+        }
+
+        IsEnablingPushNotifications = true;
+
+        try
+        {
+            var status = await _pushNotificationCoordinator.RequestPermissionAndRegisterAsync();
+            ApplyPushPermissionStatus(status);
+
+            if (status == PushPermissionStatus.Denied)
+            {
+                await _alertService.DisplayAlertAsync(
+                    "Notifications are off",
+                    "StreamTunes cannot ask again. To turn notifications on, open your device settings, find StreamTunes and allow Notifications.",
+                    "OK");
+            }
+        }
+        finally
+        {
+            IsEnablingPushNotifications = false;
+        }
+    }
+
+    private async Task RefreshPushNotificationStateAsync()
+    {
+        if (_pushNotificationCoordinator is null)
+        {
+            IsPushNotificationsSupported = false;
+            return;
+        }
+
+        ApplyPushPermissionStatus(await _pushNotificationCoordinator.GetPermissionStatusAsync());
+    }
+
+    private void ApplyPushPermissionStatus(PushPermissionStatus status)
+    {
+        IsPushNotificationsSupported = status != PushPermissionStatus.Unsupported;
+        IsPushNotificationsEnabled = status == PushPermissionStatus.Granted;
+        IsPushNotificationsDenied = status == PushPermissionStatus.Denied;
+    }
 }

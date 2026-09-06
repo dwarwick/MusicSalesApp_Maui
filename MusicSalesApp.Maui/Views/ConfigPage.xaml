@@ -2,11 +2,19 @@
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:vm="clr-namespace:MusicSalesApp.Maui.ViewModels"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             xmlns:views="clr-namespace:MusicSalesApp.Maui.Views"
              x:Class="MusicSalesApp.Maui.Views.ConfigPage"
              x:DataType="vm:ConfigViewModel"
              Title="Config"
              SafeAreaEdges="All"
              BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
+
+    <ContentPage.Resources>
+        <!-- The picker shows the shared display names, so the app and the web account page cannot
+             drift apart on what "every 12 hours" is called. -->
+        <views:PushFrequencyConverter x:Key="PushFrequencyConverter" />
+    </ContentPage.Resources>
 
     <ScrollView>
         <VerticalStackLayout Padding="24,24" Spacing="{StaticResource Space5}">
@@ -103,6 +111,42 @@
                         HeightRequest="{StaticResource ControlHeight}"
                         HorizontalOptions="Start"
                         Padding="20,0" />
+            </VerticalStackLayout>
+
+            <!-- Notification frequency. Hidden until the preferences have been read, because it is
+                 an account setting the server enforces - a picker that could not save would be
+                 worse than no picker. -->
+            <VerticalStackLayout Spacing="{StaticResource Space4}"
+                                 IsVisible="{Binding IsNotificationFrequencyAvailable}">
+                <BoxView HeightRequest="1"
+                         Color="{AppThemeBinding Light={StaticResource LineLight}, Dark={StaticResource LineDark}}" />
+
+                <VerticalStackLayout Spacing="{StaticResource Space1}">
+                    <Label Text="Notifications"
+                           FontSize="{StaticResource FontSizeH4}"
+                           FontAttributes="Bold"
+                           TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />
+                    <Label Text="How often artists you follow may notify you."
+                           FontSize="{StaticResource FontSizeCardTitle}"
+                           TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
+                </VerticalStackLayout>
+
+                <Picker ItemsSource="{Binding NotificationFrequencies}"
+                        SelectedItem="{Binding NotificationFrequency}"
+                        IsEnabled="{Binding IsSavingNotificationFrequency, Converter={toolkit:InvertedBoolConverter}}"
+                        ItemDisplayBinding="{Binding ., Converter={StaticResource PushFrequencyConverter}}"
+                        TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}"
+                        HorizontalOptions="Fill" />
+
+                <Label Text="{Binding NotificationFrequencyDescription}"
+                       FontSize="{StaticResource FontSizeSmall}"
+                       LineBreakMode="WordWrap"
+                       TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
+
+                <Label Text="{Binding NotificationFrequencyStatus}"
+                       FontSize="{StaticResource FontSizeSmall}"
+                       IsVisible="{Binding NotificationFrequencyStatus, Converter={toolkit:IsStringNotNullOrEmptyConverter}}"
+                       TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
             </VerticalStackLayout>
         </VerticalStackLayout>
     </ScrollView>

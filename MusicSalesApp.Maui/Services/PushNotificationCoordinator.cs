@@ -26,6 +26,11 @@ public class PushNotificationCoordinator : IPushNotificationCoordinator, IDispos
     private readonly IPushApiService _pushApiService;
     private readonly IAppPreferenceStore _preferenceStore;
     private readonly ILogger<PushNotificationCoordinator> _logger;
+
+    // Trailing and optional, so the existing tests construct this without it. Null simply means
+    // the account preferences are left alone.
+    private readonly INotificationPreferenceApiService? _notificationPreferences;
+
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     private bool _disposed;
@@ -35,13 +40,15 @@ public class PushNotificationCoordinator : IPushNotificationCoordinator, IDispos
         IPushRegistrationService registrationService,
         IPushApiService pushApiService,
         IAppPreferenceStore preferenceStore,
-        ILogger<PushNotificationCoordinator> logger)
+        ILogger<PushNotificationCoordinator> logger,
+        INotificationPreferenceApiService? notificationPreferences = null)
     {
         _authService = authService;
         _registrationService = registrationService;
         _pushApiService = pushApiService;
         _preferenceStore = preferenceStore;
         _logger = logger;
+        _notificationPreferences = notificationPreferences;
 
         _authService.AuthStateChanged += OnAuthStateChanged;
         _registrationService.TokenRefreshed += OnTokenRefreshed;
@@ -105,11 +112,72 @@ public class PushNotificationCoordinator : IPushNotificationCoordinator, IDispos
 
         if (status == PushPermissionStatus.Granted)
         {
+            // Saying yes on the device says yes to the feature. The OS permission and the account
+            // preferences are different things - one is "may this phone show notifications", the
+            // other is "what do you want to be told about" - but a listener who has just been
+            // asked, in an app that explained what it is for, has answered both. Leaving the
+            // account switches off would register the phone and then never send it anything, which
+            // reads as broken rather than as a second setting they have not found yet.
+            //
+            // Only ever turns them ON. Turning push off is still done per channel, on the web
+            // account page, and this must not undo that on the next app launch.
+            await EnableAccountPushPreferencesAsync();
             await SyncAsync();
         }
 
         return status;
     }
+
+    /// <summary>
+    /// Switches the account-level push preferences on, if they are not already.
+    /// </summary>
+    /// <remarks>
+    /// Read first so the whole record can be written back: the endpoint replaces every preference,
+    /// so sending only the two push flags would switch the listener's email choices off.
+    /// </remarks>
+    private async Task EnableAccountPushPreferencesAsync()
+    {
+        if (_notificationPreferences is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var preferences = await _notificationPreferences.GetAsync();
+
+            if (preferences is null)
+            {
+                return;
+            }
+
+            if (preferences.ReceiveArtistReleasePush && preferences.ReceiveArtistMessagePush)
+            {
+                return;
+            }
+
+            preferences.ReceiveArtistReleasePush = true;
+            preferences.ReceiveArtistMessagePush = true;
+
+            if (!await _notificationPreferences.SetAsync(preferences))
+            {
+                _logger.LogWarning(
+                    "Notification permission was granted, but the account push preferences could not be switched on.");
+            }
+        }
+        catch (Exception ex)
+        {
+            // Registration has already succeeded by this point. Failing to flip the preferences is
+            // worth a line in the log, not worth reporting a denied permission to the caller.
+            _logger.LogWarning(ex, "Could not switch on the account push preferences.");
+        }
+    }
+
+    /// <inheritdoc />
+    public Task<PushPermissionStatus> GetPermissionStatusAsync() =>
+        _registrationService.IsSupported
+            ? _registrationService.GetPermissionStatusAsync()
+            : Task.FromResult(PushPermissionStatus.Unsupported);
 
     private async Task RegisterCurrentDeviceAsync()
     {
@@ -125,6 +193,16 @@ public class PushNotificationCoordinator : IPushNotificationCoordinator, IDispos
         switch (outcome)
         {
             case PushRegistrationOutcome.Registered:
+                // Logged in full, and deliberately: this is the only way to get the token off the
+                // device to send a test message with from the Firebase console, and it is what
+                // separates "Apple and Firebase are configured" from "the server never sent". It is
+                // a device address rather than a credential, and the file log lives inside the app
+                // container.
+                _logger.LogInformation(
+                    "Registered this device for push. Platform={Platform}, Token={Token}",
+                    CurrentPlatform,
+                    token);
+
                 // Remembered so sign-out can unregister the exact token that was registered. The
                 // platform may well hand back a different one by then, and unregistering the wrong
                 // one leaves the old registration live - which is how a signed-out phone keeps

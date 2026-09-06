@@ -169,6 +169,18 @@
 		<PartialAppManifest Include="Platforms\iOS\ExportCompliance.plist" />
 	</ItemGroup>
 
+	<!-- aps-environment, which must differ per configuration and so cannot live in Entitlements.plist.
+	     Release covers both TestFlight and the App Store, and both are signed with the "StreamTunes
+	     App Store" profile whose own aps-environment is "production" - TestFlight is NOT sandbox.
+	     A Release build carrying "development" gets tokens APNs rejects as BadDeviceToken, which
+	     reads as a server misconfiguration rather than a build one. CustomEntitlements is the SDK's
+	     own mechanism (see _CompileEntitlements), so the value is merged into the compiled
+	     entitlements rather than a second plist being kept in sync by hand. -->
+	<ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">
+		<CustomEntitlements Include="aps-environment" Type="String" Value="production" Condition="'$(Configuration)' == 'Release'" />
+		<CustomEntitlements Include="aps-environment" Type="String" Value="development" Condition="'$(Configuration)' != 'Release'" />
+	</ItemGroup>
+
 	<ItemGroup>
 		<ProjectReference Include="..\..\MusicSalesApp\MusicSalesApp.Common\MusicSalesApp.Common.csproj" />
 	</ItemGroup>
@@ -190,6 +202,18 @@
 
 	<ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) != 'android'">
 		<PackageReference Include="Plugin.MediaManager" Version="1.2.2" />
+	</ItemGroup>
+
+	<!-- iOS-only packages. FCM on iOS is a RELAY: the device gets an APNs token from Apple, and
+	     Firebase exchanges it for the FCM registration token the server actually stores. That
+	     exchange needs the native Firebase iOS SDK, so Xamarin.Firebase.Messaging cannot be reused
+	     here - it ships android TFMs only. Microsoft's Xamarin.Firebase.iOS.CloudMessaging was last
+	     published in 2022 against Firebase 8.10 and net6.0-ios15.4; this is the maintained binding
+	     (Firebase 12.10, net10.0-ios26.0, privacy manifests in every framework slice), and the one
+	     Plugin.Firebase depends on internally. Mac Catalyst gets NoPushRegistrationService, so the
+	     condition is ios and not "apple". -->
+	<ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">
+		<PackageReference Include="AdamE.Firebase.iOS.CloudMessaging" Version="12.10.0" />
 	</ItemGroup>
 
 	<!-- Android-only packages -->

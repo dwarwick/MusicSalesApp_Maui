@@ -12,13 +12,15 @@ public sealed class AppActivationCoordinator : IAppActivationCoordinator
     private readonly IMusicService _musicService;
     private readonly ISignalRConnectionManager _signalRConnectionManager;
     private readonly IPushNotificationCoordinator? _pushNotificationCoordinator;
+    private readonly IPushNotificationRouter? _pushNotificationRouter;
     private readonly ILogger<AppActivationCoordinator> _logger;
 
     public AppActivationCoordinator(
         IMusicService musicService,
         ISignalRConnectionManager signalRConnectionManager,
         ILogger<AppActivationCoordinator> logger,
-        IPushNotificationCoordinator? pushNotificationCoordinator = null)
+        IPushNotificationCoordinator? pushNotificationCoordinator = null,
+        IPushNotificationRouter? pushNotificationRouter = null)
     {
         _musicService = musicService;
         _signalRConnectionManager = signalRConnectionManager;
@@ -27,6 +29,7 @@ public sealed class AppActivationCoordinator : IAppActivationCoordinator
         // Trailing and optional, matching how the player ViewModels take their optional
         // collaborators - existing tests construct this without knowing about push.
         _pushNotificationCoordinator = pushNotificationCoordinator;
+        _pushNotificationRouter = pushNotificationRouter;
     }
 
     public async Task HandleActivationAsync()
@@ -41,6 +44,21 @@ public sealed class AppActivationCoordinator : IAppActivationCoordinator
         }
 
         await _signalRConnectionManager.HandleAppResumeAsync();
+
+        if (_pushNotificationRouter is not null)
+        {
+            try
+            {
+                // A notification tapped while the app was closed delivers its payload long before
+                // Shell exists, so the platform queues it and this is the first moment it can be
+                // acted on. Nothing pending is the normal case and costs nothing.
+                await _pushNotificationRouter.FlushPendingAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to route a queued push notification during app activation");
+            }
+        }
 
         if (_pushNotificationCoordinator is null)
         {

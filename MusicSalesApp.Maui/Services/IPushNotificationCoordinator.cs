@@ -22,6 +22,16 @@ public interface IPushNotificationCoordinator
     /// just expressed interest in notifications, so the prompt has a reason next to it.
     /// </summary>
     Task<PushPermissionStatus> RequestPermissionAndRegisterAsync();
+
+    /// <summary>
+    /// The current permission, without prompting.
+    /// </summary>
+    /// <remarks>
+    /// Needed by any UI that offers to turn notifications on: it has to know whether to show the
+    /// button, a confirmation, or the "you refused, go to settings" copy - and it must not find out
+    /// by prompting, which would spend the one prompt the platform ever shows.
+    /// </remarks>
+    Task<PushPermissionStatus> GetPermissionStatusAsync();
 }
 
 /// <summary>
@@ -38,6 +48,9 @@ public sealed class NoPushNotificationCoordinator : IPushNotificationCoordinator
     public Task SyncAsync() => Task.CompletedTask;
 
     public Task<PushPermissionStatus> RequestPermissionAndRegisterAsync() =>
+        Task.FromResult(PushPermissionStatus.Unsupported);
+
+    public Task<PushPermissionStatus> GetPermissionStatusAsync() =>
         Task.FromResult(PushPermissionStatus.Unsupported);
 }
 

@@ -16,6 +16,7 @@ public class PushNotificationCoordinatorTests
     private Mock<IPushRegistrationService> _registrationService;
     private Mock<IPushApiService> _pushApiService;
     private InMemoryPreferenceStore _preferences;
+    private Mock<INotificationPreferenceApiService> _notificationPreferences;
     private PushNotificationCoordinator _coordinator;
 
     [SetUp]
@@ -37,12 +38,21 @@ public class PushNotificationCoordinatorTests
 
         _authService.Setup(x => x.IsLoggedIn).Returns(true);
 
+        _notificationPreferences = new Mock<INotificationPreferenceApiService>();
+        _notificationPreferences
+            .Setup(x => x.GetAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new NotificationPreferences());
+        _notificationPreferences
+            .Setup(x => x.SetAsync(It.IsAny<NotificationPreferences>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
         _coordinator = new PushNotificationCoordinator(
             _authService.Object,
             _registrationService.Object,
             _pushApiService.Object,
             _preferences,
-            Mock.Of<ILogger<PushNotificationCoordinator>>());
+            Mock.Of<ILogger<PushNotificationCoordinator>>(),
+            _notificationPreferences.Object);
     }
 
     [TearDown]
@@ -265,5 +275,117 @@ public class PushNotificationCoordinatorTests
         public void SetString(string key, string value) => _values[key] = value;
 
         public void Remove(string key) => _values.Remove(key);
+    }
+
+    [Test]
+    public async Task GetPermissionStatusAsync_ReportsWhatThePlatformSays_WithoutPrompting()
+    {
+        _registrationService.Setup(x => x.GetPermissionStatusAsync())
+            .ReturnsAsync(PushPermissionStatus.Denied);
+
+        var status = await _coordinator.GetPermissionStatusAsync();
+
+        Assert.That(status, Is.EqualTo(PushPermissionStatus.Denied));
+
+        // The UI asks this to decide which control to show. If it prompted, simply opening the
+        // settings page would spend the one prompt the platform ever shows.
+        _registrationService.Verify(x => x.RequestPermissionAsync(), Times.Never);
+    }
+
+    [Test]
+    public async Task GetPermissionStatusAsync_WhenThePlatformHasNoTransport_ReportsUnsupported()
+    {
+        _registrationService.Setup(x => x.IsSupported).Returns(false);
+
+        var status = await _coordinator.GetPermissionStatusAsync();
+
+        Assert.That(status, Is.EqualTo(PushPermissionStatus.Unsupported));
+    }
+
+    // --- Opting in on the device is also opting in on the account ---
+
+    [Test]
+    public async Task RequestPermissionAndRegister_WhenGranted_SwitchesTheAccountPushPreferencesOn()
+    {
+        // Otherwise the phone registers cleanly and is then never sent anything, because the
+        // account-level switches default off - which reads as push being broken.
+        _registrationService.Setup(x => x.RequestPermissionAsync()).ReturnsAsync(PushPermissionStatus.Granted);
+
+        await _coordinator.RequestPermissionAndRegisterAsync();
+
+        _notificationPreferences.Verify(
+            x => x.SetAsync(
+                It.Is<NotificationPreferences>(p => p.ReceiveArtistReleasePush && p.ReceiveArtistMessagePush),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Test]
+    public async Task RequestPermissionAndRegister_PreservesTheEmailPreferencesItDidNotAskAbout()
+    {
+        // The endpoint replaces the whole record, so writing only the push flags would silently
+        // unsubscribe the listener from mail they had asked for.
+        _registrationService.Setup(x => x.RequestPermissionAsync()).ReturnsAsync(PushPermissionStatus.Granted);
+        _notificationPreferences
+            .Setup(x => x.GetAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new NotificationPreferences { ReceiveArtistReleaseEmails = true });
+
+        await _coordinator.RequestPermissionAndRegisterAsync();
+
+        _notificationPreferences.Verify(
+            x => x.SetAsync(
+                It.Is<NotificationPreferences>(p => p.ReceiveArtistReleaseEmails),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Test]
+    public async Task RequestPermissionAndRegister_WhenAlreadyOn_DoesNotWriteAtAll()
+    {
+        _registrationService.Setup(x => x.RequestPermissionAsync()).ReturnsAsync(PushPermissionStatus.Granted);
+        _notificationPreferences
+            .Setup(x => x.GetAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new NotificationPreferences
+            {
+                ReceiveArtistReleasePush = true,
+                ReceiveArtistMessagePush = true,
+            });
+
+        await _coordinator.RequestPermissionAndRegisterAsync();
+
+        _notificationPreferences.Verify(
+            x => x.SetAsync(It.IsAny<NotificationPreferences>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Test]
+    public async Task RequestPermissionAndRegister_WhenDenied_LeavesTheAccountAlone()
+    {
+        // This only ever turns preferences ON, and only when the user said yes.
+        _registrationService.Setup(x => x.RequestPermissionAsync()).ReturnsAsync(PushPermissionStatus.Denied);
+
+        await _coordinator.RequestPermissionAndRegisterAsync();
+
+        _notificationPreferences.Verify(
+            x => x.SetAsync(It.IsAny<NotificationPreferences>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Test]
+    public async Task RequestPermissionAndRegister_WhenThePreferencesCannotBeSaved_StillRegisters()
+    {
+        // The device registration is the part that matters and has already happened; a failed
+        // preference write must not be reported as a denied permission.
+        _registrationService.Setup(x => x.RequestPermissionAsync()).ReturnsAsync(PushPermissionStatus.Granted);
+        _notificationPreferences
+            .Setup(x => x.SetAsync(It.IsAny<NotificationPreferences>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("offline"));
+
+        var status = await _coordinator.RequestPermissionAndRegisterAsync();
+
+        Assert.That(status, Is.EqualTo(PushPermissionStatus.Granted));
+        _pushApiService.Verify(
+            x => x.RegisterDeviceAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()),
+            Times.Once);
     }
 }
