@@ -60,7 +60,17 @@ public partial class AccountSettingsViewModel : ObservableObject
     public partial string BiometricMethodName { get; set; } = BiometricAvailability.Unavailable.DisplayName;
 
     /// <summary>The button-and-dialog form of the same name: "Face ID", "Fingerprint".</summary>
+    /// <remarks>
+    /// It notifies <see cref="BiometricLoginStatusText"/> as well as the button, and the omission was
+    /// a real bug rather than a tidy-up. That status line names this property in its OFF branch, and
+    /// the refresh assigns this LAST - so on the common path, where the device has biometrics but
+    /// nothing is saved, <see cref="IsBiometricLoginEnabled"/> goes false-to-false, raises nothing,
+    /// and the last recomputation of the status line happened before this was set. The label sat on
+    /// its startup default and read "Biometric sign-in is off" on a phone that would have said
+    /// "Fingerprint" - which reads as the feature being unavailable rather than merely switched off.
+    /// </remarks>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(BiometricLoginStatusText))]
     [NotifyPropertyChangedFor(nameof(TurnOffBiometricLoginText))]
     public partial string BiometricMethodShortName { get; set; } = BiometricAvailability.Unavailable.ShortName;
 
