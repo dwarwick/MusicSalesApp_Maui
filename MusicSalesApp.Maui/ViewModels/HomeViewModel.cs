@@ -844,9 +844,9 @@ public partial class HomeViewModel : ObservableObject
     {
         if (string.IsNullOrWhiteSpace(artist)) return Task.CompletedTask;
 
-        return _navigationService.GoToAsync("playlist-player", new Dictionary<string, object>
+        return _navigationService.GoToAsync(NavigationRoutes.PlaylistPlayer, new Dictionary<string, object>
         {
-            ["ArtistName"] = artist
+            [PlaylistNavigationTarget.ArtistNameKey] = artist
         });
     }
 

@@ -182,7 +182,7 @@ public sealed class PushNotificationRouter : IPushNotificationRouter
         // trip, which matters on a cold start with no network.
         await _navigationService.GoToAsync(NavigationRoutes.PlaylistPlayer, new Dictionary<string, object>
         {
-            ["ArtistName"] = artistName
+            [PlaylistNavigationTarget.ArtistNameKey] = artistName
         });
 
         _logger.LogInformation("Opened artist {ArtistName} from a tapped digest.", artistName);

@@ -938,9 +938,9 @@ public partial class MusicLibraryViewModel : ObservableObject
     private async Task NavigateToArtistAsync(string? artist)
     {
         if (string.IsNullOrEmpty(artist)) return;
-        await _navigationService.GoToAsync("playlist-player", new Dictionary<string, object>
+        await _navigationService.GoToAsync(NavigationRoutes.PlaylistPlayer, new Dictionary<string, object>
         {
-            ["ArtistName"] = artist
+            [PlaylistNavigationTarget.ArtistNameKey] = artist
         });
     }
 

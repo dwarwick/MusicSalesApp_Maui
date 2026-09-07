@@ -1029,32 +1029,6 @@ sealed class NeverEndingStream : Stream
     public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 }
 
-sealed class InMemoryPreferenceStore : IAppPreferenceStore
-{
-    private readonly Dictionary<string, string> _values = [];
-
-    public bool GetBool(string key, bool defaultValue = false)
-        => bool.TryParse(GetString(key), out var value) ? value : defaultValue;
-
-    public void SetBool(string key, bool value)
-        => SetString(key, value.ToString());
-
-    public int GetInt(string key, int defaultValue = 0)
-        => int.TryParse(GetString(key), out var value) ? value : defaultValue;
-
-    public void SetInt(string key, int value)
-        => SetString(key, value.ToString());
-
-    public string? GetString(string key)
-        => _values.TryGetValue(key, out var value) ? value : null;
-
-    public void SetString(string key, string value)
-        => _values[key] = value;
-
-    public void Remove(string key)
-        => _values.Remove(key);
-}
-
 sealed class TestConnectivity : IConnectivity
 {
     public event EventHandler<ConnectivityChangedEventArgs>? ConnectivityChanged;

@@ -5,7 +5,7 @@ using MusicSalesApp.Maui.Services;
 namespace MusicSalesApp.Maui.ViewModels;
 
 [QueryProperty(nameof(GenreName), "GenreName")]
-[QueryProperty(nameof(ArtistName), "ArtistName")]
+[QueryProperty(nameof(ArtistName), PlaylistNavigationTarget.ArtistNameKey)]
 [QueryProperty(nameof(PlaylistIdParam), "PlaylistId")]
 [QueryProperty(nameof(RecommendedUserIdParam), "RecommendedUserId")]
 [QueryProperty(nameof(TopStreamedWindow), "TopStreamedWindow")]
@@ -871,9 +871,9 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     private async Task NavigateToArtistAsync(string? artist)
     {
         if (string.IsNullOrEmpty(artist)) return;
-        await _navigationService.GoToReplacingCurrentAsync("playlist-player", new Dictionary<string, object>
+        await _navigationService.GoToReplacingCurrentAsync(NavigationRoutes.PlaylistPlayer, new Dictionary<string, object>
         {
-            ["ArtistName"] = artist
+            [PlaylistNavigationTarget.ArtistNameKey] = artist
         });
     }
 

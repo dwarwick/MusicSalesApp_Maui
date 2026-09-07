@@ -269,29 +269,6 @@ public class PushNotificationCoordinatorTests
         await Task.CompletedTask;
     }
 
-    /// <summary>
-    /// A real store rather than a mock: the coordinator round-trips values through it, and
-    /// asserting on what it holds is clearer than verifying setter calls.
-    /// </summary>
-    private sealed class InMemoryPreferenceStore : IAppPreferenceStore
-    {
-        private readonly Dictionary<string, string> _values = [];
-
-        public bool GetBool(string key, bool defaultValue = false) => defaultValue;
-
-        public void SetBool(string key, bool value) { }
-
-        public int GetInt(string key, int defaultValue = 0) => defaultValue;
-
-        public void SetInt(string key, int value) { }
-
-        public string? GetString(string key) => _values.GetValueOrDefault(key);
-
-        public void SetString(string key, string value) => _values[key] = value;
-
-        public void Remove(string key) => _values.Remove(key);
-    }
-
     [Test]
     public async Task GetPermissionStatusAsync_ReportsWhatThePlatformSays_WithoutPrompting()
     {

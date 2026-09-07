@@ -57,12 +57,22 @@
                 carries the follow control beside the name rather than in the track actions, because
                 here it is about the ARTIST rather than the song being played.
             -->
-            <HorizontalStackLayout Spacing="{StaticResource Space2}">
-                <Label Text="{Binding PersonaName, Source={x:Reference Root}}"
+            <!--
+                A Grid rather than a HorizontalStackLayout, which is the same choice SongCardView
+                makes and for the same reason: a stack measures its children unconstrained, so a
+                long persona name took its full natural width and pushed the bell past the right
+                edge of the card - clipping the only way to follow from the player. The star column
+                gives way and the name truncates; the Auto column never squeezes.
+            -->
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space2}">
+                <Label Grid.Column="0"
+                       Text="{Binding PersonaName, Source={x:Reference Root}}"
                        FontSize="{StaticResource FontSizeCardTitle}"
                        FontAttributes="Bold"
                        TextColor="{StaticResource StBlueBright}"
                        TextDecorations="Underline"
+                       LineBreakMode="TailTruncation"
+                       MaxLines="1"
                        VerticalOptions="Center">
                     <Label.GestureRecognizers>
                         <TapGestureRecognizer Command="{Binding NavigateCommand, Source={x:Reference Root}}"
@@ -70,7 +80,8 @@
                     </Label.GestureRecognizers>
                 </Label>
 
-                <Grid IsVisible="{Binding CanFollow, Source={x:Reference Root}}"
+                <Grid Grid.Column="1"
+                      IsVisible="{Binding CanFollow, Source={x:Reference Root}}"
                       HeightRequest="{StaticResource ControlHeightSmall}"
                       WidthRequest="{StaticResource ControlHeightSmall}"
                       VerticalOptions="Center">
@@ -85,7 +96,7 @@
                           HorizontalOptions="Center"
                           VerticalOptions="Center" />
                 </Grid>
-            </HorizontalStackLayout>
+            </Grid>
 
             <Label Style="{StaticResource PlayerBodyText}"
                    Text="{Binding Bio, Source={x:Reference Root}}"
