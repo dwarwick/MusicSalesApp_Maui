@@ -1,4 +1,4 @@
-﻿using System.Windows.Input;
+using System.Windows.Input;
 using MusicSalesApp.Maui.Services;
 using MusicSalesApp.Maui.ViewModels;
 
@@ -40,6 +40,14 @@ public partial class SongCardView : ContentView
 
     public static readonly BindableProperty ReportSongCommandProperty =
         BindableProperty.Create(nameof(ReportSongCommand), typeof(ICommand), typeof(SongCardView));
+
+    /// <summary>
+    /// Follow or unfollow this song's artist. Supplied by the host page the same way
+    /// <see cref="LikeSongCommand"/> is, so a surface that has no business offering it simply does
+    /// not set it.
+    /// </summary>
+    public static readonly BindableProperty FollowArtistCommandProperty =
+        BindableProperty.Create(nameof(FollowArtistCommand), typeof(ICommand), typeof(SongCardView));
 
     /// <summary>
     /// Set false to hide the report flag. Pages bind this to their ViewModel's CanUseServerActions so
@@ -109,6 +117,12 @@ public partial class SongCardView : ContentView
     {
         get => (ICommand?)GetValue(DislikeSongCommandProperty);
         set => SetValue(DislikeSongCommandProperty, value);
+    }
+
+    public ICommand? FollowArtistCommand
+    {
+        get => (ICommand?)GetValue(FollowArtistCommandProperty);
+        set => SetValue(FollowArtistCommandProperty, value);
     }
 
     public ICommand? ReportSongCommand

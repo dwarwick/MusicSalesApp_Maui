@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MusicSalesApp.Maui.Services;
 
@@ -17,6 +17,7 @@ public partial class SongPlayerViewModel : ObservableObject
     private readonly IMediaPlaybackOnboardingService _mediaPlaybackOnboardingService;
     private readonly ISignalRService _signalRService;
     private readonly IAppConfig _appConfig;
+    private readonly IArtistFollowStateCoordinator? _artistFollowStateCoordinator;
     private readonly IBillingService _billingService;
     private readonly INetworkStatusService? _networkStatusService;
     private readonly ISongArtworkHydrator? _songArtworkHydrator;
@@ -34,7 +35,8 @@ public partial class SongPlayerViewModel : ObservableObject
         IBillingService billingService,
         INetworkStatusService? networkStatusService = null,
         ISongArtworkHydrator? songArtworkHydrator = null,
-        IUserStreamedSongStore? userStreamedSongStore = null)
+        IUserStreamedSongStore? userStreamedSongStore = null,
+        IArtistFollowStateCoordinator? artistFollowStateCoordinator = null)
     {
         _musicService = musicService;
         _alertService = alertService;
@@ -45,6 +47,14 @@ public partial class SongPlayerViewModel : ObservableObject
         _signalRService = signalRService;
         _appConfig = appConfig;
         _billingService = billingService;
+        _artistFollowStateCoordinator = artistFollowStateCoordinator;
+
+        if (_artistFollowStateCoordinator != null)
+        {
+            // The library, the other player and this one can all be holding a card for the same
+            // artist. Following from any of them has to move this bell too.
+            _artistFollowStateCoordinator.FollowStateChanged += HandleArtistFollowStateChanged;
+        }
         _networkStatusService = networkStatusService;
         _songArtworkHydrator = songArtworkHydrator;
         _userStreamedSongStore = userStreamedSongStore;
@@ -182,6 +192,7 @@ public partial class SongPlayerViewModel : ObservableObject
             OnPropertyChanged(nameof(ShareUrl));
             _ = HydrateArtworkAsync(value);
             _ = LoadSongDetailsAsync(value);
+            _ = LoadArtistFollowStateAsync();
         }
     }
 
@@ -270,6 +281,47 @@ public partial class SongPlayerViewModel : ObservableObject
             _playbackService,
             Song,
             PlaybackQueueDescriptions.SongPage(Song));
+    }
+
+    /// <summary>
+    /// Follows or unfollows this song's artist.
+    /// </summary>
+    /// <remarks>
+    /// No stream requirement, unlike the thumbs: following says you want to hear what this artist
+    /// does next, which does not depend on having finished the track in front of you.
+    /// </remarks>
+    [RelayCommand]
+    private async Task FollowArtistAsync()
+    {
+        if (Song?.PersonaId is not int personaId || personaId <= 0) return;
+        if (_artistFollowStateCoordinator is null) return;
+
+        if (!await RequireAuthenticatedUserAsync("follow artists")) return;
+
+        await _artistFollowStateCoordinator.ToggleAsync(Song);
+    }
+
+    private void HandleArtistFollowStateChanged(object? sender, ArtistFollowChange change)
+    {
+        if (Song is null || Song.PersonaId != change.PersonaId) return;
+
+        _artistFollowStateCoordinator?.ApplyKnownState([Song]);
+    }
+
+    private async Task LoadArtistFollowStateAsync()
+    {
+        if (Song is null || _artistFollowStateCoordinator is null || !_authService.IsLoggedIn) return;
+
+        try
+        {
+            await _artistFollowStateCoordinator.LoadForAsync([Song]);
+        }
+        catch (Exception ex)
+        {
+            // Never fatal to opening a song. An unresolved bell renders as "not following", which
+            // the user can correct with a tap.
+            System.Diagnostics.Debug.WriteLine($"Failed to load the artist follow state: {ex.Message}");
+        }
     }
 
     [RelayCommand]

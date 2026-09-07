@@ -103,4 +103,18 @@ public class PlaybackDiagnosticsLoggerFilterTests
     {
         Assert.That(PlaybackDiagnosticsLoggerFilter.IsDiagnosticCategory(categoryName), Is.False);
     }
+
+    [TestCase("MusicSalesApp.Maui.Services.PushNotificationCoordinator")]
+    [TestCase("MusicSalesApp.Maui.Services.PushApiService")]
+    [TestCase("MusicSalesApp.Maui.Platforms.Android.AndroidPushRegistrationService")]
+    [TestCase("MusicSalesApp.Maui.Platforms.iOS.ApplePushRegistrationService")]
+    public void ShouldLog_InformationFromThePushPath_Logs(string category)
+    {
+        // The whole push success path is Information - only a rejected token is a Warning - so
+        // without these a device that registered and a device that never tried write the same
+        // nothing, and the FCM token cannot be read off the device to test a send with.
+        var logged = PlaybackDiagnosticsLoggerFilter.ShouldLog(category, LogLevel.Information, LogLevel.Information);
+
+        Assert.That(logged, Is.True);
+    }
 }

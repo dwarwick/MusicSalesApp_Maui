@@ -168,6 +168,8 @@ public partial class HomeViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowFeaturedMusic))]
     public partial ObservableCollection<SongDto> FeaturedSongs { get; set; } = new();
 
+    private readonly IArtistFollowStateCoordinator? _artistFollowStateCoordinator;
+
     public bool ShowSubscriptionContent => !HasActiveSubscription;
     public bool ShowLoginRegister => !IsAuthenticated && !ShowSubscriptionOfferCard;
     public bool ShowValidateEmail => IsAuthenticated && !IsEmailVerified;
@@ -367,7 +369,8 @@ public partial class HomeViewModel : ObservableObject
         IConfiguration configuration,
         IPlaylistService playlistService,
         ISongArtworkHydrator? songArtworkHydrator = null,
-        IUserStreamedSongStore? userStreamedSongStore = null)
+        IUserStreamedSongStore? userStreamedSongStore = null,
+        IArtistFollowStateCoordinator? artistFollowStateCoordinator = null)
     {
         _authService = authService;
         NetworkStatus = networkStatus;
@@ -384,6 +387,14 @@ public partial class HomeViewModel : ObservableObject
         _playlistService = playlistService;
         _songArtworkHydrator = songArtworkHydrator;
         _userStreamedSongStore = userStreamedSongStore;
+        _artistFollowStateCoordinator = artistFollowStateCoordinator;
+
+        if (_artistFollowStateCoordinator != null)
+        {
+            // Home and the library can show the same artist at once, and the players can change the
+            // state while Home is still in the back stack.
+            _artistFollowStateCoordinator.FollowStateChanged += HandleArtistFollowStateChanged;
+        }
 
         AttachAuthSubscription();
         AttachSignalRSubscriptions();
@@ -487,12 +498,39 @@ public partial class HomeViewModel : ObservableObject
         Interlocked.Increment(ref _loadsInFlight);
         try
         {
+            // Repeat when the session changes underneath the load.
+            //
+            // On a cold start App.CreateWindow restores the saved session while this first load is
+            // already running - restore sits behind SignalR initialisation, and this load makes
+            // several network round trips - so the pass that called RefreshAuthState() read "signed
+            // out" and everything below it loaded the signed-out page. AuthStateChanged fires at the
+            // end of the restore, but OnAuthStateChanged drops it precisely because a load is in
+            // flight, so nothing corrected it: Home showed Log in / Create account over a perfectly
+            // good session while the flyout and Account Settings showed the account.
+            //
+            // Comparing the identity rather than waiting for the event is deliberate.
+            // TryRestoreSessionAsync sets IsLoggedIn as soon as it has read the token and only
+            // notifies once it has finished refreshing entitlements, so the flag is true well before
+            // the event - and this way the repeat does not depend on the event arriving at all.
+            AuthIdentity identity;
+
+            do
+            {
+                identity = CurrentAuthIdentity();
+
+                RefreshAuthState();
+                await LoadAndroidSubscriptionOfferAsync();
+                await LoadStreamQualifyingSecondsAsync();
+                await LoadHomePlaylistsAsync();
+                await LoadFeaturedSongsAsync();
+                await TryReconfirmSubscriptionAsync();
+            }
+            while (CurrentAuthIdentity() != identity);
+
+            // The identity can hold still while the entitlement moves - TryReconfirmSubscriptionAsync
+            // returns without re-reading when it finds the subscription already verified, which is
+            // the common case on a restored session. One last cheap read closes that gap.
             RefreshAuthState();
-            await LoadAndroidSubscriptionOfferAsync();
-            await LoadStreamQualifyingSecondsAsync();
-            await LoadHomePlaylistsAsync();
-            await LoadFeaturedSongsAsync();
-            await TryReconfirmSubscriptionAsync();
         }
         finally
         {
@@ -500,6 +538,20 @@ public partial class HomeViewModel : ObservableObject
             IsLoading = false;
         }
     }
+
+    /// <summary>
+    /// Who the page is being built for. Compared before and after a load to notice a sign-in or
+    /// sign-out that landed while it was running.
+    /// </summary>
+    /// <remarks>
+    /// Email confirmation is part of it because half the page keys off it - <see cref="ShowPlaylists"/>
+    /// and <see cref="ShowValidateEmail"/> among them - so confirming an address mid-load has to
+    /// count as a change for the same reason signing in does.
+    /// </remarks>
+    private readonly record struct AuthIdentity(bool IsLoggedIn, int? UserId, bool EmailConfirmed);
+
+    private AuthIdentity CurrentAuthIdentity()
+        => new(_authService.IsLoggedIn, _authService.UserId, _authService.EmailConfirmed);
 
     /// <summary>
     /// Asks the server again when the entitlement was never confirmed this session. Home previously
@@ -591,6 +643,44 @@ public partial class HomeViewModel : ObservableObject
 
         FeaturedSongs = new ObservableCollection<SongDto>(featuredSongs);
         SynchronizeFeaturedQueue();
+
+        // After the assignment, so the bells are stamped onto the collection the cards are bound to.
+        await LoadArtistFollowStatesAsync(featuredSongs);
+    }
+
+    private async Task LoadArtistFollowStatesAsync(IEnumerable<SongDto> songs)
+    {
+        if (_artistFollowStateCoordinator is null || !_authService.IsLoggedIn) return;
+
+        try
+        {
+            await _artistFollowStateCoordinator.LoadForAsync(songs);
+        }
+        catch (Exception ex)
+        {
+            // Never fatal to the home page. An unresolved bell reads as "not following", which is a
+            // control the user can correct rather than a claim about their data.
+            System.Diagnostics.Debug.WriteLine($"Failed to load artist follow states: {ex.Message}");
+        }
+    }
+
+    private void HandleArtistFollowStateChanged(object? sender, ArtistFollowChange change)
+    {
+        _artistFollowStateCoordinator?.ApplyKnownState(FeaturedSongs);
+    }
+
+    /// <summary>
+    /// Follows or unfollows this song's artist. No stream requirement, unlike the thumbs.
+    /// </summary>
+    [RelayCommand]
+    private async Task FollowArtistAsync(SongDto? song)
+    {
+        if (song?.PersonaId is not int personaId || personaId <= 0) return;
+        if (_artistFollowStateCoordinator is null) return;
+
+        if (!await RequireAuthenticatedUserAsync("follow artists")) return;
+
+        await _artistFollowStateCoordinator.ToggleAsync(song);
     }
 
     private async Task LoadStreamQualifyingSecondsAsync()
@@ -1111,10 +1201,15 @@ public partial class HomeViewModel : ObservableObject
 
     private void OnAuthStateChanged()
     {
-        // LoadAsync now refreshes the subscription status, which raises AuthStateChanged, which
-        // lands back here — so without the guard every unconfirmed load ran the whole page twice.
+        // LoadAsync refreshes the subscription status, which raises AuthStateChanged, which lands
+        // back here — so without the guard every unconfirmed load ran the whole page twice.
         // IsLoading cannot stand in for this: LoadAsync's finally clears it before the outer call
         // returns. Auth changes originating elsewhere still land, because nothing is in flight then.
+        //
+        // Dropping the notification is only safe because LoadAsync compares the auth identity
+        // across itself and repeats when it moved. It did not always do that, and the missing half
+        // was a signed-in cold start rendering as signed out: restore completed mid-load, this
+        // discarded the only notice of it, and nothing read the service again.
         if (Volatile.Read(ref _loadsInFlight) != 0)
         {
             return;

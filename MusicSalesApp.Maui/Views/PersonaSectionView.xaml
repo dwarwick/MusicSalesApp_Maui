@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8" ?>
+<?xml version="1.0" encoding="utf-8" ?>
 <!--
     The artist block, shown inline on both players.
 
@@ -20,8 +20,14 @@
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             xmlns:views="clr-namespace:MusicSalesApp.Maui.Views"
              x:Class="MusicSalesApp.Maui.Views.PersonaSectionView"
              x:Name="Root">
+
+    <ContentView.Resources>
+        <views:FollowBellGlyphConverter x:Key="FollowBellGlyphConverter" />
+        <views:FollowBellPlayerFillConverter x:Key="FollowBellPlayerFillConverter" />
+    </ContentView.Resources>
 
     <Grid ColumnDefinitions="Auto,*"
           ColumnSpacing="{StaticResource Space3}"
@@ -46,16 +52,40 @@
                              Spacing="{StaticResource Space1}"
                              VerticalOptions="Start">
 
-            <Label Text="{Binding PersonaName, Source={x:Reference Root}}"
-                   FontSize="{StaticResource FontSizeCardTitle}"
-                   FontAttributes="Bold"
-                   TextColor="{StaticResource StBlueBright}"
-                   TextDecorations="Underline">
-                <Label.GestureRecognizers>
-                    <TapGestureRecognizer Command="{Binding NavigateCommand, Source={x:Reference Root}}"
-                                          CommandParameter="{Binding PersonaName, Source={x:Reference Root}}" />
-                </Label.GestureRecognizers>
-            </Label>
+            <!--
+                Name and bell on one line, which is where the web app puts it: the artist hero
+                carries the follow control beside the name rather than in the track actions, because
+                here it is about the ARTIST rather than the song being played.
+            -->
+            <HorizontalStackLayout Spacing="{StaticResource Space2}">
+                <Label Text="{Binding PersonaName, Source={x:Reference Root}}"
+                       FontSize="{StaticResource FontSizeCardTitle}"
+                       FontAttributes="Bold"
+                       TextColor="{StaticResource StBlueBright}"
+                       TextDecorations="Underline"
+                       VerticalOptions="Center">
+                    <Label.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding NavigateCommand, Source={x:Reference Root}}"
+                                              CommandParameter="{Binding PersonaName, Source={x:Reference Root}}" />
+                    </Label.GestureRecognizers>
+                </Label>
+
+                <Grid IsVisible="{Binding CanFollow, Source={x:Reference Root}}"
+                      HeightRequest="{StaticResource ControlHeightSmall}"
+                      WidthRequest="{StaticResource ControlHeightSmall}"
+                      VerticalOptions="Center">
+                    <Grid.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding FollowCommand, Source={x:Reference Root}}" />
+                    </Grid.GestureRecognizers>
+                    <Path Data="{Binding IsFollowing, Source={x:Reference Root}, Converter={StaticResource FollowBellGlyphConverter}}"
+                          Fill="{Binding IsFollowing, Source={x:Reference Root}, Converter={StaticResource FollowBellPlayerFillConverter}}"
+                          Aspect="Uniform"
+                          HeightRequest="18"
+                          WidthRequest="18"
+                          HorizontalOptions="Center"
+                          VerticalOptions="Center" />
+                </Grid>
+            </HorizontalStackLayout>
 
             <Label Style="{StaticResource PlayerBodyText}"
                    Text="{Binding Bio, Source={x:Reference Root}}"

@@ -47,6 +47,21 @@ public partial class SongDto : ObservableObject
     /// <summary>As <see cref="AlbumArtVersion"/>, for the persona image.</summary>
     public int PersonaImageVersion { get; set; }
 
+    /// <summary>
+    /// The artist entity behind this song, or null when the song has none.
+    /// </summary>
+    /// <remarks>
+    /// The first STABLE artist identifier this app has been given. <see cref="ArtistName"/> is a
+    /// display string resolved through a fallback chain on the server and changes when a creator
+    /// renames a persona, so it can never key a follow.
+    ///
+    /// <para>
+    /// Null means there is no artist entity to follow - the song's artist is free text - so the
+    /// bell must be absent rather than present and inert.
+    /// </para>
+    /// </remarks>
+    public int? PersonaId { get; set; }
+
     public string? PersonaBio { get; set; }
 
     /// <summary>
@@ -167,6 +182,51 @@ public partial class SongDto : ObservableObject
     /// actionable either way. Mirrors the asymmetry the server enforces in SongLikeService.
     /// </summary>
     public bool CanRate => HasStreamed || UserLikeStatus != null;
+
+    /// <summary>
+    /// Whether the current user follows this song's artist.
+    /// </summary>
+    /// <remarks>
+    /// Resolved in bulk for a whole page of songs, the same way <see cref="UserLikeStatus"/> is -
+    /// one round trip rather than one per card. Not JsonIgnored, so it rides along in the offline
+    /// catalogue snapshot and a signed-in user who goes offline still sees which artists they
+    /// follow.
+    ///
+    /// <para>
+    /// Every card for the same persona shares this artist, so setting it on one is not enough:
+    /// <c>IArtistFollowNotifier</c> is what keeps the rest in step.
+    /// </para>
+    /// </remarks>
+    [ObservableProperty]
+    public partial bool IsFollowingArtist { get; set; }
+
+    /// <summary>
+    /// Whether this song is the signed-in user's own music.
+    /// </summary>
+    /// <remarks>
+    /// Stamped by <c>ArtistFollowStateCoordinator</c> from <c>ArtistFollowPolicy</c> rather
+    /// than computed here: the DTO has the creator ids but no way to reach the auth state.
+    ///
+    /// <para>
+    /// The <c>NotifyPropertyChangedFor</c> is load-bearing. <see cref="CanFollowArtist"/> is a
+    /// computed property and this flag is stamped AFTER the bell has bound to it, so without the
+    /// notification a bell that rendered before the stamp would never re-hide.
+    /// </para>
+    /// </remarks>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanFollowArtist))]
+    public partial bool IsOwnArtist { get; set; }
+
+    /// <summary>
+    /// Whether to offer a follow control at all.
+    /// </summary>
+    /// <remarks>
+    /// False for a song with no artist entity, and false for your own music - following yourself is
+    /// refused by the server, so offering it would be a control that cannot work. This one
+    /// expression gates the bell on all three surfaces: the card, the song player and the playlist
+    /// player, which each bind it rather than deciding for themselves.
+    /// </remarks>
+    public bool CanFollowArtist => PersonaId is > 0 && !IsOwnArtist;
 
     /// <summary>
     /// Pre-built share URL for this song (e.g. https://domain/song/Encoded%20Title).

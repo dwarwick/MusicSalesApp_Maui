@@ -194,6 +194,121 @@ public class LoginViewModelTests
         _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.MusicLibraryRoot), Times.Never);
     }
 
+    // --- Offering biometric sign-in after a password login -------------------------------------
+    //
+    // This whole chain had no coverage: nothing asserted that a successful password login even
+    // offers to save the credentials, which is the ONLY way the feature is ever switched on.
+
+    /// <summary>A password login that succeeds, with the device able to prompt.</summary>
+    private void ArrangeSuccessfulPasswordLogin(bool acceptsTheOffer)
+    {
+        _viewModel.Email = "test@test.com";
+        _viewModel.Password = "password";
+        _mockAuthService.Setup(a => a.LoginAsync("test@test.com", "password"))
+            .ReturnsAsync((true, string.Empty));
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
+        _mockAlertService
+            .Setup(a => a.ShowConfirmAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(acceptsTheOffer);
+    }
+
+    [Test]
+    public async Task LoginAsync_OffersToSaveCredentialsAndShowsTheButtonOnceAccepted()
+    {
+        ArrangeSuccessfulPasswordLogin(acceptsTheOffer: true);
+
+        await _viewModel.LoginCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            _mockAuthService.Verify(
+                a => a.EnableBiometricLoginAsync("test@test.com", "password"), Times.Once);
+            Assert.That(
+                _viewModel.BiometricVisible, Is.True,
+                "the button has to appear straight away, not only on the next visit");
+        });
+    }
+
+    [Test]
+    public async Task LoginAsync_DoesNotSaveCredentialsWhenTheOfferIsDeclined()
+    {
+        ArrangeSuccessfulPasswordLogin(acceptsTheOffer: false);
+
+        await _viewModel.LoginCommand.ExecuteAsync(null);
+
+        _mockAuthService.Verify(
+            a => a.EnableBiometricLoginAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        Assert.That(_viewModel.BiometricVisible, Is.False);
+    }
+
+    [Test]
+    public async Task LoginAsync_TrimsTheEmailItSavesSoItMatchesTheOneItSignedInWith()
+    {
+        // The login call trims; the save has to trim the same way, or the saved pair is an address
+        // the server never accepts and the fingerprint button fails on every tap.
+        ArrangeSuccessfulPasswordLogin(acceptsTheOffer: true);
+        _viewModel.Email = "  test@test.com  ";
+        _mockAuthService.Setup(a => a.LoginAsync("test@test.com", "password"))
+            .ReturnsAsync((true, string.Empty));
+
+        await _viewModel.LoginCommand.ExecuteAsync(null);
+
+        _mockAuthService.Verify(
+            a => a.EnableBiometricLoginAsync("test@test.com", "password"), Times.Once);
+    }
+
+    [Test]
+    public async Task LoginAsync_DoesNotOfferWhereTheDeviceCannotPrompt()
+    {
+        // Accepting on a device with nothing enrolled would save the credentials and show a button
+        // that fails on every tap.
+        GiveTheDeviceNoBiometrics();
+        ArrangeSuccessfulPasswordLogin(acceptsTheOffer: true);
+
+        await _viewModel.LoginCommand.ExecuteAsync(null);
+
+        _mockAlertService.Verify(
+            a => a.ShowConfirmAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()),
+            Times.Never);
+        _mockAuthService.Verify(
+            a => a.EnableBiometricLoginAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Test]
+    public async Task LoginAsync_DoesNotAskAgainWhenCredentialsAreAlreadySaved()
+    {
+        ArrangeSuccessfulPasswordLogin(acceptsTheOffer: true);
+        _mockAuthService
+            .Setup(a => a.HasBiometricCredentialsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        await _viewModel.LoginCommand.ExecuteAsync(null);
+
+        _mockAlertService.Verify(
+            a => a.ShowConfirmAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()),
+            Times.Never);
+    }
+
+    [Test]
+    public async Task GoogleLoginAsync_CannotOfferBiometricsBecauseThereIsNoPasswordToSave()
+    {
+        // Documents a real gap rather than approving of it: biometric sign-in replays a saved email
+        // and PASSWORD, and a Google sign-in never handles one - so a Google-only account can never
+        // switch the feature on, while the account page tells the user to "sign in with your
+        // password". Closing that needs a different mechanism, not a call added here.
+        _mockAuthService.Setup(a => a.AuthenticateWithGoogleAsync())
+            .ReturnsAsync(new ExternalAuthResultDto { Success = true, Email = "user@test.com" });
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
+
+        await _viewModel.GoogleLoginCommand.ExecuteAsync(null);
+
+        _mockAuthService.Verify(
+            a => a.EnableBiometricLoginAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
     [Test]
     public async Task LoginAsync_EmailConfirmed_NavigatesToMusicLibrary()
     {

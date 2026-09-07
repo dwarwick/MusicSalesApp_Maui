@@ -46,7 +46,8 @@ public partial class MusicLibraryViewModel : ObservableObject
         IAudioCacheService? audioCacheService = null,
         INetworkStatusService? networkStatusService = null,
         ISongArtworkHydrator? songArtworkHydrator = null,
-        IUserStreamedSongStore? userStreamedSongStore = null)
+        IUserStreamedSongStore? userStreamedSongStore = null,
+        IArtistFollowStateCoordinator? artistFollowStateCoordinator = null)
     {
         _musicService = musicService;
         _alertService = alertService;
@@ -61,6 +62,7 @@ public partial class MusicLibraryViewModel : ObservableObject
         _networkStatusService = networkStatusService;
         _songArtworkHydrator = songArtworkHydrator;
         _userStreamedSongStore = userStreamedSongStore;
+        _artistFollowStateCoordinator = artistFollowStateCoordinator;
 
         UpdateAiPillText();
         UpdateGenrePillText();
@@ -103,7 +105,21 @@ public partial class MusicLibraryViewModel : ObservableObject
         _playbackService.StateChanged += OnPlaybackStateChanged;
         if (_networkStatusService != null)
             _networkStatusService.PropertyChanged += HandleNetworkStatusChanged;
+        if (_artistFollowStateCoordinator != null)
+            _artistFollowStateCoordinator.FollowStateChanged += HandleArtistFollowStateChanged;
         _subscriptionsAttached = true;
+    }
+
+    /// <summary>
+    /// One artist owns many cards, so a follow made on any of them has to move the rest.
+    /// </summary>
+    /// <remarks>
+    /// The coordinator has already updated its set by the time this runs, so re-applying is enough
+    /// - there is no need to reason about which card raised it, or to reload anything.
+    /// </remarks>
+    private void HandleArtistFollowStateChanged(object? sender, ArtistFollowChange change)
+    {
+        _artistFollowStateCoordinator?.ApplyKnownState(Songs);
     }
 
     /// <summary>
@@ -175,6 +191,8 @@ public partial class MusicLibraryViewModel : ObservableObject
 
     /// <summary>Web base URL for share links.</summary>
     public string WebBaseUrl => _appConfig.WebBaseUrl;
+
+    private readonly IArtistFollowStateCoordinator? _artistFollowStateCoordinator;
 
     public ObservableRangeCollection<SongDto> Songs { get; } = [];
 
@@ -776,6 +794,29 @@ public partial class MusicLibraryViewModel : ObservableObject
         await RatingRequiresStreamNotice.ReportAsync(outcome, _alertService);
     }
 
+    /// <summary>
+    /// Follows or unfollows this song's artist.
+    /// </summary>
+    /// <remarks>
+    /// No stream requirement, unlike the thumbs: following is an interest in what an artist does
+    /// next, not a verdict on a track. A song with no PersonaId has no artist entity to follow, and
+    /// the bell is hidden for it, so this only guards against a stale binding.
+    /// </remarks>
+    [RelayCommand]
+    private async Task FollowArtistAsync(SongDto? song)
+    {
+        if (song?.PersonaId is not int personaId || personaId <= 0)
+            return;
+
+        if (_artistFollowStateCoordinator is null)
+            return;
+
+        if (!await RequireAuthenticatedUserAsync("follow artists"))
+            return;
+
+        await _artistFollowStateCoordinator.ToggleAsync(song);
+    }
+
     [RelayCommand]
     private async Task DislikeSongAsync(SongDto? song)
     {
@@ -957,10 +998,13 @@ public partial class MusicLibraryViewModel : ObservableObject
             // failed, and the cached songs already carry their last-known counts.
             if (songsSource == SongCatalogSource.Live)
             {
-                // Load like counts and user like status in parallel
+                // Load like counts, user like status and follow state in parallel. The follow call
+                // is one request for the whole page - a bell per card resolving itself would be a
+                // request per card.
                 await Task.WhenAll(
                     LoadLikeCountsAsync(orderedSongs),
-                    LoadUserLikeStatusAsync(orderedSongs));
+                    LoadUserLikeStatusAsync(orderedSongs),
+                    LoadArtistFollowStatesAsync(orderedSongs));
             }
             else
             {
@@ -1038,6 +1082,25 @@ public partial class MusicLibraryViewModel : ObservableObject
         foreach (var song in songs)
         {
             _likeCounts[song.Id] = (song.LikeCount, song.DislikeCount);
+        }
+    }
+
+    private async Task LoadArtistFollowStatesAsync(List<SongDto> songs)
+    {
+        if (_artistFollowStateCoordinator is null || !_authService.IsLoggedIn)
+        {
+            return;
+        }
+
+        try
+        {
+            await _artistFollowStateCoordinator.LoadForAsync(songs);
+        }
+        catch (Exception ex)
+        {
+            // Never fatal to a library load. The bells render as "not following", which is a
+            // control the user can correct rather than a claim about their data.
+            System.Diagnostics.Debug.WriteLine($"Failed to load artist follow states: {ex.Message}");
         }
     }
 

@@ -9,5 +9,13 @@
 	<array>
 		<string>Default</string>
 	</array>
+	<!-- aps-environment is deliberately NOT here. It has to differ per configuration, so it is
+	     added by the build as a CustomEntitlements item in MusicSalesApp.Maui.csproj - Debug gets
+	     "development", Release gets "production". Adding it here as well would fight that.
+
+	     Same portal trap as Sign in with Apple above: the entitlement is necessary but not
+	     sufficient. The App ID needs the "Push Notifications" capability enabled and the
+	     provisioning profile regenerated afterwards, or signing succeeds and
+	     RegisterForRemoteNotifications fails at runtime. -->
 </dict>
 </plist>

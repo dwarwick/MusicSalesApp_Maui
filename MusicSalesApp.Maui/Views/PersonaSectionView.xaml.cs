@@ -1,4 +1,4 @@
-﻿using System.Windows.Input;
+using System.Windows.Input;
 using MusicSalesApp.Maui.Services;
 
 namespace MusicSalesApp.Maui.Views;
@@ -35,6 +35,43 @@ public partial class PersonaSectionView : ContentView
     public static readonly BindableProperty NavigateCommandProperty =
         BindableProperty.Create(
             nameof(NavigateCommand), typeof(ICommand), typeof(PersonaSectionView), default(ICommand));
+
+    /// <summary>
+    /// Follow or unfollow this artist. Left unset on a surface that should not offer it - the bell
+    /// is hidden unless <see cref="CanFollow"/> is also true, so an unset command cannot leave an
+    /// inert bell behind.
+    /// </summary>
+    public static readonly BindableProperty FollowCommandProperty =
+        BindableProperty.Create(
+            nameof(FollowCommand), typeof(ICommand), typeof(PersonaSectionView), default(ICommand));
+
+    /// <summary>Whether there is an artist entity to follow at all.</summary>
+    public static readonly BindableProperty CanFollowProperty =
+        BindableProperty.Create(
+            nameof(CanFollow), typeof(bool), typeof(PersonaSectionView), false);
+
+    /// <summary>Filled bell when true. The whole state - there is no third value.</summary>
+    public static readonly BindableProperty IsFollowingProperty =
+        BindableProperty.Create(
+            nameof(IsFollowing), typeof(bool), typeof(PersonaSectionView), false);
+
+    public ICommand? FollowCommand
+    {
+        get => (ICommand?)GetValue(FollowCommandProperty);
+        set => SetValue(FollowCommandProperty, value);
+    }
+
+    public bool CanFollow
+    {
+        get => (bool)GetValue(CanFollowProperty);
+        set => SetValue(CanFollowProperty, value);
+    }
+
+    public bool IsFollowing
+    {
+        get => (bool)GetValue(IsFollowingProperty);
+        set => SetValue(IsFollowingProperty, value);
+    }
 
     public PersonaSectionView()
     {

@@ -159,6 +159,84 @@ public class AccountSettingsViewModelTests
             .ReturnsAsync(new BiometricAvailability(true, BiometricMethod.Fingerprint, "your fingerprint or face", "Fingerprint"));
 
     [Test]
+    public async Task LoadCommand_NamesTheDevicesBiometricWhenItIsOff()
+    {
+        // The regression. BiometricMethodShortName is assigned LAST in the refresh and did not
+        // notify the status line, so on the ordinary path - device has biometrics, nothing saved -
+        // IsBiometricLoginEnabled went false-to-false, raised nothing, and the label kept the
+        // startup default. It read "Biometric sign-in is off" where the phone says "Fingerprint",
+        // which reads as the feature being missing rather than merely switched off.
+        GiveTheDeviceBiometrics();
+        _mockAuthService.Setup(a => a.HasBiometricCredentialsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.BiometricLoginStatusText, Does.StartWith("Fingerprint sign-in is off"));
+            Assert.That(
+                _viewModel.BiometricLoginStatusText,
+                Does.Not.StartWith(BiometricAvailability.Unavailable.ShortName),
+                "the generic default means the label never saw the device's answer");
+        });
+    }
+
+    [Test]
+    public void BiometricMethodShortName_InvalidatesTheStatusLineItAppearsIn()
+    {
+        // THE regression guard, and it has to be asserted at this level.
+        //
+        // BiometricLoginStatusText is computed, so a test that runs the load and then READS it
+        // recomputes from the current fields and passes whether or not any notification was raised
+        // - which is exactly what an earlier version of this test did. Only a XAML binding can tell
+        // the difference, and it tells it by never updating. So assert the notification itself.
+        var raised = new List<string?>();
+        _viewModel.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        _viewModel.BiometricMethodShortName = "Fingerprint";
+
+        Assert.That(
+            raised,
+            Does.Contain(nameof(AccountSettingsViewModel.BiometricLoginStatusText)),
+            "the OFF branch of the status line names this property, so changing it must invalidate the line");
+    }
+
+    [Test]
+    public void BiometricMethodName_InvalidatesTheStatusLineItAppearsIn()
+    {
+        // Its sibling, and the reason the omission was easy to miss: this one was wired correctly,
+        // so the ON copy always read properly and only the OFF copy was ever stale.
+        var raised = new List<string?>();
+        _viewModel.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        _viewModel.BiometricMethodName = "your fingerprint or face";
+
+        Assert.That(raised, Does.Contain(nameof(AccountSettingsViewModel.BiometricLoginStatusText)));
+    }
+
+    [Test]
+    public async Task LoadCommand_HidesTheSectionWhenTheDeviceHasNoBiometrics()
+    {
+        // The other direction: nothing enrolled, or no hardware. Offering a switch that cannot work
+        // is worse than not offering one, and the section is gated on this flag.
+        _mockAuthService.Setup(a => a.GetBiometricAvailabilityAsync())
+            .ReturnsAsync(BiometricAvailability.Unavailable);
+        _mockAuthService.Setup(a => a.HasBiometricCredentialsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.IsBiometricLoginSupported, Is.False);
+            Assert.That(
+                _viewModel.IsBiometricLoginEnabled, Is.False,
+                "saved credentials on a device with no prompt must not read as enabled");
+        });
+    }
+
+    [Test]
     public async Task LoadCommand_ReportsWhetherBiometricCredentialsAreSaved()
     {
         GiveTheDeviceBiometrics();

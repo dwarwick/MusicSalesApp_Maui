@@ -63,6 +63,93 @@ public class HomeViewModelTests
         _viewModel = CreateViewModel();
     }
 
+    // ------------------------------------------------------------ cold-start session restore
+
+    [Test]
+    public async Task Load_PicksUpASessionThatWasRestoredWhileItWasRunning()
+    {
+        // The reported bug. On a cold start App.CreateWindow restores the saved session behind
+        // SignalR initialisation, so it completes while Home's first load is still making its
+        // network calls. That load had already read "signed out", and OnAuthStateChanged discards
+        // the notice precisely because a load is in flight - so Home sat there offering Log in /
+        // Create account while the flyout and Account Settings showed the account.
+        var loggedIn = false;
+
+        _mockAuthService.SetupGet(a => a.IsLoggedIn).Returns(() => loggedIn);
+        _mockAuthService.SetupGet(a => a.UserId).Returns(() => loggedIn ? 42 : (int?)null);
+        _mockAuthService.SetupGet(a => a.EmailConfirmed).Returns(() => loggedIn);
+        _mockAuthService.Setup(a => a.RefreshUserStatusAsync()).Returns(Task.CompletedTask);
+
+        // Verified, which is what the device reports: TryRestoreSessionAsync refreshes the status
+        // before it notifies. It matters because TryReconfirmSubscriptionAsync returns early on a
+        // verified entitlement WITHOUT re-reading auth - so with the mock left at its default
+        // (unverified) this test passes even with the bug present, rescued by a refresh that never
+        // happens in the real flow.
+        _mockAuthService.SetupGet(a => a.SubscriptionVerification)
+            .Returns(SubscriptionVerificationState.Verified);
+
+        // The restore lands part-way through, exactly as it does on the device.
+        _mockMusicService.Setup(s => s.GetStreamQualifyingSecondsAsync())
+            .ReturnsAsync(() =>
+            {
+                loggedIn = true;
+                return 30;
+            });
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_viewModel.IsAuthenticated, Is.True);
+            Assert.That(_viewModel.ShowLoginRegister, Is.False,
+                "Home must not offer Log in / Create account over a restored session.");
+        });
+    }
+
+    [Test]
+    public async Task Load_RunsOnceWhenTheSessionHoldsStill()
+    {
+        // The other half: the repeat is bounded by the identity actually moving. LoadAsync's own
+        // subscription refresh raises AuthStateChanged, and if that were enough to re-run it, every
+        // unconfirmed load would build the whole page twice - which is what the in-flight guard was
+        // added to stop in the first place.
+        _mockAuthService.SetupGet(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.SetupGet(a => a.UserId).Returns(7);
+        _mockAuthService.SetupGet(a => a.EmailConfirmed).Returns(true);
+        _mockAuthService.Setup(a => a.RefreshUserStatusAsync()).Returns(Task.CompletedTask);
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        _mockMusicService.Verify(s => s.GetStreamQualifyingSecondsAsync(), Times.Once);
+    }
+
+    [Test]
+    public async Task Load_NoticesASignOutThatLandedWhileItWasRunning()
+    {
+        // Symmetrical, and the one that matters for privacy rather than convenience: a token that
+        // turns out to be expired signs the session out mid-load, and Home must not keep showing
+        // the signed-in page over it.
+        var loggedIn = true;
+
+        _mockAuthService.SetupGet(a => a.IsLoggedIn).Returns(() => loggedIn);
+        _mockAuthService.SetupGet(a => a.UserId).Returns(() => loggedIn ? 42 : (int?)null);
+        _mockAuthService.SetupGet(a => a.EmailConfirmed).Returns(() => loggedIn);
+        _mockAuthService.Setup(a => a.RefreshUserStatusAsync()).Returns(Task.CompletedTask);
+        _mockAuthService.SetupGet(a => a.SubscriptionVerification)
+            .Returns(SubscriptionVerificationState.Verified);
+
+        _mockMusicService.Setup(s => s.GetStreamQualifyingSecondsAsync())
+            .ReturnsAsync(() =>
+            {
+                loggedIn = false;
+                return 30;
+            });
+
+        await _viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.That(_viewModel.IsAuthenticated, Is.False);
+    }
+
     private HomeViewModel CreateViewModel()
     {
         return new HomeViewModel(

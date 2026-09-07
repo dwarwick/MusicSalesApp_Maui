@@ -43,6 +43,16 @@ public static class PlaybackDiagnosticsLoggerFilter
     // sheet that never opened all look identical in the file log.
     public const string AppleSignInCategoryPrefix = "MusicSalesApp.Maui.Services.AppleSignInService";
 
+    // Push registration. The whole success path is Information - which token was obtained, and that
+    // the server accepted it - while only a REJECTED token logs at Warning. Without these prefixes a
+    // device that registered cleanly and a device that never registered at all write exactly the
+    // same nothing, and the FCM token cannot be read off the device to test a send with. One prefix
+    // covers PushApiService and PushNotificationCoordinator, which share it; the two platform
+    // registration services do not.
+    public const string PushCategoryPrefix = "MusicSalesApp.Maui.Services.Push";
+    public const string AndroidPushRegistrationCategoryPrefix = "MusicSalesApp.Maui.Platforms.Android.AndroidPushRegistrationService";
+    public const string ApplePushRegistrationCategoryPrefix = "MusicSalesApp.Maui.Platforms.iOS.ApplePushRegistrationService";
+
     private static readonly string[] DiagnosticCategoryPrefixes =
     [
         PlaybackServiceCategoryPrefix,
@@ -58,7 +68,10 @@ public static class PlaybackDiagnosticsLoggerFilter
         AuthServiceCategoryPrefix,
         AndroidBiometricCategoryPrefix,
         AppleBiometricCategoryPrefix,
-        AppleSignInCategoryPrefix
+        AppleSignInCategoryPrefix,
+        PushCategoryPrefix,
+        AndroidPushRegistrationCategoryPrefix,
+        ApplePushRegistrationCategoryPrefix
     ];
 
     public static bool ShouldLog(string categoryName, LogLevel logLevel, LogLevel diagnosticMinimumLevel)
