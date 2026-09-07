@@ -89,38 +89,47 @@ with the same App Store profile. A Release build carrying `development` gets tok
 
 ---
 
-## 3. The follow client — nothing exists yet
+## 3. The follow client — the bell is built; the pages are not
 
 `SongListItemDto` on the server carries **`PersonaId`** — the first *stable* artist identifier this
 app has been given, since `ArtistName` is a display string resolved through a fallback chain and
 changes when a creator renames a persona. A null `PersonaId` means the song has no artist entity,
-so the client must offer no follow control rather than inventing one from the name.
+so the client offers no follow control rather than inventing one from the name.
 
-Sketch, from the original plan and still accurate:
+**Built**, and the shape it actually took:
 
-- `SongDto` gains `PersonaId` and an `[ObservableProperty] IsFollowingArtist` — treated like
-  `UserLikeStatus`, i.e. **not** `[JsonIgnore]`, so it rides along in the offline catalogue
-  snapshot.
-- A new `IFollowService` as its own `IHttpClientFactory`-only service, deliberately **not** added
-  to `IMusicService`, which would oblige a pass-through in `OfflineAwareMusicService` for every
-  member.
-- Follow control on `PersonaSectionView` and as a `SongCardView` bindable command, matching how
-  `LikeSongCommand` is supplied. Reuse `RequireAuthenticatedUserAsync("follow artists")`.
-- New `FollowingPage` and `ArtistMessagesPage` as `MenuItem`s beside My Playlists — three edits
-  each: `NavigationRoutes.cs`, `Routing.RegisterRoute` in `AppShell.xaml.cs`, and the
-  `AddTransient` pair in `MauiProgram.cs`.
-- New service/ViewModel files go in `Services/` and `ViewModels/`, which the test project compiles
-  by glob, so they must not touch MAUI platform APIs.
+- `SongDto` carries `PersonaId`, `[ObservableProperty] IsFollowingArtist` and `IsOwnArtist`, with
+  `CanFollowArtist` as the single expression every bell binds to and every follow command guards
+  on. Neither is `[JsonIgnore]`, so both ride along in the offline catalogue snapshot — which is
+  why `OfflineSongCatalogStore.ClearUserStateAsync` strips them on sign-out alongside the votes.
+- `IFollowService` is its own `IHttpClientFactory`-only service, as planned. Note
+  `GetFollowedPersonaIdsAsync` returns `HashSet<int>?`: **null means the server could not be asked**
+  and is not the same as an empty set. Collapsing them let a brief outage erase the cached follow
+  set and visibly unfollow a user's whole library.
+- `ArtistFollowStateCoordinator` is the singleton every surface goes through — it resolves a page
+  in one round trip, stamps ownership, toggles optimistically and re-raises `FollowStateChanged`
+  **on the UI thread**. Subscribers must still detach in `Cleanup()`: it is a singleton and the
+  ViewModels are transient.
+- `OwnMusicPolicy` decides "is this the user's own music" for the bell, the tip button, the preview
+  limiter and stream counting. One rule; do not add a fifth copy.
+- The bell is on `SongCardView` and `PersonaSectionView`, through `IconGlyphConverter` /
+  `IconFillConverter`, which the like and dislike icons share.
+
+**Still to build:** `FollowingPage` and `ArtistMessagesPage` as `MenuItem`s beside My Playlists —
+three edits each: `NavigationRoutes.cs`, `Routing.RegisterRoute` in `AppShell.xaml.cs`, and the
+`AddTransient` pair in `MauiProgram.cs`. New service/ViewModel files go in `Services/` and
+`ViewModels/`, which the test project compiles by glob, so they must not touch MAUI platform APIs.
 
 ### Three server rules to mirror, not rediscover
 
 - **Self-follow is refused.** `PUT api/mobile/follows/{personaId}` answers `CannotFollowSelf` as a
-  400, like every other domain refusal. The control must be *absent* on your own songs rather than
-  present and failing.
-- **One artist owns many cards.** Following from one card has to move every other card for that
-  persona on screen. The web does this with a shared followed-persona set on the parent, not a
-  broadcast — the equivalent here is a notifier the card ViewModels subscribe to, and it has to
-  exist before `IsFollowingArtist` is worth anything.
+  400, like every other domain refusal. The control is *absent* on your own songs rather than
+  present and failing — `OwnMusicPolicy` decides that, and `ApplyKnownState` stamps it. Any new
+  song surface must run its songs through the coordinator or the bell reappears on your own music.
+- **One artist owns many cards.** Following from one card moves every other card for that persona
+  on screen, through `ArtistFollowStateCoordinator.FollowStateChanged`. Re-stamp the *whole* backing
+  collection, not the filtered one and not just the current track — both mistakes were made and
+  both leave a stale bell the user can reach without a reload.
 - **"Follow as" needs a server endpoint that does not exist.** The PUT accepts
   `followAsPersonaId`, but nothing exposes `GetFollowAsOptionsAsync` — it is service-only and the
   web reads it directly. Until that endpoint is added, send nothing and follow anonymously, which

@@ -529,7 +529,19 @@ public partial class HomeViewModel : ObservableObject
             // TryRestoreSessionAsync sets IsLoggedIn as soon as it has read the token and only
             // notifies once it has finished refreshing entitlements, so the flag is true well before
             // the event - and this way the repeat does not depend on the event arriving at all.
+            //
+            // Capped, because the loop's exit condition is state this method does not own. One
+            // repeat is the case above and is expected; a second means something is changing the
+            // identity as fast as the page can read it - a token expiring mid-load, an
+            // EmailConfirmed refresh that disagrees with the cache - and each pass costs five
+            // network round trips plus a Play Billing query. Spinning on that would pin IsLoading
+            // and, because OnAuthStateChanged drops events while a load is in flight, swallow every
+            // genuine auth change for as long as it ran. Stopping leaves the page one identity
+            // behind, which the next navigation or auth event corrects.
+            const int maxLoadPasses = 3;
+
             AuthIdentity identity;
+            var passes = 0;
 
             do
             {
@@ -541,8 +553,10 @@ public partial class HomeViewModel : ObservableObject
                 await LoadHomePlaylistsAsync();
                 await LoadFeaturedSongsAsync();
                 await TryReconfirmSubscriptionAsync();
+
+                passes++;
             }
-            while (CurrentAuthIdentity() != identity);
+            while (CurrentAuthIdentity() != identity && passes < maxLoadPasses);
 
             // The identity can hold still while the entitlement moves - TryReconfirmSubscriptionAsync
             // returns without re-reading when it finds the subscription already verified, which is
