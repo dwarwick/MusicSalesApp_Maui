@@ -201,9 +201,32 @@ public partial class SongDto : ObservableObject
     public partial bool IsFollowingArtist { get; set; }
 
     /// <summary>
-    /// Whether to offer a follow control at all. False for a song with no artist entity.
+    /// Whether this song is the signed-in user's own music.
     /// </summary>
-    public bool CanFollowArtist => PersonaId is > 0;
+    /// <remarks>
+    /// Stamped by <c>ArtistFollowStateCoordinator</c> from <c>ArtistFollowPolicy</c> rather
+    /// than computed here: the DTO has the creator ids but no way to reach the auth state.
+    ///
+    /// <para>
+    /// The <c>NotifyPropertyChangedFor</c> is load-bearing. <see cref="CanFollowArtist"/> is a
+    /// computed property and this flag is stamped AFTER the bell has bound to it, so without the
+    /// notification a bell that rendered before the stamp would never re-hide.
+    /// </para>
+    /// </remarks>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanFollowArtist))]
+    public partial bool IsOwnArtist { get; set; }
+
+    /// <summary>
+    /// Whether to offer a follow control at all.
+    /// </summary>
+    /// <remarks>
+    /// False for a song with no artist entity, and false for your own music - following yourself is
+    /// refused by the server, so offering it would be a control that cannot work. This one
+    /// expression gates the bell on all three surfaces: the card, the song player and the playlist
+    /// player, which each bind it rather than deciding for themselves.
+    /// </remarks>
+    public bool CanFollowArtist => PersonaId is > 0 && !IsOwnArtist;
 
     /// <summary>
     /// Pre-built share URL for this song (e.g. https://domain/song/Encoded%20Title).

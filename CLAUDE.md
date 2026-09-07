@@ -219,12 +219,12 @@ project can still build and run — and it is another reason silence is not evid
 
 ### Still to build
 
-Push delivery works end to end, but the rest of the mobile follow experience does not exist yet —
-no follow button, no Following page, no Artist Messages page, no in-app preference toggles, and no
-deep-link routing for a notification tap (the payload carries `PushDataKeys.Kind` / `PersonaId` /
-`SongId` / `EntityId` ready for it, and `StreamTunesFirebaseMessagingService` already puts them on
-the launch intent). The account-level push preferences are settable on the web at `/manage-account`
-meanwhile.
+Push delivery, the in-app preference toggles (`ConfigPage`) and notification-tap routing
+(`PushNotificationRouter`) all work end to end, and the **follow bell ships on the song cards and
+both players**. What does not exist yet is a place to see the results: no Following page and no
+Artist Messages page. The payload carries `PushDataKeys.Kind` / `PersonaId` / `SongId` / `EntityId`
+and `StreamTunesFirebaseMessagingService` puts them on the launch intent, so a route to those pages
+has everything it needs the day they exist.
 
 ## Playback & cache architecture
 
@@ -309,7 +309,7 @@ The backend web/API app lives at `../MusicSalesApp` (dual-root VS Code workspace
 
 - References `MusicSalesApp.Common` directly from that repo (`../../MusicSalesApp/MusicSalesApp.Common`) — shared constants change in lockstep across both repos.
 - Consumes that repo's `api/mobile*`, `api/mobile-auth`, and `api/subscription/*` controllers — see that repo's `CLAUDE.md` for the server-side contract and the mobile API key + JWT auth scheme.
-- **Artist follow is built server-side and unconsumed here.** The backend ships `api/mobile/follows`
+- **Artist follow: the bell ships, the pages do not.** The backend ships `api/mobile/follows`
   (follow/unfollow, followed artists, release notifications, artist messages, per-artist mute,
   block, email preferences) and `SongListItemDto` now carries **`PersonaId`** — the first *stable*
   artist identifier this app has ever been given, since `ArtistName` is a display string resolved
@@ -337,6 +337,18 @@ The backend web/API app lives at `../MusicSalesApp` (dual-root VS Code workspace
     a privacy feature anyway.
   - **One artist owns many cards.** Following from one card has to move every other card for that
     persona on screen. The web does this with a shared followed-persona set on the parent, not a
-    broadcast — the equivalent here is a notifier the card ViewModels subscribe to, and it is the
-    piece that has to exist before `IsFollowingArtist` on `SongDto` is worth anything.
+    broadcast — here it is `IArtistFollowNotifier` plus `ArtistFollowStateCoordinator`, which
+    updates its set and re-raises *afterwards* so a subscriber cannot race it.
+
+  All three are now implemented. Two things about the client are worth knowing before touching it:
+
+  > **`SongDto.CanFollowArtist` is the only gate.** The card and both players bind that one
+  > expression rather than deciding for themselves, so the bell is hidden in one place — it is false
+  > without a `PersonaId` and false for your own music. `ArtistFollowStateCoordinator.ApplyKnownState`
+  > is the single funnel that stamps `IsOwnArtist` onto every song, via `ArtistFollowPolicy`.
+
+  > **`CreatorId` and `CreatorUserId` are both `int?`, so `song.CreatorUserId == auth.UserId` is
+  > TRUE when both are null** — which is every signed-out listener, and every song whose `Creator`
+  > navigation was not eager-loaded. `ArtistFollowPolicy` guards each comparison on `HasValue`;
+  > null means "not mine", which fails safe because the server refuses a self-follow anyway.
 - Its backend URL (`streamtunes.net` vs `davidtest.dev`) is resolved independently on this side via `AppConfig` (above) — the two repos must agree on which environment they're pointed at when testing end-to-end.

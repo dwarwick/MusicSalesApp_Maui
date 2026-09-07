@@ -11,7 +11,11 @@ namespace MusicSalesApp.Maui.Tests.Services;
 [TestFixture]
 public class ArtistFollowStateCoordinatorTests
 {
+    private const int ListenerUserId = 500;
+    private const int ListenerCreatorId = 90;
+
     private Mock<IFollowService> _followService;
+    private Mock<IAuthService> _authService;
     private ArtistFollowNotifier _notifier;
     private ArtistFollowStateCoordinator _coordinator;
 
@@ -24,14 +28,33 @@ public class ArtistFollowStateCoordinatorTests
         // right order is the behaviour under test, and a mock would assert the wiring away.
         _notifier = new ArtistFollowNotifier();
 
+        // Signed in, and a creator - the only state in which a song can be the caller's own.
+        _authService = new Mock<IAuthService>();
+        _authService.SetupGet(a => a.IsLoggedIn).Returns(true);
+        _authService.SetupGet(a => a.UserId).Returns(ListenerUserId);
+        _authService.SetupGet(a => a.IsCreator).Returns(true);
+        _authService.SetupGet(a => a.CreatorId).Returns(ListenerCreatorId);
+
         _coordinator = new ArtistFollowStateCoordinator(
             _followService.Object,
             _notifier,
+            _authService.Object,
             Mock.Of<ILogger<ArtistFollowStateCoordinator>>());
     }
 
     private static SongDto Song(int id, int? personaId) =>
         new() { Id = id, SongTitle = $"Song {id}", PersonaId = personaId };
+
+    /// <summary>A song uploaded by the signed-in creator.</summary>
+    private static SongDto OwnSong(int id, int personaId) =>
+        new()
+        {
+            Id = id,
+            SongTitle = $"Song {id}",
+            PersonaId = personaId,
+            CreatorId = ListenerCreatorId,
+            CreatorUserId = ListenerUserId,
+        };
 
     [Test]
     public async Task LoadFor_ResolvesEveryArtistInOneCall()
@@ -72,6 +95,88 @@ public class ArtistFollowStateCoordinatorTests
         await _coordinator.LoadForAsync(songs);
 
         Assert.That(asked, Is.EqualTo(new[] { 10 }));
+    }
+
+    // ------------------------------------------------------------ your own music
+
+    [Test]
+    public async Task LoadFor_HidesTheBellOnYourOwnSong()
+    {
+        // Following your own artist is refused by the server, so the control must be absent rather
+        // than present and failing. One expression - CanFollowArtist - gates the bell on the card
+        // and on both players, so stamping the flag here covers all three.
+        var mine = OwnSong(1, 10);
+        var theirs = Song(2, 11);
+
+        _followService
+            .Setup(s => s.GetFollowedPersonaIdsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync([]);
+
+        await _coordinator.LoadForAsync([mine, theirs]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(mine.IsOwnArtist, Is.True);
+            Assert.That(mine.CanFollowArtist, Is.False, "no bell on your own music");
+            Assert.That(theirs.IsOwnArtist, Is.False);
+            Assert.That(theirs.CanFollowArtist, Is.True, "someone else's song still offers it");
+        });
+    }
+
+    [Test]
+    public void ApplyKnownState_StampsOwnershipEvenForASongWithNoArtistEntity()
+    {
+        // The ownership stamp sits OUTSIDE the persona guard on purpose. A song with no persona
+        // already hides its bell, but leaving the flag unset would make the two properties
+        // disagree for anyone reading them.
+        var mine = OwnSong(1, 10);
+        mine.PersonaId = null;
+
+        _coordinator.ApplyKnownState([mine]);
+
+        Assert.That(mine.IsOwnArtist, Is.True);
+    }
+
+    [Test]
+    public async Task Toggle_RefusesYourOwnSongWithoutAskingTheServer()
+    {
+        // Defence in depth behind the hidden bell. Letting the tap through would flip the bell
+        // optimistically and put it back a round trip later when the server answered 400, which on
+        // screen is indistinguishable from a bug.
+        var mine = OwnSong(1, 10);
+        _coordinator.ApplyKnownState([mine]);
+
+        var stuck = await _coordinator.ToggleAsync(mine);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(stuck, Is.False);
+            Assert.That(mine.IsFollowingArtist, Is.False, "the bell must not even flicker");
+        });
+
+        _followService.Verify(
+            s => s.SetFollowStateAsync(It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<int?>()),
+            Times.Never);
+    }
+
+    [Test]
+    public void ApplyKnownState_ClaimsNothingWhileSignedOut()
+    {
+        // Both ids are int?, so a bare equality check would make null == null true and hide the
+        // bell from every signed-out listener.
+        _authService.SetupGet(a => a.IsLoggedIn).Returns(false);
+        _authService.SetupGet(a => a.UserId).Returns((int?)null);
+        _authService.SetupGet(a => a.CreatorId).Returns((int?)null);
+
+        var song = Song(1, 10);
+
+        _coordinator.ApplyKnownState([song]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(song.IsOwnArtist, Is.False);
+            Assert.That(song.CanFollowArtist, Is.True);
+        });
     }
 
     [Test]

@@ -43,6 +43,7 @@ public sealed class ArtistFollowStateCoordinator : IArtistFollowStateCoordinator
 {
     private readonly IFollowService _followService;
     private readonly IArtistFollowNotifier _notifier;
+    private readonly IAuthService _authService;
     private readonly ILogger<ArtistFollowStateCoordinator> _logger;
 
     private readonly HashSet<int> _followed = [];
@@ -51,10 +52,12 @@ public sealed class ArtistFollowStateCoordinator : IArtistFollowStateCoordinator
     public ArtistFollowStateCoordinator(
         IFollowService followService,
         IArtistFollowNotifier notifier,
+        IAuthService authService,
         ILogger<ArtistFollowStateCoordinator> logger)
     {
         _followService = followService;
         _notifier = notifier;
+        _authService = authService;
         _logger = logger;
 
         _notifier.FollowStateChanged += OnNotifierFollowStateChanged;
@@ -104,6 +107,12 @@ public sealed class ArtistFollowStateCoordinator : IArtistFollowStateCoordinator
 
         foreach (var song in songs)
         {
+            // Ownership first, and OUTSIDE the persona guard below. It is a purely local
+            // comparison, so it holds offline and while signed out, and this is the one method
+            // every surface runs its songs through - the card list, both players, and every
+            // notifier event - which makes it the only place the bell can be hidden once.
+            song.IsOwnArtist = ArtistFollowPolicy.IsOwnArtist(song, _authService);
+
             if (song.PersonaId is not int personaId || personaId <= 0)
             {
                 continue;
@@ -123,6 +132,14 @@ public sealed class ArtistFollowStateCoordinator : IArtistFollowStateCoordinator
     public async Task<bool> ToggleAsync(SongDto song)
     {
         if (song?.PersonaId is not int personaId || personaId <= 0)
+        {
+            return false;
+        }
+
+        // Mirrors the server's own CannotFollowSelf rather than trusting the bell to be hidden. The
+        // hidden control is the courtesy; this is what stops a stale binding turning a tap into an
+        // optimistic flip that a 400 undoes a round trip later, which just looks like a bug.
+        if (ArtistFollowPolicy.IsOwnArtist(song, _authService))
         {
             return false;
         }

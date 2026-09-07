@@ -95,11 +95,109 @@
                 </Border>
             </Grid>
 
-            <views:AiContentBadgesView IsAiMusic="{Binding IsAiGenerated}"
-                                        IsAiVocals="{Binding IsAiVocals}"
-                                        IsAiLyrics="{Binding IsAiLyrics}"
-                                        BadgeSize="28"
-                                        HorizontalOptions="Center" />
+            <!--
+                AI disclosure badges on the left, engagement actions on the right - the web app's
+                .card-ai-actions-row, which sits in exactly this place between the artwork and the
+                title and reaches the same result with justify-content: space-between.
+
+                The badges take the * column and the actions Auto: the actions are fixed-size touch
+                targets that must never be squeezed, and the badges are InputTransparent images that
+                can give way. That matters on the home page, whose carousel sizes cards to their
+                content rather than to the screen.
+
+                Sizes are deliberately NOT the web's. It shrinks these to 24px targets with 12px
+                glyphs inside this row, which are mouse targets; ControlHeightSmall (32) is already
+                under the Android and iOS touch guidance and 24 would be worse. Following the web
+                here means matching the placement, not the pixels.
+            -->
+            <Grid ColumnDefinitions="*,Auto"
+                  ColumnSpacing="{StaticResource Space1}">
+                <views:AiContentBadgesView Grid.Column="0"
+                                           IsAiMusic="{Binding IsAiGenerated}"
+                                           IsAiVocals="{Binding IsAiVocals}"
+                                           IsAiLyrics="{Binding IsAiLyrics}"
+                                           BadgeSize="28"
+                                           HorizontalOptions="Start"
+                                           VerticalOptions="Center" />
+
+                <HorizontalStackLayout Grid.Column="1"
+                                       Spacing="{StaticResource Space1}"
+                                       HorizontalOptions="End"
+                                       VerticalOptions="Center">
+                    <Grid Opacity="{Binding CanRate, Converter={StaticResource RateableOpacityConverter}}"
+                          HeightRequest="{StaticResource ControlHeightSmall}"
+                          WidthRequest="{StaticResource ControlHeightSmall}"
+                          VerticalOptions="Center">
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer
+                                Command="{Binding Source={x:Reference Root}, Path=LikeSongCommand}"
+                                CommandParameter="{Binding .}" />
+                        </Grid.GestureRecognizers>
+                        <Path Data="{Binding UserLikeStatus, Converter={StaticResource LikeGlyphConverter}}"
+                              Fill="{Binding UserLikeStatus, Converter={StaticResource LikeFillConverter}}"
+                              Aspect="Uniform"
+                              HeightRequest="18"
+                              WidthRequest="18"
+                              HorizontalOptions="Center"
+                              VerticalOptions="Center" />
+                    </Grid>
+                    <Label Text="{Binding LikeCount}"
+                           FontSize="{StaticResource FontSizeCardMeta}"
+                           TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource LikeButtonDarkText}}"
+                           VerticalOptions="Center"
+                           VerticalTextAlignment="Center" />
+
+                    <Grid Opacity="{Binding CanRate, Converter={StaticResource RateableOpacityConverter}}"
+                          HeightRequest="{StaticResource ControlHeightSmall}"
+                          WidthRequest="{StaticResource ControlHeightSmall}"
+                          VerticalOptions="Center">
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer
+                                Command="{Binding Source={x:Reference Root}, Path=DislikeSongCommand}"
+                                CommandParameter="{Binding .}" />
+                        </Grid.GestureRecognizers>
+                        <Path Data="{Binding UserLikeStatus, Converter={StaticResource DislikeGlyphConverter}}"
+                              Fill="{Binding UserLikeStatus, Converter={StaticResource DislikeFillConverter}}"
+                              Aspect="Uniform"
+                              HeightRequest="18"
+                              WidthRequest="18"
+                              HorizontalOptions="Center"
+                              VerticalOptions="Center" />
+                    </Grid>
+                    <Label Text="{Binding DislikeCount}"
+                           FontSize="{StaticResource FontSizeCardMeta}"
+                           TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource LikeButtonDarkText}}"
+                           VerticalOptions="Center"
+                           VerticalTextAlignment="Center" />
+
+                    <!--
+                        Follow. Beside the thumbs and drawn the same way, because the web app puts it in
+                        the same cluster for the same reason - it is an icon action on this song, and a
+                        word among icons reads as the odd one out.
+
+                        Hidden when the song has no PersonaId - its artist is free text, so there is no
+                        artist entity to follow - and also on your own music, which the server refuses
+                        outright. Both live in CanFollowArtist, so this markup asks one question.
+                    -->
+                    <Grid IsVisible="{Binding CanFollowArtist}"
+                          HeightRequest="{StaticResource ControlHeightSmall}"
+                          WidthRequest="{StaticResource ControlHeightSmall}"
+                          VerticalOptions="Center">
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer
+                                Command="{Binding Source={x:Reference Root}, Path=FollowArtistCommand}"
+                                CommandParameter="{Binding .}" />
+                        </Grid.GestureRecognizers>
+                        <Path Data="{Binding IsFollowingArtist, Converter={StaticResource FollowBellGlyphConverter}}"
+                              Fill="{Binding IsFollowingArtist, Converter={StaticResource FollowBellFillConverter}}"
+                              Aspect="Uniform"
+                              HeightRequest="18"
+                              WidthRequest="18"
+                              HorizontalOptions="Center"
+                              VerticalOptions="Center" />
+                    </Grid>
+                </HorizontalStackLayout>
+            </Grid>
 
             <Label Text="{Binding SongTitle}"
                    FontSize="{StaticResource FontSizeBodyLarge}"
@@ -177,84 +275,6 @@
                        VerticalTextAlignment="Center"
                        TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}"
                        Text="{Binding TrackLengthSeconds, Converter={StaticResource DurationConverter}}" />
-                <Label Text="·"
-                       FontSize="{StaticResource FontSizeCardMeta}"
-                       VerticalOptions="Center"
-                       VerticalTextAlignment="Center"
-                       TextColor="{AppThemeBinding Light={StaticResource StreamIconLight}, Dark={StaticResource StreamIconDark}}" />
-
-                <Grid Opacity="{Binding CanRate, Converter={StaticResource RateableOpacityConverter}}"
-                      HeightRequest="{StaticResource ControlHeightSmall}"
-                      WidthRequest="{StaticResource ControlHeightSmall}"
-                      VerticalOptions="Center">
-                    <Grid.GestureRecognizers>
-                        <TapGestureRecognizer
-                            Command="{Binding Source={x:Reference Root}, Path=LikeSongCommand}"
-                            CommandParameter="{Binding .}" />
-                    </Grid.GestureRecognizers>
-                    <Path Data="{Binding UserLikeStatus, Converter={StaticResource LikeGlyphConverter}}"
-                          Fill="{Binding UserLikeStatus, Converter={StaticResource LikeFillConverter}}"
-                          Aspect="Uniform"
-                          HeightRequest="18"
-                          WidthRequest="18"
-                          HorizontalOptions="Center"
-                          VerticalOptions="Center" />
-                </Grid>
-                <Label Text="{Binding LikeCount}"
-                       FontSize="{StaticResource FontSizeCardMeta}"
-                       TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource LikeButtonDarkText}}"
-                       VerticalOptions="Center"
-                       VerticalTextAlignment="Center" />
-
-                <Grid Opacity="{Binding CanRate, Converter={StaticResource RateableOpacityConverter}}"
-                      HeightRequest="{StaticResource ControlHeightSmall}"
-                      WidthRequest="{StaticResource ControlHeightSmall}"
-                      VerticalOptions="Center">
-                    <Grid.GestureRecognizers>
-                        <TapGestureRecognizer
-                            Command="{Binding Source={x:Reference Root}, Path=DislikeSongCommand}"
-                            CommandParameter="{Binding .}" />
-                    </Grid.GestureRecognizers>
-                    <Path Data="{Binding UserLikeStatus, Converter={StaticResource DislikeGlyphConverter}}"
-                          Fill="{Binding UserLikeStatus, Converter={StaticResource DislikeFillConverter}}"
-                          Aspect="Uniform"
-                          HeightRequest="18"
-                          WidthRequest="18"
-                          HorizontalOptions="Center"
-                          VerticalOptions="Center" />
-                </Grid>
-                <Label Text="{Binding DislikeCount}"
-                       FontSize="{StaticResource FontSizeCardMeta}"
-                       TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource LikeButtonDarkText}}"
-                       VerticalOptions="Center"
-                       VerticalTextAlignment="Center" />
-
-                <!--
-                    Follow. Beside the thumbs and drawn the same way, because the web app puts it in
-                    the same cluster for the same reason - it is an icon action on this song, and a
-                    word among icons reads as the odd one out.
-
-                    Hidden entirely when the song has no PersonaId: its artist is free text, there
-                    is no artist entity to follow, and an inert bell invites a tap that can never
-                    work. The host also leaves the command unset where following makes no sense.
-                -->
-                <Grid IsVisible="{Binding CanFollowArtist}"
-                      HeightRequest="{StaticResource ControlHeightSmall}"
-                      WidthRequest="{StaticResource ControlHeightSmall}"
-                      VerticalOptions="Center">
-                    <Grid.GestureRecognizers>
-                        <TapGestureRecognizer
-                            Command="{Binding Source={x:Reference Root}, Path=FollowArtistCommand}"
-                            CommandParameter="{Binding .}" />
-                    </Grid.GestureRecognizers>
-                    <Path Data="{Binding IsFollowingArtist, Converter={StaticResource FollowBellGlyphConverter}}"
-                          Fill="{Binding IsFollowingArtist, Converter={StaticResource FollowBellFillConverter}}"
-                          Aspect="Uniform"
-                          HeightRequest="18"
-                          WidthRequest="18"
-                          HorizontalOptions="Center"
-                          VerticalOptions="Center" />
-                </Grid>
             </HorizontalStackLayout>
 
                         <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto"
