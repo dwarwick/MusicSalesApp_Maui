@@ -22,6 +22,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     private readonly IAppConfig _appConfig;
     private readonly IBillingService _billingService;
     private readonly IPlaylistService _playlistService;
+    private readonly IArtistFollowStateCoordinator? _artistFollowStateCoordinator;
     private readonly INetworkStatusService? _networkStatusService;
     private readonly ISongArtworkHydrator? _songArtworkHydrator;
 
@@ -44,7 +45,8 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         IPlaylistService playlistService,
         INetworkStatusService? networkStatusService = null,
         ISongArtworkHydrator? songArtworkHydrator = null,
-        IUserStreamedSongStore? userStreamedSongStore = null)
+        IUserStreamedSongStore? userStreamedSongStore = null,
+        IArtistFollowStateCoordinator? artistFollowStateCoordinator = null)
     {
         _musicService = musicService;
         _alertService = alertService;
@@ -56,6 +58,14 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         _appConfig = appConfig;
         _billingService = billingService;
         _playlistService = playlistService;
+        _artistFollowStateCoordinator = artistFollowStateCoordinator;
+
+        if (_artistFollowStateCoordinator != null)
+        {
+            // A follow made anywhere else - the library, the song player - has to move this bell.
+            _artistFollowStateCoordinator.FollowStateChanged += HandleArtistFollowStateChanged;
+        }
+
         _networkStatusService = networkStatusService;
         _songArtworkHydrator = songArtworkHydrator;
         _userStreamedSongStore = userStreamedSongStore;
@@ -587,7 +597,8 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         {
             await Task.WhenAll(
                 LoadLikeCountsAsync(list),
-                LoadUserLikeStatusAsync(list));
+                LoadUserLikeStatusAsync(list),
+                LoadArtistFollowStatesAsync(list));
         }
 
         // Unconditional: offline the status call above is skipped, so this is the only thing that knows
@@ -788,6 +799,54 @@ public partial class PlaylistPlayerViewModel : ObservableObject
             _playbackService,
             startSong,
             BuildVisibleQueueDescription());
+
+    // --- Follow ---
+
+    /// <summary>
+    /// Follows or unfollows the current track's artist.
+    /// </summary>
+    /// <remarks>
+    /// No stream requirement, unlike the thumbs: following is about what the artist does next
+    /// rather than a verdict on the track that happens to be playing.
+    /// </remarks>
+    [RelayCommand]
+    private async Task FollowArtistAsync()
+    {
+        if (CurrentSong?.PersonaId is not int personaId || personaId <= 0) return;
+        if (_artistFollowStateCoordinator is null) return;
+
+        if (!await RequireAuthenticatedUserAsync("follow artists")) return;
+
+        await _artistFollowStateCoordinator.ToggleAsync(CurrentSong);
+    }
+
+    private void HandleArtistFollowStateChanged(object? sender, ArtistFollowChange change)
+    {
+        if (CurrentSong is null || CurrentSong.PersonaId != change.PersonaId) return;
+
+        _artistFollowStateCoordinator?.ApplyKnownState([CurrentSong]);
+    }
+
+    /// <summary>
+    /// Resolves the follow state for the whole queue in one call.
+    /// </summary>
+    /// <remarks>
+    /// The queue, not just the current track: skipping to the next song must not leave the bell
+    /// stale while a fresh request is in flight, and one playlist is usually a handful of artists.
+    /// </remarks>
+    private async Task LoadArtistFollowStatesAsync(IEnumerable<SongDto> songs)
+    {
+        if (_artistFollowStateCoordinator is null || !_authService.IsLoggedIn) return;
+
+        try
+        {
+            await _artistFollowStateCoordinator.LoadForAsync(songs);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to load artist follow states: {ex.Message}");
+        }
+    }
 
     // --- Like/Dislike ---
 

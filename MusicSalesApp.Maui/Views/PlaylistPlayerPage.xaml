@@ -741,7 +741,10 @@
                                                                   Bio="{Binding CurrentSong.PersonaBio}"
                                                                   WebsiteUrl="{Binding CurrentSong.PersonaWebsiteUrl}"
                                                                   ImageSource="{Binding CurrentSong.PersonaImageHeroDisplaySource}"
-                                                                  NavigateCommand="{Binding NavigateToArtistCommand}" />
+                                                                  NavigateCommand="{Binding NavigateToArtistCommand}"
+                                                                  CanFollow="{Binding CurrentSong.CanFollowArtist}"
+                                                                  IsFollowing="{Binding CurrentSong.IsFollowingArtist}"
+                                                                  FollowCommand="{Binding FollowArtistCommand}" />
                                 </VerticalStackLayout>
                             </Border>
 

@@ -168,6 +168,8 @@ public partial class HomeViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowFeaturedMusic))]
     public partial ObservableCollection<SongDto> FeaturedSongs { get; set; } = new();
 
+    private readonly IArtistFollowStateCoordinator? _artistFollowStateCoordinator;
+
     public bool ShowSubscriptionContent => !HasActiveSubscription;
     public bool ShowLoginRegister => !IsAuthenticated && !ShowSubscriptionOfferCard;
     public bool ShowValidateEmail => IsAuthenticated && !IsEmailVerified;
@@ -367,7 +369,8 @@ public partial class HomeViewModel : ObservableObject
         IConfiguration configuration,
         IPlaylistService playlistService,
         ISongArtworkHydrator? songArtworkHydrator = null,
-        IUserStreamedSongStore? userStreamedSongStore = null)
+        IUserStreamedSongStore? userStreamedSongStore = null,
+        IArtistFollowStateCoordinator? artistFollowStateCoordinator = null)
     {
         _authService = authService;
         NetworkStatus = networkStatus;
@@ -384,6 +387,14 @@ public partial class HomeViewModel : ObservableObject
         _playlistService = playlistService;
         _songArtworkHydrator = songArtworkHydrator;
         _userStreamedSongStore = userStreamedSongStore;
+        _artistFollowStateCoordinator = artistFollowStateCoordinator;
+
+        if (_artistFollowStateCoordinator != null)
+        {
+            // Home and the library can show the same artist at once, and the players can change the
+            // state while Home is still in the back stack.
+            _artistFollowStateCoordinator.FollowStateChanged += HandleArtistFollowStateChanged;
+        }
 
         AttachAuthSubscription();
         AttachSignalRSubscriptions();
@@ -632,6 +643,44 @@ public partial class HomeViewModel : ObservableObject
 
         FeaturedSongs = new ObservableCollection<SongDto>(featuredSongs);
         SynchronizeFeaturedQueue();
+
+        // After the assignment, so the bells are stamped onto the collection the cards are bound to.
+        await LoadArtistFollowStatesAsync(featuredSongs);
+    }
+
+    private async Task LoadArtistFollowStatesAsync(IEnumerable<SongDto> songs)
+    {
+        if (_artistFollowStateCoordinator is null || !_authService.IsLoggedIn) return;
+
+        try
+        {
+            await _artistFollowStateCoordinator.LoadForAsync(songs);
+        }
+        catch (Exception ex)
+        {
+            // Never fatal to the home page. An unresolved bell reads as "not following", which is a
+            // control the user can correct rather than a claim about their data.
+            System.Diagnostics.Debug.WriteLine($"Failed to load artist follow states: {ex.Message}");
+        }
+    }
+
+    private void HandleArtistFollowStateChanged(object? sender, ArtistFollowChange change)
+    {
+        _artistFollowStateCoordinator?.ApplyKnownState(FeaturedSongs);
+    }
+
+    /// <summary>
+    /// Follows or unfollows this song's artist. No stream requirement, unlike the thumbs.
+    /// </summary>
+    [RelayCommand]
+    private async Task FollowArtistAsync(SongDto? song)
+    {
+        if (song?.PersonaId is not int personaId || personaId <= 0) return;
+        if (_artistFollowStateCoordinator is null) return;
+
+        if (!await RequireAuthenticatedUserAsync("follow artists")) return;
+
+        await _artistFollowStateCoordinator.ToggleAsync(song);
     }
 
     private async Task LoadStreamQualifyingSecondsAsync()

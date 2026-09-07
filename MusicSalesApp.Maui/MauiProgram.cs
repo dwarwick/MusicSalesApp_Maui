@@ -298,6 +298,11 @@ public static class MauiProgram
 			services.GetRequiredService<ILogger<OfflineAwarePlaylistService>>()));
 		builder.Services.AddSingleton<IPlaylistService>(services => services.GetRequiredService<OfflineAwarePlaylistService>());
 		builder.Services.AddSingleton<IPlaylistDataSourceReporter>(services => services.GetRequiredService<OfflineAwarePlaylistService>());
+		// Following artists. Singleton so every ViewModel shares one notifier - the whole point of
+		// it is that a follow made on one card reaches the other cards for the same artist.
+		builder.Services.AddSingleton<IArtistFollowNotifier, ArtistFollowNotifier>();
+		builder.Services.AddSingleton<IFollowService, FollowService>();
+		builder.Services.AddSingleton<IArtistFollowStateCoordinator, ArtistFollowStateCoordinator>();
 		builder.Services.AddSingleton<IContactApiService, ContactApiService>();
 		builder.Services.AddSingleton<ITipApiService, TipApiService>();
 		builder.Services.AddSingleton<ITipAmountPicker, TipAmountPicker>();

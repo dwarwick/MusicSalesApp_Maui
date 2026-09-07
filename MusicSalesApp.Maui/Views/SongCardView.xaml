@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8" ?>
+<?xml version="1.0" encoding="utf-8" ?>
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
@@ -14,6 +14,8 @@
         <views:DislikeGlyphConverter x:Key="DislikeGlyphConverter" />
         <views:LikeFillConverter x:Key="LikeFillConverter" />
         <views:DislikeFillConverter x:Key="DislikeFillConverter" />
+        <views:FollowBellGlyphConverter x:Key="FollowBellGlyphConverter" />
+        <views:FollowBellFillConverter x:Key="FollowBellFillConverter" />
         <views:RateableOpacityConverter x:Key="RateableOpacityConverter" />
     </ContentView.Resources>
 
@@ -226,6 +228,33 @@
                        TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource LikeButtonDarkText}}"
                        VerticalOptions="Center"
                        VerticalTextAlignment="Center" />
+
+                <!--
+                    Follow. Beside the thumbs and drawn the same way, because the web app puts it in
+                    the same cluster for the same reason - it is an icon action on this song, and a
+                    word among icons reads as the odd one out.
+
+                    Hidden entirely when the song has no PersonaId: its artist is free text, there
+                    is no artist entity to follow, and an inert bell invites a tap that can never
+                    work. The host also leaves the command unset where following makes no sense.
+                -->
+                <Grid IsVisible="{Binding CanFollowArtist}"
+                      HeightRequest="{StaticResource ControlHeightSmall}"
+                      WidthRequest="{StaticResource ControlHeightSmall}"
+                      VerticalOptions="Center">
+                    <Grid.GestureRecognizers>
+                        <TapGestureRecognizer
+                            Command="{Binding Source={x:Reference Root}, Path=FollowArtistCommand}"
+                            CommandParameter="{Binding .}" />
+                    </Grid.GestureRecognizers>
+                    <Path Data="{Binding IsFollowingArtist, Converter={StaticResource FollowBellGlyphConverter}}"
+                          Fill="{Binding IsFollowingArtist, Converter={StaticResource FollowBellFillConverter}}"
+                          Aspect="Uniform"
+                          HeightRequest="18"
+                          WidthRequest="18"
+                          HorizontalOptions="Center"
+                          VerticalOptions="Center" />
+                </Grid>
             </HorizontalStackLayout>
 
                         <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto"

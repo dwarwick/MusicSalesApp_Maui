@@ -47,6 +47,21 @@ public partial class SongDto : ObservableObject
     /// <summary>As <see cref="AlbumArtVersion"/>, for the persona image.</summary>
     public int PersonaImageVersion { get; set; }
 
+    /// <summary>
+    /// The artist entity behind this song, or null when the song has none.
+    /// </summary>
+    /// <remarks>
+    /// The first STABLE artist identifier this app has been given. <see cref="ArtistName"/> is a
+    /// display string resolved through a fallback chain on the server and changes when a creator
+    /// renames a persona, so it can never key a follow.
+    ///
+    /// <para>
+    /// Null means there is no artist entity to follow - the song's artist is free text - so the
+    /// bell must be absent rather than present and inert.
+    /// </para>
+    /// </remarks>
+    public int? PersonaId { get; set; }
+
     public string? PersonaBio { get; set; }
 
     /// <summary>
@@ -167,6 +182,28 @@ public partial class SongDto : ObservableObject
     /// actionable either way. Mirrors the asymmetry the server enforces in SongLikeService.
     /// </summary>
     public bool CanRate => HasStreamed || UserLikeStatus != null;
+
+    /// <summary>
+    /// Whether the current user follows this song's artist.
+    /// </summary>
+    /// <remarks>
+    /// Resolved in bulk for a whole page of songs, the same way <see cref="UserLikeStatus"/> is -
+    /// one round trip rather than one per card. Not JsonIgnored, so it rides along in the offline
+    /// catalogue snapshot and a signed-in user who goes offline still sees which artists they
+    /// follow.
+    ///
+    /// <para>
+    /// Every card for the same persona shares this artist, so setting it on one is not enough:
+    /// <c>IArtistFollowNotifier</c> is what keeps the rest in step.
+    /// </para>
+    /// </remarks>
+    [ObservableProperty]
+    public partial bool IsFollowingArtist { get; set; }
+
+    /// <summary>
+    /// Whether to offer a follow control at all. False for a song with no artist entity.
+    /// </summary>
+    public bool CanFollowArtist => PersonaId is > 0;
 
     /// <summary>
     /// Pre-built share URL for this song (e.g. https://domain/song/Encoded%20Title).
