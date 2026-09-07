@@ -169,7 +169,7 @@ public sealed class ArtistFollowStateCoordinator : IArtistFollowStateCoordinator
             // comparison, so it holds offline and while signed out, and this is the one method
             // every surface runs its songs through - the card list, both players, and every
             // notifier event - which makes it the only place the bell can be hidden once.
-            song.IsOwnArtist = ArtistFollowPolicy.IsOwnArtist(song, _authService);
+            song.IsOwnArtist = OwnMusicPolicy.IsOwnMusic(song, _authService);
 
             if (song.PersonaId is not int personaId || personaId <= 0)
             {
@@ -197,7 +197,7 @@ public sealed class ArtistFollowStateCoordinator : IArtistFollowStateCoordinator
         // Mirrors the server's own CannotFollowSelf rather than trusting the bell to be hidden. The
         // hidden control is the courtesy; this is what stops a stale binding turning a tap into an
         // optimistic flip that a 400 undoes a round trip later, which just looks like a bug.
-        if (ArtistFollowPolicy.IsOwnArtist(song, _authService))
+        if (OwnMusicPolicy.IsOwnMusic(song, _authService))
         {
             return false;
         }

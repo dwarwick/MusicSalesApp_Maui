@@ -1039,8 +1039,10 @@ public class PlaybackService : IPlaybackService
         if (CurrentSong == null || !IsPlaying || _streamRecordedForCurrentSong)
             return;
 
-        // Don't count streams for creators listening to their own songs
-        if (_authService.IsCreator && CurrentSong.CreatorUserId == _authService.UserId)
+        // Don't count streams for creators listening to their own songs. Through the shared
+        // policy, so "own song" means the same thing here as it does to the follow bell, the tip
+        // button and the preview limiter.
+        if (OwnMusicPolicy.IsOwnMusic(CurrentSong, _authService))
         {
             _streamRecordedForCurrentSong = true;
             return;
@@ -1744,7 +1746,7 @@ public class PlaybackService : IPlaybackService
             return false;
         }
 
-        if (_authService.IsCreator && CurrentSong.CreatorUserId == _authService.UserId)
+        if (OwnMusicPolicy.IsOwnMusic(CurrentSong, _authService))
         {
             return false;
         }
