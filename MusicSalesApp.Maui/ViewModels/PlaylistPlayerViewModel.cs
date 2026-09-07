@@ -822,9 +822,10 @@ public partial class PlaylistPlayerViewModel : ObservableObject
 
     private void HandleArtistFollowStateChanged(object? sender, ArtistFollowChange change)
     {
-        if (CurrentSong is null || CurrentSong.PersonaId != change.PersonaId) return;
-
-        _artistFollowStateCoordinator?.ApplyKnownState([CurrentSong]);
+        // The whole queue, for the same reason the load resolves the whole queue: a playlist can
+        // hold several tracks by one artist, and re-stamping only the current one leaves the bell
+        // wrong on every other track the user is about to skip to.
+        _artistFollowStateCoordinator?.ApplyKnownState(Songs);
     }
 
     /// <summary>
@@ -1065,6 +1066,13 @@ public partial class PlaylistPlayerViewModel : ObservableObject
 
     public void Cleanup()
     {
+        if (_artistFollowStateCoordinator != null)
+        {
+            // The coordinator is a singleton and this ViewModel is created per playlist opened, so
+            // a missing detach roots every one of them for the life of the process.
+            _artistFollowStateCoordinator.FollowStateChanged -= HandleArtistFollowStateChanged;
+        }
+
         if (!_subscriptionsAttached)
         {
             return;

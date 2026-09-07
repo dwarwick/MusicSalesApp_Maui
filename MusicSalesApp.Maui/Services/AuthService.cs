@@ -622,6 +622,10 @@ public class AuthService : IAuthService
 
     public async Task LogoutAsync()
     {
+        // First, while the token is still valid: anything that needs an authenticated call on the
+        // way out has to make it before the session is torn down.
+        await NotifySigningOutAsync();
+
         await _musicService.ClearPendingStreamRecordsAsync();
         // Queued like/dislike intents belong to the outgoing user - replaying them under the next
         // account would attribute their opinions to someone else.
@@ -651,8 +655,9 @@ public class AuthService : IAuthService
     /// its contents are, and there are three cases rather than two:
     ///
     /// <list type="bullet">
-    /// <item>The song catalog is public and only the thumbs-up/down state on it is personal, so only
-    /// the votes are stripped. Deleting the catalog would take offline playback away too - including
+    /// <item>The song catalog is public and only the personal state stamped onto it - the
+    /// thumbs-up/down vote and whether the user follows the artist - has to go, so only those are
+    /// stripped. Deleting the catalog would take offline playback away too - including
     /// on the session-expiry logout that can fire at startup with no network.</item>
     /// <item>A user's own playlists, Liked Songs and Recommended are wholly personal and go entirely.</item>
     /// <item>The five "most streamed" playlists are neither - they are identical for every visitor and
@@ -669,7 +674,7 @@ public class AuthService : IAuthService
                 await _offlinePlaylistStore.ClearAsync();
 
             if (_offlineSongCatalogStore != null)
-                await _offlineSongCatalogStore.ClearUserLikeStatesAsync();
+                await _offlineSongCatalogStore.ClearUserStateAsync();
         }
         catch (Exception ex)
         {
@@ -1253,6 +1258,34 @@ public class AuthService : IAuthService
         // calls back into RefreshUserStatusAsync — cannot start this retry a second time.
         _billingRestorePending = false;
         await TryRestoreBillingAsync();
+    }
+
+    public event Func<Task>? SigningOut;
+
+    /// <summary>
+    /// Runs the <see cref="SigningOut"/> handlers and waits for them, so an authenticated cleanup
+    /// call actually goes out authenticated.
+    /// </summary>
+    private async Task NotifySigningOutAsync()
+    {
+        var handler = SigningOut;
+        if (handler is null)
+        {
+            return;
+        }
+
+        foreach (var subscriber in handler.GetInvocationList().Cast<Func<Task>>())
+        {
+            try
+            {
+                await subscriber();
+            }
+            catch (Exception ex)
+            {
+                // A sign-out cannot be refused, and one handler must not stop the next.
+                _logger.LogWarning(ex, "A sign-out handler failed; continuing with the sign-out");
+            }
+        }
     }
 
     private void NotifyAuthStateChanged()

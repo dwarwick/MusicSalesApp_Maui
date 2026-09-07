@@ -90,6 +90,11 @@ public partial class MusicLibraryViewModel : ObservableObject
         _playbackService.StateChanged -= OnPlaybackStateChanged;
         if (_networkStatusService != null)
             _networkStatusService.PropertyChanged -= HandleNetworkStatusChanged;
+        // Detached here as well as attached above: without it, Cleanup clearing the flag meant the
+        // next OnAppearing added a SECOND handler, and a tab visited ten times re-stamped the whole
+        // catalogue ten times per bell tap.
+        if (_artistFollowStateCoordinator != null)
+            _artistFollowStateCoordinator.FollowStateChanged -= HandleArtistFollowStateChanged;
         _subscriptionsAttached = false;
     }
 
@@ -119,7 +124,10 @@ public partial class MusicLibraryViewModel : ObservableObject
     /// </remarks>
     private void HandleArtistFollowStateChanged(object? sender, ArtistFollowChange change)
     {
-        _artistFollowStateCoordinator?.ApplyKnownState(Songs);
+        // _allSongs, not Songs. Songs is the filtered projection, and ApplyFilters rebuilds it from
+        // these same instances - so a follow made while a genre filter is active would otherwise
+        // leave the hidden cards stale, and clearing the filter would show the wrong bell.
+        _artistFollowStateCoordinator?.ApplyKnownState(_allSongs);
     }
 
     /// <summary>
@@ -1009,6 +1017,11 @@ public partial class MusicLibraryViewModel : ObservableObject
             else
             {
                 SeedLikeCountsFromCachedSongs(orderedSongs);
+
+                // Ownership is a purely local comparison, so it holds offline - and it has to be
+                // stamped here or a creator browsing their own catalogue offline gets a follow bell
+                // on their own songs that does nothing at all when tapped.
+                _artistFollowStateCoordinator?.ApplyKnownState(orderedSongs);
             }
 
             // Unconditional: offline the status call above is skipped, so this is the only thing that

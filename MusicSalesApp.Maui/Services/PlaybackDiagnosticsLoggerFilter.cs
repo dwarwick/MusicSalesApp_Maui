@@ -53,6 +53,13 @@ public static class PlaybackDiagnosticsLoggerFilter
     public const string AndroidPushRegistrationCategoryPrefix = "MusicSalesApp.Maui.Platforms.Android.AndroidPushRegistrationService";
     public const string ApplePushRegistrationCategoryPrefix = "MusicSalesApp.Maui.Platforms.iOS.ApplePushRegistrationService";
 
+    // Artist follow. Same reason as push, and the same trap: every DOMAIN REFUSAL on this path is
+    // Information, because a 400 is the server working correctly - so without these a bell that
+    // sprang back because the server said no wrote exactly the same nothing as a bell nobody
+    // tapped. Note ".Services.Push" does not prefix-match either of these.
+    public const string FollowServiceCategoryPrefix = "MusicSalesApp.Maui.Services.FollowService";
+    public const string ArtistFollowCategoryPrefix = "MusicSalesApp.Maui.Services.ArtistFollow";
+
     private static readonly string[] DiagnosticCategoryPrefixes =
     [
         PlaybackServiceCategoryPrefix,
@@ -71,7 +78,9 @@ public static class PlaybackDiagnosticsLoggerFilter
         AppleSignInCategoryPrefix,
         PushCategoryPrefix,
         AndroidPushRegistrationCategoryPrefix,
-        ApplePushRegistrationCategoryPrefix
+        ApplePushRegistrationCategoryPrefix,
+        FollowServiceCategoryPrefix,
+        ArtistFollowCategoryPrefix
     ];
 
     public static bool ShouldLog(string categoryName, LogLevel logLevel, LogLevel diagnosticMinimumLevel)

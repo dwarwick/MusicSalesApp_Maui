@@ -193,7 +193,7 @@ public class OfflineSongCatalogStoreTests
     }
 
     [Test]
-    public async Task ClearUserLikeStatesAsync_ForgetsTheVotesButKeepsTheCatalog()
+    public async Task ClearUserStateAsync_ForgetsTheVotesButKeepsTheCatalog()
     {
         // Logout: the songs are public, only the opinion on them is personal - and dropping the catalog
         // would take offline playback away with it.
@@ -203,7 +203,7 @@ public class OfflineSongCatalogStoreTests
         disliked.UserLikeStatus = false;
         await _store.SaveAsync([liked, disliked]);
 
-        await _store.ClearUserLikeStatesAsync();
+        await _store.ClearUserStateAsync();
 
         var restored = await _store.LoadAsync();
         Assert.Multiple(() =>
@@ -214,7 +214,7 @@ public class OfflineSongCatalogStoreTests
     }
 
     [Test]
-    public async Task ClearUserLikeStatesAsync_KeepsTheLikeCounts()
+    public async Task ClearUserStateAsync_KeepsTheLikeCounts()
     {
         // The counts are public totals, not the user's own vote, and are what the offline library shows.
         var song = CreateSong(1);
@@ -223,7 +223,7 @@ public class OfflineSongCatalogStoreTests
         song.DislikeCount = 3;
         await _store.SaveAsync([song]);
 
-        await _store.ClearUserLikeStatesAsync();
+        await _store.ClearUserStateAsync();
 
         var restored = (await _store.LoadAsync()).Single();
         Assert.Multiple(() =>
@@ -234,8 +234,8 @@ public class OfflineSongCatalogStoreTests
     }
 
     [Test]
-    public void ClearUserLikeStatesAsync_WithNoStoredCatalog_DoesNotThrow()
-        => Assert.That(async () => await _store.ClearUserLikeStatesAsync(), Throws.Nothing);
+    public void ClearUserStateAsync_WithNoStoredCatalog_DoesNotThrow()
+        => Assert.That(async () => await _store.ClearUserStateAsync(), Throws.Nothing);
 
     [Test]
     public async Task ConcurrentSaves_LeaveAValidCatalog()
@@ -246,5 +246,29 @@ public class OfflineSongCatalogStoreTests
         // Whichever writer landed last, the file must be parseable and complete - never half-written.
         Assert.That(await _store.LoadAsync(), Has.Count.EqualTo(2));
         Assert.That(File.Exists(CatalogFilePath + ".tmp"), Is.False);
+    }
+
+    [Test]
+    public async Task ClearUserStateAsync_ForgetsTheFollows()
+    {
+        // Follows are as personal as the votes, and the snapshot is not namespaced by account - so
+        // leaving them showed one user's follow list to whoever signed in next while offline, in a
+        // feature whose whole privacy rule is that nobody learns who follows whom.
+        var followed = CreateSong(1);
+        followed.PersonaId = 10;
+        followed.IsFollowingArtist = true;
+        followed.IsOwnArtist = true;
+
+        await _store.SaveAsync([followed]);
+
+        await _store.ClearUserStateAsync();
+
+        var restored = await _store.LoadAsync();
+        Assert.Multiple(() =>
+        {
+            Assert.That(restored, Has.Count.EqualTo(1), "the catalogue itself survives");
+            Assert.That(restored[0].IsFollowingArtist, Is.False);
+            Assert.That(restored[0].IsOwnArtist, Is.False);
+        });
     }
 }

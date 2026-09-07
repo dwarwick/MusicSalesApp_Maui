@@ -20,14 +20,21 @@ public interface IOfflineSongCatalogStore
     Task<DateTimeOffset?> GetLastUpdatedUtcAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Strips the outgoing user's thumbs-up/down state from the snapshot, keeping the catalog itself.
+    /// Strips the outgoing user's personal state from the snapshot, keeping the catalog itself.
     ///
-    /// Called on logout. The catalog is not namespaced by account, so leaving the opinions in place
-    /// would show one user's votes to whoever signs in next while offline - but deleting the whole file
+    /// Called on logout. The catalog is not namespaced by account, so leaving personal state in place
+    /// would show it to whoever signs in next while offline - but deleting the whole file
     /// would also take away offline playback, including for the session-expiry logout that can happen at
-    /// startup with no network. The songs are public; only the opinion is personal.
+    /// startup with no network. The songs are public; the opinions and the follows are not.
+    ///
+    /// <para>
+    /// Two fields today: the thumbs-up/down vote, and whether the user follows the song's artist.
+    /// Both ride along in the snapshot deliberately, so an offline user still sees their own state -
+    /// which is exactly why both have to be stripped here. Anything personal added to
+    /// <see cref="ViewModels.SongDto"/> later belongs in this list too.
+    /// </para>
     /// </summary>
-    Task ClearUserLikeStatesAsync(CancellationToken cancellationToken = default);
+    Task ClearUserStateAsync(CancellationToken cancellationToken = default);
 
     Task ClearAsync(CancellationToken cancellationToken = default);
 }
@@ -154,7 +161,7 @@ public sealed class OfflineSongCatalogStore : IOfflineSongCatalogStore
         return document?.UpdatedUtc;
     }
 
-    public async Task ClearUserLikeStatesAsync(CancellationToken cancellationToken = default)
+    public async Task ClearUserStateAsync(CancellationToken cancellationToken = default)
     {
         await _fileLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -168,6 +175,12 @@ public sealed class OfflineSongCatalogStore : IOfflineSongCatalogStore
             foreach (var entry in document.Songs.Where(entry => entry.Song is not null))
             {
                 entry.Song.UserLikeStatus = null;
+
+                // Follows are personal too. Missing this leaked one account's follow list to the
+                // next person to sign in on the same handset while offline - in a feature whose
+                // whole privacy rule is that nobody learns who follows whom.
+                entry.Song.IsFollowingArtist = false;
+                entry.Song.IsOwnArtist = false;
             }
 
             document.UpdatedUtc = DateTimeOffset.UtcNow;
@@ -175,7 +188,7 @@ public sealed class OfflineSongCatalogStore : IOfflineSongCatalogStore
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to clear the user like states from the offline song catalog");
+            _logger.LogWarning(ex, "Failed to clear the user state from the offline song catalog");
         }
         finally
         {

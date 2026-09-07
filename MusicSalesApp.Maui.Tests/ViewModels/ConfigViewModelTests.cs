@@ -356,4 +356,32 @@ public class ConfigViewModelTests
 
         Assert.That(_viewModel.IsNotificationSectionAvailable, Is.False);
     }
+
+    [Test]
+    public async Task TurningTheLastCategoryOff_TurnsTheMasterOff_EvenWhenTheReadBackFails()
+    {
+        // The write succeeds, the confirming GET does not. Returning there left the master switch
+        // ON with both categories OFF - "allowed on the phone, receiving nothing, and no way to
+        // tell from the device", which is the exact state this section exists to prevent.
+        var (viewModel, api, _) = CreateWithNotifications(
+            Stored(release: true, message: false), PushPermissionStatus.Granted);
+
+        await viewModel.LoadNotificationPreferencesAsync();
+        Assert.That(viewModel.AllowPushNotifications, Is.True, "precondition: one category is on");
+
+        api.Setup(x => x.GetAsync(It.IsAny<CancellationToken>())).ReturnsAsync((NotificationPreferences?)null);
+
+        viewModel.ReceiveReleasePush = false;
+        await Task.Delay(50);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(viewModel.ReceiveReleasePush, Is.False);
+            Assert.That(viewModel.ReceiveMessagePush, Is.False);
+            Assert.That(
+                viewModel.AllowPushNotifications,
+                Is.False,
+                "nothing is wanted any more, so the master switch must say so");
+        });
+    }
 }

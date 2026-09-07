@@ -28,6 +28,7 @@ public partial class HomeViewModel : ObservableObject
     private bool _signalRSubscriptionsAttached;
     private bool _authSubscriptionAttached;
     private bool _networkSubscriptionAttached;
+    private bool _followSubscriptionAttached;
     private bool _hasBillingDerivedSubscriptionPrice;
 
     /// <summary>Guards against an appearance-driven load and an auth-event load duplicating work.</summary>
@@ -389,16 +390,10 @@ public partial class HomeViewModel : ObservableObject
         _userStreamedSongStore = userStreamedSongStore;
         _artistFollowStateCoordinator = artistFollowStateCoordinator;
 
-        if (_artistFollowStateCoordinator != null)
-        {
-            // Home and the library can show the same artist at once, and the players can change the
-            // state while Home is still in the back stack.
-            _artistFollowStateCoordinator.FollowStateChanged += HandleArtistFollowStateChanged;
-        }
-
         AttachAuthSubscription();
         AttachSignalRSubscriptions();
         AttachNetworkSubscription();
+        AttachFollowSubscription();
     }
 
     public void Activate()
@@ -406,6 +401,7 @@ public partial class HomeViewModel : ObservableObject
         AttachAuthSubscription();
         AttachSignalRSubscriptions();
         AttachNetworkSubscription();
+        AttachFollowSubscription();
         SynchronizeFeaturedQueue();
     }
 
@@ -432,6 +428,27 @@ public partial class HomeViewModel : ObservableObject
             NetworkStatus.PropertyChanged -= HandleNetworkStatusChanged;
             _networkSubscriptionAttached = false;
         }
+
+        if (_followSubscriptionAttached && _artistFollowStateCoordinator != null)
+        {
+            // The coordinator is a singleton and this ViewModel is not, so a missing detach here
+            // roots every instance ever built for the life of the process - and keeps driving them.
+            _artistFollowStateCoordinator.FollowStateChanged -= HandleArtistFollowStateChanged;
+            _followSubscriptionAttached = false;
+        }
+    }
+
+    private void AttachFollowSubscription()
+    {
+        if (_followSubscriptionAttached || _artistFollowStateCoordinator is null)
+        {
+            return;
+        }
+
+        // Home and the library can show the same artist at once, and the players can change the
+        // state while Home is still in the back stack.
+        _artistFollowStateCoordinator.FollowStateChanged += HandleArtistFollowStateChanged;
+        _followSubscriptionAttached = true;
     }
 
     private void AttachNetworkSubscription()
@@ -645,7 +662,19 @@ public partial class HomeViewModel : ObservableObject
         SynchronizeFeaturedQueue();
 
         // After the assignment, so the bells are stamped onto the collection the cards are bound to.
-        await LoadArtistFollowStatesAsync(featuredSongs);
+        // Inside the Live guard, for the same reason the like calls are: offline these songs came
+        // from the local catalogue, and asking anyway just stalls for the full HTTP timeout with
+        // LoadAsync still awaiting it. The library already gets this right.
+        if (songsSource == SongCatalogSource.Live)
+        {
+            await LoadArtistFollowStatesAsync(featuredSongs);
+        }
+        else
+        {
+            // Still stamp what is known. Ownership is a local comparison, so the bell can be hidden
+            // on the user's own songs without asking anyone.
+            _artistFollowStateCoordinator?.ApplyKnownState(featuredSongs);
+        }
     }
 
     private async Task LoadArtistFollowStatesAsync(IEnumerable<SongDto> songs)

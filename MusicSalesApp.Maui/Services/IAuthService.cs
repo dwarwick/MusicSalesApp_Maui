@@ -7,6 +7,23 @@ public interface IAuthService
     /// <summary>Raised when login/logout state changes.</summary>
     event Action? AuthStateChanged;
 
+    /// <summary>
+    /// Raised during sign-out while the session is still usable, and awaited before it is torn down.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="AuthStateChanged"/> is raised after the token has been cleared, which is too late
+    /// for anything that has to make an authenticated call on the way out. Push de-registration is
+    /// the case that forced this: it ran from AuthStateChanged, so its DELETE went out with no
+    /// bearer token, came back 401, and left the handset registered - still receiving the previous
+    /// user's notifications - with the local token already erased so nothing could retry.
+    ///
+    /// <para>
+    /// Handlers must not throw and must not block for long; a slow one delays the sign-out the user
+    /// asked for. Failures are logged and swallowed, because a sign-out cannot be refused.
+    /// </para>
+    /// </remarks>
+    event Func<Task>? SigningOut;
+
     bool IsLoggedIn { get; }
     int? UserId { get; }
     string? Email { get; }

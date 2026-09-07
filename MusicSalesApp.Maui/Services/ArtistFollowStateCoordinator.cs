@@ -16,10 +16,24 @@ namespace MusicSalesApp.Maui.Services;
 /// to <see cref="IArtistFollowNotifier"/> itself and re-raises afterwards, which means a subscriber
 /// is guaranteed to see the updated set: subscribing to the notifier directly would race it.
 /// </para>
+///
+/// <para>
+/// Surviving navigation is the point; surviving a sign-out is not. The set is one account's private
+/// data, so it is dropped whenever the signed-in identity moves - without that, the next person to
+/// sign in on the same handset sees the previous one's follows, in a feature whose whole privacy
+/// rule is that nobody learns who follows whom.
+/// </para>
 /// </remarks>
 public interface IArtistFollowStateCoordinator
 {
-    /// <summary>Raised after the cached set has been updated, never before.</summary>
+    /// <summary>
+    /// Raised after the cached set has been updated, never before, and always on the UI thread.
+    /// </summary>
+    /// <remarks>
+    /// Marshalled here rather than by each subscriber. A handler that stamps state onto SongDtos
+    /// looks like ordinary code and only fails once those properties are bound to something a
+    /// platform renders, so leaving it to the subscriber means the next surface has to know.
+    /// </remarks>
     event EventHandler<ArtistFollowChange>? FollowStateChanged;
 
     /// <summary>
@@ -49,6 +63,11 @@ public sealed class ArtistFollowStateCoordinator : IArtistFollowStateCoordinator
     private readonly HashSet<int> _followed = [];
     private readonly object _gate = new();
 
+    /// <summary>
+    /// Whose follows <see cref="_followed"/> holds. Null while signed out.
+    /// </summary>
+    private int? _followedUserId;
+
     public ArtistFollowStateCoordinator(
         IFollowService followService,
         IArtistFollowNotifier notifier,
@@ -60,7 +79,32 @@ public sealed class ArtistFollowStateCoordinator : IArtistFollowStateCoordinator
         _authService = authService;
         _logger = logger;
 
+        _followedUserId = _authService.UserId;
+
         _notifier.FollowStateChanged += OnNotifierFollowStateChanged;
+        _authService.AuthStateChanged += OnAuthStateChanged;
+    }
+
+    /// <summary>
+    /// Drops the cached set when the signed-in identity moves, so one account's follows never reach
+    /// the next. Covers sign-out, sign-in and switching accounts with the one comparison.
+    /// </summary>
+    private void OnAuthStateChanged()
+    {
+        var userId = _authService.UserId;
+
+        lock (_gate)
+        {
+            if (_followedUserId == userId)
+            {
+                return;
+            }
+
+            _followedUserId = userId;
+            _followed.Clear();
+        }
+
+        _logger.LogInformation("Signed-in identity changed; dropped the cached follow set.");
     }
 
     public event EventHandler<ArtistFollowChange>? FollowStateChanged;
@@ -76,6 +120,20 @@ public sealed class ArtistFollowStateCoordinator : IArtistFollowStateCoordinator
 
         var personaIds = list.Select(song => song.PersonaId!.Value).Distinct().ToList();
         var followed = await _followService.GetFollowedPersonaIdsAsync(personaIds);
+
+        if (followed is null)
+        {
+            // We asked and got no answer. Stamping "not following" here would record a network
+            // failure as a fact about the user's data and, because this set is shared by every
+            // surface, would unfollow their whole library until the next successful round trip.
+            // Apply what is already known instead - which still stamps ownership.
+            _logger.LogInformation(
+                "Follow states for {Count} personas are unknown; kept the cached set.",
+                personaIds.Count);
+
+            ApplyKnownState(list);
+            return;
+        }
 
         lock (_gate)
         {
@@ -161,8 +219,11 @@ public sealed class ArtistFollowStateCoordinator : IArtistFollowStateCoordinator
         }
 
         // FollowService raises the notifier, which lands on OnNotifierFollowStateChanged below and
-        // brings every other card for this artist with it - including this one, if the server
-        // settled on something other than what was asked for.
+        // brings every other card for this artist with it. This song is stamped directly as well:
+        // the notifier only reaches cards a subscribed ViewModel is holding, and the tapped song
+        // can be one that is currently filtered out of its own list.
+        ApplyKnownState([song]);
+
         return result.Following == wanted;
     }
 
@@ -180,6 +241,10 @@ public sealed class ArtistFollowStateCoordinator : IArtistFollowStateCoordinator
             }
         }
 
-        FollowStateChanged?.Invoke(this, change);
+        // Marshalled once, here, because this is the single choke point every subscriber goes
+        // through. FollowService raises the notifier from a ConfigureAwait(false) continuation, so
+        // without this the handlers set bound properties - and therefore Path.Fill, Path.Data and
+        // Grid.IsVisible - from a thread pool thread, which Android rejects outright.
+        MainThreadDispatch.Run(() => FollowStateChanged?.Invoke(this, change));
     }
 }

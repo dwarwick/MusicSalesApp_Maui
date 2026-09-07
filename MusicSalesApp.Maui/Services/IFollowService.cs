@@ -29,15 +29,24 @@ public interface IFollowService
     Task<FollowStateResult?> SetFollowStateAsync(int personaId, bool following, int? sourceSongId = null);
 
     /// <summary>
-    /// Which of these personas the signed-in user follows, in one round trip.
+    /// Which of these personas the signed-in user follows, in one round trip, or <c>null</c> when
+    /// the server could not be asked.
     /// </summary>
     /// <remarks>
     /// The music library renders one bell per card and many cards share an artist; resolving per
-    /// card would be a request per card. Returns an empty set when signed out or unreachable, which
-    /// renders as "not following" - the safe direction, since the bell is a toggle the user can
-    /// correct rather than a claim about their data.
+    /// card would be a request per card.
+    ///
+    /// <para>
+    /// <b>An empty set and a null are not the same answer, and collapsing them is a real bug.</b>
+    /// Empty means the server replied and the user follows none of these. Null means we never got
+    /// an answer - offline, a 5xx, an expired token - and the caller must leave what it already
+    /// knows alone. Returning empty for both is what let a lift or a brief outage erase the cached
+    /// follow set and visibly unfollow a user's whole library. This is the same distinction
+    /// <c>IBillingService</c> draws between "the store answered, you own nothing" and "we could not
+    /// ask"; see the rule in CLAUDE.md.
+    /// </para>
     /// </remarks>
-    Task<HashSet<int>> GetFollowedPersonaIdsAsync(IEnumerable<int> personaIds);
+    Task<HashSet<int>?> GetFollowedPersonaIdsAsync(IEnumerable<int> personaIds);
 }
 
 /// <summary>

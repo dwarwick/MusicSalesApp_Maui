@@ -521,6 +521,13 @@ public partial class SongPlayerViewModel : ObservableObject
 
     public void Cleanup()
     {
+        if (_artistFollowStateCoordinator != null)
+        {
+            // The coordinator is a singleton and this ViewModel is created per song opened, so a
+            // missing detach roots every one of them for the life of the process.
+            _artistFollowStateCoordinator.FollowStateChanged -= HandleArtistFollowStateChanged;
+        }
+
         if (!_subscriptionsAttached)
         {
             return;

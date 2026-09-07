@@ -336,6 +336,11 @@ public partial class ConfigViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// One save at a time. See <see cref="SaveNotificationsAsync"/> for why.
+    /// </summary>
+    private readonly SemaphoreSlim _notificationSaveGate = new(1, 1);
+
     private async Task ApplyMasterToggleAsync(bool allow)
     {
         if (_pushNotifications is null || _notificationPreferences is null)
@@ -427,12 +432,25 @@ public partial class ConfigViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Saves the notification preferences, one at a time.
+    /// </summary>
+    /// <remarks>
+    /// Serialised deliberately. Four switch setters start this without awaiting it, and all four
+    /// mutate the same <c>_preferences</c> record before posting the whole thing - so two quick
+    /// toggles used to race, and whichever read-back landed first re-applied a snapshot that could
+    /// predate the other write, silently flipping back a switch the user had just set. They also
+    /// shared <c>IsSavingNotifications</c>, so the first to finish re-enabled the controls while
+    /// the second was still in flight.
+    /// </remarks>
     private async Task SaveNotificationsAsync()
     {
         if (_notificationPreferences is null || _preferences is null)
         {
             return;
         }
+
+        await _notificationSaveGate.WaitAsync().ConfigureAwait(true);
 
         IsSavingNotifications = true;
         SetStatus(string.Empty);
@@ -458,6 +476,11 @@ public partial class ConfigViewModel : ObservableObject
 
             if (confirmed is null)
             {
+                // The write went through but we could not read it back. Recompute the master switch
+                // from what is now on screen anyway: returning here used to leave it ON with both
+                // categories OFF - "allowed on the phone, receiving nothing, and no way to tell
+                // from the device", which is the exact state this section exists to prevent.
+                RecomputeMasterToggle();
                 SetStatus("Saved.");
                 return;
             }
@@ -476,6 +499,26 @@ public partial class ConfigViewModel : ObservableObject
         finally
         {
             IsSavingNotifications = false;
+            _notificationSaveGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Restates the invariant the master switch stands for: allowed by the system, and at least one
+    /// kind of notification actually wanted.
+    /// </summary>
+    private void RecomputeMasterToggle()
+    {
+        _suppressNotificationWrites = true;
+
+        try
+        {
+            AllowPushNotifications =
+                !IsPushBlockedBySystem && (ReceiveReleasePush || ReceiveMessagePush);
+        }
+        finally
+        {
+            _suppressNotificationWrites = false;
         }
     }
 

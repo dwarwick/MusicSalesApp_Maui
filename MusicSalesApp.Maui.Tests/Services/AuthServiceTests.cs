@@ -167,7 +167,7 @@ public class AuthServiceTests
         await _authService.LogoutAsync();
 
         _mockOfflineSongCatalogStore.Verify(
-            store => store.ClearUserLikeStatesAsync(It.IsAny<CancellationToken>()), Times.Once);
+            store => store.ClearUserStateAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Test]

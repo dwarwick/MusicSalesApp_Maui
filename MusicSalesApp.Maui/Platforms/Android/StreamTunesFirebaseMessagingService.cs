@@ -104,6 +104,9 @@ public sealed class StreamTunesFirebaseMessagingService : FirebaseMessagingServi
         builder.SetSmallIcon(global::Android.Resource.Drawable.IcDialogInfo);
         builder.SetAutoCancel(true);
 
+        // A per-message id, so several notifications stack rather than each replacing the last.
+        var notificationId = (int)(DateTime.UtcNow.Ticks % int.MaxValue);
+
         if (launchIntent is not null)
         {
             // Only when there is something to launch: PendingIntent.GetActivity throws on a null
@@ -111,15 +114,17 @@ public sealed class StreamTunesFirebaseMessagingService : FirebaseMessagingServi
             // target, since the throw is swallowed by the caller and leaves no trace.
             builder.SetContentIntent(PendingIntent.GetActivity(
                 context,
-                0,
+                // The notification's own id as the request code, NOT a shared 0. A PendingIntent is
+                // identified by (context, requestCode, intent, flags) and the extras are no part of
+                // that - so with a shared code every stacked notification resolved to the same
+                // PendingIntent, and UpdateCurrent rewrote its extras each time. Tapping the oldest
+                // of three then opened the newest one's song.
+                notificationId,
                 launchIntent,
-                // Immutable is required from Android 12, and UpdateCurrent so a second notification
-                // replaces the first one's extras rather than reusing stale ones.
+                // Immutable is required from Android 12. UpdateCurrent now only refreshes the
+                // extras of THIS notification's own PendingIntent, which is what it was for.
                 PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable));
         }
-
-        // A per-message id, so several notifications stack rather than each replacing the last.
-        var notificationId = (int)(DateTime.UtcNow.Ticks % int.MaxValue);
 
         NotificationManagerCompat.From(context)?.Notify(notificationId, builder.Build());
     }

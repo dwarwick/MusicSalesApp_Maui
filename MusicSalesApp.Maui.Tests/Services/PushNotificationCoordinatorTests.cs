@@ -19,6 +19,16 @@ public class PushNotificationCoordinatorTests
     private Mock<INotificationPreferenceApiService> _notificationPreferences;
     private PushNotificationCoordinator _coordinator;
 
+    /// <summary>
+    /// The coordinator's own SigningOut handler, captured as it subscribes.
+    /// </summary>
+    /// <remarks>
+    /// Captured rather than raised through Moq because the handler is a <c>Func&lt;Task&gt;</c>:
+    /// Moq would invoke it and drop the Task on the floor, so the assertions would race the work.
+    /// Invoking it directly means the test awaits exactly what AuthService awaits.
+    /// </remarks>
+    private Func<Task>? _signingOut;
+
     [SetUp]
     public void SetUp()
     {
@@ -45,6 +55,10 @@ public class PushNotificationCoordinatorTests
         _notificationPreferences
             .Setup(x => x.SetAsync(It.IsAny<NotificationPreferences>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
+
+        _authService
+            .SetupAdd(a => a.SigningOut += It.IsAny<Func<Task>>())
+            .Callback<Func<Task>>(handler => _signingOut = handler);
 
         _coordinator = new PushNotificationCoordinator(
             _authService.Object,
@@ -387,5 +401,66 @@ public class PushNotificationCoordinatorTests
         _pushApiService.Verify(
             x => x.RegisterDeviceAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()),
             Times.Once);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Sign-out has to unregister while the session can still authenticate the call
+    // ---------------------------------------------------------------------------------------
+
+    [Test]
+    public async Task SigningOut_UnregistersTheDevice_WhileTheSessionIsStillUsable()
+    {
+        // Hooked to SigningOut, not AuthStateChanged. The latter is raised after the token has been
+        // cleared, so the DELETE went out unauthenticated, came back 401, and left the handset
+        // receiving the previous account's notifications with nothing able to retry.
+        await _coordinator.SyncAsync();
+        Assert.That(
+            _preferences.GetString(MobilePreferenceKeys.RegisteredPushToken),
+            Is.EqualTo("token-abc"),
+            "precondition: the device is registered");
+
+        // `is not null` rather than Is.Not.Null: the constraint form binds to NUnit's
+        // Assert.That(Func<Task>, ...) overload and would INVOKE the handler being asserted about.
+        Assert.That(_signingOut is not null, "the coordinator must subscribe to SigningOut");
+        await _signingOut!();
+
+        _pushApiService.Verify(x => x.UnregisterDeviceAsync("token-abc"), Times.Once);
+    }
+
+    [Test]
+    public async Task SigningOut_SendsTheToken_BeforeItIsForgotten()
+    {
+        // Ordering, explicitly: the token used to be cleared first, so the call it was needed for
+        // had nothing left to send.
+        string? tokenAtCallTime = null;
+        _pushApiService
+            .Setup(x => x.UnregisterDeviceAsync(It.IsAny<string>()))
+            .Callback<string>(token => tokenAtCallTime = token)
+            .ReturnsAsync(true);
+
+        await _coordinator.SyncAsync();
+        await _signingOut!();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(tokenAtCallTime, Is.EqualTo("token-abc"));
+            Assert.That(
+                _preferences.GetString(MobilePreferenceKeys.RegisteredPushToken),
+                Is.Null.Or.Empty,
+                "and it is forgotten afterwards");
+        });
+    }
+
+    [Test]
+    public async Task SigningOut_ForgetsTheToken_EvenWhenTheServerDoesNotConfirm()
+    {
+        // A failed unregister must not leave the app retrying forever; the server reassigns the
+        // token to whoever registers it next.
+        _pushApiService.Setup(x => x.UnregisterDeviceAsync(It.IsAny<string>())).ReturnsAsync(false);
+
+        await _coordinator.SyncAsync();
+        await _signingOut!();
+
+        Assert.That(_preferences.GetString(MobilePreferenceKeys.RegisteredPushToken), Is.Null.Or.Empty);
     }
 }
