@@ -212,7 +212,7 @@ public class ConfigViewModelTests
 
         api.Setup(x => x.GetAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Stored());
         viewModel.AllowPushNotifications = true;
-        await Task.Delay(50);
+        await viewModel.NotificationWorkInFlight;
 
         Assert.Multiple(() =>
         {
@@ -234,7 +234,7 @@ public class ConfigViewModelTests
 
         await viewModel.LoadNotificationPreferencesAsync();
         viewModel.AllowPushNotifications = true;
-        await Task.Delay(50);
+        await viewModel.NotificationWorkInFlight;
 
         Assert.Multiple(() =>
         {
@@ -256,7 +256,7 @@ public class ConfigViewModelTests
             .ReturnsAsync(Stored(release: false, message: false));
 
         viewModel.AllowPushNotifications = false;
-        await Task.Delay(50);
+        await viewModel.NotificationWorkInFlight;
 
         api.Verify(
             x => x.SetAsync(
@@ -278,7 +278,7 @@ public class ConfigViewModelTests
         api.Setup(x => x.GetAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Stored());
 
         viewModel.AllowPushNotifications = true;
-        await Task.Delay(50);
+        await viewModel.NotificationWorkInFlight;
 
         api.Verify(
             x => x.SetAsync(It.IsAny<NotificationPreferences>(), It.IsAny<CancellationToken>()),
@@ -296,7 +296,7 @@ public class ConfigViewModelTests
         await viewModel.LoadNotificationPreferencesAsync();
 
         viewModel.ReceiveMessagePush = false;
-        await Task.Delay(50);
+        await viewModel.NotificationWorkInFlight;
 
         api.Verify(
             x => x.SetAsync(
@@ -319,7 +319,7 @@ public class ConfigViewModelTests
         await viewModel.LoadNotificationPreferencesAsync();
 
         viewModel.NotificationFrequency = ArtistPushFrequency.Daily;
-        await Task.Delay(50);
+        await viewModel.NotificationWorkInFlight;
 
         Assert.Multiple(() =>
         {
@@ -338,7 +338,7 @@ public class ConfigViewModelTests
         await viewModel.LoadNotificationPreferencesAsync();
 
         viewModel.NotificationFrequency = ArtistPushFrequency.Daily;
-        await Task.Delay(50);
+        await viewModel.NotificationWorkInFlight;
 
         Assert.Multiple(() =>
         {
@@ -372,7 +372,7 @@ public class ConfigViewModelTests
         api.Setup(x => x.GetAsync(It.IsAny<CancellationToken>())).ReturnsAsync((NotificationPreferences?)null);
 
         viewModel.ReceiveReleasePush = false;
-        await Task.Delay(50);
+        await viewModel.NotificationWorkInFlight;
 
         Assert.Multiple(() =>
         {
