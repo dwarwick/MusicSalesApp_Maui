@@ -293,7 +293,9 @@ public partial class SongPlayerViewModel : ObservableObject
     [RelayCommand]
     private async Task FollowArtistAsync()
     {
-        if (Song?.PersonaId is not int personaId || personaId <= 0) return;
+        // The same expression the bell's own visibility binds to, so the control and the command
+        // cannot disagree.
+        if (Song?.CanFollowArtist != true) return;
         if (_artistFollowStateCoordinator is null) return;
 
         if (!await RequireAuthenticatedUserAsync("follow artists")) return;
@@ -308,21 +310,10 @@ public partial class SongPlayerViewModel : ObservableObject
         _artistFollowStateCoordinator?.ApplyKnownState([Song]);
     }
 
-    private async Task LoadArtistFollowStateAsync()
-    {
-        if (Song is null || _artistFollowStateCoordinator is null || !_authService.IsLoggedIn) return;
-
-        try
-        {
-            await _artistFollowStateCoordinator.LoadForAsync([Song]);
-        }
-        catch (Exception ex)
-        {
-            // Never fatal to opening a song. An unresolved bell renders as "not following", which
-            // the user can correct with a tap.
-            System.Diagnostics.Debug.WriteLine($"Failed to load the artist follow state: {ex.Message}");
-        }
-    }
+    private Task LoadArtistFollowStateAsync() =>
+        Song is null
+            ? Task.CompletedTask
+            : _artistFollowStateCoordinator.LoadForSafelyAsync([Song]);
 
     [RelayCommand]
     private async Task LikeSongAsync()

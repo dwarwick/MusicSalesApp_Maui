@@ -813,7 +813,9 @@ public partial class MusicLibraryViewModel : ObservableObject
     [RelayCommand]
     private async Task FollowArtistAsync(SongDto? song)
     {
-        if (song?.PersonaId is not int personaId || personaId <= 0)
+        // The same expression the bell's own visibility binds to, so the control and the command
+        // cannot disagree.
+        if (song?.CanFollowArtist != true)
             return;
 
         if (_artistFollowStateCoordinator is null)
@@ -1012,7 +1014,7 @@ public partial class MusicLibraryViewModel : ObservableObject
                 await Task.WhenAll(
                     LoadLikeCountsAsync(orderedSongs),
                     LoadUserLikeStatusAsync(orderedSongs),
-                    LoadArtistFollowStatesAsync(orderedSongs));
+                    _artistFollowStateCoordinator.LoadForSafelyAsync(orderedSongs));
             }
             else
             {
@@ -1095,25 +1097,6 @@ public partial class MusicLibraryViewModel : ObservableObject
         foreach (var song in songs)
         {
             _likeCounts[song.Id] = (song.LikeCount, song.DislikeCount);
-        }
-    }
-
-    private async Task LoadArtistFollowStatesAsync(List<SongDto> songs)
-    {
-        if (_artistFollowStateCoordinator is null || !_authService.IsLoggedIn)
-        {
-            return;
-        }
-
-        try
-        {
-            await _artistFollowStateCoordinator.LoadForAsync(songs);
-        }
-        catch (Exception ex)
-        {
-            // Never fatal to a library load. The bells render as "not following", which is a
-            // control the user can correct rather than a claim about their data.
-            System.Diagnostics.Debug.WriteLine($"Failed to load artist follow states: {ex.Message}");
         }
     }
 

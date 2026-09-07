@@ -598,7 +598,7 @@ public partial class PlaylistPlayerViewModel : ObservableObject
             await Task.WhenAll(
                 LoadLikeCountsAsync(list),
                 LoadUserLikeStatusAsync(list),
-                LoadArtistFollowStatesAsync(list));
+                _artistFollowStateCoordinator.LoadForSafelyAsync(list));
         }
 
         // Unconditional: offline the status call above is skipped, so this is the only thing that knows
@@ -812,7 +812,9 @@ public partial class PlaylistPlayerViewModel : ObservableObject
     [RelayCommand]
     private async Task FollowArtistAsync()
     {
-        if (CurrentSong?.PersonaId is not int personaId || personaId <= 0) return;
+        // The same expression the bell's own visibility binds to, so the control and the command
+        // cannot disagree.
+        if (CurrentSong?.CanFollowArtist != true) return;
         if (_artistFollowStateCoordinator is null) return;
 
         if (!await RequireAuthenticatedUserAsync("follow artists")) return;
@@ -826,27 +828,6 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         // hold several tracks by one artist, and re-stamping only the current one leaves the bell
         // wrong on every other track the user is about to skip to.
         _artistFollowStateCoordinator?.ApplyKnownState(Songs);
-    }
-
-    /// <summary>
-    /// Resolves the follow state for the whole queue in one call.
-    /// </summary>
-    /// <remarks>
-    /// The queue, not just the current track: skipping to the next song must not leave the bell
-    /// stale while a fresh request is in flight, and one playlist is usually a handful of artists.
-    /// </remarks>
-    private async Task LoadArtistFollowStatesAsync(IEnumerable<SongDto> songs)
-    {
-        if (_artistFollowStateCoordinator is null || !_authService.IsLoggedIn) return;
-
-        try
-        {
-            await _artistFollowStateCoordinator.LoadForAsync(songs);
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Failed to load artist follow states: {ex.Message}");
-        }
     }
 
     // --- Like/Dislike ---

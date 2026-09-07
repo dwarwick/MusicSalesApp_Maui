@@ -52,6 +52,31 @@ public interface IArtistFollowStateCoordinator
     Task<bool> ToggleAsync(SongDto song);
 }
 
+/// <summary>
+/// Call-site conveniences for surfaces that take the coordinator as an optional dependency.
+/// </summary>
+public static class ArtistFollowStateCoordinatorExtensions
+{
+    /// <summary>
+    /// Loads follow state when there is a coordinator, and does nothing when there is not.
+    /// </summary>
+    /// <remarks>
+    /// Every song surface takes <see cref="IArtistFollowStateCoordinator"/> as an optional
+    /// constructor parameter, and each had grown the same null check wrapped around the same
+    /// try/catch. Returning a Task rather than being void keeps it usable inside the
+    /// <c>Task.WhenAll</c> the load paths already batch their requests into.
+    ///
+    /// <para>
+    /// Deliberately not named <c>LoadForAsync</c>: an extension method cannot be reached through a
+    /// receiver whose type already declares that name, so the null check would silently never run.
+    /// </para>
+    /// </remarks>
+    public static Task LoadForSafelyAsync(
+        this IArtistFollowStateCoordinator? coordinator,
+        IEnumerable<SongDto> songs) =>
+        coordinator?.LoadForAsync(songs) ?? Task.CompletedTask;
+}
+
 /// <inheritdoc />
 public sealed class ArtistFollowStateCoordinator : IArtistFollowStateCoordinator
 {
@@ -119,7 +144,25 @@ public sealed class ArtistFollowStateCoordinator : IArtistFollowStateCoordinator
         }
 
         var personaIds = list.Select(song => song.PersonaId!.Value).Distinct().ToList();
-        var followed = await _followService.GetFollowedPersonaIdsAsync(personaIds);
+
+        HashSet<int>? followed;
+
+        try
+        {
+            followed = await _followService.GetFollowedPersonaIdsAsync(personaIds);
+        }
+        catch (Exception ex)
+        {
+            // Never fatal to the page that asked. An unresolved bell reads as "not following",
+            // which is a control the user can correct rather than a claim about their data.
+            //
+            // Caught here rather than in each caller: the four that existed all swallowed into
+            // Debug.WriteLine, which is compiled out of Release - so on a device the exception went
+            // nowhere at all. This logger writes to the rolling file log.
+            _logger.LogWarning(ex, "Failed to load follow states for {Count} personas.", personaIds.Count);
+            ApplyKnownState(list);
+            return;
+        }
 
         if (followed is null)
         {
