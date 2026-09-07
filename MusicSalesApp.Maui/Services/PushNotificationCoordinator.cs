@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.Logging;
 using MusicSalesApp.Common.Helpers;
 
@@ -209,11 +210,25 @@ public class PushNotificationCoordinator : IPushNotificationCoordinator, IDispos
             ? _registrationService.GetPermissionStatusAsync()
             : Task.FromResult(PushPermissionStatus.Unsupported);
 
+    /// <summary>
+    /// How long a successful registration is trusted before it is refreshed anyway.
+    /// </summary>
+    /// <remarks>
+    /// The upper bound on how long a device stays dark if the server loses its row - a reinstall of
+    /// the database, a pruning job, a bug. Registration is idempotent, so refreshing costs one PUT.
+    /// </remarks>
+    private static readonly TimeSpan RegistrationRefreshInterval = TimeSpan.FromDays(1);
+
     private async Task RegisterCurrentDeviceAsync()
     {
         var token = await _registrationService.GetTokenAsync();
 
         if (string.IsNullOrWhiteSpace(token))
+        {
+            return;
+        }
+
+        if (IsRegistrationStillGood(token))
         {
             return;
         }
@@ -238,6 +253,9 @@ public class PushNotificationCoordinator : IPushNotificationCoordinator, IDispos
                 // one leaves the old registration live - which is how a signed-out phone keeps
                 // receiving notifications.
                 _preferenceStore.SetString(MobilePreferenceKeys.RegisteredPushToken, token);
+                _preferenceStore.SetString(
+                    MobilePreferenceKeys.PushTokenRegisteredAtUtcTicks,
+                    DateTimeOffset.UtcNow.UtcTicks.ToString(CultureInfo.InvariantCulture));
                 break;
 
             case PushRegistrationOutcome.Rejected:
@@ -250,6 +268,38 @@ public class PushNotificationCoordinator : IPushNotificationCoordinator, IDispos
                 // Leave whatever was stored alone; the next activation tries again.
                 break;
         }
+    }
+
+    /// <summary>
+    /// Whether the server already has this exact token, recently enough to be trusted.
+    /// </summary>
+    /// <remarks>
+    /// Sync runs on every app activation, so without this a user who opens the app thirty times a
+    /// day pays thirty registrations for a token that changes perhaps once a year - and on iOS each
+    /// one puts RegisterForRemoteNotifications on the main thread, which is exactly the kind of
+    /// resume-path work the ANR sweep exists to keep out.
+    /// </remarks>
+    private bool IsRegistrationStillGood(string token)
+    {
+        if (_preferenceStore.GetString(MobilePreferenceKeys.RegisteredPushToken) != token)
+        {
+            return false;
+        }
+
+        var stamp = _preferenceStore.GetString(MobilePreferenceKeys.PushTokenRegisteredAtUtcTicks);
+
+        // No stamp means it was registered by a build that did not write one. Re-register once and
+        // it gains a stamp; treating it as good would leave those installs never refreshing.
+        if (!long.TryParse(stamp, NumberStyles.Integer, CultureInfo.InvariantCulture, out var ticks))
+        {
+            return false;
+        }
+
+        var registeredAt = new DateTimeOffset(ticks, TimeSpan.Zero);
+        var age = DateTimeOffset.UtcNow - registeredAt;
+
+        // A negative age means the clock moved backwards; re-register rather than trust it.
+        return age >= TimeSpan.Zero && age < RegistrationRefreshInterval;
     }
 
     /// <summary>
@@ -277,6 +327,7 @@ public class PushNotificationCoordinator : IPushNotificationCoordinator, IDispos
         // moment anyone signs in on this device. Cleared after the call, not before, so the call
         // itself still has the token to send.
         _preferenceStore.Remove(MobilePreferenceKeys.RegisteredPushToken);
+        _preferenceStore.Remove(MobilePreferenceKeys.PushTokenRegisteredAtUtcTicks);
 
         if (!unregistered)
         {

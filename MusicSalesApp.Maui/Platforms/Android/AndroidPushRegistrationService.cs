@@ -25,6 +25,19 @@ public sealed class AndroidPushRegistrationService : IPushRegistrationService
 {
     private readonly ILogger<AndroidPushRegistrationService> _logger;
 
+    /// <summary>
+    /// Whether Firebase initialised, resolved once. Null until first asked.
+    /// </summary>
+    /// <remarks>
+    /// The answer cannot change during a process lifetime - the config is compiled into the APK -
+    /// but the property is consulted three times per sync (here, and at the top of the permission
+    /// and token calls) and a sync runs on every app resume. Each miss was a JNI transition into
+    /// FirebaseApp.initializeApp, which re-reads the Android string resources before discovering it
+    /// has already run. The iOS sibling resolves its equivalent once behind a flag for the same
+    /// reason.
+    /// </remarks>
+    private bool? _isSupported;
+
     public AndroidPushRegistrationService(ILogger<AndroidPushRegistrationService> logger)
     {
         _logger = logger;
@@ -39,15 +52,22 @@ public sealed class AndroidPushRegistrationService : IPushRegistrationService
     {
         get
         {
+            if (_isSupported.HasValue)
+            {
+                return _isSupported.Value;
+            }
+
             try
             {
-                return FirebaseApp.InitializeApp(Application.Context) is not null;
+                _isSupported = FirebaseApp.InitializeApp(Application.Context) is not null;
             }
             catch (Exception ex)
             {
                 _logger.LogInformation(ex, "Firebase is not configured; Android push is unavailable.");
-                return false;
+                _isSupported = false;
             }
+
+            return _isSupported.Value;
         }
     }
 

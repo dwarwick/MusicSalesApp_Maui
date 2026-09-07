@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.Logging;
 using Moq;
 using MusicSalesApp.Maui.Services;
@@ -462,5 +463,69 @@ public class PushNotificationCoordinatorTests
         await _signingOut!();
 
         Assert.That(_preferences.GetString(MobilePreferenceKeys.RegisteredPushToken), Is.Null.Or.Empty);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Registration is idempotent, so it is not repeated on every resume
+    // ---------------------------------------------------------------------------------------
+
+    [Test]
+    public async Task Sync_DoesNotReRegister_WhenTheTokenHasNotChanged()
+    {
+        // Sync runs on every app activation. Registering each time cost a PUT per resume, and on
+        // iOS a main-thread RegisterForRemoteNotifications with it.
+        await _coordinator.SyncAsync();
+        await _coordinator.SyncAsync();
+        await _coordinator.SyncAsync();
+
+        _pushApiService.Verify(
+            x => x.RegisterDeviceAsync(It.IsAny<string>(), "token-abc", It.IsAny<string>()),
+            Times.Once);
+    }
+
+    [Test]
+    public async Task Sync_ReRegisters_WhenTheTokenRotates()
+    {
+        await _coordinator.SyncAsync();
+
+        _registrationService.Setup(x => x.GetTokenAsync()).ReturnsAsync("token-xyz");
+        await _coordinator.SyncAsync();
+
+        _pushApiService.Verify(
+            x => x.RegisterDeviceAsync(It.IsAny<string>(), "token-xyz", It.IsAny<string>()),
+            Times.Once);
+    }
+
+    [Test]
+    public async Task Sync_ReRegisters_OnceTheRegistrationIsADayOld()
+    {
+        // The upper bound on how long a device stays dark if the server loses its row. Skipping
+        // forever would be cheaper and would strand it.
+        await _coordinator.SyncAsync();
+
+        _preferences.SetString(
+            MobilePreferenceKeys.PushTokenRegisteredAtUtcTicks,
+            DateTimeOffset.UtcNow.AddDays(-2).UtcTicks.ToString(CultureInfo.InvariantCulture));
+
+        await _coordinator.SyncAsync();
+
+        _pushApiService.Verify(
+            x => x.RegisterDeviceAsync(It.IsAny<string>(), "token-abc", It.IsAny<string>()),
+            Times.Exactly(2));
+    }
+
+    [Test]
+    public async Task Sync_ReRegisters_WhenAnOlderBuildLeftNoTimestamp()
+    {
+        // Upgrading from a build that stored the token but no stamp: treating that as good would
+        // leave those installs never refreshing again.
+        await _coordinator.SyncAsync();
+        _preferences.Remove(MobilePreferenceKeys.PushTokenRegisteredAtUtcTicks);
+
+        await _coordinator.SyncAsync();
+
+        _pushApiService.Verify(
+            x => x.RegisterDeviceAsync(It.IsAny<string>(), "token-abc", It.IsAny<string>()),
+            Times.Exactly(2));
     }
 }
