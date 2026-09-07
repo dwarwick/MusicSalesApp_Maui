@@ -48,6 +48,86 @@ public class MusicLibraryViewModelTests
             _mockBillingService.Object, _mockAudioCacheService.Object);
     }
 
+    // ------------------------------------------------------------ following, signed out
+
+    /// <summary>
+    /// Rebuilds the view model with a follow coordinator attached - it is an optional last
+    /// constructor argument, so the fixture's default instance has none.
+    /// </summary>
+    private MusicLibraryViewModel CreateViewModelWithFollow(
+        Mock<IArtistFollowStateCoordinator> coordinator) =>
+        new(
+            _mockMusicService.Object, _mockAlertService.Object, _mockSignalRService.Object,
+            _mockAuthService.Object, _mockNavigationService.Object,
+            _mockPlaybackService.Object, _mockMediaPlaybackOnboardingService.Object,
+            _mockAppConfig.Object, _mockBillingService.Object, _mockAudioCacheService.Object,
+            artistFollowStateCoordinator: coordinator.Object);
+
+    [Test]
+    public async Task FollowArtist_AsksASignedOutListenerToLogInRatherThanFailingQuietly()
+    {
+        // The bell is deliberately still SHOWN when signed out - CanFollowArtist has no auth term,
+        // and hiding it would give a signed-out visitor no way to discover the feature exists. The
+        // web behaves the same way: the button renders and its NotAuthorized branch offers a login.
+        // So the tap has to explain itself, and must not reach the server.
+        var coordinator = new Mock<IArtistFollowStateCoordinator>();
+        var viewModel = CreateViewModelWithFollow(coordinator);
+
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(false);
+        _mockAlertService
+            .Setup(a => a.ShowConfirmAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(false);
+
+        await viewModel.FollowArtistCommand.ExecuteAsync(new SongDto { Id = 1, PersonaId = 10 });
+
+        _mockAlertService.Verify(
+            a => a.ShowConfirmAsync(
+                It.IsAny<string>(),
+                It.Is<string>(message => message.Contains("follow artists")),
+                It.IsAny<string>(),
+                It.IsAny<string>()),
+            Times.Once);
+
+        coordinator.Verify(c => c.ToggleAsync(It.IsAny<SongDto>()), Times.Never);
+    }
+
+    [Test]
+    public async Task FollowArtist_TakesASignedOutListenerToLoginWhenTheyAccept()
+    {
+        var coordinator = new Mock<IArtistFollowStateCoordinator>();
+        var viewModel = CreateViewModelWithFollow(coordinator);
+
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(false);
+        _mockAlertService
+            .Setup(a => a.ShowConfirmAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(true);
+
+        await viewModel.FollowArtistCommand.ExecuteAsync(new SongDto { Id = 1, PersonaId = 10 });
+
+        _mockNavigationService.Verify(n => n.GoToAsync(NavigationRoutes.LoginEntry), Times.Once);
+    }
+
+    [Test]
+    public async Task FollowArtist_FollowsWithoutPromptingOnceSignedIn()
+    {
+        var coordinator = new Mock<IArtistFollowStateCoordinator>();
+        var viewModel = CreateViewModelWithFollow(coordinator);
+
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.EmailConfirmed).Returns(true);
+
+        var song = new SongDto { Id = 1, PersonaId = 10 };
+        await viewModel.FollowArtistCommand.ExecuteAsync(song);
+
+        coordinator.Verify(c => c.ToggleAsync(song), Times.Once);
+        _mockAlertService.Verify(
+            a => a.ShowConfirmAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()),
+            Times.Never);
+    }
+
     [Test]
     public async Task Activate_MarksThePlayingCardAndClearsTheRest()
     {
