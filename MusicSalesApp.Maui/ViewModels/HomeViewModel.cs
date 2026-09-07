@@ -487,12 +487,39 @@ public partial class HomeViewModel : ObservableObject
         Interlocked.Increment(ref _loadsInFlight);
         try
         {
+            // Repeat when the session changes underneath the load.
+            //
+            // On a cold start App.CreateWindow restores the saved session while this first load is
+            // already running - restore sits behind SignalR initialisation, and this load makes
+            // several network round trips - so the pass that called RefreshAuthState() read "signed
+            // out" and everything below it loaded the signed-out page. AuthStateChanged fires at the
+            // end of the restore, but OnAuthStateChanged drops it precisely because a load is in
+            // flight, so nothing corrected it: Home showed Log in / Create account over a perfectly
+            // good session while the flyout and Account Settings showed the account.
+            //
+            // Comparing the identity rather than waiting for the event is deliberate.
+            // TryRestoreSessionAsync sets IsLoggedIn as soon as it has read the token and only
+            // notifies once it has finished refreshing entitlements, so the flag is true well before
+            // the event - and this way the repeat does not depend on the event arriving at all.
+            AuthIdentity identity;
+
+            do
+            {
+                identity = CurrentAuthIdentity();
+
+                RefreshAuthState();
+                await LoadAndroidSubscriptionOfferAsync();
+                await LoadStreamQualifyingSecondsAsync();
+                await LoadHomePlaylistsAsync();
+                await LoadFeaturedSongsAsync();
+                await TryReconfirmSubscriptionAsync();
+            }
+            while (CurrentAuthIdentity() != identity);
+
+            // The identity can hold still while the entitlement moves - TryReconfirmSubscriptionAsync
+            // returns without re-reading when it finds the subscription already verified, which is
+            // the common case on a restored session. One last cheap read closes that gap.
             RefreshAuthState();
-            await LoadAndroidSubscriptionOfferAsync();
-            await LoadStreamQualifyingSecondsAsync();
-            await LoadHomePlaylistsAsync();
-            await LoadFeaturedSongsAsync();
-            await TryReconfirmSubscriptionAsync();
         }
         finally
         {
@@ -500,6 +527,20 @@ public partial class HomeViewModel : ObservableObject
             IsLoading = false;
         }
     }
+
+    /// <summary>
+    /// Who the page is being built for. Compared before and after a load to notice a sign-in or
+    /// sign-out that landed while it was running.
+    /// </summary>
+    /// <remarks>
+    /// Email confirmation is part of it because half the page keys off it - <see cref="ShowPlaylists"/>
+    /// and <see cref="ShowValidateEmail"/> among them - so confirming an address mid-load has to
+    /// count as a change for the same reason signing in does.
+    /// </remarks>
+    private readonly record struct AuthIdentity(bool IsLoggedIn, int? UserId, bool EmailConfirmed);
+
+    private AuthIdentity CurrentAuthIdentity()
+        => new(_authService.IsLoggedIn, _authService.UserId, _authService.EmailConfirmed);
 
     /// <summary>
     /// Asks the server again when the entitlement was never confirmed this session. Home previously
@@ -1111,10 +1152,15 @@ public partial class HomeViewModel : ObservableObject
 
     private void OnAuthStateChanged()
     {
-        // LoadAsync now refreshes the subscription status, which raises AuthStateChanged, which
-        // lands back here — so without the guard every unconfirmed load ran the whole page twice.
+        // LoadAsync refreshes the subscription status, which raises AuthStateChanged, which lands
+        // back here — so without the guard every unconfirmed load ran the whole page twice.
         // IsLoading cannot stand in for this: LoadAsync's finally clears it before the outer call
         // returns. Auth changes originating elsewhere still land, because nothing is in flight then.
+        //
+        // Dropping the notification is only safe because LoadAsync compares the auth identity
+        // across itself and repeats when it moved. It did not always do that, and the missing half
+        // was a signed-in cold start rendering as signed out: restore completed mid-load, this
+        // discarded the only notice of it, and nothing read the service again.
         if (Volatile.Read(ref _loadsInFlight) != 0)
         {
             return;
