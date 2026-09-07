@@ -1,7 +1,13 @@
 # Handoff — Artist follow, MAUI side
 
 Branch: `work/artist-follow-engagement`, in **both** repos.
-Written 2026-09-05.
+Written 2026-09-05, last updated 2026-09-06.
+
+> This branch also carries an unrelated fix merged from `work/fix-home-auth-on-cold-start`: Home
+> rendered signed-out over a restored session after a force-close and reopen, because the cold-start
+> restore lands while Home's first load is still running and `OnAuthStateChanged` drops the notice
+> while a load is in flight. `LoadAsync` now compares the auth identity across itself. The bug was
+> on master, not from the follow work.
 
 > **The full handoff lives in the sibling repo**, at
 > `../MusicSalesApp/HANDOFF_ARTIST_FOLLOW.md`. Read that first — it covers the server, the web UI,
@@ -37,10 +43,15 @@ Neither consumes the notification — rows stay pending, so switching either on 
 backlog. And **registration deliberately keeps working while both are off**, because registering is
 how the round trip gets proven before delivery is switched on.
 
-Also check the gitignored config is present: `Platforms/Android/google-services.Test.json` and
-`google-services.Production.json`. Without them `FirebaseApp.InitializeApp` returns null,
-`AndroidPushRegistrationService.IsSupported` reads that as "no push", and the app runs normally
-with no notifications and no error. A fresh clone builds fine and simply has no push.
+Also check the gitignored config is present: `Platforms/Android/google-services.{Test,Production}.json`
+and `Platforms/iOS/GoogleService-Info.{Test,Production}.plist`. Without the Android pair
+`FirebaseApp.InitializeApp` returns null, `AndroidPushRegistrationService.IsSupported` reads that as
+"no push", and the app runs normally with no notifications and no error. A fresh clone builds fine
+and simply has no push.
+
+> None of the four was covered by `.gitignore` until 2026-09-06 — they sat untracked but unignored,
+> one `git add -A` from a public repo, project ids and API keys included. Rules are in place now.
+> Check before staging if you are working in an older clone.
 
 ---
 
@@ -59,9 +70,8 @@ entitlement is in `Platforms/iOS/Entitlements.plist`, wired via `CodesignEntitle
    uninstalled devices from the dispatcher's side. Once the binding lands: set
    `Messaging.SharedInstance.ApnsToken` from the AppDelegate callback, and return
    `Messaging.SharedInstance.FcmToken` from `GetTokenAsync`.
-3. **Neither `Platforms/iOS/GoogleService-Info.{Test,Production}.plist` exists.** The csproj
-   already carries the `Exists()`-guarded `BundleResource` items; they need downloading from the
-   two Firebase consoles.
+3. ~~The iOS plists do not exist.~~ **Done 2026-09-06** — both are now in place. Gitignored, so
+   they still have to be restored per machine. Nothing reads them until item 1 lands.
 4. **Console configuration** — "Push Notifications" on the App ID with the provisioning profile
    **regenerated afterwards**, and the APNs auth key (Key ID `9RTLMRH4GX`, Team ID `K7ZGP97YV6`)
    uploaded under Cloud Messaging in **both** Firebase projects. A missing key fails silently, on
