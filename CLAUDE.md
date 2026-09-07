@@ -126,14 +126,25 @@ and without it FCM delivers nothing with no error to notice. Two build-level tra
 Windows and Mac Catalyst get `NoPushRegistrationService` / `NoPushNotificationCoordinator`, so no
 calling code branches on platform.
 
-**iOS registration is switched off for now** (`ApplePushRegistrationService.IsSupported => false`).
-The authorization and `RegisterForRemoteNotifications` work is correct and still needed — FCM on iOS
-is a relay, so the device must still obtain an APNs token — but the last hop is missing: Firebase has
-to exchange that APNs token for an FCM registration token, and the FCM token is what the server
-stores. Reporting supported today would register raw APNs tokens that FCM rejects on every send,
-which look exactly like uninstalled devices from the dispatcher's side. To finish: add the Firebase
-iOS Cloud Messaging binding, set `Messaging.SharedInstance.ApnsToken` from the AppDelegate callback,
-and return `Messaging.SharedInstance.FcmToken` from `GetTokenAsync`.
+**iOS push is live.** `ApplePushRegistrationService.IsSupported` is `true`, and the last hop that
+used to be missing is in place: `AdamE.Firebase.iOS.CloudMessaging` (12.10.0) provides the native
+SDK, `Firebase.Core.App.Configure()` runs once behind a guard, the APNs token from
+`ApplePushTokenBroker` is handed to Firebase, and `GetTokenAsync` returns
+`Messaging.SharedInstance.FcmToken` — which is what the server stores.
+
+> `Xamarin.Firebase.Messaging` cannot be reused on iOS: it ships android TFMs only. Microsoft's
+> `Xamarin.Firebase.iOS.CloudMessaging` was last published in 2022 against Firebase 8.10; the
+> `AdamE.*` package is the maintained binding and the one `Plugin.Firebase` depends on internally.
+
+> **`aps-environment` is NOT in `Entitlements.plist`.** It has to differ per configuration, so it is
+> supplied as a `CustomEntitlements` item in the csproj — `production` for Release, `development`
+> otherwise — and merged into the compiled entitlements by the SDK's own `_CompileEntitlements`.
+> Release covers **both TestFlight and the App Store**: TestFlight is not sandbox, and both are
+> signed with the same App Store profile. A Release build carrying `development` gets tokens APNs
+> rejects as `BadDeviceToken`, which reads as a server misconfiguration rather than a build one.
+
+Authorization and registration remain two separate steps on iOS, and both are still needed — FCM is
+a relay, so the device must obtain an APNs token before Firebase has anything to exchange.
 
 ### Delivery is gated on the server, twice, and both gates default off
 

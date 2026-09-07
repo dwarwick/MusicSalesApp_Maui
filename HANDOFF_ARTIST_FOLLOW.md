@@ -26,8 +26,12 @@ by relative path, and nothing builds otherwise.
 `StreamTunesFirebaseMessagingService`, the platform-neutral coordinator in `Services/`, and
 `PushApiService` talking to the server. Covered by `PushNotificationCoordinatorTests`.
 
-**Not started:** everything a listener can see. No follow button, no Following page, no Artist
-Messages page, no in-app preference toggles, no deep-link routing on a notification tap.
+**Also done:** push preferences in the app (all of them on `ConfigPage`, one place), and tap
+routing — `PushNotificationRouter` opens the song for a Release notification and the playlist for a
+Digest, from both a cold launch and a backgrounded tap.
+
+**Not started:** the follow *feature* a listener can see. No follow button, no Following page, no
+Artist Messages page.
 
 ---
 
@@ -61,35 +65,27 @@ The APNs half is complete. `AppDelegate` binds both selectors and hands the raw 
 `ApplePushTokenBroker`; authorization and `RegisterForRemoteNotifications` are correct; the
 entitlement is in `Platforms/iOS/Entitlements.plist`, wired via `CodesignEntitlements`.
 
-1. **The Firebase iOS SDK is not referenced at all.** `Xamarin.Firebase.Messaging` sits inside the
-   `== 'android'` ItemGroup in the csproj. This is the blocker: FCM on iOS is a *relay*, so the
-   device gets an APNs token — which it does — but Firebase has to exchange that for an FCM
-   registration token, and the FCM token is what the server stores.
-2. **`ApplePushRegistrationService.IsSupported` is hard-coded `false`**, on purpose. Flipping it
-   today would register raw APNs tokens that FCM rejects on every send, which look exactly like
-   uninstalled devices from the dispatcher's side. Once the binding lands: set
-   `Messaging.SharedInstance.ApnsToken` from the AppDelegate callback, and return
-   `Messaging.SharedInstance.FcmToken` from `GetTokenAsync`.
-3. ~~The iOS plists do not exist.~~ **Done 2026-09-06** — both are now in place. Gitignored, so
-   they still have to be restored per machine. Nothing reads them until item 1 lands.
-4. **Console configuration** — "Push Notifications" on the App ID with the provisioning profile
-   **regenerated afterwards**, and the APNs auth key (Key ID `9RTLMRH4GX`, Team ID `K7ZGP97YV6`)
-   uploaded under Cloud Messaging in **both** Firebase projects. A missing key fails silently, on
-   iOS only.
+**All four items are done, and push has been received on a device.** Kept here only as the record of
+what iOS push needs, because every piece is invisible until one of them is missing:
 
-### `aps-environment` is never rewritten — decide before shipping iOS push
+1. ~~The Firebase iOS SDK is not referenced.~~ `AdamE.Firebase.iOS.CloudMessaging` 12.10.0.
+2. ~~`IsSupported` is hard-coded `false`.~~ Now `true`; `Firebase.Core.App.Configure()` runs once
+   behind a guard, the APNs token is handed to Firebase, and `GetTokenAsync` returns the FCM token.
+3. ~~The iOS plists do not exist.~~ Both in place. Gitignored, so still restored per machine.
+4. ~~Console configuration.~~ "Push Notifications" on the App ID with the profile regenerated
+   afterwards, and the APNs auth key (Key ID `9RTLMRH4GX`, Team ID `K7ZGP97YV6`) uploaded under
+   Cloud Messaging in **both** Firebase projects. A missing key fails silently, on iOS only.
 
-`Platforms/iOS/Entitlements.plist` carries a comment claiming the value "is rewritten per
-configuration rather than being switched by hand". **No such rewrite exists** — the csproj,
-targets and publish scripts were searched and nothing touches it. The file ships a literal
-`development`.
+### `aps-environment` is not in Entitlements.plist, and that is deliberate
 
-Harmless today because iOS registration is off, and correct for Debug and TestFlight. It bites the
-moment iOS push ships: an App Store build carrying `development` gets tokens APNs rejects as
+It has to differ per configuration, so it is a `CustomEntitlements` item in the csproj —
+`production` for Release, `development` otherwise — merged into the compiled entitlements by the
+SDK's own `_CompileEntitlements`. Do not "fix" this by adding the key back to the plist; two
+sources for one entitlement is how they drift.
+
+**Release covers both TestFlight and the App Store.** TestFlight is not sandbox, and both are signed
+with the same App Store profile. A Release build carrying `development` gets tokens APNs rejects as
 `BadDeviceToken`, which reads as a server misconfiguration rather than a build one.
-
-Either add the MSBuild rewrite keyed on configuration, or correct the comment to say it is manual.
-Do not leave it claiming something the build does not do.
 
 ---
 
@@ -130,11 +126,15 @@ Sketch, from the original plan and still accurate:
   web reads it directly. Until that endpoint is added, send nothing and follow anonymously, which
   fails in the safe direction.
 
-### Deep linking
+### Deep linking — built
 
-The payload already carries `PushDataKeys.Kind` / `PersonaId` / `SongId` / `EntityId`, and
-`StreamTunesFirebaseMessagingService` copies every data key onto the launch intent as an extra. The
-routing has everything it needs; nothing consumes it yet.
+`PushNotificationRouter` handles a tapped notification: `PushNotificationKinds.Release` opens the
+song player for `PushDataKeys.SongId`, `Digest` opens the playlist player. It is wired from both
+`MainActivity` (Android) and `AppDelegate` (iOS), so a backgrounded tap routes rather than just
+raising the app, and it is covered by `PushNotificationRouterTests`.
+
+What has no route yet is anything that would need a Following or Artist Messages page — the payload
+carries `PersonaId` and `EntityId` ready for it.
 
 ---
 
