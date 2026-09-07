@@ -34,6 +34,15 @@ streamtunes-logs/
 device-logs/
 pulled-logs/
 
+## Firebase Cloud Messaging config - one pair per Firebase project, neither in the repo.
+## These carry project ids and API keys for the Test and Production Firebase projects, and the
+## build item groups are Exists()-guarded, so a clone without them builds fine and simply has no
+## push. Restore them from the Firebase console.
+Platforms/Android/google-services*.json
+Platforms/iOS/GoogleService-Info*.plist
+MusicSalesApp.Maui/Platforms/Android/google-services*.json
+MusicSalesApp.Maui/Platforms/iOS/GoogleService-Info*.plist
+
 ## Visual Studio files
 .vs/
 *.suo
