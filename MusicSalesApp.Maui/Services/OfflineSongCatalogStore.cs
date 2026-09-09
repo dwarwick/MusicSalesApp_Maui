@@ -181,6 +181,12 @@ public sealed class OfflineSongCatalogStore : IOfflineSongCatalogStore
                 // whole privacy rule is that nobody learns who follows whom.
                 entry.Song.IsFollowingArtist = false;
                 entry.Song.IsOwnArtist = false;
+
+                // Whether the OUTGOING user has listened to this song. It rides along in the
+                // snapshot deliberately, and CanRate is `HasStreamed || UserLikeStatus != null` -
+                // so leaving it behind hands the next person the right to rate songs they have
+                // never heard, which is the entitlement the server checks.
+                entry.Song.HasStreamed = false;
             }
 
             document.UpdatedUtc = DateTimeOffset.UtcNow;

@@ -258,6 +258,7 @@ public class OfflineSongCatalogStoreTests
         followed.PersonaId = 10;
         followed.IsFollowingArtist = true;
         followed.IsOwnArtist = true;
+        followed.HasStreamed = true;
 
         await _store.SaveAsync([followed]);
 
@@ -269,6 +270,10 @@ public class OfflineSongCatalogStoreTests
             Assert.That(restored, Has.Count.EqualTo(1), "the catalogue itself survives");
             Assert.That(restored[0].IsFollowingArtist, Is.False);
             Assert.That(restored[0].IsOwnArtist, Is.False);
+
+            // CanRate is `HasStreamed || UserLikeStatus != null`, so carrying this over hands the
+            // next account the right to rate songs it has never heard.
+            Assert.That(restored[0].HasStreamed, Is.False);
         });
     }
 }

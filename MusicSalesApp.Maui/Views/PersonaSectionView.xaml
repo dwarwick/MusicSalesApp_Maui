@@ -73,6 +73,7 @@
                        TextDecorations="Underline"
                        LineBreakMode="TailTruncation"
                        MaxLines="1"
+                       HorizontalOptions="Start"
                        VerticalOptions="Center">
                     <Label.GestureRecognizers>
                         <TapGestureRecognizer Command="{Binding NavigateCommand, Source={x:Reference Root}}"

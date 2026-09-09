@@ -305,6 +305,15 @@ public class PushNotificationCoordinator : IPushNotificationCoordinator, IDispos
             return false;
         }
 
+        // Parseable is not the same as usable: DateTimeOffset throws on a tick count outside its
+        // range, and that throw would have happened on every single sync while the bad value sat
+        // in preferences forever - push silently dead with no way out. Treat it as no stamp, which
+        // re-registers once and overwrites it.
+        if (ticks < DateTimeOffset.MinValue.UtcTicks || ticks > DateTimeOffset.MaxValue.UtcTicks)
+        {
+            return false;
+        }
+
         var registeredAt = new DateTimeOffset(ticks, TimeSpan.Zero);
         var age = DateTimeOffset.UtcNow - registeredAt;
 
