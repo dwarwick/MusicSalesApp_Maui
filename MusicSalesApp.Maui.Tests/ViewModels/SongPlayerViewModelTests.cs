@@ -92,6 +92,7 @@ public class SongPlayerViewModelTests
     {
         var song = new SongDto { Id = 1, SongTitle = "Test" };
         _viewModel.Song = song;
+        _viewModel.Activate();               // arriving
         _mockPlaybackService.Invocations.Clear();
         _mockMediaPlaybackOnboardingService.Invocations.Clear();
 
@@ -109,6 +110,7 @@ public class SongPlayerViewModelTests
     {
         var song = new SongDto { Id = 1, SongTitle = "Test" };
         _viewModel.Song = song;
+        _viewModel.Activate();               // arriving
         _mockPlaybackService.Invocations.Clear();
         _mockMediaPlaybackOnboardingService.Invocations.Clear();
         _mockPlaybackService.SetupGet(p => p.CurrentSong).Returns(song);
@@ -126,6 +128,7 @@ public class SongPlayerViewModelTests
     {
         var song = new SongDto { Id = 9, SongTitle = "Queued Song" };
         _viewModel.Song = song;
+        _viewModel.Activate();               // arriving
         _mockPlaybackService.Invocations.Clear();
 
         var started = await _viewModel.PlayDisplayedSongQueueAsync();
@@ -624,5 +627,90 @@ public class SongPlayerViewModelTests
         Assert.That(
             _viewModel.HasUnlimitedAccess,
             Is.EqualTo(!_viewModel.IsCurrentSongPreviewLimited));
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Taking the queue back when the page reappears over someone else's playback
+    // ---------------------------------------------------------------------------------------
+
+    [Test]
+    public void Activate_TakesTheQueueBack_WhenSomethingElseIsPlaying()
+    {
+        // Open a song, follow its artist link, play the artist's tracks, press Back. The page said
+        // one song while a different one played and went on advancing through the artist's queue.
+        var song = new SongDto { Id = 1, SongTitle = "Test Song" };
+        _viewModel.Song = song;
+        _viewModel.Activate();               // arriving
+        _mockPlaybackService.Invocations.Clear();
+
+        _mockPlaybackService.SetupGet(p => p.IsPlaying).Returns(true);
+        _mockPlaybackService.SetupGet(p => p.CurrentSong)
+            .Returns(new SongDto { Id = 99, SongTitle = "Something from the artist page" });
+
+        _viewModel.Activate();
+
+        _mockPlaybackService.Verify(p => p.SetPlaylist(
+            It.Is<List<SongDto>>(songs => songs.Count == 1 && songs[0] == song),
+            0,
+            "Song page: Test Song"), Times.Once);
+    }
+
+    [Test]
+    public void Activate_LeavesTheQueueAlone_WhenThisPagesSongIsAlreadyPlaying()
+    {
+        var song = new SongDto { Id = 1, SongTitle = "Test Song" };
+        _viewModel.Song = song;
+        _viewModel.Activate();               // arriving
+        _mockPlaybackService.Invocations.Clear();
+
+        _mockPlaybackService.SetupGet(p => p.IsPlaying).Returns(true);
+        _mockPlaybackService.SetupGet(p => p.CurrentSong).Returns(song);
+
+        _viewModel.Activate();
+
+        _mockPlaybackService.Verify(
+            p => p.SetPlaylist(It.IsAny<List<SongDto>>(), It.IsAny<int>(), It.IsAny<string>()),
+            Times.Never);
+    }
+
+    [Test]
+    public void Activate_LeavesPlaybackAlone_WhenPaused()
+    {
+        // Paused, nothing is advancing, so there is no contradiction to correct - and pressing play
+        // here rebuilds the queue from this page anyway. Interfering would also be the one thing
+        // the playback rules forbid: turning a user-requested pause back into playback.
+        var song = new SongDto { Id = 1, SongTitle = "Test Song" };
+        _viewModel.Song = song;
+        _viewModel.Activate();               // arriving
+        _mockPlaybackService.Invocations.Clear();
+
+        _mockPlaybackService.SetupGet(p => p.IsPlaying).Returns(false);
+        _mockPlaybackService.SetupGet(p => p.CurrentSong)
+            .Returns(new SongDto { Id = 99, SongTitle = "Paused artist track" });
+
+        _viewModel.Activate();
+
+        _mockPlaybackService.Verify(
+            p => p.SetPlaylist(It.IsAny<List<SongDto>>(), It.IsAny<int>(), It.IsAny<string>()),
+            Times.Never);
+    }
+
+    [Test]
+    public void Activate_DoesNotSetTheQueueTwice_OnFirstAppearance()
+    {
+        // The setter is already establishing the queue when OnAppearing fires, and SetPlaylist
+        // returns before CurrentSong catches up - so a first-appearance check would see a stale
+        // song, call SetPlaylist again, and restart the track under the listener.
+        var song = new SongDto { Id = 1, SongTitle = "Test Song" };
+        _mockPlaybackService.SetupGet(p => p.IsPlaying).Returns(true);
+        _mockPlaybackService.SetupGet(p => p.CurrentSong).Returns((SongDto?)null);
+
+        _viewModel.Song = song;
+        _viewModel.Activate();
+
+        _mockPlaybackService.Verify(p => p.SetPlaylist(
+            It.IsAny<List<SongDto>>(),
+            It.IsAny<int>(),
+            It.IsAny<string>()), Times.Once);
     }
 }

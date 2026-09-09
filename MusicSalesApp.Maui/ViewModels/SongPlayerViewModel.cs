@@ -62,9 +62,62 @@ public partial class SongPlayerViewModel : ObservableObject
         AttachSubscriptions();
     }
 
+    /// <summary>
+    /// Whether this page has been on screen before, which is what separates arriving from returning.
+    /// </summary>
+    private bool _hasAppeared;
+
     public void Activate()
     {
         AttachSubscriptions();
+
+        // Arriving is the Song setter's job and it has already started; only a RETURN needs the
+        // queue taken back. Checking playback state on first appearance instead would race the
+        // setter: SetPlaylist starts the playback request and returns, so CurrentSong is still the
+        // previous song for a moment afterwards - and both of them would call SetPlaylist, which
+        // restarts the track under the listener.
+        if (!_hasAppeared)
+        {
+            _hasAppeared = true;
+            return;
+        }
+
+        ReclaimQueueIfStale();
+    }
+
+    /// <summary>
+    /// Takes the queue back when this page reappears over something else's playback.
+    /// </summary>
+    /// <remarks>
+    /// The <see cref="Song"/> setter shrinks the queue to this one song, but it only runs when the
+    /// song changes - and back-navigation does not change it. So opening a song, following its
+    /// artist link to the artist player, and pressing Back left the artist's queue playing while
+    /// this page displayed a different song, and the queue went on advancing through the artist's
+    /// tracks. The page and the audio disagreed, and the page was the one lying.
+    ///
+    /// <para>
+    /// Only when something is actually playing. Paused, nothing is advancing and there is nothing
+    /// to contradict, so yanking the queue would be interference for its own sake - and pressing
+    /// play here rebuilds the queue from this page anyway, through PlayDisplayedSongQueueAsync.
+    /// That also keeps this well clear of the rule that a user-requested pause must never be turned
+    /// back into playback.
+    /// </para>
+    /// </remarks>
+    private void ReclaimQueueIfStale()
+    {
+        var song = Song;
+
+        if (song is null || !_playbackService.IsPlaying)
+        {
+            return;
+        }
+
+        if (_playbackService.CurrentSong?.Id == song.Id)
+        {
+            return;
+        }
+
+        _playbackService.SetPlaylist([song], 0, PlaybackQueueDescriptions.SongPage(song));
     }
 
     public Task StartSignalRAsync() => _signalRService.StartAsync();
