@@ -59,13 +59,6 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         _billingService = billingService;
         _playlistService = playlistService;
         _artistFollowStateCoordinator = artistFollowStateCoordinator;
-
-        if (_artistFollowStateCoordinator != null)
-        {
-            // A follow made anywhere else - the library, the song player - has to move this bell.
-            _artistFollowStateCoordinator.FollowStateChanged += HandleArtistFollowStateChanged;
-        }
-
         _networkStatusService = networkStatusService;
         _songArtworkHydrator = songArtworkHydrator;
         _userStreamedSongStore = userStreamedSongStore;
@@ -152,6 +145,17 @@ public partial class PlaylistPlayerViewModel : ObservableObject
         _playbackService.ShowSubscribeCtaRequested += OnShowSubscribeCta;
         if (_networkStatusService != null)
             _networkStatusService.PropertyChanged += HandleNetworkStatusChanged;
+
+        if (_artistFollowStateCoordinator != null)
+        {
+            // Attached HERE, not in the constructor, because Cleanup() detaches it and Cleanup()
+            // runs on every OnDisappearing. A constructor-only attach meant the first navigation
+            // away left this page permanently deaf to follow changes: the bell stopped moving when
+            // the artist was followed from anywhere else, for the life of the page.
+            _artistFollowStateCoordinator.FollowStateChanged += HandleArtistFollowStateChanged;
+        }
+
+        // A follow made anywhere else - the library, the song player - has to move this bell.
         _subscriptionsAttached = true;
     }
 

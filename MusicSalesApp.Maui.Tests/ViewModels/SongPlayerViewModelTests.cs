@@ -16,6 +16,8 @@ public class SongPlayerViewModelTests
     private Mock<ISignalRService> _mockSignalRService;
     private Mock<IAppConfig> _mockAppConfig;
     private Mock<IBillingService> _mockBillingService;
+    private ArtistFollowNotifier _notifier;
+    private ArtistFollowStateCoordinator _coordinator;
     private SongPlayerViewModel _viewModel;
 
     [SetUp]
@@ -34,11 +36,21 @@ public class SongPlayerViewModelTests
         _mockAppConfig.Setup(c => c.ApiBaseUrl).Returns("https://streamtunes.net");
         _mockMediaPlaybackOnboardingService.Setup(s => s.EnsureBackgroundPlaybackExplainedAsync()).Returns(Task.CompletedTask);
 
+        // Real notifier and coordinator: whether this page is still LISTENING after a navigation
+        // round trip is the behaviour under test, and a mock would assert the wiring away.
+        _notifier = new ArtistFollowNotifier();
+        _coordinator = new ArtistFollowStateCoordinator(
+            Mock.Of<IFollowService>(),
+            _notifier,
+            _mockAuthService.Object,
+            Mock.Of<Microsoft.Extensions.Logging.ILogger<ArtistFollowStateCoordinator>>());
+
         _viewModel = new SongPlayerViewModel(
             _mockMusicService.Object, _mockAlertService.Object,
             _mockAuthService.Object, _mockNavigationService.Object,
             _mockPlaybackService.Object, _mockMediaPlaybackOnboardingService.Object, _mockSignalRService.Object,
-            _mockAppConfig.Object, _mockBillingService.Object);
+            _mockAppConfig.Object, _mockBillingService.Object,
+            artistFollowStateCoordinator: _coordinator);
     }
 
     // --- Song property ---
@@ -712,5 +724,44 @@ public class SongPlayerViewModelTests
             It.IsAny<List<SongDto>>(),
             It.IsAny<int>(),
             It.IsAny<string>()), Times.Once);
+    }
+
+    [Test]
+    public void FollowChanges_StillReachThePage_AfterItHasBeenAwayAndComeBack()
+    {
+        // The regression this exists for: Cleanup() detaches FollowStateChanged and runs on every
+        // OnDisappearing, but the attach lived in the constructor - so the first navigation away
+        // left the page permanently deaf and its bell stopped moving when the artist was followed
+        // from anywhere else. Attaching from AttachSubscriptions() is what pairs the two.
+        var song = new SongDto { Id = 1, SongTitle = "Test Song", PersonaId = 42 };
+        _viewModel.Song = song;
+        _viewModel.Activate();
+
+        // Away to the artist page, and back.
+        _viewModel.Cleanup();
+        _viewModel.Activate();
+
+        // Someone follows this artist from another surface.
+        _notifier.NotifyFollowStateChanged(42, isFollowing: true);
+
+        Assert.That(
+            song.IsFollowingArtist,
+            Is.True,
+            "the bell must still track follow changes after a navigation round trip");
+    }
+
+    [Test]
+    public void FollowChanges_DoNotReachThePage_WhileItIsAway()
+    {
+        // The other half of the pair: detaching has to actually detach, or the singleton
+        // coordinator keeps every page this app has ever built alive and driving.
+        var song = new SongDto { Id = 1, SongTitle = "Test Song", PersonaId = 42 };
+        _viewModel.Song = song;
+        _viewModel.Activate();
+        _viewModel.Cleanup();
+
+        _notifier.NotifyFollowStateChanged(42, isFollowing: true);
+
+        Assert.That(song.IsFollowingArtist, Is.False);
     }
 }

@@ -48,13 +48,6 @@ public partial class SongPlayerViewModel : ObservableObject
         _appConfig = appConfig;
         _billingService = billingService;
         _artistFollowStateCoordinator = artistFollowStateCoordinator;
-
-        if (_artistFollowStateCoordinator != null)
-        {
-            // The library, the other player and this one can all be holding a card for the same
-            // artist. Following from any of them has to move this bell too.
-            _artistFollowStateCoordinator.FollowStateChanged += HandleArtistFollowStateChanged;
-        }
         _networkStatusService = networkStatusService;
         _songArtworkHydrator = songArtworkHydrator;
         _userStreamedSongStore = userStreamedSongStore;
@@ -135,6 +128,18 @@ public partial class SongPlayerViewModel : ObservableObject
         _playbackService.ShowSubscribeCtaRequested += OnShowSubscribeCta;
         if (_networkStatusService != null)
             _networkStatusService.PropertyChanged += HandleNetworkStatusChanged;
+
+        if (_artistFollowStateCoordinator != null)
+        {
+            // Attached HERE, not in the constructor, because Cleanup() detaches it and Cleanup()
+            // runs on every OnDisappearing. A constructor-only attach meant the first navigation
+            // away left this page permanently deaf to follow changes: the bell stopped moving when
+            // the artist was followed from anywhere else, for the life of the page.
+            _artistFollowStateCoordinator.FollowStateChanged += HandleArtistFollowStateChanged;
+        }
+
+        // The library, the other player and this one can all be holding a card for the same
+        // artist. Following from any of them has to move this bell too.
         _subscriptionsAttached = true;
     }
 
