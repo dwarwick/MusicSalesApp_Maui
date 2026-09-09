@@ -98,6 +98,16 @@ public class PushNotificationCoordinator : IPushNotificationCoordinator, IDispos
         {
             _gate.Release();
         }
+
+        // One last look, AFTER releasing. A trigger that arrived between the loop's final read and
+        // the release set the flag with nobody left inside to see it, and would then have waited
+        // for some unrelated future sync to notice - which for a sign-out is exactly the wait that
+        // must not happen. Re-entering is safe: this pass clears the flag before doing any work, so
+        // two of these cannot chase each other.
+        if (Volatile.Read(ref _syncRequestedAgain) == 1)
+        {
+            await SyncAsync();
+        }
     }
 
     /// <summary>
@@ -379,7 +389,33 @@ public class PushNotificationCoordinator : IPushNotificationCoordinator, IDispos
     /// <summary>
     /// Runs before the session is torn down, so the DELETE goes out with a valid bearer token.
     /// </summary>
-    private Task OnSigningOutAsync() => UnregisterCurrentDeviceAsync();
+    /// <remarks>
+    /// Takes the same gate a sync does. Without it the unregister could interleave with a
+    /// registration already in flight, which would re-write RegisteredPushToken and re-create the
+    /// server row moments after the DELETE removed it - leaving the handset registered to the
+    /// account that just signed out, which is the failure this hook exists to prevent.
+    ///
+    /// <para>
+    /// Bounded, because the caller is a sign-out the user asked for: if a sync is genuinely stuck,
+    /// unregistering unguarded is a better outcome than making them wait for it.
+    /// </para>
+    /// </remarks>
+    private async Task OnSigningOutAsync()
+    {
+        var held = await _gate.WaitAsync(TimeSpan.FromSeconds(2));
+
+        try
+        {
+            await UnregisterCurrentDeviceAsync();
+        }
+        finally
+        {
+            if (held)
+            {
+                _gate.Release();
+            }
+        }
+    }
 
     private void OnTokenRefreshed(object? sender, string token) => _ = SyncAsync();
 

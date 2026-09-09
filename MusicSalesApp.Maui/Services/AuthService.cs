@@ -1266,6 +1266,17 @@ public class AuthService : IAuthService
     /// Runs the <see cref="SigningOut"/> handlers and waits for them, so an authenticated cleanup
     /// call actually goes out authenticated.
     /// </summary>
+    /// <summary>
+    /// How long all the sign-out handlers together may take before the sign-out proceeds anyway.
+    /// </summary>
+    /// <remarks>
+    /// They make network calls - push de-registration is one - and the shared HttpClient has no
+    /// Timeout configured, so it falls back to the 100-second default. Without a bound here, a
+    /// server that is merely unreachable makes Sign Out look frozen for over a minute. Signing out
+    /// is a local act the user is entitled to; the server tidy-up is best-effort around it.
+    /// </remarks>
+    private static readonly TimeSpan SigningOutHandlerBudget = TimeSpan.FromSeconds(5);
+
     private async Task NotifySigningOutAsync()
     {
         var handler = SigningOut;
@@ -1274,17 +1285,40 @@ public class AuthService : IAuthService
             return;
         }
 
-        foreach (var subscriber in handler.GetInvocationList().Cast<Func<Task>>())
+        var subscribers = handler.GetInvocationList().Cast<Func<Task>>().ToList();
+
+        try
         {
-            try
+            // Started together and waited on once, so the budget covers all of them rather than
+            // being paid per handler.
+            var work = Task.WhenAll(subscribers.Select(InvokeSigningOutHandlerAsync));
+            var finished = await Task.WhenAny(work, Task.Delay(SigningOutHandlerBudget));
+
+            if (finished != work)
             {
-                await subscriber();
+                // Abandoned, not cancelled: the DELETE may still land, and if it does not the
+                // server reassigns the token to whoever registers it next.
+                _logger.LogWarning(
+                    "Sign-out handlers did not finish within {Seconds}s; signing out anyway.",
+                    SigningOutHandlerBudget.TotalSeconds);
             }
-            catch (Exception ex)
-            {
-                // A sign-out cannot be refused, and one handler must not stop the next.
-                _logger.LogWarning(ex, "A sign-out handler failed; continuing with the sign-out");
-            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "A sign-out handler failed; continuing with the sign-out");
+        }
+    }
+
+    private async Task InvokeSigningOutHandlerAsync(Func<Task> subscriber)
+    {
+        try
+        {
+            await subscriber();
+        }
+        catch (Exception ex)
+        {
+            // A sign-out cannot be refused, and one handler must not stop the next.
+            _logger.LogWarning(ex, "A sign-out handler failed; continuing with the sign-out");
         }
     }
 
