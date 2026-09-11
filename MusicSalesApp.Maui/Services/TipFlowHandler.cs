@@ -53,12 +53,8 @@ public class TipFlowHandler : ITipFlowHandler
         if (!creatorId.HasValue || creatorId.Value <= 0)
             return false;
 
-        if (_authService.CreatorId.HasValue && _authService.CreatorId.Value == creatorId.Value)
-            return false;
-
-        return !_authService.UserId.HasValue
-            || !creatorUserId.HasValue
-            || _authService.UserId.Value != creatorUserId.Value;
+        // Your own music: no tip button, for the same reason there is no follow bell on it.
+        return !OwnMusicPolicy.IsOwnMusic(creatorId, creatorUserId, _authService);
     }
 
     public async Task ShowAsync(int songMetadataId, string songTitle, int? creatorId, int? creatorUserId)

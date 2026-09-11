@@ -301,4 +301,158 @@ public class ArtistFollowStateCoordinatorTests
 
         Assert.That(song.IsFollowingArtist, Is.False);
     }
+
+    // ---------------------------------------------------------------------------------------
+    // "The server said none" is not "we could not ask"
+    // ---------------------------------------------------------------------------------------
+
+    [Test]
+    public async Task LoadFor_KeepsWhatIsKnown_WhenTheLookupCouldNotBeMade()
+    {
+        // The distinction the billing rule in CLAUDE.md exists for. Empty means the server answered
+        // and the user follows nobody; null means we never got an answer. Treating null as empty is
+        // what let a lift erase the cached set and visibly unfollow the whole library.
+        var song = Song(1, personaId: 10);
+
+        _followService
+            .Setup(f => f.GetFollowedPersonaIdsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync([10]);
+        await _coordinator.LoadForAsync([song]);
+        Assert.That(song.IsFollowingArtist, Is.True, "precondition: the follow resolved");
+
+        _followService
+            .Setup(f => f.GetFollowedPersonaIdsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync((HashSet<int>?)null);
+
+        var second = Song(2, personaId: 10);
+        await _coordinator.LoadForAsync([second]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(second.IsFollowingArtist, Is.True, "an unanswered lookup must not unfollow");
+            Assert.That(song.IsFollowingArtist, Is.True, "and must not disturb songs already stamped");
+        });
+    }
+
+    [Test]
+    public async Task LoadFor_StillStampsOwnership_WhenTheLookupCouldNotBeMade()
+    {
+        // Ownership is a local comparison, so it holds with no server at all - and it has to, or a
+        // creator gets a bell on their own song that does nothing when tapped.
+        _followService
+            .Setup(f => f.GetFollowedPersonaIdsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync((HashSet<int>?)null);
+
+        var own = OwnSong(1, personaId: 10);
+
+        await _coordinator.LoadForAsync([own]);
+
+        Assert.That(own.IsOwnArtist, Is.True);
+    }
+
+    [Test]
+    public async Task LoadFor_ClearsAnArtist_WhenTheServerAnswersWithAnEmptySet()
+    {
+        // The other half of the pair: an empty set IS an answer and must still clear.
+        var song = Song(1, personaId: 10);
+
+        _followService
+            .Setup(f => f.GetFollowedPersonaIdsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync([10]);
+        await _coordinator.LoadForAsync([song]);
+
+        _followService
+            .Setup(f => f.GetFollowedPersonaIdsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync([]);
+        await _coordinator.LoadForAsync([song]);
+
+        Assert.That(song.IsFollowingArtist, Is.False);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // One account's follows must never reach the next
+    // ---------------------------------------------------------------------------------------
+
+    [Test]
+    public async Task AuthStateChanged_DropsTheCachedSet_WhenADifferentUserSignsIn()
+    {
+        _followService
+            .Setup(f => f.GetFollowedPersonaIdsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync([10]);
+
+        await _coordinator.LoadForAsync([Song(1, personaId: 10)]);
+
+        // A different account on the same handset.
+        _authService.SetupGet(a => a.UserId).Returns(ListenerUserId + 1);
+        _authService.Raise(a => a.AuthStateChanged += null);
+
+        // Nothing is asked of the server here: ApplyKnownState is what every surface runs its songs
+        // through before a load lands, and it is where the leak showed.
+        var theirSong = Song(2, personaId: 10);
+        _coordinator.ApplyKnownState([theirSong]);
+
+        Assert.That(theirSong.IsFollowingArtist, Is.False);
+    }
+
+    [Test]
+    public async Task AuthStateChanged_DropsTheCachedSet_OnSignOut()
+    {
+        _followService
+            .Setup(f => f.GetFollowedPersonaIdsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync([10]);
+
+        await _coordinator.LoadForAsync([Song(1, personaId: 10)]);
+
+        _authService.SetupGet(a => a.IsLoggedIn).Returns(false);
+        _authService.SetupGet(a => a.UserId).Returns((int?)null);
+        _authService.Raise(a => a.AuthStateChanged += null);
+
+        var song = Song(2, personaId: 10);
+        _coordinator.ApplyKnownState([song]);
+
+        Assert.That(song.IsFollowingArtist, Is.False);
+    }
+
+    [Test]
+    public async Task AuthStateChanged_KeepsTheCachedSet_WhenTheSameUserIsStillSignedIn()
+    {
+        // AuthStateChanged fires for things other than a sign-in - a subscription refresh, for one
+        // - and dropping the set on those would cost a needless round trip on every surface.
+        _followService
+            .Setup(f => f.GetFollowedPersonaIdsAsync(It.IsAny<IEnumerable<int>>()))
+            .ReturnsAsync([10]);
+
+        await _coordinator.LoadForAsync([Song(1, personaId: 10)]);
+
+        _authService.Raise(a => a.AuthStateChanged += null);
+
+        var song = Song(2, personaId: 10);
+        _coordinator.ApplyKnownState([song]);
+
+        Assert.That(song.IsFollowingArtist, Is.True);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // The tapped song is corrected by the toggle itself
+    // ---------------------------------------------------------------------------------------
+
+    [Test]
+    public async Task Toggle_CorrectsTheTappedSong_WhenTheServerSettlesTheOtherWay()
+    {
+        // The notifier only reaches cards a subscribed ViewModel is holding, and the tapped song
+        // can be one that is filtered out of its own list - so the toggle stamps it directly.
+        var song = Song(1, personaId: 10);
+
+        _followService
+            .Setup(f => f.SetFollowStateAsync(10, true, It.IsAny<int?>()))
+            .ReturnsAsync(new FollowStateResult(10, Following: false, Outcome: "Blocked"));
+
+        var stuck = await _coordinator.ToggleAsync(song);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(stuck, Is.False);
+            Assert.That(song.IsFollowingArtist, Is.False, "the optimistic flip must not survive");
+        });
+    }
 }

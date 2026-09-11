@@ -143,13 +143,6 @@ public partial class ConfigViewModel : ObservableObject
     // other: permission first, then what to be told about, then how often.
 
     private NotificationPreferences? _preferences;
-    private ArtistPushFrequency _notificationFrequency;
-    private bool _allowPushNotifications;
-    private bool _receiveReleasePush;
-    private bool _receiveMessagePush;
-    private bool _isNotificationSectionAvailable;
-    private bool _isPushBlockedBySystem;
-    private bool _isSavingNotifications;
 
     // Guards the writes the toggles trigger. Switching the master on sets both categories, and
     // each category setter would otherwise fire its own save - three round trips for one tap, in a
@@ -160,42 +153,24 @@ public partial class ConfigViewModel : ObservableObject
         Enum.GetValues<ArtistPushFrequency>();
 
     /// <summary>False on a platform with no push transport, or before the preferences load.</summary>
-    public bool IsNotificationSectionAvailable
-    {
-        get => _isNotificationSectionAvailable;
-        private set => SetProperty(ref _isNotificationSectionAvailable, value);
-    }
+    [ObservableProperty]
+    public partial bool IsNotificationSectionAvailable { get; private set; }
 
     /// <summary>
     /// The user refused at the OS level. Neither platform will ask again, so the toggles are shown
     /// disabled with an explanation rather than hidden - hiding them reads as the feature being
     /// missing rather than as something they turned off.
     /// </summary>
-    public bool IsPushBlockedBySystem
-    {
-        get => _isPushBlockedBySystem;
-        private set
-        {
-            if (SetProperty(ref _isPushBlockedBySystem, value))
-            {
-                OnPropertyChanged(nameof(CanEditNotifications));
-                OnPropertyChanged(nameof(NotificationBlockedMessage));
-            }
-        }
-    }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanEditNotifications))]
+    [NotifyPropertyChangedFor(nameof(CanEditNotificationCategories))]
+    [NotifyPropertyChangedFor(nameof(NotificationBlockedMessage))]
+    public partial bool IsPushBlockedBySystem { get; private set; }
 
-    public bool IsSavingNotifications
-    {
-        get => _isSavingNotifications;
-        private set
-        {
-            if (SetProperty(ref _isSavingNotifications, value))
-            {
-                OnPropertyChanged(nameof(CanEditNotifications));
-                OnPropertyChanged(nameof(CanEditNotificationCategories));
-            }
-        }
-    }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanEditNotifications))]
+    [NotifyPropertyChangedFor(nameof(CanEditNotificationCategories))]
+    public partial bool IsSavingNotifications { get; private set; }
 
     public bool CanEditNotifications => !IsPushBlockedBySystem && !IsSavingNotifications;
 
@@ -206,72 +181,66 @@ public partial class ConfigViewModel : ObservableObject
         ? "Notifications are turned off for StreamTunes on this device. Turn them back on in your device settings."
         : string.Empty;
 
-    public string NotificationStatus { get; private set; } = string.Empty;
+    [ObservableProperty]
+    public partial string NotificationStatus { get; private set; }
 
     /// <summary>
     /// The master switch. On means the OS permission is granted AND at least one kind is wanted,
     /// which is exactly the condition under which a notification can actually arrive - so it can
     /// never claim to be on while the user would receive nothing.
     /// </summary>
-    public bool AllowPushNotifications
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanEditNotificationCategories))]
+    public partial bool AllowPushNotifications { get; set; }
+
+    [ObservableProperty]
+    public partial bool ReceiveReleasePush { get; set; }
+
+    [ObservableProperty]
+    public partial bool ReceiveMessagePush { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NotificationFrequencyDescription))]
+    public partial ArtistPushFrequency NotificationFrequency { get; set; }
+
+    // The side effects, in the generated hooks. Every dependent property above is declared with
+    // NotifyPropertyChangedFor rather than a hand-written OnPropertyChanged call: the list is then
+    // checked by the compiler, and adding a dependency cannot silently leave a control stale - the
+    // bug AccountSettingsViewModel had to be patched for in the same change that built this page.
+
+    /// <summary>
+    /// Whatever a toggle last started, so a test can await it instead of guessing at a delay.
+    /// </summary>
+    /// <remarks>
+    /// The switches are bound to properties, so their work has to be fire-and-forget - there is no
+    /// caller to hand a Task to. That left the tests sleeping 50ms and asserting, which passes or
+    /// fails on how loaded the machine is, and can pass while the mocked call is still in flight.
+    /// Internal because the ViewModel sources are compiled straight into the test assembly.
+    /// </remarks>
+    internal Task NotificationWorkInFlight { get; private set; } = Task.CompletedTask;
+
+    partial void OnAllowPushNotificationsChanged(bool value)
     {
-        get => _allowPushNotifications;
-        set
+        if (!_suppressNotificationWrites)
         {
-            if (!SetProperty(ref _allowPushNotifications, value))
-            {
-                return;
-            }
-
-            OnPropertyChanged(nameof(CanEditNotificationCategories));
-
-            if (!_suppressNotificationWrites)
-            {
-                _ = ApplyMasterToggleAsync(value);
-            }
+            NotificationWorkInFlight = ApplyMasterToggleAsync(value);
         }
     }
 
-    public bool ReceiveReleasePush
+    partial void OnReceiveReleasePushChanged(bool value) => SaveIfUserDriven();
+
+    partial void OnReceiveMessagePushChanged(bool value) => SaveIfUserDriven();
+
+    partial void OnNotificationFrequencyChanged(ArtistPushFrequency value) => SaveIfUserDriven();
+
+    /// <summary>
+    /// Saves unless this change came from the app displaying what the server already has.
+    /// </summary>
+    private void SaveIfUserDriven()
     {
-        get => _receiveReleasePush;
-        set
+        if (!_suppressNotificationWrites)
         {
-            if (SetProperty(ref _receiveReleasePush, value) && !_suppressNotificationWrites)
-            {
-                _ = SaveNotificationsAsync();
-            }
-        }
-    }
-
-    public bool ReceiveMessagePush
-    {
-        get => _receiveMessagePush;
-        set
-        {
-            if (SetProperty(ref _receiveMessagePush, value) && !_suppressNotificationWrites)
-            {
-                _ = SaveNotificationsAsync();
-            }
-        }
-    }
-
-    public ArtistPushFrequency NotificationFrequency
-    {
-        get => _notificationFrequency;
-        set
-        {
-            if (!SetProperty(ref _notificationFrequency, value))
-            {
-                return;
-            }
-
-            OnPropertyChanged(nameof(NotificationFrequencyDescription));
-
-            if (!_suppressNotificationWrites)
-            {
-                _ = SaveNotificationsAsync();
-            }
+            NotificationWorkInFlight = SaveNotificationsAsync();
         }
     }
 
@@ -319,9 +288,7 @@ public partial class ConfigViewModel : ObservableObject
     {
         // Assigned with writes suppressed: this is displaying what the server already has, and
         // going through the setters would post it straight back on every page open.
-        _suppressNotificationWrites = true;
-
-        try
+        Quietly(() =>
         {
             ReceiveReleasePush = preferences.ReceiveArtistReleasePush;
             ReceiveMessagePush = preferences.ReceiveArtistMessagePush;
@@ -329,12 +296,42 @@ public partial class ConfigViewModel : ObservableObject
             AllowPushNotifications =
                 permission == PushPermissionStatus.Granted &&
                 (preferences.ReceiveArtistReleasePush || preferences.ReceiveArtistMessagePush);
+        });
+    }
+
+    /// <summary>
+    /// Applies a change without letting its setter post it back to the server.
+    /// </summary>
+    /// <remarks>
+    /// Every toggle saves when it moves, which is what makes the page feel immediate - and wrong
+    /// for the several places that assign a value the server has just told us. This was written out
+    /// four times as a set-flag/try/finally sandwich.
+    ///
+    /// <para>
+    /// The flag is saved and restored rather than cleared, so one of these nested inside another
+    /// cannot re-enable saving for the remainder of the outer block - which the plain
+    /// <c>= false</c> version would have done, firing a PUT per switch.
+    /// </para>
+    /// </remarks>
+    private void Quietly(Action apply)
+    {
+        var wasSuppressed = _suppressNotificationWrites;
+        _suppressNotificationWrites = true;
+
+        try
+        {
+            apply();
         }
         finally
         {
-            _suppressNotificationWrites = false;
+            _suppressNotificationWrites = wasSuppressed;
         }
     }
+
+    /// <summary>
+    /// One save at a time. See <see cref="SaveNotificationsAsync"/> for why.
+    /// </summary>
+    private readonly SemaphoreSlim _notificationSaveGate = new(1, 1);
 
     private async Task ApplyMasterToggleAsync(bool allow)
     {
@@ -344,7 +341,7 @@ public partial class ConfigViewModel : ObservableObject
         }
 
         IsSavingNotifications = true;
-        SetStatus(string.Empty);
+        NotificationStatus = string.Empty;
 
         try
         {
@@ -358,10 +355,10 @@ public partial class ConfigViewModel : ObservableObject
                 if (status != PushPermissionStatus.Granted)
                 {
                     IsPushBlockedBySystem = status == PushPermissionStatus.Denied;
-                    RevertMaster(false);
-                    SetStatus(status == PushPermissionStatus.Denied
+                    Quietly(() => AllowPushNotifications = false);
+                    NotificationStatus = status == PushPermissionStatus.Denied
                         ? "Notifications are turned off for StreamTunes in your device settings."
-                        : "Notifications could not be turned on.");
+                        : "Notifications could not be turned on.";
                     return;
                 }
 
@@ -381,7 +378,7 @@ public partial class ConfigViewModel : ObservableObject
                     SetCategoriesQuietly(true, true);
                 }
 
-                SetStatus("Saved.");
+                NotificationStatus = "Saved.";
                 return;
             }
 
@@ -398,35 +395,24 @@ public partial class ConfigViewModel : ObservableObject
         }
     }
 
-    private void SetCategoriesQuietly(bool release, bool message)
-    {
-        _suppressNotificationWrites = true;
-
-        try
+    private void SetCategoriesQuietly(bool release, bool message) =>
+        Quietly(() =>
         {
             ReceiveReleasePush = release;
             ReceiveMessagePush = message;
-        }
-        finally
-        {
-            _suppressNotificationWrites = false;
-        }
-    }
+        });
 
-    private void RevertMaster(bool value)
-    {
-        _suppressNotificationWrites = true;
-
-        try
-        {
-            AllowPushNotifications = value;
-        }
-        finally
-        {
-            _suppressNotificationWrites = false;
-        }
-    }
-
+    /// <summary>
+    /// Saves the notification preferences, one at a time.
+    /// </summary>
+    /// <remarks>
+    /// Serialised deliberately. Four switch setters start this without awaiting it, and all four
+    /// mutate the same <c>_preferences</c> record before posting the whole thing - so two quick
+    /// toggles used to race, and whichever read-back landed first re-applied a snapshot that could
+    /// predate the other write, silently flipping back a switch the user had just set. They also
+    /// shared <c>IsSavingNotifications</c>, so the first to finish re-enabled the controls while
+    /// the second was still in flight.
+    /// </remarks>
     private async Task SaveNotificationsAsync()
     {
         if (_notificationPreferences is null || _preferences is null)
@@ -434,8 +420,10 @@ public partial class ConfigViewModel : ObservableObject
             return;
         }
 
+        await _notificationSaveGate.WaitAsync().ConfigureAwait(true);
+
         IsSavingNotifications = true;
-        SetStatus(string.Empty);
+        NotificationStatus = string.Empty;
 
         try
         {
@@ -447,7 +435,7 @@ public partial class ConfigViewModel : ObservableObject
 
             if (!await _notificationPreferences.SetAsync(_preferences).ConfigureAwait(true))
             {
-                SetStatus("Could not save that just now.");
+                NotificationStatus = "Could not save that just now.";
                 return;
             }
 
@@ -458,7 +446,12 @@ public partial class ConfigViewModel : ObservableObject
 
             if (confirmed is null)
             {
-                SetStatus("Saved.");
+                // The write went through but we could not read it back. Recompute the master switch
+                // from what is now on screen anyway: returning here used to leave it ON with both
+                // categories OFF - "allowed on the phone, receiving nothing, and no way to tell
+                // from the device", which is the exact state this section exists to prevent.
+                RecomputeMasterToggle();
+                NotificationStatus = "Saved.";
                 return;
             }
 
@@ -469,19 +462,23 @@ public partial class ConfigViewModel : ObservableObject
                 ? PushPermissionStatus.Denied
                 : PushPermissionStatus.Granted);
 
-            SetStatus(frequencyIgnored
+            NotificationStatus = frequencyIgnored
                 ? "This server does not support notification frequency yet."
-                : "Saved.");
+                : "Saved.";
         }
         finally
         {
             IsSavingNotifications = false;
+            _notificationSaveGate.Release();
         }
     }
 
-    private void SetStatus(string status)
-    {
-        NotificationStatus = status;
-        OnPropertyChanged(nameof(NotificationStatus));
-    }
+    /// <summary>
+    /// Restates the invariant the master switch stands for: allowed by the system, and at least one
+    /// kind of notification actually wanted.
+    /// </summary>
+    private void RecomputeMasterToggle() =>
+        Quietly(() => AllowPushNotifications =
+            !IsPushBlockedBySystem && (ReceiveReleasePush || ReceiveMessagePush));
+
 }

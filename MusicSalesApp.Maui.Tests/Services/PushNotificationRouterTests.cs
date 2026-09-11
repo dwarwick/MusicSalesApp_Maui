@@ -52,20 +52,35 @@ public class PushNotificationRouterTests
             x => x.GoToAsync(It.IsAny<string>(), It.IsAny<IDictionary<string, object>>()),
             Times.Never);
 
-    [Test]
-    public async Task HandleAsync_ForARelease_OpensThatSongInThePlayer()
+    /// <summary>
+    /// What the platform heads do: queue the tapped payload, then try to route it.
+    /// </summary>
+    /// <remarks>
+    /// The tests used to call a HandleAsync overload that no production caller used, and which
+    /// discarded the "could not navigate yet" answer that FlushPendingAsync exists to act on - so
+    /// they were thinner than the file count suggested. That overload is gone; this is the shipped
+    /// path, as MainActivity.cs and AppDelegate.cs invoke it.
+    /// </remarks>
+    private Task RouteAsync(IReadOnlyDictionary<string, string?>? data)
     {
-        await _router.HandleAsync(ReleasePayload());
+        _router.QueuePending(data);
+        return _router.FlushPendingAsync();
+    }
+
+    [Test]
+    public async Task Routing_ForARelease_OpensThatSongInThePlayer()
+    {
+        await RouteAsync(ReleasePayload());
 
         VerifyNavigatedToSong();
     }
 
     [Test]
-    public async Task HandleAsync_ForAnArtistMessage_StaysWhereItLanded()
+    public async Task Routing_ForAnArtistMessage_StaysWhereItLanded()
     {
         // There is no Artist Messages page yet. Home is the current destination and remains correct
         // until there is somewhere better to go.
-        await _router.HandleAsync(new Dictionary<string, string?>
+        await RouteAsync(new Dictionary<string, string?>
         {
             [PushDataKeys.Kind] = PushNotificationKinds.ArtistMessage,
             [PushDataKeys.EntityId] = "9",
@@ -76,35 +91,35 @@ public class PushNotificationRouterTests
 
     [TestCase("")]
     [TestCase("not-a-number")]
-    public async Task HandleAsync_WithAnUnusableSongId_DoesNotNavigate(string songId)
+    public async Task Routing_WithAnUnusableSongId_DoesNotNavigate(string songId)
     {
-        await _router.HandleAsync(ReleasePayload(songId));
+        await RouteAsync(ReleasePayload(songId));
 
         VerifyNoNavigation();
     }
 
     [Test]
-    public async Task HandleAsync_WhenTheSongIsNoLongerInTheCatalogue_DoesNotNavigate()
+    public async Task Routing_WhenTheSongIsNoLongerInTheCatalogue_DoesNotNavigate()
     {
         // Withdrawn between the push being sent and the tap, or an offline snapshot without it.
         _musicService.Setup(x => x.GetSongsAsync()).ReturnsAsync([]);
 
-        await _router.HandleAsync(ReleasePayload());
+        await RouteAsync(ReleasePayload());
 
         VerifyNoNavigation();
     }
 
     [TestCase(null)]
     [TestCase(0)]
-    public async Task HandleAsync_WithNothingToRouteOn_DoesNotNavigate(int? emptiness)
+    public async Task Routing_WithNothingToRouteOn_DoesNotNavigate(int? emptiness)
     {
-        await _router.HandleAsync(emptiness is null ? null : new Dictionary<string, string?>());
+        await RouteAsync(emptiness is null ? null : new Dictionary<string, string?>());
 
         VerifyNoNavigation();
     }
 
     [Test]
-    public async Task HandleAsync_WhenNavigationThrows_DoesNotPropagate()
+    public async Task Routing_WhenNavigationThrows_DoesNotPropagate()
     {
         // This runs during launch on a cold-start tap, where an escaping exception is a crash the
         // user sees as the app dying when they touched a notification.
@@ -112,7 +127,7 @@ public class PushNotificationRouterTests
             .Setup(x => x.GoToAsync(It.IsAny<string>(), It.IsAny<IDictionary<string, object>>()))
             .ThrowsAsync(new InvalidOperationException("Shell is not ready"));
 
-        Assert.DoesNotThrowAsync(() => _router.HandleAsync(ReleasePayload()));
+        Assert.DoesNotThrowAsync(() => RouteAsync(ReleasePayload()));
         await Task.CompletedTask;
     }
 
@@ -234,9 +249,9 @@ public class PushNotificationRouterTests
     }
 
     [Test]
-    public async Task HandleAsync_ForASingleArtistDigest_OpensThatArtist()
+    public async Task Routing_ForASingleArtistDigest_OpensThatArtist()
     {
-        await _router.HandleAsync(DigestPayload("Alex Rivers"));
+        await RouteAsync(DigestPayload("Alex Rivers"));
 
         _navigation.Verify(
             x => x.GoToAsync(
@@ -246,21 +261,21 @@ public class PushNotificationRouterTests
     }
 
     [Test]
-    public async Task HandleAsync_ForADigestSpanningArtists_StaysOnHome()
+    public async Task Routing_ForADigestSpanningArtists_StaysOnHome()
     {
         // "4 new updates from 3 artists you follow" names no destination, so opening one would be
         // taking the user somewhere the notification did not offer.
-        await _router.HandleAsync(DigestPayload(artistName: null));
+        await RouteAsync(DigestPayload(artistName: null));
 
         VerifyNoNavigation();
     }
 
     [Test]
-    public async Task HandleAsync_ForADigest_NeverNeedsTheCatalogue()
+    public async Task Routing_ForADigest_NeverNeedsTheCatalogue()
     {
         // Deliberate: a digest arrives with the artist name on it so a cold-start tap works with
         // no network, unlike a release which has to resolve its SongDto.
-        await _router.HandleAsync(DigestPayload("Alex Rivers"));
+        await RouteAsync(DigestPayload("Alex Rivers"));
 
         _musicService.Verify(x => x.GetSongsAsync(), Times.Never);
     }

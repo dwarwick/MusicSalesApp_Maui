@@ -1352,6 +1352,9 @@ public class PlaybackServiceTests
     {
         _mockAuthService.Setup(a => a.IsCreator).Returns(true);
         _mockAuthService.Setup(a => a.UserId).Returns(100);
+        // Signed in, because a creator always is - the real AuthService nulls UserId on
+        // logout, so "has a UserId but is signed out" is a state it cannot produce.
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
         _service.SetStreamQualifyingSeconds(5);
 
         var song = new SongDto { Id = 1, SongTitle = "My Song", CreatorUserId = 100, StreamUrl = "https://test.com/song.mp3" };
@@ -1477,6 +1480,9 @@ public class PlaybackServiceTests
         _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
         _mockAuthService.Setup(a => a.IsCreator).Returns(true);
         _mockAuthService.Setup(a => a.UserId).Returns(100);
+        // Signed in, because a creator always is - the real AuthService nulls UserId on
+        // logout, so "has a UserId but is signed out" is a state it cannot produce.
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
 
         var song = new SongDto { Id = 1, SongTitle = "My Song", CreatorUserId = 100, StreamUrl = "https://test.com/song.mp3" };
         _service.PlaySong(song);
@@ -1541,6 +1547,9 @@ public class PlaybackServiceTests
         _mockAuthService.Setup(a => a.IsAdmin).Returns(true);
         _mockAuthService.Setup(a => a.IsCreator).Returns(true);
         _mockAuthService.Setup(a => a.UserId).Returns(100);
+        // Signed in, because a creator always is - the real AuthService nulls UserId on
+        // logout, so "has a UserId but is signed out" is a state it cannot produce.
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
         _service.SetStreamQualifyingSeconds(5);
 
         var song = new SongDto { Id = 1, SongTitle = "My Song", CreatorUserId = 100, StreamUrl = "https://test.com/song.mp3" };

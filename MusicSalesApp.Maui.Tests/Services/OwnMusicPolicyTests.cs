@@ -8,7 +8,7 @@ namespace MusicSalesApp.Maui.Tests.Services;
 /// Whether a song is the signed-in user's own, which is what hides the follow bell.
 /// </summary>
 [TestFixture]
-public class ArtistFollowPolicyTests
+public class OwnMusicPolicyTests
 {
     private const int MyUserId = 500;
     private const int MyCreatorId = 90;
@@ -31,7 +31,7 @@ public class ArtistFollowPolicyTests
     [Test]
     public void IsOwnArtist_TrueWhenTheCreatorUserIdMatches()
     {
-        Assert.That(ArtistFollowPolicy.IsOwnArtist(Song(null, MyUserId), _auth.Object), Is.True);
+        Assert.That(OwnMusicPolicy.IsOwnMusic(Song(null, MyUserId), _auth.Object), Is.True);
     }
 
     [Test]
@@ -39,13 +39,13 @@ public class ArtistFollowPolicyTests
     {
         // Either identifier is enough: which one arrives populated depends on the query path that
         // built the DTO, and the server sends CreatorUserId as Creator?.UserId.
-        Assert.That(ArtistFollowPolicy.IsOwnArtist(Song(MyCreatorId, null), _auth.Object), Is.True);
+        Assert.That(OwnMusicPolicy.IsOwnMusic(Song(MyCreatorId, null), _auth.Object), Is.True);
     }
 
     [Test]
     public void IsOwnArtist_FalseForSomeoneElsesSong()
     {
-        Assert.That(ArtistFollowPolicy.IsOwnArtist(Song(91, 501), _auth.Object), Is.False);
+        Assert.That(OwnMusicPolicy.IsOwnMusic(Song(91, 501), _auth.Object), Is.False);
     }
 
     [Test]
@@ -53,7 +53,7 @@ public class ArtistFollowPolicyTests
     {
         _auth.SetupGet(a => a.IsLoggedIn).Returns(false);
 
-        Assert.That(ArtistFollowPolicy.IsOwnArtist(Song(MyCreatorId, MyUserId), _auth.Object), Is.False);
+        Assert.That(OwnMusicPolicy.IsOwnMusic(Song(MyCreatorId, MyUserId), _auth.Object), Is.False);
     }
 
     [Test]
@@ -65,7 +65,7 @@ public class ArtistFollowPolicyTests
         _auth.SetupGet(a => a.UserId).Returns((int?)null);
         _auth.SetupGet(a => a.CreatorId).Returns((int?)null);
 
-        Assert.That(ArtistFollowPolicy.IsOwnArtist(Song(null, null), _auth.Object), Is.False);
+        Assert.That(OwnMusicPolicy.IsOwnMusic(Song(null, null), _auth.Object), Is.False);
     }
 
     [Test]
@@ -73,7 +73,7 @@ public class ArtistFollowPolicyTests
     {
         // Null on the song alone. Fails in the safe direction: the bell is offered and the server
         // refuses it with a 400 if the guess was wrong.
-        Assert.That(ArtistFollowPolicy.IsOwnArtist(Song(null, null), _auth.Object), Is.False);
+        Assert.That(OwnMusicPolicy.IsOwnMusic(Song(null, null), _auth.Object), Is.False);
     }
 
     [Test]
@@ -83,7 +83,7 @@ public class ArtistFollowPolicyTests
         _auth.SetupGet(a => a.IsCreator).Returns(false);
         _auth.SetupGet(a => a.CreatorId).Returns((int?)null);
 
-        Assert.That(ArtistFollowPolicy.IsOwnArtist(Song(MyCreatorId, 501), _auth.Object), Is.False);
+        Assert.That(OwnMusicPolicy.IsOwnMusic(Song(MyCreatorId, 501), _auth.Object), Is.False);
     }
 
     [Test]
@@ -91,8 +91,8 @@ public class ArtistFollowPolicyTests
     {
         Assert.Multiple(() =>
         {
-            Assert.That(ArtistFollowPolicy.IsOwnArtist(null, _auth.Object), Is.False);
-            Assert.That(ArtistFollowPolicy.IsOwnArtist(Song(MyCreatorId, MyUserId), null), Is.False);
+            Assert.That(OwnMusicPolicy.IsOwnMusic(null, _auth.Object), Is.False);
+            Assert.That(OwnMusicPolicy.IsOwnMusic(Song(MyCreatorId, MyUserId), null), Is.False);
         });
     }
 }

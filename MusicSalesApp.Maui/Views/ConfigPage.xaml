@@ -153,7 +153,7 @@
                        LineBreakMode="WordWrap"
                        TextColor="{AppThemeBinding Light={StaticResource Text2Light}, Dark={StaticResource Text2Dark}}" />
 
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space4}" Margin="16,0,0,0">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space4}" Margin="{StaticResource SubSettingIndent}">
                     <Label Grid.Column="0"
                            Text="New music from artists I follow"
                            FontSize="{StaticResource FontSizeCardTitle}"
@@ -166,7 +166,7 @@
                             VerticalOptions="Center" />
                 </Grid>
 
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space4}" Margin="16,0,0,0">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource Space4}" Margin="{StaticResource SubSettingIndent}">
                     <Label Grid.Column="0"
                            Text="Messages from artists I follow"
                            FontSize="{StaticResource FontSizeCardTitle}"
@@ -179,7 +179,7 @@
                             VerticalOptions="Center" />
                 </Grid>
 
-                <VerticalStackLayout Spacing="{StaticResource Space1}" Margin="16,0,0,0">
+                <VerticalStackLayout Spacing="{StaticResource Space1}" Margin="{StaticResource SubSettingIndent}">
                     <Label Text="How often"
                            FontSize="{StaticResource FontSizeCardTitle}"
                            TextColor="{AppThemeBinding Light={StaticResource TextLight}, Dark={StaticResource TextDark}}" />

@@ -65,8 +65,11 @@ public static class PreviewAccessPolicy
             return false;
         }
 
-        // Creators always hear their own songs in full.
-        if (authService?.IsCreator == true && song.CreatorUserId == authService.UserId)
+        // Creators always hear their own songs in full. Through the shared policy: this used to
+        // test CreatorUserId alone, so a song matched only by CreatorId was cut off at the preview
+        // limit for the very creator who uploaded it - while the follow bell correctly vanished
+        // from that same card.
+        if (OwnMusicPolicy.IsOwnMusic(song, authService))
         {
             return false;
         }

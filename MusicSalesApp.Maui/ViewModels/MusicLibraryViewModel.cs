@@ -90,6 +90,11 @@ public partial class MusicLibraryViewModel : ObservableObject
         _playbackService.StateChanged -= OnPlaybackStateChanged;
         if (_networkStatusService != null)
             _networkStatusService.PropertyChanged -= HandleNetworkStatusChanged;
+        // Detached here as well as attached above: without it, Cleanup clearing the flag meant the
+        // next OnAppearing added a SECOND handler, and a tab visited ten times re-stamped the whole
+        // catalogue ten times per bell tap.
+        if (_artistFollowStateCoordinator != null)
+            _artistFollowStateCoordinator.FollowStateChanged -= HandleArtistFollowStateChanged;
         _subscriptionsAttached = false;
     }
 
@@ -119,7 +124,10 @@ public partial class MusicLibraryViewModel : ObservableObject
     /// </remarks>
     private void HandleArtistFollowStateChanged(object? sender, ArtistFollowChange change)
     {
-        _artistFollowStateCoordinator?.ApplyKnownState(Songs);
+        // _allSongs, not Songs. Songs is the filtered projection, and ApplyFilters rebuilds it from
+        // these same instances - so a follow made while a genre filter is active would otherwise
+        // leave the hidden cards stale, and clearing the filter would show the wrong bell.
+        _artistFollowStateCoordinator?.ApplyKnownState(_allSongs);
     }
 
     /// <summary>
@@ -805,7 +813,9 @@ public partial class MusicLibraryViewModel : ObservableObject
     [RelayCommand]
     private async Task FollowArtistAsync(SongDto? song)
     {
-        if (song?.PersonaId is not int personaId || personaId <= 0)
+        // The same expression the bell's own visibility binds to, so the control and the command
+        // cannot disagree.
+        if (song?.CanFollowArtist != true)
             return;
 
         if (_artistFollowStateCoordinator is null)
@@ -928,9 +938,9 @@ public partial class MusicLibraryViewModel : ObservableObject
     private async Task NavigateToArtistAsync(string? artist)
     {
         if (string.IsNullOrEmpty(artist)) return;
-        await _navigationService.GoToAsync("playlist-player", new Dictionary<string, object>
+        await _navigationService.GoToAsync(NavigationRoutes.PlaylistPlayer, new Dictionary<string, object>
         {
-            ["ArtistName"] = artist
+            [PlaylistNavigationTarget.ArtistNameKey] = artist
         });
     }
 
@@ -1004,11 +1014,16 @@ public partial class MusicLibraryViewModel : ObservableObject
                 await Task.WhenAll(
                     LoadLikeCountsAsync(orderedSongs),
                     LoadUserLikeStatusAsync(orderedSongs),
-                    LoadArtistFollowStatesAsync(orderedSongs));
+                    _artistFollowStateCoordinator.LoadForSafelyAsync(orderedSongs));
             }
             else
             {
                 SeedLikeCountsFromCachedSongs(orderedSongs);
+
+                // Ownership is a purely local comparison, so it holds offline - and it has to be
+                // stamped here or a creator browsing their own catalogue offline gets a follow bell
+                // on their own songs that does nothing at all when tapped.
+                _artistFollowStateCoordinator?.ApplyKnownState(orderedSongs);
             }
 
             // Unconditional: offline the status call above is skipped, so this is the only thing that
@@ -1082,25 +1097,6 @@ public partial class MusicLibraryViewModel : ObservableObject
         foreach (var song in songs)
         {
             _likeCounts[song.Id] = (song.LikeCount, song.DislikeCount);
-        }
-    }
-
-    private async Task LoadArtistFollowStatesAsync(List<SongDto> songs)
-    {
-        if (_artistFollowStateCoordinator is null || !_authService.IsLoggedIn)
-        {
-            return;
-        }
-
-        try
-        {
-            await _artistFollowStateCoordinator.LoadForAsync(songs);
-        }
-        catch (Exception ex)
-        {
-            // Never fatal to a library load. The bells render as "not following", which is a
-            // control the user can correct rather than a claim about their data.
-            System.Diagnostics.Debug.WriteLine($"Failed to load artist follow states: {ex.Message}");
         }
     }
 

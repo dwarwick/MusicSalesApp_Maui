@@ -28,6 +28,7 @@ public partial class HomeViewModel : ObservableObject
     private bool _signalRSubscriptionsAttached;
     private bool _authSubscriptionAttached;
     private bool _networkSubscriptionAttached;
+    private bool _followSubscriptionAttached;
     private bool _hasBillingDerivedSubscriptionPrice;
 
     /// <summary>Guards against an appearance-driven load and an auth-event load duplicating work.</summary>
@@ -389,16 +390,10 @@ public partial class HomeViewModel : ObservableObject
         _userStreamedSongStore = userStreamedSongStore;
         _artistFollowStateCoordinator = artistFollowStateCoordinator;
 
-        if (_artistFollowStateCoordinator != null)
-        {
-            // Home and the library can show the same artist at once, and the players can change the
-            // state while Home is still in the back stack.
-            _artistFollowStateCoordinator.FollowStateChanged += HandleArtistFollowStateChanged;
-        }
-
         AttachAuthSubscription();
         AttachSignalRSubscriptions();
         AttachNetworkSubscription();
+        AttachFollowSubscription();
     }
 
     public void Activate()
@@ -406,6 +401,7 @@ public partial class HomeViewModel : ObservableObject
         AttachAuthSubscription();
         AttachSignalRSubscriptions();
         AttachNetworkSubscription();
+        AttachFollowSubscription();
         SynchronizeFeaturedQueue();
     }
 
@@ -432,6 +428,27 @@ public partial class HomeViewModel : ObservableObject
             NetworkStatus.PropertyChanged -= HandleNetworkStatusChanged;
             _networkSubscriptionAttached = false;
         }
+
+        if (_followSubscriptionAttached && _artistFollowStateCoordinator != null)
+        {
+            // The coordinator is a singleton and this ViewModel is not, so a missing detach here
+            // roots every instance ever built for the life of the process - and keeps driving them.
+            _artistFollowStateCoordinator.FollowStateChanged -= HandleArtistFollowStateChanged;
+            _followSubscriptionAttached = false;
+        }
+    }
+
+    private void AttachFollowSubscription()
+    {
+        if (_followSubscriptionAttached || _artistFollowStateCoordinator is null)
+        {
+            return;
+        }
+
+        // Home and the library can show the same artist at once, and the players can change the
+        // state while Home is still in the back stack.
+        _artistFollowStateCoordinator.FollowStateChanged += HandleArtistFollowStateChanged;
+        _followSubscriptionAttached = true;
     }
 
     private void AttachNetworkSubscription()
@@ -512,7 +529,19 @@ public partial class HomeViewModel : ObservableObject
             // TryRestoreSessionAsync sets IsLoggedIn as soon as it has read the token and only
             // notifies once it has finished refreshing entitlements, so the flag is true well before
             // the event - and this way the repeat does not depend on the event arriving at all.
+            //
+            // Capped, because the loop's exit condition is state this method does not own. One
+            // repeat is the case above and is expected; a second means something is changing the
+            // identity as fast as the page can read it - a token expiring mid-load, an
+            // EmailConfirmed refresh that disagrees with the cache - and each pass costs five
+            // network round trips plus a Play Billing query. Spinning on that would pin IsLoading
+            // and, because OnAuthStateChanged drops events while a load is in flight, swallow every
+            // genuine auth change for as long as it ran. Stopping leaves the page one identity
+            // behind, which the next navigation or auth event corrects.
+            const int maxLoadPasses = 3;
+
             AuthIdentity identity;
+            var passes = 0;
 
             do
             {
@@ -524,8 +553,10 @@ public partial class HomeViewModel : ObservableObject
                 await LoadHomePlaylistsAsync();
                 await LoadFeaturedSongsAsync();
                 await TryReconfirmSubscriptionAsync();
+
+                passes++;
             }
-            while (CurrentAuthIdentity() != identity);
+            while (CurrentAuthIdentity() != identity && passes < maxLoadPasses);
 
             // The identity can hold still while the entitlement moves - TryReconfirmSubscriptionAsync
             // returns without re-reading when it finds the subscription already verified, which is
@@ -645,22 +676,18 @@ public partial class HomeViewModel : ObservableObject
         SynchronizeFeaturedQueue();
 
         // After the assignment, so the bells are stamped onto the collection the cards are bound to.
-        await LoadArtistFollowStatesAsync(featuredSongs);
-    }
-
-    private async Task LoadArtistFollowStatesAsync(IEnumerable<SongDto> songs)
-    {
-        if (_artistFollowStateCoordinator is null || !_authService.IsLoggedIn) return;
-
-        try
+        // Inside the Live guard, for the same reason the like calls are: offline these songs came
+        // from the local catalogue, and asking anyway just stalls for the full HTTP timeout with
+        // LoadAsync still awaiting it. The library already gets this right.
+        if (songsSource == SongCatalogSource.Live)
         {
-            await _artistFollowStateCoordinator.LoadForAsync(songs);
+            await _artistFollowStateCoordinator.LoadForSafelyAsync(featuredSongs);
         }
-        catch (Exception ex)
+        else
         {
-            // Never fatal to the home page. An unresolved bell reads as "not following", which is a
-            // control the user can correct rather than a claim about their data.
-            System.Diagnostics.Debug.WriteLine($"Failed to load artist follow states: {ex.Message}");
+            // Still stamp what is known. Ownership is a local comparison, so the bell can be hidden
+            // on the user's own songs without asking anyone.
+            _artistFollowStateCoordinator?.ApplyKnownState(featuredSongs);
         }
     }
 
@@ -675,7 +702,10 @@ public partial class HomeViewModel : ObservableObject
     [RelayCommand]
     private async Task FollowArtistAsync(SongDto? song)
     {
-        if (song?.PersonaId is not int personaId || personaId <= 0) return;
+        // The same expression the bell's own visibility binds to, so the control and the command
+        // cannot disagree - the old guard omitted the ownership half and let a tap through on your
+        // own song, leaving the coordinator to refuse it silently.
+        if (song?.CanFollowArtist != true) return;
         if (_artistFollowStateCoordinator is null) return;
 
         if (!await RequireAuthenticatedUserAsync("follow artists")) return;
@@ -828,9 +858,9 @@ public partial class HomeViewModel : ObservableObject
     {
         if (string.IsNullOrWhiteSpace(artist)) return Task.CompletedTask;
 
-        return _navigationService.GoToAsync("playlist-player", new Dictionary<string, object>
+        return _navigationService.GoToAsync(NavigationRoutes.PlaylistPlayer, new Dictionary<string, object>
         {
-            ["ArtistName"] = artist
+            [PlaylistNavigationTarget.ArtistNameKey] = artist
         });
     }
 

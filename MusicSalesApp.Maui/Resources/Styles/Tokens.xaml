@@ -111,6 +111,9 @@
     <Thickness x:Key="ListItemPadding">16,12,16,12</Thickness>
     <Thickness x:Key="PillPadding">16,0,16,0</Thickness>
     <Thickness x:Key="SectionSpacing">0,24,0,0</Thickness>
+
+    <!-- Space4 on the leading edge only: a sub-setting sitting under the switch that governs it. -->
+    <Thickness x:Key="SubSettingIndent">16,0,0,0</Thickness>
     <!-- The auth pages all open with this exact inset. -->
     <Thickness x:Key="AuthFormPadding">24,40,24,24</Thickness>
 

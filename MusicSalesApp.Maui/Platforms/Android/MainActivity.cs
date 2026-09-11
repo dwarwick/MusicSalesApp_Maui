@@ -6,6 +6,7 @@ using Android.Graphics;
 using Android.OS;
 using Android.Views;
 using Android.Views.InputMethods;
+using MusicSalesApp.Common.Helpers;
 
 namespace MusicSalesApp.Maui;
 
@@ -80,8 +81,10 @@ public class MainActivity : MauiAppCompatActivity
         // Cold start: queued and attempted. Shell usually does not exist yet, in which case the
         // router puts the payload back and OnResume replays it - so trying costs nothing and
         // covers the case where it IS ready.
-        QueueTappedNotification(Intent);
-        FlushTappedNotification();
+        if (QueueTappedNotification(Intent))
+        {
+            FlushTappedNotification();
+        }
     }
 
     protected override void OnNewIntent(Intent? intent)
@@ -90,8 +93,10 @@ public class MainActivity : MauiAppCompatActivity
         HandleDeepLink(intent);
 
         // Warm start: the app is already running and can navigate immediately.
-        QueueTappedNotification(intent);
-        FlushTappedNotification();
+        if (QueueTappedNotification(intent))
+        {
+            FlushTappedNotification();
+        }
     }
 
     /// <summary>
@@ -99,13 +104,41 @@ public class MainActivity : MauiAppCompatActivity
     /// Android displayed itself while the app was backgrounded, and for one
     /// StreamTunesFirebaseMessagingService posted in the foreground, which copies the same keys.
     /// </summary>
-    private static void QueueTappedNotification(Intent? intent)
+    /// <returns>True when a push payload was found and queued.</returns>
+    /// <remarks>
+    /// Three things this deliberately refuses, each of which sent the app to the wrong place:
+    ///
+    /// <list type="bullet">
+    /// <item>An intent replayed from Recents. Android hands the activity back its ORIGINAL intent,
+    /// extras and all, so without this a notification tapped days ago reopened its song every time
+    /// the app was cold-started from the task list.</item>
+    /// <item>An intent with no <see cref="PushDataKeys.Kind"/>. Every string extra used to be
+    /// copied from any intent, so an ActionView deep link produced a non-empty payload that
+    /// replaced a real push waiting to be retried - and the router then discarded it as having no
+    /// kind.</item>
+    /// <item>The same payload twice. The extras are removed once queued, so the routing is a
+    /// one-shot and a later recreation of the activity finds nothing to replay.</item>
+    /// </list>
+    /// </remarks>
+    private static bool QueueTappedNotification(Intent? intent)
     {
-        var extras = intent?.Extras;
+        if (intent is null)
+        {
+            return false;
+        }
+
+        // Relaunched from the task list rather than from a tap: the extras are the ones the
+        // original tap arrived with and have already been acted on.
+        if (intent.Flags.HasFlag(ActivityFlags.LaunchedFromHistory))
+        {
+            return false;
+        }
+
+        var extras = intent.Extras;
 
         if (extras is null)
         {
-            return;
+            return false;
         }
 
         var data = new Dictionary<string, string?>(StringComparer.Ordinal);
@@ -122,7 +155,21 @@ public class MainActivity : MauiAppCompatActivity
             }
         }
 
+        // A push payload is one carrying a kind. Anything else is some other intent that happens to
+        // have string extras, and queueing it would evict a push that is waiting for Shell.
+        if (!data.ContainsKey(PushDataKeys.Kind))
+        {
+            return false;
+        }
+
+        // Consumed: this tap is now the router's, and the intent must not offer it again.
+        foreach (var key in data.Keys)
+        {
+            intent.RemoveExtra(key);
+        }
+
         Router?.QueuePending(data);
+        return true;
     }
 
     private static void FlushTappedNotification()

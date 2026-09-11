@@ -16,13 +16,17 @@ public class PreviewAccessPolicyTests
         _mockAuthService = new Mock<IAuthService>();
     }
 
-    private static SongDto CreateSong(bool displayOnHomePage = false, int? creatorUserId = null) =>
+    private static SongDto CreateSong(
+        bool displayOnHomePage = false,
+        int? creatorUserId = null,
+        int? creatorId = null) =>
         new()
         {
             Id = 1,
             SongTitle = "Test",
             DisplayOnHomePage = displayOnHomePage,
             CreatorUserId = creatorUserId,
+            CreatorId = creatorId,
             StreamUrl = "https://test.com/song.mp3"
         };
 
@@ -98,6 +102,9 @@ public class PreviewAccessPolicyTests
         _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
         _mockAuthService.Setup(a => a.IsCreator).Returns(true);
         _mockAuthService.Setup(a => a.UserId).Returns(100);
+        // Signed in, because a creator always is - the real AuthService nulls UserId on
+        // logout, so "has a UserId but is signed out" is a state it cannot produce.
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
 
         Assert.That(
             PreviewAccessPolicy.ShouldLimitPreview(_mockAuthService.Object, CreateSong(creatorUserId: 100)),
@@ -149,5 +156,37 @@ public class PreviewAccessPolicyTests
             Assert.That(PreviewAccessPolicy.HasFullPlaybackAccess(subscriber.Object), Is.True);
             Assert.That(PreviewAccessPolicy.HasFullPlaybackAccess(admin.Object), Is.True);
         });
+    }
+
+    [Test]
+    public void ShouldLimitPreview_CreatorOwnSong_MatchedOnlyByCreatorId_IsNotLimited()
+    {
+        // The bug that consolidating the ownership rule fixed. CreatorUserId is sent as
+        // Creator?.UserId, so it is absent whenever that navigation was not eager-loaded - and this
+        // check used to test CreatorUserId alone. The follow bell correctly vanished from the card
+        // (it matched on CreatorId), while the same creator was cut off at sixty seconds of their
+        // own song. One rule now answers for both.
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(true);
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+        _mockAuthService.Setup(a => a.IsCreator).Returns(true);
+        _mockAuthService.Setup(a => a.CreatorId).Returns(90);
+
+        var song = CreateSong(creatorUserId: null, creatorId: 90);
+
+        Assert.That(PreviewAccessPolicy.ShouldLimitPreview(_mockAuthService.Object, song), Is.False);
+    }
+
+    [Test]
+    public void ShouldLimitPreview_SignedOutListener_IsStillLimited()
+    {
+        // The null-equals-null trap the guards exist for: both sides are int?, so an unguarded
+        // comparison is TRUE for a signed-out visitor looking at a song with no creator loaded,
+        // which would hand out every song in full.
+        _mockAuthService.Setup(a => a.IsLoggedIn).Returns(false);
+        _mockAuthService.Setup(a => a.HasActiveSubscription).Returns(false);
+
+        var song = CreateSong(creatorUserId: null, creatorId: null);
+
+        Assert.That(PreviewAccessPolicy.ShouldLimitPreview(_mockAuthService.Object, song), Is.True);
     }
 }

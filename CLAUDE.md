@@ -152,15 +152,25 @@ a relay, so the device must obtain an APNs token before Firebase has anything to
 in this app. Check both of these before debugging the client:
 
 - **`PushNotificationsEnabled`** — the admin kill switch, at `/admin/settings` → "Phone
-  Notifications". While it is off, `ArtistPushDispatchService` returns before it looks at anything,
-  and the phone checkboxes vanish from `/manage-account` entirely.
+  Notifications". While it is off, `ArtistPushDispatchService` returns before it looks at anything.
 - **`ReceiveArtistReleasePush` / `ReceiveArtistMessagePush`** on the listener's own account, which
-  also default off. Following an artist is consent to the in-app record, not to a phone buzz.
+  also default off. Following an artist is consent to the in-app record, not to a phone buzz. These
+  two are set **only from this app**, under Config → Notifications; `/manage-account` on the web
+  offers the *email* preferences and has never had a control for either of these.
 
 Neither gate consumes the notification — rows stay pending, so switching either on later delivers
 the backlog rather than a silence that has already eaten it. And **registration deliberately keeps
 working while both are off**, because registering is how the round trip gets proven before delivery
 is switched on.
+
+> That was a claim before it was a fact. The kill switch always behaved this way, but the per-user
+> preference was checked *after* the rows were loaded and then stamped them as settled — and since
+> both flags default off for every account, that meant every notification was consumed within five
+> minutes of being created, so opting in later delivered nothing. Fixed by making the preference a
+> WHERE clause rather than a skip, which is now how the two kinds of gate are told apart in
+> `ArtistPushDispatchService`: **a reversible gate is a filter, a standing refusal is a stamp.**
+> Unfollowing, muting, blocking, suspension and a withdrawn song are standing refusals and do
+> settle the row — the listener has said stop, so unblocking must not then deliver the backlog.
 
 ### Where the pieces are
 

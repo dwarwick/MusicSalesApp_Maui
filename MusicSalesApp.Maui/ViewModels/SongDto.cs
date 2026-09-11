@@ -204,7 +204,7 @@ public partial class SongDto : ObservableObject
     /// Whether this song is the signed-in user's own music.
     /// </summary>
     /// <remarks>
-    /// Stamped by <c>ArtistFollowStateCoordinator</c> from <c>ArtistFollowPolicy</c> rather
+    /// Stamped by <c>ArtistFollowStateCoordinator</c> from <c>OwnMusicPolicy</c> rather
     /// than computed here: the DTO has the creator ids but no way to reach the auth state.
     ///
     /// <para>

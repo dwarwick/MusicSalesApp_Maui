@@ -231,10 +231,16 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IAdminMessageApiService, AdminMessageApiService>();
 		builder.Services.AddSingleton<IAdminMessageCoordinator, AdminMessageCoordinator>();
 
-		// Push notifications. Android goes through Firebase Cloud Messaging; iOS registers with
-		// APNs natively and the SERVER talks to Apple directly, so there is deliberately no
-		// Firebase SDK in the iOS head - it already carries App Store launch-crash workarounds
-		// around static registration and LLVM AOT, and a large native SDK is what reopens those.
+		// Push notifications. Delivery goes through Firebase Cloud Messaging on BOTH platforms -
+		// the server never calls APNs directly. iOS still has to obtain an APNs token first and
+		// hand it to Firebase, which exchanges it for the FCM token the server actually stores, so
+		// authorization and registration remain two separate steps there.
+		//
+		// That means the iOS head does carry a native Firebase SDK (AdamE.Firebase.iOS.CloudMessaging).
+		// Worth knowing when a simulator aborts inside mono_runtime_init_checked -> load_aot_module:
+		// adding assemblies without clearing obj/Release/net10.0-ios leaves stale AOT images, and it
+		// reads as the SDK breaking startup. See CLAUDE.md, "Push notifications".
+		//
 		// Windows and Mac Catalyst get the no-op, so no calling code branches on platform.
 		builder.Services.AddSingleton<IPushApiService, PushApiService>();
 		builder.Services.AddSingleton<IPushNotificationRouter, PushNotificationRouter>();

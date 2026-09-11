@@ -5,13 +5,13 @@ namespace MusicSalesApp.Maui.Tests.Services;
 [TestFixture]
 public class UserStreamedSongStoreTests
 {
-    private FakeAppPreferenceStore _preferences = null!;
+    private InMemoryPreferenceStore _preferences = null!;
     private UserStreamedSongStore _store = null!;
 
     [SetUp]
     public void SetUp()
     {
-        _preferences = new FakeAppPreferenceStore();
+        _preferences = new InMemoryPreferenceStore();
         _store = new UserStreamedSongStore(_preferences);
     }
 
@@ -90,22 +90,4 @@ public class UserStreamedSongStoreTests
         Assert.That(store.HasStreamed(42), Is.False);
     }
 
-    private sealed class FakeAppPreferenceStore : IAppPreferenceStore
-    {
-        private readonly Dictionary<string, string> _values = [];
-
-        public bool GetBool(string key, bool defaultValue = false) => defaultValue;
-
-        public void SetBool(string key, bool value) { }
-
-        public int GetInt(string key, int defaultValue = 0) => defaultValue;
-
-        public void SetInt(string key, int value) { }
-
-        public string? GetString(string key) => _values.TryGetValue(key, out var value) ? value : null;
-
-        public void SetString(string key, string value) => _values[key] = value;
-
-        public void Remove(string key) => _values.Remove(key);
-    }
 }

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.Logging;
 using Moq;
 using MusicSalesApp.Maui.Services;
@@ -18,6 +19,16 @@ public class PushNotificationCoordinatorTests
     private InMemoryPreferenceStore _preferences;
     private Mock<INotificationPreferenceApiService> _notificationPreferences;
     private PushNotificationCoordinator _coordinator;
+
+    /// <summary>
+    /// The coordinator's own SigningOut handler, captured as it subscribes.
+    /// </summary>
+    /// <remarks>
+    /// Captured rather than raised through Moq because the handler is a <c>Func&lt;Task&gt;</c>:
+    /// Moq would invoke it and drop the Task on the floor, so the assertions would race the work.
+    /// Invoking it directly means the test awaits exactly what AuthService awaits.
+    /// </remarks>
+    private Func<Task>? _signingOut;
 
     [SetUp]
     public void SetUp()
@@ -45,6 +56,10 @@ public class PushNotificationCoordinatorTests
         _notificationPreferences
             .Setup(x => x.SetAsync(It.IsAny<NotificationPreferences>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
+
+        _authService
+            .SetupAdd(a => a.SigningOut += It.IsAny<Func<Task>>())
+            .Callback<Func<Task>>(handler => _signingOut = handler);
 
         _coordinator = new PushNotificationCoordinator(
             _authService.Object,
@@ -254,29 +269,6 @@ public class PushNotificationCoordinatorTests
         await Task.CompletedTask;
     }
 
-    /// <summary>
-    /// A real store rather than a mock: the coordinator round-trips values through it, and
-    /// asserting on what it holds is clearer than verifying setter calls.
-    /// </summary>
-    private sealed class InMemoryPreferenceStore : IAppPreferenceStore
-    {
-        private readonly Dictionary<string, string> _values = [];
-
-        public bool GetBool(string key, bool defaultValue = false) => defaultValue;
-
-        public void SetBool(string key, bool value) { }
-
-        public int GetInt(string key, int defaultValue = 0) => defaultValue;
-
-        public void SetInt(string key, int value) { }
-
-        public string? GetString(string key) => _values.GetValueOrDefault(key);
-
-        public void SetString(string key, string value) => _values[key] = value;
-
-        public void Remove(string key) => _values.Remove(key);
-    }
-
     [Test]
     public async Task GetPermissionStatusAsync_ReportsWhatThePlatformSays_WithoutPrompting()
     {
@@ -387,5 +379,130 @@ public class PushNotificationCoordinatorTests
         _pushApiService.Verify(
             x => x.RegisterDeviceAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()),
             Times.Once);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Sign-out has to unregister while the session can still authenticate the call
+    // ---------------------------------------------------------------------------------------
+
+    [Test]
+    public async Task SigningOut_UnregistersTheDevice_WhileTheSessionIsStillUsable()
+    {
+        // Hooked to SigningOut, not AuthStateChanged. The latter is raised after the token has been
+        // cleared, so the DELETE went out unauthenticated, came back 401, and left the handset
+        // receiving the previous account's notifications with nothing able to retry.
+        await _coordinator.SyncAsync();
+        Assert.That(
+            _preferences.GetString(MobilePreferenceKeys.RegisteredPushToken),
+            Is.EqualTo("token-abc"),
+            "precondition: the device is registered");
+
+        // `is not null` rather than Is.Not.Null: the constraint form binds to NUnit's
+        // Assert.That(Func<Task>, ...) overload and would INVOKE the handler being asserted about.
+        Assert.That(_signingOut is not null, "the coordinator must subscribe to SigningOut");
+        await _signingOut!();
+
+        _pushApiService.Verify(x => x.UnregisterDeviceAsync("token-abc"), Times.Once);
+    }
+
+    [Test]
+    public async Task SigningOut_SendsTheToken_BeforeItIsForgotten()
+    {
+        // Ordering, explicitly: the token used to be cleared first, so the call it was needed for
+        // had nothing left to send.
+        string? tokenAtCallTime = null;
+        _pushApiService
+            .Setup(x => x.UnregisterDeviceAsync(It.IsAny<string>()))
+            .Callback<string>(token => tokenAtCallTime = token)
+            .ReturnsAsync(true);
+
+        await _coordinator.SyncAsync();
+        await _signingOut!();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(tokenAtCallTime, Is.EqualTo("token-abc"));
+            Assert.That(
+                _preferences.GetString(MobilePreferenceKeys.RegisteredPushToken),
+                Is.Null.Or.Empty,
+                "and it is forgotten afterwards");
+        });
+    }
+
+    [Test]
+    public async Task SigningOut_ForgetsTheToken_EvenWhenTheServerDoesNotConfirm()
+    {
+        // A failed unregister must not leave the app retrying forever; the server reassigns the
+        // token to whoever registers it next.
+        _pushApiService.Setup(x => x.UnregisterDeviceAsync(It.IsAny<string>())).ReturnsAsync(false);
+
+        await _coordinator.SyncAsync();
+        await _signingOut!();
+
+        Assert.That(_preferences.GetString(MobilePreferenceKeys.RegisteredPushToken), Is.Null.Or.Empty);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Registration is idempotent, so it is not repeated on every resume
+    // ---------------------------------------------------------------------------------------
+
+    [Test]
+    public async Task Sync_DoesNotReRegister_WhenTheTokenHasNotChanged()
+    {
+        // Sync runs on every app activation. Registering each time cost a PUT per resume, and on
+        // iOS a main-thread RegisterForRemoteNotifications with it.
+        await _coordinator.SyncAsync();
+        await _coordinator.SyncAsync();
+        await _coordinator.SyncAsync();
+
+        _pushApiService.Verify(
+            x => x.RegisterDeviceAsync(It.IsAny<string>(), "token-abc", It.IsAny<string>()),
+            Times.Once);
+    }
+
+    [Test]
+    public async Task Sync_ReRegisters_WhenTheTokenRotates()
+    {
+        await _coordinator.SyncAsync();
+
+        _registrationService.Setup(x => x.GetTokenAsync()).ReturnsAsync("token-xyz");
+        await _coordinator.SyncAsync();
+
+        _pushApiService.Verify(
+            x => x.RegisterDeviceAsync(It.IsAny<string>(), "token-xyz", It.IsAny<string>()),
+            Times.Once);
+    }
+
+    [Test]
+    public async Task Sync_ReRegisters_OnceTheRegistrationIsADayOld()
+    {
+        // The upper bound on how long a device stays dark if the server loses its row. Skipping
+        // forever would be cheaper and would strand it.
+        await _coordinator.SyncAsync();
+
+        _preferences.SetString(
+            MobilePreferenceKeys.PushTokenRegisteredAtUtcTicks,
+            DateTimeOffset.UtcNow.AddDays(-2).UtcTicks.ToString(CultureInfo.InvariantCulture));
+
+        await _coordinator.SyncAsync();
+
+        _pushApiService.Verify(
+            x => x.RegisterDeviceAsync(It.IsAny<string>(), "token-abc", It.IsAny<string>()),
+            Times.Exactly(2));
+    }
+
+    [Test]
+    public async Task Sync_ReRegisters_WhenAnOlderBuildLeftNoTimestamp()
+    {
+        // Upgrading from a build that stored the token but no stamp: treating that as good would
+        // leave those installs never refreshing again.
+        await _coordinator.SyncAsync();
+        _preferences.Remove(MobilePreferenceKeys.PushTokenRegisteredAtUtcTicks);
+
+        await _coordinator.SyncAsync();
+
+        _pushApiService.Verify(
+            x => x.RegisterDeviceAsync(It.IsAny<string>(), "token-abc", It.IsAny<string>()),
+            Times.Exactly(2));
     }
 }

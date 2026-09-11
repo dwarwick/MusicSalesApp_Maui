@@ -48,13 +48,6 @@ public partial class SongPlayerViewModel : ObservableObject
         _appConfig = appConfig;
         _billingService = billingService;
         _artistFollowStateCoordinator = artistFollowStateCoordinator;
-
-        if (_artistFollowStateCoordinator != null)
-        {
-            // The library, the other player and this one can all be holding a card for the same
-            // artist. Following from any of them has to move this bell too.
-            _artistFollowStateCoordinator.FollowStateChanged += HandleArtistFollowStateChanged;
-        }
         _networkStatusService = networkStatusService;
         _songArtworkHydrator = songArtworkHydrator;
         _userStreamedSongStore = userStreamedSongStore;
@@ -62,9 +55,62 @@ public partial class SongPlayerViewModel : ObservableObject
         AttachSubscriptions();
     }
 
+    /// <summary>
+    /// Whether this page has been on screen before, which is what separates arriving from returning.
+    /// </summary>
+    private bool _hasAppeared;
+
     public void Activate()
     {
         AttachSubscriptions();
+
+        // Arriving is the Song setter's job and it has already started; only a RETURN needs the
+        // queue taken back. Checking playback state on first appearance instead would race the
+        // setter: SetPlaylist starts the playback request and returns, so CurrentSong is still the
+        // previous song for a moment afterwards - and both of them would call SetPlaylist, which
+        // restarts the track under the listener.
+        if (!_hasAppeared)
+        {
+            _hasAppeared = true;
+            return;
+        }
+
+        ReclaimQueueIfStale();
+    }
+
+    /// <summary>
+    /// Takes the queue back when this page reappears over something else's playback.
+    /// </summary>
+    /// <remarks>
+    /// The <see cref="Song"/> setter shrinks the queue to this one song, but it only runs when the
+    /// song changes - and back-navigation does not change it. So opening a song, following its
+    /// artist link to the artist player, and pressing Back left the artist's queue playing while
+    /// this page displayed a different song, and the queue went on advancing through the artist's
+    /// tracks. The page and the audio disagreed, and the page was the one lying.
+    ///
+    /// <para>
+    /// Only when something is actually playing. Paused, nothing is advancing and there is nothing
+    /// to contradict, so yanking the queue would be interference for its own sake - and pressing
+    /// play here rebuilds the queue from this page anyway, through PlayDisplayedSongQueueAsync.
+    /// That also keeps this well clear of the rule that a user-requested pause must never be turned
+    /// back into playback.
+    /// </para>
+    /// </remarks>
+    private void ReclaimQueueIfStale()
+    {
+        var song = Song;
+
+        if (song is null || !_playbackService.IsPlaying)
+        {
+            return;
+        }
+
+        if (_playbackService.CurrentSong?.Id == song.Id)
+        {
+            return;
+        }
+
+        _playbackService.SetPlaylist([song], 0, PlaybackQueueDescriptions.SongPage(song));
     }
 
     public Task StartSignalRAsync() => _signalRService.StartAsync();
@@ -82,6 +128,18 @@ public partial class SongPlayerViewModel : ObservableObject
         _playbackService.ShowSubscribeCtaRequested += OnShowSubscribeCta;
         if (_networkStatusService != null)
             _networkStatusService.PropertyChanged += HandleNetworkStatusChanged;
+
+        if (_artistFollowStateCoordinator != null)
+        {
+            // Attached HERE, not in the constructor, because Cleanup() detaches it and Cleanup()
+            // runs on every OnDisappearing. A constructor-only attach meant the first navigation
+            // away left this page permanently deaf to follow changes: the bell stopped moving when
+            // the artist was followed from anywhere else, for the life of the page.
+            _artistFollowStateCoordinator.FollowStateChanged += HandleArtistFollowStateChanged;
+        }
+
+        // The library, the other player and this one can all be holding a card for the same
+        // artist. Following from any of them has to move this bell too.
         _subscriptionsAttached = true;
     }
 
@@ -293,7 +351,9 @@ public partial class SongPlayerViewModel : ObservableObject
     [RelayCommand]
     private async Task FollowArtistAsync()
     {
-        if (Song?.PersonaId is not int personaId || personaId <= 0) return;
+        // The same expression the bell's own visibility binds to, so the control and the command
+        // cannot disagree.
+        if (Song?.CanFollowArtist != true) return;
         if (_artistFollowStateCoordinator is null) return;
 
         if (!await RequireAuthenticatedUserAsync("follow artists")) return;
@@ -308,21 +368,10 @@ public partial class SongPlayerViewModel : ObservableObject
         _artistFollowStateCoordinator?.ApplyKnownState([Song]);
     }
 
-    private async Task LoadArtistFollowStateAsync()
-    {
-        if (Song is null || _artistFollowStateCoordinator is null || !_authService.IsLoggedIn) return;
-
-        try
-        {
-            await _artistFollowStateCoordinator.LoadForAsync([Song]);
-        }
-        catch (Exception ex)
-        {
-            // Never fatal to opening a song. An unresolved bell renders as "not following", which
-            // the user can correct with a tap.
-            System.Diagnostics.Debug.WriteLine($"Failed to load the artist follow state: {ex.Message}");
-        }
-    }
+    private Task LoadArtistFollowStateAsync() =>
+        Song is null
+            ? Task.CompletedTask
+            : _artistFollowStateCoordinator.LoadForSafelyAsync([Song]);
 
     [RelayCommand]
     private async Task LikeSongAsync()
@@ -488,9 +537,9 @@ public partial class SongPlayerViewModel : ObservableObject
     private async Task NavigateToArtistAsync(string? artist)
     {
         if (string.IsNullOrEmpty(artist)) return;
-        await _navigationService.GoToAsync("playlist-player", new Dictionary<string, object>
+        await _navigationService.GoToAsync(NavigationRoutes.PlaylistPlayer, new Dictionary<string, object>
         {
-            ["ArtistName"] = artist
+            [PlaylistNavigationTarget.ArtistNameKey] = artist
         });
     }
 
@@ -521,6 +570,13 @@ public partial class SongPlayerViewModel : ObservableObject
 
     public void Cleanup()
     {
+        if (_artistFollowStateCoordinator != null)
+        {
+            // The coordinator is a singleton and this ViewModel is created per song opened, so a
+            // missing detach roots every one of them for the life of the process.
+            _artistFollowStateCoordinator.FollowStateChanged -= HandleArtistFollowStateChanged;
+        }
+
         if (!_subscriptionsAttached)
         {
             return;

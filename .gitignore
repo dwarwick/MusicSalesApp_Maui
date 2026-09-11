@@ -35,9 +35,13 @@ device-logs/
 pulled-logs/
 
 ## Firebase Cloud Messaging config - one pair per Firebase project, neither in the repo.
-## These carry project ids and API keys for the Test and Production Firebase projects, and the
-## build item groups are Exists()-guarded, so a clone without them builds fine and simply has no
-## push. Restore them from the Firebase console.
+## These carry project ids and API keys for the Test and Production Firebase projects, and which
+## pair is used is chosen by the FirebaseEnvironment MSBuild property in MusicSalesApp.Maui.csproj.
+## The build item groups are Exists()-guarded, so a clone without them builds fine and simply has
+## no push. Restore them from the Firebase console.
+##
+## The wildcards below cover the .Test / .Production variants and the stock names both, so this is
+## the only place these need listing.
 Platforms/Android/google-services*.json
 Platforms/iOS/GoogleService-Info*.plist
 MusicSalesApp.Maui/Platforms/Android/google-services*.json
@@ -69,13 +73,6 @@ MusicSalesApp.Maui/Platforms/iOS/GoogleService-Info*.plist
 **/appsettings.Production.json
 **/appsettings.Test.json
 
-## Firebase Cloud Messaging config — one file per Firebase project (Test / Production), selected by
-## the FirebaseEnvironment property in MusicSalesApp.Maui.csproj. Kept out of source control for the
-## same reason as the appsettings above: they are per-environment config carrying project keys.
-**/google-services.Test.json
-**/google-services.Production.json
-**/GoogleService-Info.Test.plist
-**/GoogleService-Info.Production.plist
 
 ## Test Results
 [Tt]est[Rr]esult*/
@@ -222,10 +219,3 @@ $RECYCLE.BIN/
 ## Xcode StoreKit local user state
 *.storekituser
 
-## Firebase Cloud Messaging config — one file per Firebase project, selected by the
-## FirebaseEnvironment MSBuild property. Each identifies its Firebase project; the build works
-## without them (push is simply unavailable), so they are never committed.
-**/google-services.Test.json
-**/google-services.Production.json
-**/GoogleService-Info.Test.plist
-**/GoogleService-Info.Production.plist

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.Logging;
 using MusicSalesApp.Common.Helpers;
 
@@ -33,6 +34,13 @@ public class PushNotificationCoordinator : IPushNotificationCoordinator, IDispos
 
     private readonly SemaphoreSlim _gate = new(1, 1);
 
+    /// <summary>
+    /// Set when a sync arrived while one was already running, so the running one loops once more
+    /// rather than the trigger being lost. Read and written with Volatile because the setter and
+    /// the reader are different threads.
+    /// </summary>
+    private int _syncRequestedAgain;
+
     private bool _disposed;
 
     public PushNotificationCoordinator(
@@ -51,6 +59,7 @@ public class PushNotificationCoordinator : IPushNotificationCoordinator, IDispos
         _notificationPreferences = notificationPreferences;
 
         _authService.AuthStateChanged += OnAuthStateChanged;
+        _authService.SigningOut += OnSigningOutAsync;
         _registrationService.TokenRefreshed += OnTokenRefreshed;
     }
 
@@ -63,13 +72,49 @@ public class PushNotificationCoordinator : IPushNotificationCoordinator, IDispos
         }
 
         // Never block on the gate. Sync is called from app activation, auth changes and token
-        // refreshes, which can arrive together; if one is already running it will pick up whatever
-        // the others would have seen, because it re-reads the state rather than being handed it.
+        // refreshes, which can arrive together, and a queue of them would just repeat the same work.
+        //
+        // But a dropped call cannot simply be discarded. The running one read IsLoggedIn once, at
+        // the top, BEFORE the event that was dropped happened - so a sign-out arriving mid-sync used
+        // to vanish, and the in-flight run went on to register the device for the account that had
+        // just signed out. Record the drop instead and re-run once, which collapses any number of
+        // triggers into exactly one extra pass.
         if (!await _gate.WaitAsync(0))
         {
+            Volatile.Write(ref _syncRequestedAgain, 1);
             return;
         }
 
+        try
+        {
+            do
+            {
+                Volatile.Write(ref _syncRequestedAgain, 0);
+                await SyncOnceAsync();
+            }
+            while (Volatile.Read(ref _syncRequestedAgain) == 1);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+
+        // One last look, AFTER releasing. A trigger that arrived between the loop's final read and
+        // the release set the flag with nobody left inside to see it, and would then have waited
+        // for some unrelated future sync to notice - which for a sign-out is exactly the wait that
+        // must not happen. Re-entering is safe: this pass clears the flag before doing any work, so
+        // two of these cannot chase each other.
+        if (Volatile.Read(ref _syncRequestedAgain) == 1)
+        {
+            await SyncAsync();
+        }
+    }
+
+    /// <summary>
+    /// One pass of the sync, with every piece of state read fresh.
+    /// </summary>
+    private async Task SyncOnceAsync()
+    {
         try
         {
             if (!_authService.IsLoggedIn)
@@ -93,10 +138,6 @@ public class PushNotificationCoordinator : IPushNotificationCoordinator, IDispos
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Push synchronisation failed.");
-        }
-        finally
-        {
-            _gate.Release();
         }
     }
 
@@ -179,11 +220,25 @@ public class PushNotificationCoordinator : IPushNotificationCoordinator, IDispos
             ? _registrationService.GetPermissionStatusAsync()
             : Task.FromResult(PushPermissionStatus.Unsupported);
 
+    /// <summary>
+    /// How long a successful registration is trusted before it is refreshed anyway.
+    /// </summary>
+    /// <remarks>
+    /// The upper bound on how long a device stays dark if the server loses its row - a reinstall of
+    /// the database, a pruning job, a bug. Registration is idempotent, so refreshing costs one PUT.
+    /// </remarks>
+    private static readonly TimeSpan RegistrationRefreshInterval = TimeSpan.FromDays(1);
+
     private async Task RegisterCurrentDeviceAsync()
     {
         var token = await _registrationService.GetTokenAsync();
 
         if (string.IsNullOrWhiteSpace(token))
+        {
+            return;
+        }
+
+        if (IsRegistrationStillGood(token))
         {
             return;
         }
@@ -208,6 +263,9 @@ public class PushNotificationCoordinator : IPushNotificationCoordinator, IDispos
                 // one leaves the old registration live - which is how a signed-out phone keeps
                 // receiving notifications.
                 _preferenceStore.SetString(MobilePreferenceKeys.RegisteredPushToken, token);
+                _preferenceStore.SetString(
+                    MobilePreferenceKeys.PushTokenRegisteredAtUtcTicks,
+                    DateTimeOffset.UtcNow.UtcTicks.ToString(CultureInfo.InvariantCulture));
                 break;
 
             case PushRegistrationOutcome.Rejected:
@@ -222,6 +280,56 @@ public class PushNotificationCoordinator : IPushNotificationCoordinator, IDispos
         }
     }
 
+    /// <summary>
+    /// Whether the server already has this exact token, recently enough to be trusted.
+    /// </summary>
+    /// <remarks>
+    /// Sync runs on every app activation, so without this a user who opens the app thirty times a
+    /// day pays thirty registrations for a token that changes perhaps once a year - and on iOS each
+    /// one puts RegisterForRemoteNotifications on the main thread, which is exactly the kind of
+    /// resume-path work the ANR sweep exists to keep out.
+    /// </remarks>
+    private bool IsRegistrationStillGood(string token)
+    {
+        if (_preferenceStore.GetString(MobilePreferenceKeys.RegisteredPushToken) != token)
+        {
+            return false;
+        }
+
+        var stamp = _preferenceStore.GetString(MobilePreferenceKeys.PushTokenRegisteredAtUtcTicks);
+
+        // No stamp means it was registered by a build that did not write one. Re-register once and
+        // it gains a stamp; treating it as good would leave those installs never refreshing.
+        if (!long.TryParse(stamp, NumberStyles.Integer, CultureInfo.InvariantCulture, out var ticks))
+        {
+            return false;
+        }
+
+        // Parseable is not the same as usable: DateTimeOffset throws on a tick count outside its
+        // range, and that throw would have happened on every single sync while the bad value sat
+        // in preferences forever - push silently dead with no way out. Treat it as no stamp, which
+        // re-registers once and overwrites it.
+        if (ticks < DateTimeOffset.MinValue.UtcTicks || ticks > DateTimeOffset.MaxValue.UtcTicks)
+        {
+            return false;
+        }
+
+        var registeredAt = new DateTimeOffset(ticks, TimeSpan.Zero);
+        var age = DateTimeOffset.UtcNow - registeredAt;
+
+        // A negative age means the clock moved backwards; re-register rather than trust it.
+        return age >= TimeSpan.Zero && age < RegistrationRefreshInterval;
+    }
+
+    /// <summary>
+    /// Retires this device's registration while the session can still authenticate the call.
+    /// </summary>
+    /// <remarks>
+    /// Hooked to <see cref="IAuthService.SigningOut"/> rather than <c>AuthStateChanged</c>. The
+    /// latter is raised after the token has been cleared, so the DELETE went out unauthenticated,
+    /// came back 401, and left the handset registered - still receiving the previous user's
+    /// notifications - with the local token already erased so nothing could ever retry.
+    /// </remarks>
     private async Task UnregisterCurrentDeviceAsync()
     {
         var token = _preferenceStore.GetString(MobilePreferenceKeys.RegisteredPushToken);
@@ -231,11 +339,20 @@ public class PushNotificationCoordinator : IPushNotificationCoordinator, IDispos
             return;
         }
 
-        // Cleared first. A failed unregister must not leave the app trying forever, and the server
-        // reassigns a token to whoever registers it next anyway - so the stale row is corrected the
-        // moment anyone signs in on this device.
+        var unregistered = await _pushApiService.UnregisterDeviceAsync(token);
+
+        // Forgotten either way. A failed unregister must not leave the app trying forever, and the
+        // server reassigns a token to whoever registers it next - so the stale row is corrected the
+        // moment anyone signs in on this device. Cleared after the call, not before, so the call
+        // itself still has the token to send.
         _preferenceStore.Remove(MobilePreferenceKeys.RegisteredPushToken);
-        await _pushApiService.UnregisterDeviceAsync(token);
+        _preferenceStore.Remove(MobilePreferenceKeys.PushTokenRegisteredAtUtcTicks);
+
+        if (!unregistered)
+        {
+            _logger.LogWarning(
+                "The server did not confirm this device was unregistered; it may keep receiving notifications until someone signs in here.");
+        }
     }
 
     /// <summary>
@@ -278,6 +395,37 @@ public class PushNotificationCoordinator : IPushNotificationCoordinator, IDispos
 
     private void OnAuthStateChanged() => _ = SyncAsync();
 
+    /// <summary>
+    /// Runs before the session is torn down, so the DELETE goes out with a valid bearer token.
+    /// </summary>
+    /// <remarks>
+    /// Takes the same gate a sync does. Without it the unregister could interleave with a
+    /// registration already in flight, which would re-write RegisteredPushToken and re-create the
+    /// server row moments after the DELETE removed it - leaving the handset registered to the
+    /// account that just signed out, which is the failure this hook exists to prevent.
+    ///
+    /// <para>
+    /// Bounded, because the caller is a sign-out the user asked for: if a sync is genuinely stuck,
+    /// unregistering unguarded is a better outcome than making them wait for it.
+    /// </para>
+    /// </remarks>
+    private async Task OnSigningOutAsync()
+    {
+        var held = await _gate.WaitAsync(TimeSpan.FromSeconds(2));
+
+        try
+        {
+            await UnregisterCurrentDeviceAsync();
+        }
+        finally
+        {
+            if (held)
+            {
+                _gate.Release();
+            }
+        }
+    }
+
     private void OnTokenRefreshed(object? sender, string token) => _ = SyncAsync();
 
     public void Dispose()
@@ -289,6 +437,7 @@ public class PushNotificationCoordinator : IPushNotificationCoordinator, IDispos
 
         _disposed = true;
         _authService.AuthStateChanged -= OnAuthStateChanged;
+        _authService.SigningOut -= OnSigningOutAsync;
         _registrationService.TokenRefreshed -= OnTokenRefreshed;
         _gate.Dispose();
     }

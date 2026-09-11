@@ -31,6 +31,17 @@ public static class PlaylistNavigationTarget
     public const string TopStreamedWindowKey = "TopStreamedWindow";
 
     /// <summary>
+    /// Query key for an artist's listing, which the player addresses by NAME rather than by id.
+    /// </summary>
+    /// <remarks>
+    /// The odd one out, and deliberately: a push digest has to be able to open an artist without a
+    /// catalogue round trip first, so the server sends the name. It sits here with the other three
+    /// because it is the same page's contract - it was previously a bare literal in six places,
+    /// including a [QueryProperty] attribute and a notification-tap route that no UI exercises.
+    /// </remarks>
+    public const string ArtistNameKey = "ArtistName";
+
+    /// <summary>
     /// The route and query for <paramref name="playlist"/>, or <c>null</c> when it cannot be opened -
     /// an unknown kind, or a top-streamed tile that arrived without its key.
     /// </summary>

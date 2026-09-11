@@ -15,13 +15,6 @@ namespace MusicSalesApp.Maui.Services;
 public interface IPushNotificationRouter
 {
     /// <summary>
-    /// Navigates to whatever the notification is about. Safe to call for any payload: an unknown
-    /// kind, a missing id, or a song that is no longer in the catalogue all leave the user where
-    /// they landed rather than failing at them.
-    /// </summary>
-    Task HandleAsync(IReadOnlyDictionary<string, string?>? data);
-
-    /// <summary>
     /// Holds a payload that arrived before the app could navigate, for
     /// <see cref="FlushPendingAsync"/> to replay.
     /// </summary>
@@ -100,9 +93,6 @@ public sealed class PushNotificationRouter : IPushNotificationRouter
             }
         }
     }
-
-    /// <inheritdoc />
-    public Task HandleAsync(IReadOnlyDictionary<string, string?>? data) => TryRouteAsync(data);
 
     /// <summary>
     /// Routes one payload. False means "could not navigate yet, try again"; true means the
@@ -192,7 +182,7 @@ public sealed class PushNotificationRouter : IPushNotificationRouter
         // trip, which matters on a cold start with no network.
         await _navigationService.GoToAsync(NavigationRoutes.PlaylistPlayer, new Dictionary<string, object>
         {
-            ["ArtistName"] = artistName
+            [PlaylistNavigationTarget.ArtistNameKey] = artistName
         });
 
         _logger.LogInformation("Opened artist {ArtistName} from a tapped digest.", artistName);

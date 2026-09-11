@@ -37,6 +37,8 @@ public class FollowService : IFollowService
 
         var client = _httpClientFactory.CreateClient("MusicSalesApi");
 
+        FollowStateResult settledResult;
+
         try
         {
             // followAsPersonaId is deliberately never sent. It would let a creator be NAMED to the
@@ -50,51 +52,72 @@ public class FollowService : IFollowService
                     new { Following = following, SourceSongId = sourceSongId })
                 .ConfigureAwait(false);
 
-            if (response.IsSuccessStatusCode)
+            if (!response.IsSuccessStatusCode)
             {
-                var result = await response.Content
-                    .ReadFromJsonAsync<FollowStateResult>()
-                    .ConfigureAwait(false);
+                // Every domain refusal - following yourself, a blocked artist, an unavailable
+                // persona - is a 400 by contract, not a 5xx. Logged at Information rather than
+                // Warning because it is the server working correctly, and Warning here would train
+                // the reader to ignore it.
+                if (response.StatusCode == HttpStatusCode.BadRequest)
+                {
+                    _logger.LogInformation(
+                        "The server refused a follow change for persona {PersonaId}.", personaId);
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        "Follow change for persona {PersonaId} failed with {StatusCode}.",
+                        personaId,
+                        response.StatusCode);
+                }
 
-                // Trust the server's answer rather than what was asked for: following an artist you
-                // already follow answers AlreadyFollowing with Following=true, and a refusal that
-                // still returned 200 would otherwise be recorded as success.
-                var settled = result?.Following ?? following;
-                _notifier.NotifyFollowStateChanged(personaId, settled);
-
-                return result ?? new FollowStateResult(personaId, settled, null);
+                return null;
             }
 
-            // Every domain refusal - following yourself, a blocked artist, an unavailable persona -
-            // is a 400 by contract, not a 5xx. Logged at Information rather than Warning because it
-            // is the server working correctly, and Warning here would train the reader to ignore it.
-            if (response.StatusCode == HttpStatusCode.BadRequest)
-            {
-                _logger.LogInformation(
-                    "The server refused a follow change for persona {PersonaId}.", personaId);
-            }
-            else
-            {
-                _logger.LogWarning(
-                    "Follow change for persona {PersonaId} failed with {StatusCode}.",
-                    personaId,
-                    response.StatusCode);
-            }
+            var result = await response.Content
+                .ReadFromJsonAsync<FollowStateResult>()
+                .ConfigureAwait(false);
 
-            return null;
+            // Trust the server's answer rather than what was asked for: following an artist you
+            // already follow answers AlreadyFollowing with Following=true, and a refusal that
+            // still returned 200 would otherwise be recorded as success.
+            var settled = result?.Following ?? following;
+            settledResult = result ?? new FollowStateResult(personaId, settled, null);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to change the follow state for persona {PersonaId}.", personaId);
             return null;
         }
+
+        // Announced outside the try above, and guarded separately, because the two failures mean
+        // opposite things. The server has recorded the change by this point; a subscriber blowing
+        // up - easy, since they touch bound state - must not turn that into a reported failure,
+        // which is what rolled the bell back on a follow the server had accepted and blamed the
+        // network in the log. It must not escape either: the caller asked to follow an artist, and
+        // that worked.
+        try
+        {
+            _notifier.NotifyFollowStateChanged(settledResult.CreatorPersonaId, settledResult.Following);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "A follow-state subscriber failed for persona {PersonaId}; the change itself was saved.",
+                settledResult.CreatorPersonaId);
+        }
+
+        return settledResult;
     }
 
     /// <inheritdoc />
-    public async Task<HashSet<int>> GetFollowedPersonaIdsAsync(IEnumerable<int> personaIds)
+    public async Task<HashSet<int>?> GetFollowedPersonaIdsAsync(IEnumerable<int> personaIds)
     {
         var ids = personaIds?.Where(id => id > 0).Distinct().ToList() ?? [];
 
+        // Nothing to ask about, or nobody to ask for: a signed-out user genuinely follows nobody,
+        // so this is an answer rather than a failure to reach the server.
         if (ids.Count == 0 || !_authService.IsLoggedIn)
         {
             return [];
@@ -114,22 +137,22 @@ public class FollowService : IFollowService
             {
                 _logger.LogWarning(
                     "Bulk follow-state lookup failed with {StatusCode}.", response.StatusCode);
-                return [];
+                return null;
             }
 
             var followed = await response.Content
                 .ReadFromJsonAsync<List<int>>()
                 .ConfigureAwait(false);
 
+            // A 200 with no body is still an answer: the server reported no follows.
             return followed is null ? [] : [.. followed];
         }
         catch (Exception ex)
         {
-            // Empty renders as "not following", which is the safe direction: the bell is a control
-            // the user can correct, not a claim about their data. Failing loudly here would put an
-            // error in front of someone who only opened the library.
+            // Null, not empty. We do not know what this user follows, so the caller has to keep
+            // what it already had rather than record "follows nobody" as a fact.
             _logger.LogWarning(ex, "Failed to load follow states for {Count} personas.", ids.Count);
-            return [];
+            return null;
         }
     }
 }
